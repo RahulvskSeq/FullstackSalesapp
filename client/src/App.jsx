@@ -15401,7 +15401,7 @@ import AddDealerModal    from './components/AddDealerModal';
 import BulkActionModal   from './components/BulkActionModal';
 import IndiaMap          from './components/IndiaMap';
 import UploadMonth      from './components/UploadMonth';
-import MonthlyEntry     from './components/MonthlyEntry';
+import MonthlyEntry     from './components/Monthlyentry';
 import Outstanding      from './components/Outstanding';
 
 // ── Cookie helpers ────────────────────────────────────────
