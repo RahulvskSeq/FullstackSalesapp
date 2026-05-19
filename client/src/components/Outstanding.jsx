@@ -5893,7 +5893,7 @@ function ExpandedRow({ d, dealers, onOpenDealer, setActiveDealer, allMonthCols, 
           <div style={{width:1,height:28,background:'var(--b2)',flexShrink:0}}/>
 
           {/* 2. Comment boxes */}
-          <div style={{display:'flex',gap:6,alignItems:'center',flex:1,minWidth:200,flexWrap:'wrap'}}>
+          {/* <div style={{display:'flex',gap:6,alignItems:'center',flex:1,minWidth:200,flexWrap:'wrap'}}>
             {notes.map((v,i)=>(
               <input key={i} className="inp" value={v} onChange={e=>setNote(i,e.target.value)}
                 placeholder={`Comment ${i+1}...`}
@@ -5906,7 +5906,7 @@ function ExpandedRow({ d, dealers, onOpenDealer, setActiveDealer, allMonthCols, 
               {saving?<RefreshCw size={10} style={{animation:'spin .7s linear infinite'}}/>:saved?<Check size={10}/>:<MessageSquare size={10}/>}
               {saved?'Saved!':'Save'}
             </button>
-          </div>
+          </div> */}
 
           <div style={{width:1,height:28,background:'var(--b2)',flexShrink:0}}/>
 
