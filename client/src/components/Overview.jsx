@@ -1283,7 +1283,7 @@ import React, { useState, useMemo } from 'react';
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Users, Target, Award, Activity, TrendingUp, Clock, Bell, AlertTriangle, Search, MapPin, Star, ArrowUpRight, ArrowDownRight, X, GripVertical, Hash } from 'lucide-react';
 import { MO as MO_CONST, CURRENT_MONTH_IDX } from '../constants';
-import { pct, spct, pclr, trendPct, forecast } from '../utils';
+import { pct, spct, pclr, trendPct, forecast, monthTarget } from '../utils';
 import { useMonth } from '../context';
 import { StatusBadge, Avatar, MiniBars, StatCard, MultiSelect } from './UI';
 import MapView from './MapView';
@@ -1298,7 +1298,8 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate})=>{
   const dealersForMonth=useMemo(()=>dealers.map(d=>({
     ...d,
     achieved:d.months[selectedMonthIdx]||0,
-    target:(d.monthTargets?.[selectedMonthIdx] ?? d.target),
+    // Smart per-month target (see utils.monthTarget for full logic)
+    target:monthTarget(d, selectedMonthIdx),
   })),[dealers,selectedMonthIdx]);
 
   const myD=dealersForMonth;
@@ -1349,13 +1350,59 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate})=>{
   const other = myD.length - active - inactive - dead;
 
   // Insight calculations — ALL dealers, real thresholds
-  const risingList=dealers.filter(x=>trendPct(x.months)>30&&x.months.slice(-3).reduce((a,b)=>a+b,0)>0);
-  const decliningList=dealers.filter(x=>trendPct(x.months)<-20&&x.months.slice(-6,-3).reduce((a,b)=>a+b,0)>0);
-  const dormantList=dealers.filter(x=>x.months.slice(-3).reduce((a,b)=>a+b,0)===0&&x.months.slice(0,8).reduce((a,b)=>a+b,0)>0);
-  const recentlyInactiveList=dealers.filter(x=>x.months[CURRENT_MONTH_IDX]===0&&x.months.slice(0,CURRENT_MONTH_IDX).reduce((a,b)=>a+b,0)>0);
+  // Smart trend that works regardless of how many empty future months are in
+  // the MO array. We find each dealer's latest month with actual data and
+  // compare to the previous month with data, not blindly to MO's last index.
+  const monthlyTrend = (months) => {
+    if(!Array.isArray(months) || months.length === 0) return 0;
+    // Latest non-zero month
+    let latest = -1;
+    for(let i = months.length - 1; i >= 0; i--){
+      if(Number(months[i]) > 0){ latest = i; break; }
+    }
+    if(latest < 0) return 0;   // dealer has no data at all
+    const cur = Number(months[latest]) || 0;
+    // Previous month (any value, including 0 — but only if it makes sense)
+    if(latest === 0) return cur > 0 ? 100 : 0;
+    const prev = Number(months[latest - 1]) || 0;
+    if(!prev) return cur > 0 ? 100 : 0;
+    return Math.round(((cur - prev) / prev) * 100);
+  };
+  const hasAnyData = months => Array.isArray(months) && months.some(v => Number(v) > 0);
+  const risingList    = dealers.filter(x => hasAnyData(x.months) && monthlyTrend(x.months) > 30);
+  const decliningList = dealers.filter(x => hasAnyData(x.months) && monthlyTrend(x.months) < -20);
+  // Helpers that anchor calculations to the CURRENT month index instead of
+  // the end of the MO array (which may contain empty future months).
+  // months[currentMonthIdx] = this month, months[currentMonthIdx-1] = last
+  // month, etc. Older months go backwards.
+  const ci = selectedMonthIdx;   // current viewing month idx
+  const sumRange = (arr, from, to) => arr.slice(Math.max(0, from), Math.max(0, to)).reduce((a,b) => a + Number(b||0), 0);
+  // Dormant 3+ months = zero in current and previous 2 months AND had history before
+  const dormantList = dealers.filter(x => {
+    if(!Array.isArray(x.months)) return false;
+    const last3   = sumRange(x.months, ci - 2, ci + 1);    // [ci-2, ci-1, ci]
+    const before  = sumRange(x.months, 0, ci - 2);         // earlier months
+    return last3 === 0 && before > 0;
+  });
+  const recentlyInactiveList = dealers.filter(x => {
+    if(!Array.isArray(x.months)) return false;
+    const thisMonth = Number(x.months[ci]) || 0;
+    const earlier   = sumRange(x.months, 0, ci);
+    return thisMonth === 0 && earlier > 0;
+  });
   // Dead by data = zero for 6+ months; inactive by data = zero last 2-3 months
-  const inactiveByData=dealers.filter(x=>{const last3=x.months.slice(-3).reduce((a,b)=>a+b,0);const prev=x.months.slice(-6,-3).reduce((a,b)=>a+b,0);return last3===0&&prev>0;});
-  const deadByData=dealers.filter(x=>x.months.slice(-6).reduce((a,b)=>a+b,0)===0&&x.months.reduce((a,b)=>a+b,0)>0);
+  const inactiveByData = dealers.filter(x => {
+    if(!Array.isArray(x.months)) return false;
+    const last3 = sumRange(x.months, ci - 2, ci + 1);
+    const prev  = sumRange(x.months, ci - 5, ci - 2);
+    return last3 === 0 && prev > 0;
+  });
+  const deadByData = dealers.filter(x => {
+    if(!Array.isArray(x.months)) return false;
+    const last6 = sumRange(x.months, ci - 5, ci + 1);
+    const everAny = x.months.reduce((a,b) => a + Number(b||0), 0);
+    return last6 === 0 && everAny > 0;
+  });
   // Also count by status field
   const inactiveByStatus=dealers.filter(x=>['INACTIVE','RECENTLY INACTIVE'].includes((x.status||'').toUpperCase()));
   const deadByStatus=dealers.filter(x=>(x.status||'').toUpperCase()==='DEAD');
@@ -1407,8 +1454,8 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate})=>{
 
       {/* Insight chips — all based on real data calculations */}
       <div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:18}}>
-        {risingList.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'TRENDING UP',color:'#34d399',icon:'📈',sub:'sales up >30% last 3 vs prior 3 months',list:risingList})} style={{background:'rgba(52,211,153,0.1)',color:'#34d399',cursor:'pointer'}}><TrendingUp size={13}/> {risingList.length} dealers trending up</div>}
-        {decliningList.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'DECLINING SHARPLY',color:'#f87171',icon:'📉',sub:'sales down >20% last 3 vs prior 3 months',list:decliningList})} style={{background:'rgba(248,113,113,0.1)',color:'#f87171',cursor:'pointer'}}><ArrowDownRight size={13}/> {decliningList.length} declining sharply</div>}
+        <div className="insight-chip" onClick={()=>setInsightPopup({label:'TRENDING UP',color:'#34d399',icon:'📈',sub:'sales up >30% vs previous month',list:risingList})} style={{background:'rgba(52,211,153,0.1)',color:'#34d399',cursor:'pointer'}}><TrendingUp size={13}/> {risingList.length} dealers trending up</div>
+        <div className="insight-chip" onClick={()=>setInsightPopup({label:'DECLINING SHARPLY',color:'#f87171',icon:'📉',sub:'sales down >20% vs previous month',list:decliningList})} style={{background:'rgba(248,113,113,0.1)',color:'#f87171',cursor:'pointer'}}><ArrowDownRight size={13}/> {decliningList.length} declining sharply</div>
         {dormantList.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'DORMANT 3+ MONTHS',color:'#fbbf24',icon:'💤',sub:'zero sales last 3 months but had history',list:dormantList})} style={{background:'rgba(251,191,36,0.1)',color:'#fbbf24',cursor:'pointer'}}><Clock size={13}/> {dormantList.length} dormant 3+ months</div>}
         {recentlyInactiveList.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'RECENTLY INACTIVE',color:'#fb923c',icon:'⏸',sub:'no orders this month but had orders before',list:recentlyInactiveList})} style={{background:'rgba(251,146,60,0.1)',color:'#fb923c',cursor:'pointer'}}><Clock size={13}/> {recentlyInactiveList.length} recently inactive</div>}
         {inactiveByStatus.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'INACTIVE (STATUS)',color:'#fbbf24',icon:'⚠️',sub:'marked as Inactive or Recently Inactive',list:inactiveByStatus})} style={{background:'rgba(251,191,36,0.08)',color:'#fbbf24',cursor:'pointer'}}><AlertTriangle size={13}/> {inactiveByStatus.length} inactive</div>}
@@ -1849,7 +1896,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate})=>{
         const popup=tierPopup||insightPopup;
         const closePopup=()=>{setTierPopup(null);setInsightPopup(null);setPopupSearch('');};
         const filteredList=popupSearch.trim()?popup.list.filter(d=>d.name.toLowerCase().includes(popupSearch.toLowerCase())):popup.list;
-        const pListForMonth=filteredList.map(d=>({...d,achieved:d.months[selectedMonthIdx]||0,target:(d.monthTargets?.[selectedMonthIdx] ?? d.target)}));
+        const pListForMonth=filteredList.map(d=>({...d,achieved:d.months[selectedMonthIdx]||0,target:monthTarget(d, selectedMonthIdx)}));
         return(
           <div className="overlay" onClick={e=>e.target===e.currentTarget&&closePopup()}>
             <div className="modal" style={{maxWidth:1100,padding:0}}>

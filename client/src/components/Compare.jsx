@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { GitCompare } from 'lucide-react';
 import { MO as MO_CONST } from '../constants';
-import { fcash, trendPct, forecast, pct, spct } from '../utils';
+import { fcash, trendPct, forecast, pct, spct, monthTarget } from '../utils';
 import { useMonth } from '../context';
 
 const Compare=({dealers,onOpenDealer})=>{
@@ -55,7 +55,7 @@ const Compare=({dealers,onOpenDealer})=>{
                 {[
                   ['Status',d=>d.status],['Zone',d=>d.zone||'—'],['City',d=>d.city||'—'],['State',d=>d.state||'—'],
                   ['Category',d=>d.category||'—'],['Cat Type',d=>d.categoryType||'—'],
-                  [`${selMoLabel} Ach`,d=>d.months[selectedMonthIdx]||0],['Target',d=>(d.monthTargets?.[selectedMonthIdx]??d.target)||'—'],
+                  [`${selMoLabel} Ach`,d=>d.months[selectedMonthIdx]||0],['Target',d=>(monthTarget(d, selectedMonthIdx)||'—')],
                   ['Trend',d=>(trendPct(d.months)>0?'+':'')+trendPct(d.months)+'%'],['Forecast',d=>forecast(d.months)],
                   ['Credit',d=>fcash(d.creditLimit)],
                 ].map(([lbl,fn])=>(<tr key={lbl}><td style={{color:'var(--t3)'}}>{lbl}</td>{pickedDealers.map(d=><td key={d.id} style={{fontWeight:600}}>{fn(d)}</td>)}</tr>))}

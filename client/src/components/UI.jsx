@@ -802,10 +802,11 @@ export const SkeletonLoader = ({ screen='overview' }) => {
   );
 };
 
-export const MonthSelectorBar = ({selectedMonthIdx,setSelectedMonthIdx}) => {
+export const MonthSelectorBar = ({selectedMonthIdx,setSelectedMonthIdx,onRefreshMonth}) => {
   const { MO:ctxMO, currentMonthIdx } = useMonth();
   const MO = ctxMO || MO_CONST;
   const curIdx = currentMonthIdx ?? CURRENT_MONTH_IDX;
+  const selectedMonth = MO[selectedMonthIdx] || '';
   return (
   <div style={{display:'flex',alignItems:'center',gap:6,padding:'8px 14px',background:'var(--bg1)',borderBottom:'1px solid var(--b1)',overflowX:'auto',flexShrink:0}}>
     <span style={{fontSize:10,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'.12em',whiteSpace:'nowrap',marginRight:4}}>Viewing:</span>
@@ -815,6 +816,13 @@ export const MonthSelectorBar = ({selectedMonthIdx,setSelectedMonthIdx}) => {
       </button>
     ))}
     {selectedMonthIdx!==curIdx&&(<button onClick={()=>setSelectedMonthIdx(curIdx)} style={{padding:'4px 10px',borderRadius:6,border:'1px solid #34d39944',background:'rgba(52,211,153,0.1)',color:'#34d399',fontSize:11,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0}}>→ Current</button>)}
+    {onRefreshMonth && (
+      <button onClick={()=>onRefreshMonth(selectedMonth)}
+        title={'Refresh ' + selectedMonth + ' data from MongoDB (does NOT touch Google Sheets)'}
+        style={{padding:'4px 10px',borderRadius:6,border:'1px solid #15803d',background:'rgba(34,197,94,0.10)',color:'#86efac',fontSize:11,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,display:'inline-flex',alignItems:'center',gap:4}}>
+        ↻ Refresh {selectedMonth}
+      </button>
+    )}
   </div>
   );
 };

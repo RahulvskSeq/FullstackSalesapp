@@ -8547,7 +8547,7 @@ import React, { useState } from 'react';
 import { ComposedChart, Bar, Line, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { X, Trash2, Save, Bell, CheckSquare, Square, MapPin, Camera, Share2, Plus, Check, Calendar } from 'lucide-react';
 import { MO as MO_CONST, CURRENT_MONTH_IDX, CURRENT_MONTH_SHORT } from '../constants';
-import { pct, spct, pclr, fcash, num, uid, isoNow, trendPct, forecast } from '../utils';
+import { pct, spct, pclr, fcash, num, uid, isoNow, trendPct, forecast, monthTarget } from '../utils';
 import { api } from '../api';
 import SamplesTab from './SamplesTab';
 import { useMonth } from '../context';
@@ -8629,14 +8629,17 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
   const regularNotes=dealerNotes.filter(n=>n.type!=='followup');
 
   const viewAchieved=dealer.months[selectedMonthIdx]||0;
-  const viewTarget=dealer.monthTargets?.[selectedMonthIdx]??dealer.target;
+  // Smart per-month target — see utils.monthTarget. Each month gets its own
+  // target if uploaded; otherwise we fall back to the dealer's global target
+  // ONLY for months that have actual sales (so historical Sheets data is OK).
+  const viewTarget=monthTarget(dealer, selectedMonthIdx);
   const p=viewTarget?pct(viewTarget,viewAchieved):(viewAchieved>0?null:0);
   const tp=trendPct(dealer.months);
   const fc=forecast(dealer.months);
 
   const chartData=dealer.months.map((v,i)=>({
     month:MO[i].slice(0,3),units:v,
-    target:(dealer.monthTargets?.[i] ?? dealer.target) || null,
+    target:monthTarget(dealer, i) || null,
     isSelected:i===selectedMonthIdx
   }));
 
@@ -8816,7 +8819,7 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
                   {[...dealer.months].map((_,di)=>{
                     const i=dealer.months.length-1-di;
                     const v=dealer.months[i];
-                    const mt=dealer.monthTargets?.[i]??dealer.target;
+                    const mt=monthTarget(dealer, i);
                     const prev=i>0?dealer.months[i-1]:null;
                     const diff=prev!=null?v-prev:null;
                     const diffP=prev&&prev>0?Math.round((diff/prev)*100):null;

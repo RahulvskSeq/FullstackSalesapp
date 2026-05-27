@@ -15381,7 +15381,7 @@
 // }
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { LayoutDashboard, Users, TrendingUp, Settings, LogOut, Bell, GitCompare, Menu, RefreshCw, Map, AlertTriangle, Upload, Edit3 } from 'lucide-react';
+import { LayoutDashboard, Users, TrendingUp, Settings, LogOut, Bell, GitCompare, Menu, RefreshCw, Map, AlertTriangle, Upload, Edit3, Calendar } from 'lucide-react';
 import { DEFAULT_USERS, MO as MO_DEFAULT, CURRENT_MONTH_IDX as CURRENT_MONTH_IDX_DEFAULT, CURRENT_MONTH_LABEL as CURRENT_MONTH_LABEL_DEFAULT, CURRENT_MONTH_SHORT as CURRENT_MONTH_SHORT_DEFAULT } from './constants';
 import { pct, spct, pclr, uid, isoNow, storage, parseCSV, fetchCSV, parseOutstandingCSV } from './utils';
 import { api, dbDealerToApp, dbOutstandingToApp, saveToken, getToken } from './api';
@@ -15403,6 +15403,7 @@ import IndiaMap          from './components/IndiaMap';
 import UploadMonth      from './components/UploadMonth';
 import MonthlyEntry     from './components/Monthlyentry';
 import Outstanding      from './components/Outstanding';
+import ManageMonths     from './components/ManageMonths';
 
 // ── Cookie helpers ────────────────────────────────────────
 const COOKIE_KEY = 'stp_session';
@@ -15419,7 +15420,7 @@ const getCookie = () => {
 const clearCookie = () => { document.cookie = `${COOKIE_KEY}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`; };
 
 // ── Slug routing helpers ──────────────────────────────────
-const VALID_SCREENS = ['overview','dealers','monthly','compare','map','outstanding','upload','entry','followups','admin'];
+const VALID_SCREENS = ['overview','dealers','monthly','compare','map','outstanding','upload','entry','followups','months','admin'];
 const getScreenFromUrl = () => {
   const hash = window.location.hash.replace('#/','').split('?')[0];
   return VALID_SCREENS.includes(hash) ? hash : 'overview';
@@ -15559,6 +15560,7 @@ export default function App(){
 
   const saveMonthConfig = (cfg) => {
     const updated = {...monthConfig,...cfg};
+    const moChanged = JSON.stringify(updated.MO) !== JSON.stringify(monthConfig.MO);
     setMonthConfig(updated);
     // Save to localStorage (persists across refresh)
     localStorage.setItem('stp_month_config', JSON.stringify(updated));
@@ -15566,7 +15568,21 @@ export default function App(){
     if(cfg.currentIdx!==undefined) setSelectedMonthIdx(cfg.currentIdx);
     // Save to DB if available so all users get same config
     if(getToken()) {
-      api.saveMonthConfig(updated).catch(()=>{}); // silent fail ok
+      api.saveMonthConfig(updated).catch(e => {
+        console.warn('[saveMonthConfig] DB save failed — config stays in localStorage only:', e.message);
+      });
+    }
+    // If months array changed, re-map existing dealer data to the new MO
+    // so dashboards immediately show columns aligned with the new month list.
+    if(moChanged && dealers.length > 0){
+      setDealers(ds => ds.map(d => {
+        if(!d._raw && !d.monthlyData) return d;
+        const md = d.monthlyData || {};
+        const months       = updated.MO.map(m => Number(md[m]?.achieved) || 0);
+        const monthTargets = {};
+        updated.MO.forEach((m, i) => { const t = Number(md[m]?.target); if(t > 0) monthTargets[i] = t; });
+        return { ...d, months, monthTargets };
+      }));
     }
   };
 
@@ -15686,7 +15702,15 @@ export default function App(){
         }));
         await api.syncToDB(normalizedLive, activeMO);
         console.log('[Sync] Saved', live.length, 'dealers to DB');
-      } catch(e) { console.warn('[Sync] DB save failed:', e.message); }
+
+        // CRITICAL: Reload from DB so the UI reflects the MERGED state.
+        // The sheet parse only has months from the sheet (e.g. May/April/…).
+        // The DB might have additional months from manual uploads (e.g. June).
+        // Without this reload, the UI would show only the sheet's months and
+        // hide manually-uploaded months — which is what made you think June
+        // got "removed" by Sync. June is in DB; we just need to fetch it back.
+        await loadFromDB(activeMO);
+      } catch(e) { console.warn('[Sync] DB save / reload failed:', e.message); }
     }
     setSyncing(false);
     if(currentUser)addLog('sync',`Synced · ${live.length} dealers · ${errs.length} errors`);
@@ -15716,13 +15740,25 @@ export default function App(){
         api.getFollowups().catch(()=>[]),
       ]);
 
-      // Apply month config
+      // Apply month config — but PREFER the local/state config if it has
+      // more months than the DB version. This stops a stale DB monthConfig
+      // (e.g., from a failed earlier save) from clobbering a newer local one
+      // that includes months like June added recently. If local is bigger,
+      // push it to DB so they stay in sync going forward.
       let finalMO = currentMO;
-      if(dbMonthCfg?.MO?.length > 0) {
+      const localMO = activeMO || [];
+      const dbMO    = dbMonthCfg?.MO || [];
+      if(dbMO.length > 0 && dbMO.length >= localMO.length) {
+        // DB is at least as complete as local — adopt DB
         setMonthConfig(dbMonthCfg);
         localStorage.setItem('stp_month_config', JSON.stringify(dbMonthCfg));
         if(dbMonthCfg.currentIdx !== undefined) setSelectedMonthIdx(dbMonthCfg.currentIdx);
         finalMO = dbMonthCfg.MO;
+      } else if(localMO.length > dbMO.length) {
+        // Local has more months than DB — keep local AND push it to DB
+        console.log('[loadFromDB] Local config has ' + localMO.length + ' months vs DB has ' + dbMO.length + '. Preserving local + pushing to DB.');
+        try { api.saveMonthConfig(monthConfig).catch(() => {}); } catch {}
+        finalMO = localMO;
       }
 
       // Set dealers
@@ -15760,14 +15796,13 @@ export default function App(){
   const loadData = async () => {
     const token = localStorage.getItem('stp_jwt');
     if(token) {
-      const ok = await loadFromDB();
-      if(!ok) {
-        // DB failed — auto sync from sheets so user sees data without clicking
-        await syncSheets();
-      }
-    } else {
-      await syncSheets();
+      // Only load from DB. DO NOT fall back to syncSheets() — that destroys
+      // data the user uploaded manually (e.g. June). If the DB is empty,
+      // the user can click "Sync now" in Manage Months explicitly.
+      await loadFromDB();
     }
+    // If there's no token (offline / not logged in), we just leave the
+    // dashboard empty until the user logs in. No silent Sheet sync.
     setDbLoaded(true);
   };
 
@@ -15777,18 +15812,16 @@ export default function App(){
     }
   },[currentUser]);
 
-  // Auto-sync if dealers still empty after load
-  useEffect(()=>{
-    if(currentUser && dealers.length===0 && !syncing) {
-      const t = setTimeout(()=>{
-        if(dealers.length===0) syncSheets();
-      }, 3000); // wait 3s for DB to respond first
-      return ()=>clearTimeout(t);
-    }
-  },[currentUser, dealers.length]);
-
-  // Note: syncSheets is only called manually (Sync button) or as fallback inside loadData
-  // DO NOT auto-call syncSheets here — it overwrites DB data with stale sheet data
+  // IMPORTANT: Do NOT auto-sync from Sheets here.
+  // A previous version had a 3-second timer that auto-called syncSheets() if
+  // dealers was still empty after page load. That ran on EVERY page refresh
+  // and silently overwrote any data the user had uploaded manually via the
+  // Monthly Entry tab — because the sheet doesn't have those months, the
+  // sync mapped May into June's slot etc. and destroyed the upload.
+  //
+  // Sync is now ONLY triggered when the user clicks "Sync now" in
+  // Manage Months (or the Sync icon in the top bar). That's the user's
+  // explicit intent and won't surprise them on refresh.
 
   const saveDealer = async (d) => {
     setDealers(ds=>ds.map(x=>x.id===d.id?d:x));
@@ -15874,6 +15907,7 @@ export default function App(){
     {id:'outstanding',label:'Outstanding',icon:AlertTriangle},
     {id:'upload',label:'Upload Data',icon:Upload,adminOnly:true},
     {id:'entry',label:'Monthly Entry',icon:Edit3,adminOnly:true},
+    {id:'months',label:'Manage Months',icon:Calendar,adminOnly:true},
     {id:'followups',label:'Follow-ups',icon:Bell,badge:overdueCount},
     ...(currentUser.role==='admin'?[{id:'admin',label:'Admin Panel',icon:Settings}]:[]),
   ];
@@ -15918,11 +15952,20 @@ export default function App(){
               </div>
             )}
 
-            {/* ── Sync button — icon only on mobile ── */}
+            {/* ── Reload from DB button — safe refresh, doesn't touch Sheets ── */}
+            <button onClick={()=>loadFromDB(activeMO)} disabled={syncing} className="btn"
+              title="Reload all dealer data from MongoDB. Safe — never touches Google Sheets."
+              style={{fontSize:11,display:'flex',alignItems:'center',gap:4,padding:'6px 8px',flexShrink:0,color:'#86efac'}}>
+              <RefreshCw size={13}/>
+              <span className="hide-sm">Reload DB</span>
+            </button>
+
+            {/* ── Sync from Sheets button — icon only on mobile ── */}
             <button onClick={syncSheets} disabled={syncing} className="btn"
+              title="Pull latest from Google Sheets. Months not in the sheet are preserved."
               style={{fontSize:11,display:'flex',alignItems:'center',gap:4,padding:'6px 8px',flexShrink:0}}>
               <RefreshCw size={13} className={syncing?'spin':''}/>
-              <span className="hide-sm">{syncing?'Syncing':'Sync'}</span>
+              <span className="hide-sm">{syncing?'Syncing':'Sync Sheets'}</span>
             </button>
             {useDB&&<span style={{fontSize:10,background:'rgba(52,211,153,0.15)',color:'#34d399',padding:'2px 7px',borderRadius:4,fontWeight:600,flexShrink:0}}>🗄 DB</span>}
 
@@ -15950,7 +15993,45 @@ export default function App(){
             </button>
           </div>
 
-          <MonthSelectorBar selectedMonthIdx={selectedMonthIdx} setSelectedMonthIdx={setSelectedMonthIdx}/>
+          <MonthSelectorBar
+            selectedMonthIdx={selectedMonthIdx}
+            setSelectedMonthIdx={setSelectedMonthIdx}
+            onRefreshMonth={async (m) => {
+              // Per-month refresh: fetch all dealers from DB and surgically
+              // update ONLY this month's slot in each dealer in local state.
+              // Does NOT touch Google Sheets. Does NOT replace other months.
+              const token = localStorage.getItem('stp_jwt');
+              if(!token) return;
+              try {
+                const dbDealers = await api.getDealers(activeMO);
+                const i = activeMO.indexOf(m);
+                if(i < 0) return;
+                setDealers(ds => ds.map(existing => {
+                  const fresh = dbDealers.find(x =>
+                    (x._id?.toString?.() === existing.id) ||
+                    (x.id === existing.id) ||
+                    (x.name === existing.name && x.salesman === existing.salesman)
+                  );
+                  if(!fresh) return existing;
+                  const freshMd = fresh.monthlyData || {};
+                  const freshEntry = freshMd[m] || null;
+                  const newMonths = [...(existing.months || [])];
+                  while(newMonths.length < activeMO.length) newMonths.push(0);
+                  newMonths[i] = Number(freshEntry?.achieved) || 0;
+                  const newMonthTargets = { ...(existing.monthTargets || {}) };
+                  if(Number(freshEntry?.target) > 0) newMonthTargets[i] = Number(freshEntry.target);
+                  else delete newMonthTargets[i];
+                  const newMonthlyData = { ...(existing.monthlyData || {}) };
+                  if(freshEntry) newMonthlyData[m] = freshEntry;
+                  else delete newMonthlyData[m];
+                  return { ...existing, months:newMonths, monthTargets:newMonthTargets, monthlyData:newMonthlyData };
+                }));
+                console.log('[Refresh ' + m + '] updated ' + dbDealers.length + ' dealer rows from DB');
+              } catch(e){
+                console.warn('[Refresh ' + m + '] failed:', e.message);
+              }
+            }}
+          />
 
           <div id="body">
             {sidebarOpen&&window.innerWidth<=768&&<div id="sb-overlay" className="open" onClick={()=>setSidebarOpen(false)}/>}
@@ -15994,6 +16075,7 @@ export default function App(){
                   {screen==='outstanding'&&<Outstanding dealers={myDealers} users={users} onOpenDealer={setEditingId} currentUser={currentUser} outstandingData={outstandingData} setOutstandingData={setOutstandingData}/>}
                   {screen==='upload'&&<UploadMonth users={users} currentUser={currentUser} onSuccess={()=>loadFromDB(activeMO)}/>}
                   {screen==='entry'&&<MonthlyEntry dealers={myDealers} users={users} currentUser={currentUser} onUpdateDealer={updateDealerFields} onSaved={()=>loadFromDB(activeMO)}/>}
+                  {screen==='months'&&currentUser.role==='admin'&&<ManageMonths dealers={dealers} users={users} currentUser={currentUser} monthConfig={monthConfig} saveMonthConfig={saveMonthConfig} loadFromDB={loadFromDB} onSync={syncSheets} syncing={syncing} lastSync={lastSync}/>}
                   {screen==='followups'&&<FollowupsHub notes={myNotes} dealers={myDealers} users={users} onUpdateNote={updateNote} onDeleteNote={deleteNote} onOpenDealer={setEditingId}/>}
                   {screen==='admin'&&currentUser.role==='admin'&&<AdminPanel dealers={dealers} users={users} setUsers={setUsers} setShowUM={setShowUM} onSync={syncSheets} syncing={syncing} lastSync={lastSync} syncErrs={syncErrs} onNavigate={navigate} onOpenDealer={setEditingId} monthConfig={monthConfig} saveMonthConfig={saveMonthConfig}/>}
                 </>

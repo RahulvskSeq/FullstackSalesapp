@@ -1677,6 +1677,25 @@ export const api = {
 
   getMonthConfig:  ()    => fetch(`${BASE}/settings/months`,{headers:authHeaders()}).then(handle).catch(()=>null),
   saveMonthConfig: (cfg) => fetch(`${BASE}/settings/months`,{method:'POST',headers:authHeaders(),body:JSON.stringify(cfg)}).then(handle).catch(()=>null),
+
+  // Admin: back-fill per-month targets from each dealer's global target,
+  // for months that have achievement > 0 but no per-month target stored.
+  repairTargets: () => fetch(`${BASE}/dealers/repair-targets`,{method:'POST',headers:authHeaders()}).then(handle),
+
+  // Admin: DESTRUCTIVE — delete every dealer record. Used to start fresh.
+  wipeAllDealers: () => fetch(`${BASE}/dealers/wipe-all`,{
+    method:'POST',
+    headers:authHeaders(),
+    body: JSON.stringify({ confirm:'YES_WIPE_ALL' }),
+  }).then(handle),
+
+  // Admin: find and remove duplicate dealers (same salesman + same name).
+  // dryRun=true returns a preview without deleting anything.
+  dedupeDealers: (dryRun=false) => fetch(`${BASE}/dealers/dedupe`,{
+    method:'POST',
+    headers:authHeaders(),
+    body: JSON.stringify({ dryRun }),
+  }).then(handle),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

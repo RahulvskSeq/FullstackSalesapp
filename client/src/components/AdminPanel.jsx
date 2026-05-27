@@ -262,7 +262,7 @@ import React, { useState, useMemo } from 'react';
 import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Users, Target, Award, Activity, RefreshCw, Calendar, Plus, Trash2, Check } from 'lucide-react';
 import { MO as MO_CONST } from '../constants';
-import { pct, spct, pclr } from '../utils';
+import { pct, spct, pclr, monthTarget } from '../utils';
 import { useMonth } from '../context';
 import { Avatar, KPI, StatCard } from './UI';
 import CategoryDrillChart from './CategoryDrillChart';
@@ -276,7 +276,9 @@ const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,sync
   const [newMonth,setNewMonth]=useState('');
   const [newMonthErr,setNewMonthErr]=useState('');
   const sms=Object.values(users).filter(u=>u.role==='salesman');
-  const dealersForMonth=useMemo(()=>dealers.map(d=>({...d,achieved:d.months[selectedMonthIdx]||0,target:(d.monthTargets?.[selectedMonthIdx] ?? d.target)})),[dealers,selectedMonthIdx]);
+  // Smart per-month target — see utils.monthTarget. Uses month-specific target
+  // if uploaded, falls back to global only for months that actually have sales.
+  const dealersForMonth=useMemo(()=>dealers.map(d=>({...d,achieved:d.months[selectedMonthIdx]||0,target:monthTarget(d, selectedMonthIdx)})),[dealers,selectedMonthIdx]);
   const tt=dealersForMonth.reduce((s,x)=>s+x.target,0),ta=dealersForMonth.reduce((s,x)=>s+x.achieved,0);
   const active=dealersForMonth.filter(x=>['ACTIVE','ACHIVERS','KEY ACCOUNT'].includes((x.status||'').toUpperCase())).length;
   const compareData=sms.map(s=>{const sd=dealersForMonth.filter(d=>d.salesman===s.id);return{name:s.name,Target:sd.reduce((a,x)=>a+x.target,0),Achieved:sd.reduce((a,x)=>a+x.achieved,0),smId:s.id,color:s.color};});

@@ -276,13 +276,14 @@
 
 
 import { MO, CURRENT_MONTH_IDX } from '../constants';
-import { trendPct, forecast, pct } from '../utils';
+import { trendPct, forecast, pct, monthTarget } from '../utils';
 
 // ── Shared canvas builder — used by both download and share ─────────────────
 function buildCanvas(dealer, users, selectedMonthIdx) {
   const sm          = users[dealer.salesman];
   const viewAchieved= dealer.months[selectedMonthIdx] || 0;
-  const viewTarget  = dealer.monthTargets?.[selectedMonthIdx] ?? dealer.target;
+  // Smart per-month target (see utils.monthTarget)
+  const viewTarget  = monthTarget(dealer, selectedMonthIdx);
   const p           = viewTarget ? Math.round((viewAchieved/viewTarget)*100) : null;
   const tp          = trendPct(dealer.months);
   const fc          = forecast(dealer.months);
@@ -359,7 +360,7 @@ function buildCanvas(dealer, users, selectedMonthIdx) {
     const bh  = Math.max((v/maxVal)*(chartH-16), v>0?3:0);
     const bx  = 36+i*(barW+4);
     const by  = chartY+chartH-bh;
-    const mt  = dealer.monthTargets?.[i] ?? dealer.target;
+    const mt  = monthTarget(dealer, i);
     const isSel = i===selectedMonthIdx;
 
     // Bar
@@ -420,7 +421,7 @@ function buildCanvas(dealer, users, selectedMonthIdx) {
   [...dealer.months].map((_,di)=>{
     const i   = dealer.months.length-1-di;
     const v   = dealer.months[i];
-    const mt  = dealer.monthTargets?.[i] ?? dealer.target;
+    const mt  = monthTarget(dealer, i);
     const prev= i>0?dealer.months[i-1]:null;
     const diff= prev!=null?v-prev:null;
     const diffP= prev&&prev>0?Math.round(((v-prev)/prev)*100):null;
@@ -548,7 +549,7 @@ const shareDealerCard = async (dealer, users, selectedMonthIdx) => {
     const canvas       = buildCanvas(dealer, users, selectedMonthIdx);
     const filename     = dealer.name.replace(/[^a-z0-9]/gi,'_') + '_' + MO[selectedMonthIdx] + '.png';
     const viewAchieved = dealer.months[selectedMonthIdx]||0;
-    const viewTarget   = dealer.monthTargets?.[selectedMonthIdx]??dealer.target;
+    const viewTarget   = monthTarget(dealer, selectedMonthIdx);
     const p            = viewTarget?Math.round((viewAchieved/viewTarget)*100):null;
     const shareText    = dealer.name + ' · ' + MO[selectedMonthIdx] + ' · Achieved: ' + viewAchieved + '/' + (viewTarget||'—') + ' · ' + (p!==null?p+'%':'N/T');
     const dataUrl = canvas.toDataURL('image/png');

@@ -625,17 +625,17 @@
 // }
 
 
-import React, { useState, useMemo } from 'react';
-import { Save, Search, ChevronDown, CheckCircle, Edit3, Filter, AlertCircle } from 'lucide-react';
+import React, { useState, useMemo, useRef } from 'react';
+import { Save, Search, ChevronDown, CheckCircle, Edit3, Filter, AlertCircle, Download, Upload, FileSpreadsheet } from 'lucide-react';
 import { useMonth } from '../context';
 import { MO as MO_DEFAULT } from '../constants';
-import { num, pct, spct, pclr } from '../utils';
+import { num, pct, spct, pclr, monthTarget } from '../utils';
 import { api } from '../api';
 import { Avatar } from './UI';
 
 const STATUSES = ['STAR','ACTIVE','KEY ACCOUNT','ACHIVERS','RECENTLY INACTIVE','INACTIVE','DEAD','NEW','PROSPECT'];
 
-export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDealer }) {
+export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDealer, onSaved }) {
   const { MO:ctxMO, currentMonthIdx } = useMonth();
   const MO = ctxMO || MO_DEFAULT;
 
@@ -647,6 +647,11 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
   const [saving, setSaving]     = useState(false);
   const [saved, setSaved]       = useState(false);
   const [errors, setErrors]     = useState([]);
+
+  // ── Bulk Excel: download/upload per-salesman template ──────────────────────
+  const fileRef = useRef(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkMsg, setBulkMsg]   = useState(null); // { type:'success'|'error', text }
 
   const moIdx = MO.indexOf(month);
   const salesmen = Object.values(users).filter(u => u.role === 'salesman');
@@ -748,10 +753,107 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
     setSaved(true);
     setChanges({});
     setSaving(false);
+    if(ok > 0 && onSaved) onSaved();   // refresh dashboard data after successful save
+  };
+
+  // ── Bulk Excel handlers (download pre-filled template / upload back) ─────
+  const csvEscape = v => {
+    const s = (v === null || v === undefined) ? '' : String(v);
+    return '"' + s.replace(/"/g, '""') + '"';
+  };
+
+  const handleDownloadTemplate = () => {
+    setBulkMsg(null);
+    if(!month || moIdx < 0){
+      setBulkMsg({type:'error', text:'Pick a valid month first.'});
+      return;
+    }
+    const list = filtered;
+    if(!list.length){
+      setBulkMsg({type:'error', text:'No dealers to export with current filters.'});
+      return;
+    }
+
+    // Columns: include Salesman column when exporting "All Salesmen" so an admin
+    // can edit a combined file. Otherwise it's a clean per-salesman sheet.
+    const includeSalesman = (salesman === 'all');
+    const headers = [
+      ...(includeSalesman ? ['Salesman'] : []),
+      'Dealer Name', 'City', 'State', 'Zone', 'Status',
+      'Target', 'Achieved',
+      'Category Type', 'Sub Category',
+      'Credit Days', 'Credit Limit',
+    ];
+
+    const rows = list.map(d => {
+      const ach = Number(d.months?.[moIdx]) || 0;
+      const tgt = monthTarget(d, moIdx);
+      const cells = [
+        ...(includeSalesman ? [users[d.salesman]?.name || d.salesman || ''] : []),
+        d.name || '',
+        d.city || '',
+        d.state || '',
+        d.zone || '',
+        d.status || 'ACTIVE',
+        tgt || 0,
+        ach || 0,
+        d.category || '',
+        d.categoryType || '',
+        d.creditDays || 0,
+        d.creditLimit || 0,
+      ];
+      return cells.map(csvEscape).join(',');
+    });
+
+    const csv = [headers.map(csvEscape).join(','), ...rows].join('\n');
+    const smName = includeSalesman ? 'All_Salesmen' : (users[salesman]?.name || salesman || 'Unknown').replace(/\s+/g,'_');
+    const filename = `MonthlyEntry_${month}_${smName}.csv`;
+    const a = document.createElement('a');
+    a.href = 'data:text/csv;charset=utf-8,﻿' + encodeURIComponent(csv); // BOM so Excel opens UTF-8 cleanly
+    a.download = filename;
+    a.click();
+    setBulkMsg({
+      type:'success',
+      text: `Downloaded ${rows.length} dealer rows for ${smName.replace(/_/g,' ')} — ${month}. Edit Target/Achieved in Excel, save as .csv or .xlsx, then click "Upload Filled".`,
+    });
+  };
+
+  const handleUploadClick = () => {
+    setBulkMsg(null);
+    if(!month || moIdx < 0){
+      setBulkMsg({type:'error', text:'Pick a valid month first.'});
+      return;
+    }
+    if(isAdmin && salesman === 'all'){
+      setBulkMsg({type:'error', text:'Pick a specific salesman before uploading — uploads are saved salesman-wise.'});
+      return;
+    }
+    fileRef.current?.click();
+  };
+
+  const handleFileChosen = async (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if(!f) return;
+    setBulkBusy(true); setBulkMsg(null);
+    try {
+      const targetSm = isAdmin ? salesman : currentUser?.id;
+      const res = await api.uploadMonth(f, month, targetSm);
+      setBulkMsg({
+        type:'success',
+        text: `${month} → ${users[targetSm]?.name || targetSm}: ${res.added || 0} added, ${res.updated || 0} updated${res.skipped ? ', ' + res.skipped + ' skipped' : ''}`,
+      });
+      if(onSaved) onSaved();    // refresh dashboard data
+    } catch(err){
+      setBulkMsg({type:'error', text:'Upload failed: ' + err.message});
+    } finally { setBulkBusy(false); }
   };
 
   return (
     <div className="fade">
+      {/* Hidden file input for bulk upload */}
+      <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" style={{display:'none'}} onChange={handleFileChosen}/>
+
       <div style={{marginBottom:16}}>
         <div style={{fontSize:11,color:'var(--acc)',textTransform:'uppercase',letterSpacing:'.15em',marginBottom:4}}>Data Entry</div>
         <div style={{fontSize:22,fontWeight:700}}>Monthly Entry</div>
@@ -824,6 +926,67 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
           <div style={{padding:'8px 12px',background:'rgba(248,113,113,0.08)',border:'1px solid rgba(248,113,113,0.2)',borderRadius:8,marginTop:8}}>
             <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}><AlertCircle size={13} color="#f87171"/><span style={{fontSize:12,fontWeight:600,color:'#f87171'}}>Some errors:</span></div>
             {errors.map((e,i)=><div key={i} style={{fontSize:11,color:'#f87171'}}>· {e}</div>)}
+          </div>
+        )}
+      </div>
+
+      {/* ── Bulk Excel: Download per-salesman template + Upload back ──────── */}
+      <div className="card" style={{marginBottom:14, padding:14, background:'rgba(99,102,241,0.04)', border:'1px solid rgba(99,102,241,0.18)'}}>
+        <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:6}}>
+          <FileSpreadsheet size={15} color="#a5b4fc"/>
+          <span style={{fontSize:13, fontWeight:700, color:'var(--t1)'}}>Bulk Excel — download &amp; upload</span>
+          <span style={{fontSize:10, color:'var(--t3)', background:'rgba(99,102,241,0.12)', padding:'2px 7px', borderRadius:4, fontWeight:700, letterSpacing:'.04em'}}>
+            {month}{salesman !== 'all' ? ' · ' + (users[salesman]?.name || salesman) : ' · All salesmen'}
+          </span>
+        </div>
+        <div style={{fontSize:11, color:'var(--t3)', marginBottom:10, lineHeight:1.5}}>
+          Download a pre-filled spreadsheet for the selected month and salesman — every column included (name, city, state, zone, status, target, achieved, category, credit&hellip;).
+          Edit the numbers in Excel, then upload it back. New dealers are added, existing ones updated. Other months are not touched.
+        </div>
+        <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
+          <button onClick={handleDownloadTemplate} disabled={bulkBusy}
+            style={{
+              display:'flex', alignItems:'center', gap:6,
+              background:'#6366f1', color:'#fff', border:'none',
+              padding:'8px 14px', borderRadius:6, fontSize:12, fontWeight:700,
+              cursor: bulkBusy ? 'not-allowed' : 'pointer', opacity: bulkBusy ? 0.6 : 1,
+            }}>
+            <Download size={13}/> Download Filled Template ({filtered.length} dealers)
+          </button>
+          <button onClick={handleUploadClick} disabled={bulkBusy || (isAdmin && salesman === 'all')}
+            title={isAdmin && salesman === 'all' ? 'Pick a specific salesman first' : 'Upload your filled Excel/CSV'}
+            style={{
+              display:'flex', alignItems:'center', gap:6,
+              background: (isAdmin && salesman === 'all') ? 'transparent' : '#22c55e',
+              color: (isAdmin && salesman === 'all') ? 'var(--t3)' : '#0c0c1e',
+              border: '1px solid ' + ((isAdmin && salesman === 'all') ? 'var(--b1)' : '#15803d'),
+              padding:'8px 14px', borderRadius:6, fontSize:12, fontWeight:700,
+              cursor: (bulkBusy || (isAdmin && salesman === 'all')) ? 'not-allowed' : 'pointer',
+              opacity: bulkBusy ? 0.6 : 1,
+            }}>
+            {bulkBusy
+              ? <><div style={{width:11,height:11,border:'2px solid currentColor',borderTopColor:'transparent',borderRadius:'50%',animation:'spin .7s linear infinite'}}/> Uploading…</>
+              : <><Upload size={13}/> Upload Filled Excel/CSV</>}
+          </button>
+          <div style={{flex:1}}/>
+          {isAdmin && salesman === 'all' && (
+            <span style={{fontSize:11, color:'#fbbf24', fontWeight:600}}>
+              ⓘ To upload, select a single salesman above
+            </span>
+          )}
+        </div>
+
+        {bulkMsg && (
+          <div style={{
+            marginTop:10, padding:'8px 12px', borderRadius:7, fontSize:12, lineHeight:1.4,
+            background: bulkMsg.type === 'success' ? 'rgba(34,197,94,0.10)' : 'rgba(248,113,113,0.10)',
+            border: '1px solid ' + (bulkMsg.type === 'success' ? '#15803d55' : '#7f1d1d55'),
+            color:  bulkMsg.type === 'success' ? '#86efac' : '#fca5a5',
+            display:'flex', alignItems:'flex-start', gap:6,
+          }}>
+            {bulkMsg.type === 'success' ? <CheckCircle size={13} style={{flexShrink:0, marginTop:1}}/> : <AlertCircle size={13} style={{flexShrink:0, marginTop:1}}/>}
+            <span style={{flex:1}}>{bulkMsg.text}</span>
+            <button onClick={() => setBulkMsg(null)} style={{background:'none', border:'none', color:'inherit', cursor:'pointer', padding:0}}>×</button>
           </div>
         )}
       </div>

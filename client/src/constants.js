@@ -27,7 +27,7 @@ export const DEFAULT_USERS = {
   senthil: { id:'senthil', name:'Senthil',         pass:'senthil123', role:'salesman', color:'#fbbf24', ini:'SE', url:'https://docs.google.com/spreadsheets/d/e/2PACX-1vTZqgkcAAtF1wr7dVC0p6NA6cuYGK53dfeq7K5CYKKfvIBoEtF3PtHpS7705YnmrToi67yr_RagoDFz/pub?gid=609757453&single=true&output=csv', url_outstanding:null },
   sahil:   { id:'sahil',   name:'Sahil',           pass:'sahil123',   role:'salesman', color:'#22d3ee', ini:'SH', url:'https://docs.google.com/spreadsheets/d/e/2PACX-1vT4816e-YRK-9smpwxanCzdFlEzijNaPZwQqghwRN-QiyEwtDz1gjJlQB-BIPQ5YGUr9lgNqvmFBBR9/pub?gid=118116669&single=true&output=csv', url_outstanding:null },
   rakesh:  { id:'rakesh',  name:'Rakesh Boriwal',  pass:'rakesh123',  role:'salesman', color:'#e879f9', ini:'RB', url:'https://docs.google.com/spreadsheets/d/e/2PACX-1vTuVT0iA9ca77vbobS4jGbkzbMBeerzXnVNwxiCuSzL7Et_ey89ZPyMiCNKhw84YigvcpkzBT_Que4Z/pub?gid=715703131&single=true&output=csv', url_outstanding:null },
-  shivraj: { id:'shivraj', name:'Shivraj',         pass:'shivraj123', role:'salesman', color:'#f87171', ini:'SJ', url:'https://docs.google.com/spreadsheets/d/e/2PACX-1vRXdjFB7dVJ1M82et4IBZWkmLWUNY6kF4bRS5hmfsxHzR5UB90dxjfzbTRD-61QdrIZ3ustYvZsrpKe/pub?gid=1089882118&single=true&output=csv', url_outstanding:null },
+  shivraj: { id:'shivraj', name:'Shivraj',         pass:'shivraj123', role:'salesman', color:'#f87171', ini:'SJ', url:'https://docs.google.com/spreadsheets/d/e/2PACX-1vSZD8gszL0SwR1Pz0lMBRrrNRsSWI_WBTFJP7uTkniFJYXKBkmXjVJs-29ejLuPxkwPT21FWgl2pJu8/pub?gid=1089882118&single=true&output=csv', url_outstanding:null },
 };
 
 export const MO = ['Jul-25','Aug-25','Sep-25','Oct-25','Nov-25','Dec-25','Jan-26','Feb-26','Mar-26','Apr-26','May-26'];

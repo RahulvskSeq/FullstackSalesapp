@@ -1156,7 +1156,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Search, Plus, Download, Trash2, X, CheckSquare, Square, ArrowUpRight, ArrowDownRight, MessageSquare, Columns, List, GripVertical } from 'lucide-react';
 import { MO as MO_CONST, CURRENT_MONTH_IDX } from '../constants';
-import { pct, spct, pclr, fcash, num, trendPct } from '../utils';
+import { pct, spct, pclr, fcash, num, trendPct, monthTarget } from '../utils';
 import { useMonth } from '../context';
 import { StatusBadge, Avatar, MiniBars, MultiSelect } from './UI';
 
@@ -1269,7 +1269,7 @@ function KanbanBoard({ dealers, selectedMonthIdx, users, onEdit, onUpdateStatus,
             <div style={{padding:8,display:'flex',flexDirection:'column',gap:6,maxHeight:500,overflowY:'auto'}}>
               {colDealers.map(d=>{
                 const ach=d.months[selectedMonthIdx]||0;
-                const tgt=d.monthTargets?.[selectedMonthIdx]??d.target;
+                const tgt=monthTarget(d, selectedMonthIdx);
                 const p=pct(tgt,ach);
                 const sm=users[d.salesman];
                 return(
