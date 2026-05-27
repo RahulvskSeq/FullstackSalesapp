@@ -1,0 +1,85 @@
+name: Build Android APK
+
+# Runs whenever you push to main, or manually from the Actions tab.
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      api_url:
+        description: 'Backend API URL (e.g. https://api.yourdomain.com/api). Overrides the GitHub secret.'
+        required: false
+        default: ''
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: client/package-lock.json
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install client dependencies
+        working-directory: ./client
+        run: npm ci
+
+      - name: Build React app
+        working-directory: ./client
+        env:
+          VITE_API_URL: ${{ github.event.inputs.api_url || secrets.VITE_API_URL || 'https://your-backend-url.example.com/api' }}
+        run: npm run build
+
+      - name: Sync Capacitor → Android
+        working-directory: ./client
+        run: npx cap sync android
+
+      - name: Make gradlew executable
+        working-directory: ./client/android
+        run: chmod +x gradlew
+
+      - name: Build debug APK (no signing required — installable on any phone)
+        working-directory: ./client/android
+        run: ./gradlew assembleDebug
+
+      - name: Upload APK as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sales-tracker-pro-debug.apk
+          path: client/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+
+      - name: Create GitHub Release (if pushed to main)
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: APK Build ${{ github.run_number }}
+          body: |
+            Auto-built APK from commit ${{ github.sha }}.
+            API URL: ${{ github.event.inputs.api_url || vars.VITE_API_URL || 'see workflow' }}
+
+            Install on Android:
+            1. Download the .apk file below
+            2. On the phone: Settings → Security → enable "Install from unknown sources"
+            3. Open the file, tap Install
+          files: |
+            client/android/app/build/outputs/apk/debug/app-debug.apk
+          fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

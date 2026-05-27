@@ -1,0 +1,14 @@
+{
+  "appId": "com.sequencesurface.salestracker",
+  "appName": "Sales Tracker Pro",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  },
+  "android": {
+    "allowMixedContent": true,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": true
+  }
+}

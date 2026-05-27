@@ -163,7 +163,9 @@
 
 
 import React, { useState, useEffect } from 'react';
-import { Eye, EyeOff, Sun, Moon, Server, WifiOff } from 'lucide-react';
+import { Eye, EyeOff, Sun, Moon, Server, WifiOff, Settings } from 'lucide-react';
+import { getApiBase } from '../api';
+import ApiUrlSettings from './ApiUrlSettings';
 
 export default function LoginPage({users,onLogin,theme,toggleTheme}){
   const [uid_,setUid]=useState('');
@@ -172,10 +174,11 @@ export default function LoginPage({users,onLogin,theme,toggleTheme}){
   const [err,setErr]=useState('');
   const [loading,setLoading]=useState(false);
   const [serverOk,setServerOk]=useState(null); // null=checking, true=up, false=down
+  const [showApiSettings, setShowApiSettings] = useState(false);
 
   // Check if server is running
   useEffect(()=>{
-    const BASE = import.meta.env?.VITE_API_URL || 'http://localhost:5000/api';
+    const BASE = getApiBase();
     fetch(`${BASE}/health`, { signal: AbortSignal.timeout(2000) })
       .then(r=>r.ok?r.json():null)
       .then(d=>setServerOk(!!d?.ok))
@@ -188,7 +191,7 @@ export default function LoginPage({users,onLogin,theme,toggleTheme}){
 
     // Try API login first (gets JWT token for uploads etc)
     try {
-      const BASE = import.meta.env?.VITE_API_URL || 'http://localhost:5000/api';
+      const BASE = getApiBase();
       const res = await fetch(`${BASE}/auth/login`,{
         method:'POST',
         headers:{'Content-Type':'application/json'},
@@ -227,11 +230,21 @@ export default function LoginPage({users,onLogin,theme,toggleTheme}){
         </div>
 
         {/* Server status indicator */}
-        <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:6,marginBottom:14,fontSize:11}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:6,marginBottom:8,fontSize:11}}>
           {serverOk===null&&<><div style={{width:8,height:8,borderRadius:'50%',background:'#fbbf24',animation:'spin 1s linear infinite'}}/><span style={{color:'var(--t3)'}}>Checking server...</span></>}
           {serverOk===true&&<><Server size={12} color="#34d399"/><span style={{color:'#34d399',fontWeight:600}}>Server connected — full features available</span></>}
           {serverOk===false&&<><WifiOff size={12} color="#fbbf24"/><span style={{color:'#fbbf24'}}>Server offline — sheet mode (uploads disabled)</span></>}
         </div>
+
+        {/* Backend URL config — essential for mobile/APK installs */}
+        <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,marginBottom:14,fontSize:10,color:'var(--t3)'}}>
+          <span>Server: <code style={{background:'var(--bg2)',padding:'1px 4px',borderRadius:3}}>{getApiBase()}</code></span>
+          <button onClick={()=>setShowApiSettings(true)}
+            style={{display:'flex',alignItems:'center',gap:3,background:'transparent',border:'1px solid var(--b1)',borderRadius:5,color:'var(--t2)',padding:'2px 8px',fontSize:10,cursor:'pointer'}}>
+            <Settings size={10}/> Change
+          </button>
+        </div>
+        {showApiSettings && <ApiUrlSettings onClose={()=>setShowApiSettings(false)}/>}
 
         <div className="card" style={{padding:28}}>
           <div className="field">

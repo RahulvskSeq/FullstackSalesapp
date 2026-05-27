@@ -15404,6 +15404,7 @@ import UploadMonth      from './components/UploadMonth';
 import MonthlyEntry     from './components/Monthlyentry';
 import Outstanding      from './components/Outstanding';
 import ManageMonths     from './components/ManageMonths';
+import ApiUrlSettings   from './components/ApiUrlSettings';
 
 // ── Cookie helpers ────────────────────────────────────────
 const COOKIE_KEY = 'stp_session';
@@ -15450,6 +15451,7 @@ export default function App(){
   const [bulkAction,setBulkAction]=useState(null);
   const [sidebarOpen,setSidebarOpen]=useState(typeof window!=='undefined'&&window.innerWidth>768);
   const [syncing,setSyncing]=useState(false);
+  const [showApiSettings, setShowApiSettings] = useState(false);
   const [dbLoaded,setDbLoaded]=useState(false);
   const [outstandingData,setOutstandingData]=useState([]);
   const [outFollowups,setOutFollowups]=useState([]);
@@ -15952,6 +15954,13 @@ export default function App(){
               </div>
             )}
 
+            {/* ── Backend URL settings (gear) — important for mobile/APK ── */}
+            <button onClick={() => setShowApiSettings(true)} className="btn"
+              title="Set the backend server URL (needed when using the APK or remote server)"
+              style={{fontSize:11,display:'flex',alignItems:'center',gap:4,padding:'6px 8px',flexShrink:0,color:'var(--t3)'}}>
+              <Settings size={13}/>
+            </button>
+
             {/* ── Reload from DB button — safe refresh, doesn't touch Sheets ── */}
             <button onClick={()=>loadFromDB(activeMO)} disabled={syncing} className="btn"
               title="Reload all dealer data from MongoDB. Safe — never touches Google Sheets."
@@ -16088,6 +16097,7 @@ export default function App(){
         {showAdd&&<AddDealerModal users={users} currentUser={currentUser} onAdd={addDealer} onClose={()=>setShowAdd(false)}/>}
         {showUM&&<UserManagement users={users} setUsers={setUsers} onClose={()=>setShowUM(false)}/>}
         {bulkAction&&<BulkActionModal action={bulkAction} selected={selected} dealers={dealers} users={users} onApply={applyBulk} onClose={()=>setBulkAction(null)}/>}
+        {showApiSettings && <ApiUrlSettings onClose={()=>setShowApiSettings(false)}/>}
       </>
     </MonthContext.Provider>
   );

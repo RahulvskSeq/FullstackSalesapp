@@ -1596,7 +1596,32 @@
 // };
 
 
-const BASE = import.meta.env?.VITE_API_URL || 'http://localhost:5000/api';
+// API base URL — resolved at MODULE LOAD:
+//   1. localStorage 'stp_api_url' (set via Settings screen) wins — lets one
+//      APK build work against any backend (dev, prod, etc.)
+//   2. Build-time VITE_API_URL
+//   3. Fall back to local dev
+// Settings changes require a page reload to take effect (or use setApiBase
+// which also reloads automatically).
+const _resolveBaseUrl = () => {
+  try {
+    const stored = (typeof localStorage !== 'undefined') ? localStorage.getItem('stp_api_url') : '';
+    if(stored && stored.trim()) return stored.trim().replace(/\/$/, '');
+  } catch {}
+  return (import.meta.env?.VITE_API_URL || 'http://localhost:5000/api').replace(/\/$/, '');
+};
+
+const BASE = _resolveBaseUrl();
+
+// Exports for the Settings screen
+export const getApiBase = () => _resolveBaseUrl();
+export const setApiBase = (url) => {
+  if(typeof localStorage === 'undefined') return;
+  if(!url) localStorage.removeItem('stp_api_url');
+  else localStorage.setItem('stp_api_url', url.trim().replace(/\/$/, ''));
+  // Reload so the new URL takes effect everywhere
+  if(typeof window !== 'undefined') window.location.reload();
+};
 
 export const saveToken = (token) => {
   if(token) localStorage.setItem('stp_jwt', token);

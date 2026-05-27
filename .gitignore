@@ -3,3 +3,16 @@ node_modules/
 .DS_Store
 dist/
 *.log
+
+# Vite build temp files
+client/vite.config.js.timestamp-*
+
+# Capacitor / Android build outputs
+client/android/.gradle/
+client/android/build/
+client/android/app/build/
+client/android/local.properties
+client/android/.idea/
+client/android/captures/
+*.keystore
+!debug.keystore
