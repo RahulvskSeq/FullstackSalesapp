@@ -330,7 +330,8 @@ function buildCanvas(dealer, users, selectedMonthIdx) {
     avg6m:        Number(dealer.avg6m) || 0,
     creditDays:   Number(dealer.creditDays) || 0,
     creditLimit:  Number(dealer.creditLimit) || 0,
-    months:       Array.isArray(dealer.months) ? dealer.months : new Array(MO.length).fill(0),
+    // Also truncate if longer than MO so the chart loop never accesses MO[i] = undefined
+    months:       Array.isArray(dealer.months) ? dealer.months.slice(0, MO.length) : new Array(MO.length).fill(0),
     monthTargets: dealer.monthTargets || {},
     monthlyData:  dealer.monthlyData || {},
     target:       Number(dealer.target) || 0,
@@ -393,7 +394,7 @@ function buildCanvas(dealer, users, selectedMonthIdx) {
     { label: 'Credit Limit',                  value: dealer.creditLimit?'₹'+dealer.creditLimit.toLocaleString('en-IN'):'—', color:'#e2e0f0' },
     { label: 'Category',                      value: (dealer.category||'—').slice(0,20), color: '#818cf8' },
     { label: 'Cat Type',                      value: (dealer.categoryType||'—').slice(0,20), color:'#818cf8' },
-    { label: 'Salesman',                      value: (sm?.name||dealer.salesman).slice(0,20), color:'#fbbf24' },
+    { label: 'Salesman',                      value: String(sm?.name||dealer.salesman||'—').slice(0,20), color:'#fbbf24' },
   ];
   kpis.forEach((k,i) => {
     const col=i%4, row=Math.floor(i/4);
@@ -436,10 +437,10 @@ function buildCanvas(dealer, users, selectedMonthIdx) {
       ctx.stroke(); ctx.setLineDash([]);
     }
 
-    // Month label
+    // Month label — safe if MO[i] is undefined (e.g. dealer has more months than MO)
     ctx.fillStyle = isSel?'#6366f1':'#55546a';
     ctx.font = isSel?'bold 9px system-ui':'9px system-ui';
-    ctx.fillText(MO[i].slice(0,3), bx, chartY+chartH+13);
+    ctx.fillText(String(MO[i] || '').slice(0,3), bx, chartY+chartH+13);
 
     // Value label above bar
     if(v>0) {
