@@ -824,10 +824,6 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
       setBulkMsg({type:'error', text:'Pick a valid month first.'});
       return;
     }
-    if(isAdmin && salesman === 'all'){
-      setBulkMsg({type:'error', text:'Pick a specific salesman before uploading — uploads are saved salesman-wise.'});
-      return;
-    }
     fileRef.current?.click();
   };
 
@@ -837,12 +833,21 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
     if(!f) return;
     setBulkBusy(true); setBulkMsg(null);
     try {
-      const targetSm = isAdmin ? salesman : currentUser?.id;
+      // When admin selects "All Salesmen", send '_all' so the server reads the
+      // per-row Salesman column. Otherwise send the picked salesman id.
+      const targetSm = isAdmin ? (salesman === 'all' ? '_all' : salesman) : currentUser?.id;
       const res = await api.uploadMonth(f, month, targetSm);
-      setBulkMsg({
-        type:'success',
-        text: `${month} → ${users[targetSm]?.name || targetSm}: ${res.added || 0} added, ${res.updated || 0} updated${res.skipped ? ', ' + res.skipped + ' skipped' : ''}`,
-      });
+
+      // Build a readable summary, including per-salesman counts for all-mode.
+      let summary = '';
+      if(res.mode === 'all' && res.perSalesman){
+        const parts = Object.entries(res.perSalesman)
+          .map(([uid,c]) => (users[uid]?.name || uid) + ': ' + (c.added+c.updated) + ' rows');
+        summary = `${month} (All Salesmen): ${res.added||0} added, ${res.updated||0} updated${res.skipped?', '+res.skipped+' skipped':''}. ${parts.join(' · ')}`;
+      } else {
+        summary = `${month} → ${users[targetSm]?.name || targetSm}: ${res.added||0} added, ${res.updated||0} updated${res.skipped?', '+res.skipped+' skipped':''}`;
+      }
+      setBulkMsg({ type:'success', text: summary });
       if(onSaved) onSaved();    // refresh dashboard data
     } catch(err){
       setBulkMsg({type:'error', text:'Upload failed: ' + err.message});
@@ -953,15 +958,16 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
             }}>
             <Download size={13}/> Download Filled Template ({filtered.length} dealers)
           </button>
-          <button onClick={handleUploadClick} disabled={bulkBusy || (isAdmin && salesman === 'all')}
-            title={isAdmin && salesman === 'all' ? 'Pick a specific salesman first' : 'Upload your filled Excel/CSV'}
+          <button onClick={handleUploadClick} disabled={bulkBusy}
+            title={isAdmin && salesman === 'all'
+              ? 'Upload All-Salesmen template — file MUST include a "Salesman" column'
+              : 'Upload your filled Excel/CSV'}
             style={{
               display:'flex', alignItems:'center', gap:6,
-              background: (isAdmin && salesman === 'all') ? 'transparent' : '#22c55e',
-              color: (isAdmin && salesman === 'all') ? 'var(--t3)' : '#0c0c1e',
-              border: '1px solid ' + ((isAdmin && salesman === 'all') ? 'var(--b1)' : '#15803d'),
+              background:'#22c55e', color:'#0c0c1e',
+              border:'1px solid #15803d',
               padding:'8px 14px', borderRadius:6, fontSize:12, fontWeight:700,
-              cursor: (bulkBusy || (isAdmin && salesman === 'all')) ? 'not-allowed' : 'pointer',
+              cursor: bulkBusy ? 'not-allowed' : 'pointer',
               opacity: bulkBusy ? 0.6 : 1,
             }}>
             {bulkBusy
@@ -970,8 +976,9 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
           </button>
           <div style={{flex:1}}/>
           {isAdmin && salesman === 'all' && (
-            <span style={{fontSize:11, color:'#fbbf24', fontWeight:600}}>
-              ⓘ To upload, select a single salesman above
+            <span style={{fontSize:11, color:'#fbbf24', fontWeight:600}}
+              title="The All-Salesmen template includes a Salesman column. Each row is routed to the salesman named in that column.">
+              ⓘ All-Salesmen mode: file must include a Salesman column
             </span>
           )}
         </div>

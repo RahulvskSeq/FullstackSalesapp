@@ -91,23 +91,63 @@ router.get('/', protect, async (req, res) => {
 router.post('/upload', protect, upload.single('file'), async (req,res) => {
   try {
     const {month, salesman:uploadSm} = req.body;
-    const smId = isStaff(req)?(uploadSm||req.user.id):req.user.id;
+    // smId is the "default" salesman if no per-row Salesman column is present.
+    // Staff (admin/superadmin) may pick a salesman, OR send '_all' / '' to ask
+    // the server to read a per-row Salesman column from the file.
+    const isAllMode = isStaff(req) && (uploadSm === '_all' || uploadSm === 'all' || !uploadSm);
+    const smId = isStaff(req)?(uploadSm && uploadSm!=='_all' && uploadSm!=='all' ? uploadSm : req.user.id):req.user.id;
     if(!month) return res.status(400).json({error:'month required'});
     if(!req.file) return res.status(400).json({error:'No file'});
+
+    // Build a {normalized-name → user.id} map for routing rows when the file
+    // includes a Salesman column (All-Salesmen upload). We compare on the
+    // lowercased, space-stripped form so "Rakesh Boriwal" matches "RAKESH BORIWAL".
+    let nameToId = null;
+    if(isAllMode){
+      const User = mongoose.models.User || (await import('../models/User.js')).default;
+      if(User){
+        const allUsers = await User.find({ role:'salesman' }, 'id name').lean();
+        nameToId = new Map();
+        for(const u of allUsers){
+          const norm = (u.name||'').toLowerCase().replace(/\s+/g,' ').trim();
+          if(norm) nameToId.set(norm, u.id);
+          // Also map by id itself in case someone wrote the id in the column.
+          nameToId.set((u.id||'').toLowerCase(), u.id);
+        }
+      }
+    }
+
     const wb=XLSX.read(req.file.buffer,{type:'buffer'});
     const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});
     if(!rows.length) return res.status(400).json({error:'No data'});
-    const results={added:0,updated:0,skipped:0,errors:[]};
+    const results={added:0,updated:0,skipped:0,errors:[],perSalesman:{}};
+    const bump=(k,who)=>{ if(!results.perSalesman[who]) results.perSalesman[who]={added:0,updated:0,skipped:0}; results.perSalesman[who][k]++; };
     for(const row of rows){
       const keys=Object.keys(row);
       const find=(...t)=>{for(const x of t){const k=keys.find(k=>k.toLowerCase().replace(/[\s_-]/g,'').includes(x.toLowerCase().replace(/[\s_-]/g,'')));if(k&&String(row[k]).trim())return String(row[k]).trim();}return'';};
       const findNum=(...t)=>{const v=find(...t);return v?Math.round(parseFloat(v.replace(/[^\d.-]/g,''))||0):0;};
       const name=find('dealername','dealer name','name','party','firm');
       if(!name||name.length<2||/^[\d\s,]+$/.test(name)){results.skipped++;continue;}
+
+      // Per-row salesman resolution
+      let rowSm = smId;
+      if(isAllMode){
+        const rawSm = find('salesman','sales man','sm');
+        if(rawSm && nameToId){
+          const norm = rawSm.toLowerCase().replace(/\s+/g,' ').trim();
+          const found = nameToId.get(norm) || nameToId.get(norm.replace(/\s+/g,''));
+          if(found) rowSm = found;
+          else { results.skipped++; results.errors.push(`${name}: unknown salesman "${rawSm}"`); continue; }
+        } else {
+          // All mode but no Salesman column on row — skip to avoid mis-assigning
+          results.skipped++; results.errors.push(`${name}: missing Salesman column`); continue;
+        }
+      }
+
       const monthData={achieved:findNum('achieved','ach','qty','sales'),target:findNum('target','tgt'),status:find('status')||'ACTIVE',zone:find('zone'),category:find('categorytype','category'),categoryType:find('subcategory','subcat'),city:find('city'),state:find('state')};
       try{
         const rx=new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}$`,'i');
-        const ex=await Dealer.findOne({name:rx,salesman:smId});
+        const ex=await Dealer.findOne({name:rx,salesman:rowSm});
         if(ex){
           // EXPLICIT PERSISTENCE: load, mutate, save.
           // Using findByIdAndUpdate with dotted Map paths sometimes silently
@@ -128,6 +168,7 @@ router.post('/upload', protect, upload.single('file'), async (req,res) => {
           ex.source = 'upload';
           await ex.save();
           results.updated++;
+          bump('updated', rowSm);
         } else {
           // New dealer created by monthly upload.
           // IMPORTANT: do NOT seed the global target from this month's target.
@@ -135,7 +176,7 @@ router.post('/upload', protect, upload.single('file'), async (req,res) => {
           // the smart-target fallback. The per-month target lives in
           // monthlyData[month].target where it belongs.
           await Dealer.create({
-            name, salesman:smId,
+            name, salesman:rowSm,
             city:monthData.city||'', state:monthData.state||'', zone:monthData.zone||'',
             status:monthData.status||'ACTIVE',
             category:monthData.category||'', categoryType:monthData.categoryType||'',
@@ -144,6 +185,7 @@ router.post('/upload', protect, upload.single('file'), async (req,res) => {
             source:'upload',
           });
           results.added++;
+          bump('added', rowSm);
         }
       }catch(e){
         console.error('[UPLOAD] dealer error:', name, e.message);
@@ -151,17 +193,19 @@ router.post('/upload', protect, upload.single('file'), async (req,res) => {
       }
     }
     // Summary log: confirms persistence and helps trace data-loss issues.
-    console.log(`[UPLOAD] month=${month} salesman=${smId} added=${results.added} updated=${results.updated} skipped=${results.skipped} errors=${results.errors.length} total=${rows.length}`);
-    // Verify: re-count how many dealers actually have this month in DB now
-    try {
-      const verifyCount = await Dealer.countDocuments({
-        salesman: smId,
-        [`monthlyData.${month}`]: { $exists: true },
-      });
-      console.log(`[UPLOAD] verify: ${verifyCount} ${smId} dealers now have ${month} in DB`);
-    } catch {}
+    console.log(`[UPLOAD] month=${month} mode=${isAllMode?'ALL':'single('+smId+')'} added=${results.added} updated=${results.updated} skipped=${results.skipped} errors=${results.errors.length} total=${rows.length}`);
+    // Verify only for single-salesman uploads (counting per-row in all-mode is noisy)
+    if(!isAllMode){
+      try {
+        const verifyCount = await Dealer.countDocuments({
+          salesman: smId,
+          [`monthlyData.${month}`]: { $exists: true },
+        });
+        console.log(`[UPLOAD] verify: ${verifyCount} ${smId} dealers now have ${month} in DB`);
+      } catch {}
+    }
 
-    res.json({...results,month,salesman:smId,total:rows.length});
+    res.json({...results, month, salesman: isAllMode?'_all':smId, total: rows.length, mode: isAllMode?'all':'single'});
   }catch(e){
     console.error('[UPLOAD]', e.message);
     res.status(500).json({error:e.message});
