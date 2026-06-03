@@ -5656,10 +5656,6 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved }) {
   const [saving,  setSaving]  = useState(false);
   const [err,     setErr]     = useState('');
 
-  // 3 comment quick-fill boxes
-  const [quickComments, setQuickComments] = useState(['','','']);
-  const setQC = (i,v) => setQuickComments(prev=>{ const a=[...prev]; a[i]=v; return a; });
-
   const mine = existingFollowups.filter(f=>
     f.dealerName?.toLowerCase().trim()===dealer.name?.toLowerCase().trim()
   ).sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
@@ -5668,16 +5664,16 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved }) {
     if(type==='followup' && !date){ setErr('Date required'); return; }
     setSaving(true); setErr('');
     try {
-      const allComments = [comment, ...quickComments].filter(Boolean).join(' | ');
+      const text = (comment || '').trim();
       await api.addFollowup({
         dealerName:   dealer.name,
         salesman:     dealer.matchedSalesman?.id || '',
         amount:       Number(amount)||0,
         followupDate: type==='no-pickup' ? todayStr() : date,
-        comment:      type==='no-pickup' ? '📵 Did not pick call' + (allComments?` — ${allComments}`:'') : allComments,
+        comment:      type==='no-pickup' ? '📵 Did not pick call' + (text?` — ${text}`:'') : text,
         type,
       });
-      setDate(todayStr()); setComment(''); setQuickComments(['','','']); setAmount(dealer.latestOutstanding||0);
+      setDate(todayStr()); setComment(''); setAmount(dealer.latestOutstanding||0);
       onSaved();
     } catch(e){ setErr(e.message); }
     setSaving(false);
@@ -5730,22 +5726,6 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved }) {
             <textarea className="inp" value={comment} onChange={e=>setComment(e.target.value)}
               placeholder="e.g. Will pay after 15th, cheque promised..."
               rows={2} style={{width:'100%',resize:'vertical',fontFamily:'inherit'}}/>
-          </div>
-
-          {/* 3 quick comment boxes */}
-          <div style={{marginBottom:12}}>
-            <label style={{fontSize:10,color:'var(--t3)',display:'block',marginBottom:6,textTransform:'uppercase'}}>Quick Notes (3 fields)</label>
-            <div style={{display:'flex',flexDirection:'column',gap:6}}>
-              {quickComments.map((v,i)=>(
-                <div key={i} style={{display:'flex',gap:6,alignItems:'center'}}>
-                  <span style={{fontSize:10,color:'var(--t3)',width:14,textAlign:'right',flexShrink:0}}>{i+1}.</span>
-                  <input className="inp" value={v} onChange={e=>setQC(i,e.target.value)}
-                    placeholder={['Dealer response...','Next action...','Additional info...'][i]}
-                    style={{flex:1,fontSize:12}}/>
-                  {v&&<button onClick={()=>setQC(i,'')} style={{background:'none',border:'none',color:'var(--t3)',cursor:'pointer',padding:2}}><X size={11}/></button>}
-                </div>
-              ))}
-            </div>
           </div>
 
           {err&&<div style={{fontSize:11,color:'#f87171',marginBottom:8}}>{err}</div>}

@@ -15381,7 +15381,7 @@
 // }
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { LayoutDashboard, Users, TrendingUp, Settings, LogOut, Bell, GitCompare, Menu, RefreshCw, Map, AlertTriangle, Upload, Edit3, Calendar, LogIn, ChevronDown, ShieldCheck, Shield } from 'lucide-react';
+import { LayoutDashboard, Users, TrendingUp, Settings, LogOut, Bell, GitCompare, Menu, RefreshCw, Map, AlertTriangle, Upload, Edit3, Calendar, LogIn, ChevronDown, ShieldCheck, Shield, Palette, Check } from 'lucide-react';
 import { DEFAULT_USERS, MO as MO_DEFAULT, CURRENT_MONTH_IDX as CURRENT_MONTH_IDX_DEFAULT, CURRENT_MONTH_LABEL as CURRENT_MONTH_LABEL_DEFAULT, CURRENT_MONTH_SHORT as CURRENT_MONTH_SHORT_DEFAULT } from './constants';
 import { pct, spct, pclr, uid, isoNow, storage, parseCSV, fetchCSV, parseOutstandingCSV } from './utils';
 import { api, dbDealerToApp, dbOutstandingToApp, saveToken, getToken } from './api';
@@ -15389,6 +15389,7 @@ import { MonthContext } from './context';
 import Styles            from './components/Styles';
 import { MonthSelectorBar, Avatar, SkeletonLoader, LoadingScreen } from './components/UI';
 import NotificationCenter, { notify, confirmDialog } from './components/Toast';
+import { THEMES, applyTheme, loadSavedTheme, saveTheme } from './themes';
 import LoginPage         from './components/LoginPage';
 import Overview          from './components/Overview';
 import DealersList       from './components/DealersList';
@@ -15491,6 +15492,25 @@ export default function App(){
   const [syncErrs,setSyncErrs]=useState([]);
   const [selectedMonthIdx,setSelectedMonthIdx]=useState(()=>{ try{ const s=JSON.parse(localStorage.getItem('stp_month_config')||'null'); return s?.currentIdx??CURRENT_MONTH_IDX_DEFAULT; }catch{ return CURRENT_MONTH_IDX_DEFAULT; } });
   const [pendingFilters,setPendingFilters]=useState(null);
+
+  // ── Extra theme palette (layers on top of dark/light) ────────────────────
+  // Selected via the dropdown beside the Reload DB button. Each palette sets
+  // CSS variables directly on document.documentElement; the existing
+  // dark/light toggle and Styles.jsx are NOT touched.
+  const [paletteId, setPaletteId] = useState(() => loadSavedTheme());
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [palettePos, setPalettePos] = useState({ top: 60, right: 12 });
+  const paletteRef    = useRef(null);
+  const paletteBtnRef = useRef(null);
+  // Apply on mount AND whenever the user picks a different palette
+  useEffect(()=>{ applyTheme(paletteId); saveTheme(paletteId); },[paletteId]);
+  // Close on outside click
+  useEffect(()=>{
+    if(!paletteOpen) return;
+    const onDoc = (e) => { if(paletteRef.current && !paletteRef.current.contains(e.target)) setPaletteOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return ()=>document.removeEventListener('mousedown', onDoc);
+  },[paletteOpen]);
 
   // ── Boot: load storage + restore cookie session ──────────
   useEffect(()=>{
@@ -15672,7 +15692,10 @@ export default function App(){
   },[currentUser, loginAsBusy]);
 
   const saveMonthConfig = (cfg) => {
-    const updated = {...monthConfig,...cfg};
+    // Stamp with `updatedAt` so loadFromDB can decide which side is fresher.
+    // Without this, a stale DB version would silently overwrite recent local
+    // edits (e.g., removing a future month) on the next refresh.
+    const updated = {...monthConfig,...cfg, updatedAt: Date.now()};
     const moChanged = JSON.stringify(updated.MO) !== JSON.stringify(monthConfig.MO);
     setMonthConfig(updated);
     // Save to localStorage (persists across refresh)
@@ -15856,26 +15879,34 @@ export default function App(){
         api.getFollowups().catch(()=>[]),
       ]);
 
-      // Apply month config — but PREFER the local/state config if it has
-      // more months than the DB version. This stops a stale DB monthConfig
-      // (e.g., from a failed earlier save) from clobbering a newer local one
-      // that includes months like June added recently. If local is bigger,
-      // push it to DB so they stay in sync going forward.
+      // Apply month config — TIMESTAMP-based merge so the most recent edit
+      // always wins. Whichever of local/DB has the newer `updatedAt` is
+      // adopted. This is what prevents a stale DB version from silently
+      // re-adding months the user just removed (e.g., deleted future months
+      // reappearing after refresh).
       let finalMO = currentMO;
       const localMO = activeMO || [];
       const dbMO    = dbMonthCfg?.MO || [];
-      if(dbMO.length > 0 && dbMO.length >= localMO.length) {
-        // DB is at least as complete as local — adopt DB
+      const localTs = monthConfig?.updatedAt || 0;
+      const dbTs    = dbMonthCfg?.updatedAt || 0;
+      const dbHasConfig    = dbMO.length > 0;
+      const localHasConfig = localMO.length > 0;
+
+      if(dbHasConfig && (!localHasConfig || dbTs > localTs)){
+        // DB is the freshest source — adopt it
+        console.log('[loadFromDB] Adopting DB month-config (dbTs=' + dbTs + ' > localTs=' + localTs + ')');
         setMonthConfig(dbMonthCfg);
         localStorage.setItem('stp_month_config', JSON.stringify(dbMonthCfg));
         if(dbMonthCfg.currentIdx !== undefined) setSelectedMonthIdx(dbMonthCfg.currentIdx);
         finalMO = dbMonthCfg.MO;
-      } else if(localMO.length > dbMO.length) {
-        // Local has more months than DB — keep local AND push it to DB
-        console.log('[loadFromDB] Local config has ' + localMO.length + ' months vs DB has ' + dbMO.length + '. Preserving local + pushing to DB.');
+      } else if(localHasConfig && (!dbHasConfig || localTs > dbTs)){
+        // Local is the freshest source — keep it AND push to DB so other
+        // devices catch up next time they load.
+        console.log('[loadFromDB] Local month-config is newer (localTs=' + localTs + ' > dbTs=' + dbTs + '). Preserving local + pushing to DB.');
         try { api.saveMonthConfig(monthConfig).catch(() => {}); } catch {}
         finalMO = localMO;
       }
+      // Equal timestamps (or both missing) → leave finalMO as currentMO
 
       // Set dealers
       const appDealers = dbDealers.map(d => dbDealerToApp(d, finalMO));
@@ -16207,6 +16238,73 @@ export default function App(){
                 )}
               </div>
             )}
+
+            {/* ── Theme palette ▼ — visible on every screen ───────────── */}
+            <div ref={paletteRef} style={{flexShrink:0}}>
+              <button ref={paletteBtnRef} className="btn"
+                onClick={()=>{
+                  // Anchor the dropdown via viewport coords so #topbar's
+                  // overflow:hidden doesn't clip it.
+                  const r = paletteBtnRef.current?.getBoundingClientRect();
+                  if(r){
+                    setPalettePos({
+                      top: r.bottom + 6,
+                      right: Math.max(8, window.innerWidth - r.right),
+                    });
+                  }
+                  setPaletteOpen(o=>!o);
+                }}
+                title="Pick a colour palette"
+                style={{
+                  fontSize:11, display:'flex', alignItems:'center', gap:4, padding:'6px 8px',
+                  color:'var(--t2)',
+                }}>
+                <Palette size={13}/>
+                <span className="hide-sm">Theme</span>
+                <ChevronDown size={11} style={{transform:paletteOpen?'rotate(180deg)':'rotate(0)', transition:'transform .15s'}}/>
+              </button>
+              {paletteOpen && (
+                <div style={{
+                  position:'fixed', top:palettePos.top, right:palettePos.right, zIndex:9999,
+                  background:'var(--bg2)', border:'1px solid var(--b2)',
+                  borderRadius:8, minWidth:240, maxHeight:420, overflowY:'auto',
+                  boxShadow:'0 10px 30px rgba(0,0,0,0.45)', padding:6,
+                }}>
+                  <div style={{fontSize:9, color:'var(--t3)', letterSpacing:'.12em', textTransform:'uppercase', padding:'6px 10px 4px'}}>
+                    Theme — {THEMES.length} palettes
+                  </div>
+                  {THEMES.map(t => {
+                    const selected = t.id === paletteId;
+                    return (
+                      <div key={t.id}
+                        onClick={()=>{ setPaletteId(t.id); setPaletteOpen(false); }}
+                        style={{
+                          display:'flex', alignItems:'center', gap:8,
+                          padding:'7px 10px', borderRadius:6, cursor:'pointer',
+                          background: selected ? 'var(--bg1)' : 'transparent',
+                          border: selected ? '1px solid var(--acc)' : '1px solid transparent',
+                        }}
+                        onMouseEnter={e=>{ if(!selected) e.currentTarget.style.background='var(--bg1)'; }}
+                        onMouseLeave={e=>{ if(!selected) e.currentTarget.style.background='transparent'; }}>
+                        {/* Swatch */}
+                        <div style={{display:'flex', gap:2, flexShrink:0}}>
+                          {(t.swatch||[]).slice(0,3).map((c,i)=>(
+                            <div key={i} style={{
+                              width:10, height:18, borderRadius: i===0?'3px 0 0 3px':(i===(t.swatch.length-1)?'0 3px 3px 0':0),
+                              background: c, border: '1px solid rgba(255,255,255,0.06)',
+                            }}/>
+                          ))}
+                        </div>
+                        <div style={{flex:1, minWidth:0, fontSize:12, fontWeight: selected?700:500, color:'var(--t1)'}}>
+                          {t.name}
+                        </div>
+                        {selected && <Check size={12} style={{color:'var(--acc)', flexShrink:0}}/>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
 
             {/* ── Reload from DB button — safe refresh, doesn't touch Sheets ── */}
             <button onClick={()=>loadFromDB(activeMO)} disabled={syncing} className="btn"
