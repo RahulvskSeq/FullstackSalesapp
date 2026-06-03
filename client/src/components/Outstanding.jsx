@@ -5649,10 +5649,16 @@ const todayStr = () => new Date().toISOString().slice(0,10);
 const daysUntil= d => Math.ceil((new Date(d) - new Date().setHours(0,0,0,0)) / 86400000);
 
 // ── Followup Modal ────────────────────────────────────────────────────────────
-function FollowupModal({ dealer, existingFollowups, onClose, onSaved }) {
+// `prefillMonth` / `prefillAmount` are set when the popup was opened by
+// clicking a specific month-amount cell — the modal then highlights that
+// month and pre-fills the amount field with that month's value (instead of
+// the dealer's latest outstanding).
+function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMonth, prefillAmount }) {
   const [date,    setDate]    = useState(todayStr());
   const [comment, setComment] = useState('');
-  const [amount,  setAmount]  = useState(dealer.latestOutstanding||0);
+  const [amount,  setAmount]  = useState(
+    typeof prefillAmount === 'number' ? prefillAmount : (dealer.latestOutstanding||0)
+  );
   const [saving,  setSaving]  = useState(false);
   const [err,     setErr]     = useState('');
 
@@ -5695,9 +5701,15 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved }) {
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}}>
           <div>
             <div style={{fontSize:16,fontWeight:700}}>{dealer.name}</div>
-            <div style={{fontSize:12,color:'#f87171',marginTop:2}}>
-              Outstanding: {fmt(dealer.latestOutstanding)}
-            </div>
+            {prefillMonth ? (
+              <div style={{fontSize:12,color:'#fbbf24',marginTop:2,fontWeight:600}}>
+                {prefillMonth} Outstanding: {fmt(typeof prefillAmount === 'number' ? prefillAmount : 0)}
+              </div>
+            ) : (
+              <div style={{fontSize:12,color:'#f87171',marginTop:2}}>
+                Outstanding: {fmt(dealer.latestOutstanding)}
+              </div>
+            )}
           </div>
           <button onClick={onClose} style={{background:'none',border:'none',color:'var(--t3)',cursor:'pointer',fontSize:20,lineHeight:1}}>×</button>
         </div>
@@ -5881,77 +5893,11 @@ function ExpandedRow({ d, dealers, onOpenDealer, setActiveDealer, allMonthCols, 
         borderLeft:'2px solid var(--acc)',
         overflow:'hidden',
       }}>
-        {/* Buttons only — salesman/amount summary removed (already visible
-            on the row above). */}
-        <div style={{
-          display:'flex',
-          gap:6,
-          alignItems:'center',
-          flexWrap:'wrap',
-        }}>
-          {/* 1. View Dealer — primary action */}
-          <button
-            onClick={()=>{
-              const dl=dealers.find(x=>x.name.toUpperCase().trim()===d.name.toUpperCase().trim());
-              if(dl) onOpenDealer(dl.id);
-            }}
-            className="btnp"
-            style={{
-              fontSize:11,
-              fontWeight:600,
-              padding:'4px 10px',
-              whiteSpace:'nowrap',
-              flexShrink:0,
-              display:'inline-flex',
-              alignItems:'center',
-              gap:4,
-              borderRadius:5,
-            }}>
-            👤 View
-          </button>
-
-          {/* 2. Add Follow-up Date */}
-          <button
-            onClick={()=>setActiveDealer(d)}
-            className="btn"
-            style={{
-              fontSize:11,
-              fontWeight:600,
-              padding:'4px 10px',
-              display:'inline-flex',
-              alignItems:'center',
-              gap:4,
-              whiteSpace:'nowrap',
-              flexShrink:0,
-              color:'#a5b4fc',
-              border:'1px solid rgba(99,102,241,0.4)',
-              background:'rgba(99,102,241,0.08)',
-              borderRadius:5,
-            }}>
-            <Calendar size={11}/> Follow-up
-          </button>
-
-          {/* 3. Did Not Pick Call */}
-          <button
-            onClick={logNoPickup}
-            className="btn"
-            style={{
-              fontSize:11,
-              fontWeight:600,
-              padding:'4px 10px',
-              display:'inline-flex',
-              alignItems:'center',
-              gap:4,
-              whiteSpace:'nowrap',
-              flexShrink:0,
-              color:'#fca5a5',
-              border:'1px solid rgba(248,113,113,0.4)',
-              background:'rgba(248,113,113,0.08)',
-              borderRadius:5,
-            }}>
-            <PhoneMissed size={11}/> No pick
-          </button>
-        </div>
+        {/* Expanded row is intentionally empty — all actions moved:
+            - Dealer name in the row above opens the dealer modal
+            - Each month-amount cell opens the Follow-up popup
+            We keep the row so the dealer's bottom border still expands when
+            clicked, leaving room for future contextual content if needed. */}
       </td>
     </tr>
   );
@@ -5970,6 +5916,9 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
   const [expanded,     setExpanded]   = useState({});
   const [followups,    setFollowups]  = useState([]);
   const [activeDealer, setActiveDealer] = useState(null);
+  // When the popup was opened by clicking a specific month-amount cell, store
+  // the month label + amount so the FollowupModal can pre-fill them.
+  const [popupContext, setPopupContext] = useState(null); // { month, amount } | null
   const fileRef = useRef();
 
   useEffect(()=>{ loadFromDB(); loadFollowups(); },[]);
@@ -6318,26 +6267,39 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
                     <React.Fragment key={d.id}>
                       <tr
                         style={{
-                          background: isOpen ? 'var(--bg2)' : (cleared ? 'rgba(52,211,153,0.03)' : 'transparent'),
-                          cursor: 'pointer',
+                          background: cleared ? 'rgba(52,211,153,0.03)' : 'transparent',
                         }}
-                        // When expanded, hide the row's bottom border so the
-                        // dealer row + expanded panel feel like one unit, no
-                        // horizontal line between them.
-                        className={isOpen ? 'os-row os-row-open' : 'os-row'}
-                        onClick={()=>toggle(d.id)}
+                        // Row click no longer toggles an empty expanded panel.
+                        // All actions live on the row itself (dealer name +
+                        // amount cells).
+                        className="os-row"
                       >
                         <td style={{color:'var(--t3)',fontSize:11}}>{i+1}</td>
                         <td style={{maxWidth:220}}>
-                          <div style={{fontWeight:600,color:'var(--t1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.name}</div>
-                          {/* Salesman + status badges */}
-                          <div style={{display:'flex',gap:4,marginTop:2,alignItems:'center',flexWrap:'wrap'}}>
-                            {cleared&&<span style={{fontSize:9,background:'rgba(52,211,153,0.15)',color:'#34d399',padding:'1px 5px',borderRadius:3}}>CLEARED</span>}
-                            {d.matchedSalesman&&<div style={{display:'flex',alignItems:'center',gap:3}}>
-                              <Avatar user={d.matchedSalesman} size={13}/>
-                              <span style={{fontSize:9,color:d.matchedSalesman.color}}>{d.matchedSalesman.name}</span>
-                            </div>}
+                          {/* Dealer name — click to open the dealer modal.
+                              Stop propagation so the row's accordion toggle
+                              doesn't also fire. */}
+                          <div
+                            onClick={(e)=>{
+                              e.stopPropagation();
+                              const dl = dealers.find(x => x.name.toUpperCase().trim() === d.name.toUpperCase().trim());
+                              if(dl) onOpenDealer(dl.id);
+                            }}
+                            title="Open dealer details"
+                            style={{
+                              fontWeight:600, color:'var(--t1)',
+                              overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
+                              cursor:'pointer',
+                            }}>
+                            {d.name}
                           </div>
+                          {/* CLEARED badge only — salesman badge moved into
+                              the latest-comment chip (right of the date). */}
+                          {cleared && (
+                            <div style={{display:'flex',gap:4,marginTop:2,alignItems:'center',flexWrap:'wrap'}}>
+                              <span style={{fontSize:9,background:'rgba(52,211,153,0.15)',color:'#34d399',padding:'1px 5px',borderRadius:3}}>CLEARED</span>
+                            </div>
+                          )}
                           {/* Latest comment / no-pickup — clearly visible */}
                           {(()=>{
                             const allFu = [...d.dealerFollowups].sort((a,b)=>{ const ta=new Date(b.createdAt||b.updatedAt||0); const tb=new Date(a.createdAt||a.updatedAt||0); return ta-tb; });
@@ -6348,33 +6310,87 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
                             const isComment = !isNP && !isFollowup;
                             const txt = (latest.comment||'').replace('📵 Did not pick call','').replace(/^\s*[|—]\s*/,'').trim();
                             return(
-                              <div style={{marginTop:4,padding:'3px 6px',borderRadius:5,
-                                background:isNP?'rgba(248,113,113,0.1)':isComment?'rgba(99,102,241,0.08)':'rgba(52,211,153,0.07)',
-                                border:`1px solid ${isNP?'rgba(248,113,113,0.25)':isComment?'rgba(99,102,241,0.2)':'rgba(52,211,153,0.2)'}`,
-                                maxWidth:200,
-                              }}>
-                                <div style={{display:'flex',alignItems:'center',gap:4}}>
+                              <div style={{marginTop:4, display:'flex', alignItems:'center', gap:8, maxWidth:340}}>
+                                {/* Chip — single line, fixed height. The
+                                    comment text sits INSIDE this chip on the
+                                    same line as the icon/date, with ellipsis
+                                    so adding more comment never grows the
+                                    chip's height. */}
+                                <div style={{
+                                  padding:'3px 6px', borderRadius:5,
+                                  display:'inline-flex', alignItems:'center', gap:6,
+                                  background:isNP?'rgba(248,113,113,0.1)':isComment?'rgba(99,102,241,0.08)':'rgba(52,211,153,0.07)',
+                                  border:`1px solid ${isNP?'rgba(248,113,113,0.25)':isComment?'rgba(99,102,241,0.2)':'rgba(52,211,153,0.2)'}`,
+                                  minWidth:0,        // so flex child can shrink
+                                  overflow:'hidden',
+                                  flex:'0 1 auto',
+                                }}>
                                   {isNP
-                                    ? <><PhoneMissed size={10} color="#f87171"/><span style={{fontSize:10,color:'#f87171',fontWeight:600}}>Did not pick call</span></>
+                                    ? <><PhoneMissed size={10} color="#f87171" style={{flexShrink:0}}/><span style={{fontSize:10,color:'#f87171',fontWeight:600,whiteSpace:'nowrap'}}>Did not pick call</span></>
                                     : isFollowup
-                                    ? <><Calendar size={10} color="#34d399"/><span style={{fontSize:10,color:'#34d399',fontWeight:600}}>Follow-up: {latest.followupDate}</span></>
-                                    : <><MessageSquare size={10} color="var(--acc)"/><span style={{fontSize:10,color:'var(--acc)',fontWeight:600}}>Note</span></>}
-                                  <span style={{fontSize:9,color:'var(--t3)',marginLeft:'auto'}}>
+                                    ? <><Calendar size={10} color="#34d399" style={{flexShrink:0}}/><span style={{fontSize:10,color:'#34d399',fontWeight:600,whiteSpace:'nowrap'}}>Follow-up: {latest.followupDate}</span></>
+                                    : <><MessageSquare size={10} color="var(--acc)" style={{flexShrink:0}}/><span style={{fontSize:10,color:'var(--acc)',fontWeight:600,whiteSpace:'nowrap'}}>Note</span></>}
+                                  <span style={{fontSize:9,color:'var(--t3)',whiteSpace:'nowrap',flexShrink:0}}>
                                     {latest.createdAt ? new Date(latest.createdAt).toLocaleDateString('en-IN',{day:'2-digit',month:'short'}) : ''}
                                   </span>
+                                  {txt && (
+                                    <span style={{
+                                      fontSize:10, color:'var(--t2)',
+                                      overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
+                                      minWidth:0,
+                                    }}>· {txt}</span>
+                                  )}
                                 </div>
-                                {txt&&<div style={{fontSize:10,color:'var(--t2)',marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{txt}</div>}
+
+                                {/* Salesman badge OUTSIDE the chip — no
+                                    border, sits to the right. */}
+                                {d.matchedSalesman && (
+                                  <span style={{
+                                    display:'inline-flex', alignItems:'center', gap:3,
+                                    fontSize:9, color:d.matchedSalesman.color, fontWeight:600,
+                                    flexShrink:0, whiteSpace:'nowrap',
+                                  }}>
+                                    <Avatar user={d.matchedSalesman} size={12}/>
+                                    {d.matchedSalesman.name}
+                                  </span>
+                                )}
                               </div>
                             );
                           })()}
+                          {/* If there are NO follow-ups yet, still show the
+                              salesman badge under the name so admins can see
+                              who owns each dealer. */}
+                          {(!d.dealerFollowups || d.dealerFollowups.length === 0) && d.matchedSalesman && (
+                            <div style={{marginTop:4,display:'flex',alignItems:'center',gap:3}}>
+                              <Avatar user={d.matchedSalesman} size={12}/>
+                              <span style={{fontSize:9,color:d.matchedSalesman.color,fontWeight:600}}>{d.matchedSalesman.name}</span>
+                            </div>
+                          )}
                         </td>
                         {allMonthCols.map(m=>{
                           const v=d.monthlyOutstanding[m]||0;
                           const mi2=allMonthCols.indexOf(m);
                           const prev=mi2>0?d.monthlyOutstanding[allMonthCols[mi2-1]]||0:v;
-                          return(<td key={m} style={{textAlign:'right',color:v===0?'#34d399':v>prev&&mi2>0?'#f87171':'#fbbf24',fontWeight:v>0?600:400,fontSize:12}}>
-                            {v>0?fmt(v):'—'}
-                          </td>);
+                          return(
+                            <td
+                              key={m}
+                              onClick={(e)=>{
+                                e.stopPropagation();
+                                setPopupContext({ month: m, amount: v });
+                                setActiveDealer(d);
+                              }}
+                              title={v>0 ? `Open follow-up for ${m} (₹${v.toLocaleString('en-IN')})` : `Open follow-up for ${m}`}
+                              style={{
+                                textAlign:'right',
+                                color:v===0?'#34d399':v>prev&&mi2>0?'#f87171':'#fbbf24',
+                                fontWeight:v>0?600:400, fontSize:12,
+                                cursor:'pointer',
+                              }}
+                              onMouseEnter={e=>{ e.currentTarget.style.background = 'rgba(99,102,241,0.08)'; }}
+                              onMouseLeave={e=>{ e.currentTarget.style.background = 'transparent'; }}>
+                              {v>0?fmt(v):'—'}
+                            </td>
+                          );
                         })}
                         <td style={{textAlign:'center'}} onClick={e=>e.stopPropagation()}>
                           <button onClick={()=>setActiveDealer(d)} style={{
@@ -6394,7 +6410,7 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
                           )}
                         </td>
                       </tr>
-                      {isOpen&&<ExpandedRow d={d} dealers={dealers} onOpenDealer={onOpenDealer} setActiveDealer={setActiveDealer} allMonthCols={allMonthCols} loadFollowups={loadFollowups}/>}
+                      {/* Row no longer expands — dealer name + amount cells handle all actions */}
                     </React.Fragment>
                   );
                 })}
@@ -6419,7 +6435,9 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
           dealer={activeDealer}
           existingFollowups={followups}
           currentUser={currentUser}
-          onClose={()=>setActiveDealer(null)}
+          prefillMonth={popupContext?.month}
+          prefillAmount={popupContext?.amount}
+          onClose={()=>{ setActiveDealer(null); setPopupContext(null); }}
           onSaved={loadFollowups}
         />
       )}
