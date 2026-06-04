@@ -388,6 +388,36 @@ export default function Styles({theme}){
       .tab{padding:10px 14px}
       th,td{padding:9px 10px}
     }
+
+    /* ── CRM pages — mobile-friendly layout ────────────────────────────── */
+    .crm-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+    .crm-row > *{min-width:0}
+    .crm-loc-pill{flex:1 1 220px;min-width:0}
+    .crm-photo-thumb{width:48px;height:48px;object-fit:cover;border-radius:6px;border:1px solid var(--b2);cursor:zoom-in;flex-shrink:0}
+    .crm-photo-thumb-lg{width:64px;height:64px;object-fit:cover;border-radius:6px;border:1px solid var(--b2);cursor:zoom-in;flex-shrink:0}
+
+    @media(max-width:640px){
+      /* Stack camera + location vertically, full-width buttons */
+      .crm-row{flex-direction:column;align-items:stretch}
+      .crm-row > *{width:100%}
+      .crm-row .crm-loc-pill{flex:1 1 auto}
+      .crm-row button{width:100%;justify-content:center}
+      .crm-row .crm-photo-mount{justify-content:space-between}
+
+      /* Tighter cards on phone */
+      .card{padding:12px 12px}
+      /* Page headers smaller on phone */
+      .crm-page-title{font-size:18px !important}
+      .crm-page-sub{font-size:11px !important}
+
+      /* History rows reflow */
+      .crm-history-row{flex-wrap:wrap}
+      .crm-history-row .crm-history-time{margin-left:0 !important}
+    }
+
+    @media(max-width:380px){
+      .crm-photo-thumb-lg{width:56px;height:56px}
+    }
     `}</style>
   );
 }

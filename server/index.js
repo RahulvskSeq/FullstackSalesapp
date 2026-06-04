@@ -158,6 +158,7 @@ import outstandingRoutes from './routes/outstanding.js';
 import settingsRoutes    from './routes/settings.js';
 import followupRoutes    from './routes/Followups.js';
 import sampleRoutes      from './routes/samples.js';
+import crmRoutes         from './routes/crm.js';
 
 dotenv.config();
 
@@ -173,6 +174,7 @@ app.use('/api/outstanding', outstandingRoutes);
 app.use('/api/settings',    settingsRoutes);
 app.use('/api/followups',   followupRoutes);
 app.use('/api/samples',     sampleRoutes);
+app.use('/api/crm',         crmRoutes);
 
 app.get('/api/health', (_, res) => res.json({ ok:true, time:new Date(), version:'1.0.0' }));
 

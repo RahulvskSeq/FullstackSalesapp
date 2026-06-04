@@ -15381,7 +15381,7 @@
 // }
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { LayoutDashboard, Users, TrendingUp, Settings, LogOut, Bell, GitCompare, Menu, RefreshCw, Map, AlertTriangle, Upload, Edit3, Calendar, LogIn, ChevronDown, ShieldCheck, Shield, Palette, Check } from 'lucide-react';
+import { LayoutDashboard, Users, TrendingUp, Settings, LogOut, Bell, GitCompare, Menu, RefreshCw, Map, AlertTriangle, Upload, Edit3, Calendar, LogIn, ChevronDown, ShieldCheck, Shield, Palette, Check, Briefcase, Camera, ClipboardList, UserCheck, Plane } from 'lucide-react';
 import { DEFAULT_USERS, MO as MO_DEFAULT, CURRENT_MONTH_IDX as CURRENT_MONTH_IDX_DEFAULT, CURRENT_MONTH_LABEL as CURRENT_MONTH_LABEL_DEFAULT, CURRENT_MONTH_SHORT as CURRENT_MONTH_SHORT_DEFAULT } from './constants';
 import { pct, spct, pclr, uid, isoNow, storage, parseCSV, fetchCSV, parseOutstandingCSV } from './utils';
 import { api, dbDealerToApp, dbOutstandingToApp, saveToken, getToken } from './api';
@@ -15390,6 +15390,7 @@ import Styles            from './components/Styles';
 import { MonthSelectorBar, Avatar, SkeletonLoader, LoadingScreen } from './components/UI';
 import NotificationCenter, { notify, confirmDialog } from './components/Toast';
 import { THEMES, applyTheme, loadSavedTheme, saveTheme } from './themes';
+import CRM, { AttendancePage, VisitsPage, LeadsPage, LeavesPage } from './components/CRM';
 import LoginPage         from './components/LoginPage';
 import Overview          from './components/Overview';
 import DealersList       from './components/DealersList';
@@ -15423,7 +15424,7 @@ const getCookie = () => {
 const clearCookie = () => { document.cookie = `${COOKIE_KEY}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`; };
 
 // ── Slug routing helpers ──────────────────────────────────
-const VALID_SCREENS = ['overview','dealers','monthly','compare','map','outstanding','upload','entry','followups','months','admin'];
+const VALID_SCREENS = ['overview','dealers','monthly','compare','map','outstanding','upload','entry','followups','months','admin','crm','attendance','visits','leads','leaves'];
 const getScreenFromUrl = () => {
   const hash = window.location.hash.replace('#/','').split('?')[0];
   return VALID_SCREENS.includes(hash) ? hash : 'overview';
@@ -15492,6 +15493,19 @@ export default function App(){
   const [syncErrs,setSyncErrs]=useState([]);
   const [selectedMonthIdx,setSelectedMonthIdx]=useState(()=>{ try{ const s=JSON.parse(localStorage.getItem('stp_month_config')||'null'); return s?.currentIdx??CURRENT_MONTH_IDX_DEFAULT; }catch{ return CURRENT_MONTH_IDX_DEFAULT; } });
   const [pendingFilters,setPendingFilters]=useState(null);
+
+  // ── Sidebar group expand state (e.g., CRM contains Visits + Leads) ───────
+  const [navGroupsOpen, setNavGroupsOpen] = useState(()=>{
+    try{ return JSON.parse(localStorage.getItem('stp_nav_groups')||'{"crm":true}'); }
+    catch{ return { crm: true }; }
+  });
+  const toggleNavGroup = (id) => {
+    setNavGroupsOpen(prev => {
+      const next = { ...prev, [id]: !prev[id] };
+      try{ localStorage.setItem('stp_nav_groups', JSON.stringify(next)); }catch{}
+      return next;
+    });
+  };
 
   // ── Extra theme palette (layers on top of dark/light) ────────────────────
   // Selected via the dropdown beside the Reload DB button. Each palette sets
@@ -16062,6 +16076,13 @@ export default function App(){
     {id:'entry',label:'Monthly Entry',icon:Edit3,adminOnly:true},
     {id:'months',label:'Manage Months',icon:Calendar,adminOnly:true},
     {id:'followups',label:'Follow-ups',icon:Bell,badge:overdueCount},
+    {id:'attendance',label:'Attendance',icon:Camera},
+    // CRM is a collapsible group with Visits + Leads as children.
+    { group:'crm', label:'CRM', icon:Briefcase, children:[
+        {id:'visits', label:'Visits', icon:ClipboardList},
+        {id:'leads',  label:'Leads',  icon:UserCheck},
+    ]},
+    {id:'leaves', label:'Leaves', icon:Plane},
     ...(isStaff?[{id:'admin',label:'Admin Panel',icon:Settings}]:[]),
   ];
 
@@ -16391,12 +16412,44 @@ export default function App(){
             {sidebarOpen&&window.innerWidth<=768&&<div id="sb-overlay" className="open" onClick={()=>setSidebarOpen(false)}/>}
             <div id="sidebar" className={sidebarOpen?'open':'closed'}>
               <div className="nav-sec">Navigation</div>
-              {navItems.filter(n=>!n.adminOnly||isStaff).map(n=>{const Icon=n.icon;return(
-                <div key={n.id} className={`nav-item ${screen===n.id?'active':''}`} onClick={()=>navigate(n.id)}>
-                  <Icon size={14}/><span style={{flex:1}}>{n.label}</span>
-                  {n.badge>0&&<span style={{background:'var(--red)',color:'#fff',borderRadius:10,padding:'1px 7px',fontSize:10,fontWeight:700}}>{n.badge}</span>}
-                </div>
-              );})}
+              {navItems.filter(n=>!n.adminOnly||isStaff).map((n, idx)=>{
+                // Render a collapsible group (parent header + children)
+                if(n.group){
+                  const GIcon = n.icon;
+                  const isOpen = !!navGroupsOpen[n.group];
+                  const anyChildActive = (n.children||[]).some(c => c.id === screen);
+                  return (
+                    <React.Fragment key={'g-'+n.group}>
+                      <div className={`nav-item ${anyChildActive?'active':''}`}
+                        onClick={()=>toggleNavGroup(n.group)}>
+                        <GIcon size={14}/>
+                        <span style={{flex:1}}>{n.label}</span>
+                        <ChevronDown size={12}
+                          style={{transform: isOpen?'rotate(180deg)':'rotate(0)', transition:'transform .15s', color:'var(--t3)'}}/>
+                      </div>
+                      {isOpen && (n.children||[]).map(c => {
+                        const CIcon = c.icon;
+                        return (
+                          <div key={c.id}
+                            className={`nav-item ${screen===c.id?'active':''}`}
+                            style={{paddingLeft:32}}
+                            onClick={()=>navigate(c.id)}>
+                            <CIcon size={13}/><span style={{flex:1}}>{c.label}</span>
+                          </div>
+                        );
+                      })}
+                    </React.Fragment>
+                  );
+                }
+                // Flat nav item (default)
+                const Icon = n.icon;
+                return (
+                  <div key={n.id} className={`nav-item ${screen===n.id?'active':''}`} onClick={()=>navigate(n.id)}>
+                    <Icon size={14}/><span style={{flex:1}}>{n.label}</span>
+                    {n.badge>0&&<span style={{background:'var(--red)',color:'#fff',borderRadius:10,padding:'1px 7px',fontSize:10,fontWeight:700}}>{n.badge}</span>}
+                  </div>
+                );
+              })}
               <div style={{flex:1}}/>
               {/* Sidebar snapshot */}
               <div style={{padding:'14px 16px',borderTop:'1px solid var(--b1)'}}>
@@ -16431,6 +16484,11 @@ export default function App(){
                   {screen==='entry'&&<MonthlyEntry dealers={myDealers} users={users} currentUser={currentUser} onUpdateDealer={updateDealerFields} onSaved={()=>loadFromDB(activeMO)}/>}
                   {screen==='months'&&isStaff&&<ManageMonths dealers={dealers} users={users} currentUser={currentUser} monthConfig={monthConfig} saveMonthConfig={saveMonthConfig} loadFromDB={loadFromDB} onSync={syncSheets} syncing={syncing} lastSync={lastSync}/>}
                   {screen==='followups'&&<FollowupsHub notes={myNotes} dealers={myDealers} users={users} onUpdateNote={updateNote} onDeleteNote={deleteNote} onOpenDealer={setEditingId}/>}
+                  {screen==='crm'        && <CRM            dealers={myDealers} users={users} currentUser={currentUser}/>}
+                  {screen==='attendance' && <AttendancePage users={users} currentUser={currentUser}/>}
+                  {screen==='visits'     && <VisitsPage     dealers={myDealers} users={users} currentUser={currentUser}/>}
+                  {screen==='leads'      && <LeadsPage      users={users} currentUser={currentUser}/>}
+                  {screen==='leaves'     && <LeavesPage     users={users} currentUser={currentUser}/>}
                   {screen==='admin'&&isStaff&&<AdminPanel dealers={dealers} users={users} setUsers={setUsers} setShowUM={setShowUM} onSync={syncSheets} syncing={syncing} lastSync={lastSync} syncErrs={syncErrs} onNavigate={navigate} onOpenDealer={setEditingId} monthConfig={monthConfig} saveMonthConfig={saveMonthConfig} currentUser={currentUser} onLoginAs={(token, user, impersonatedBy)=>{
                     saveToken(token);
                     localStorage.setItem('stp_jwt', token);

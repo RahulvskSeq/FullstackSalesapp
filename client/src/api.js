@@ -1753,6 +1753,69 @@ export const api = {
     method:'DELETE',
     headers:authHeaders(),
   }).then(handle),
+
+  // ── CRM ────────────────────────────────────────────────────────────────
+  // Attendance
+  attListAttendance: (q={}) => {
+    const p = new URLSearchParams(q).toString();
+    return fetch(`${BASE}/crm/attendance${p?'?'+p:''}`,{ headers:authHeaders() }).then(handle);
+  },
+  attPunch: (body) => fetch(`${BASE}/crm/attendance`,{
+    method:'POST',
+    headers:authHeaders(),
+    body: JSON.stringify(body),
+  }).then(handle),
+
+  // Visits
+  visitsList: (q={}) => {
+    const p = new URLSearchParams(q).toString();
+    return fetch(`${BASE}/crm/visits${p?'?'+p:''}`,{ headers:authHeaders() }).then(handle);
+  },
+  visitsCreate: (body) => fetch(`${BASE}/crm/visits`,{
+    method:'POST',
+    headers:authHeaders(),
+    body: JSON.stringify(body),
+  }).then(handle),
+  visitsDelete: (id) => fetch(`${BASE}/crm/visits/${encodeURIComponent(id)}`,{
+    method:'DELETE',
+    headers:authHeaders(),
+  }).then(handle),
+
+  // Leads
+  leadsList: (q={}) => {
+    const p = new URLSearchParams(q).toString();
+    return fetch(`${BASE}/crm/leads${p?'?'+p:''}`,{ headers:authHeaders() }).then(handle);
+  },
+  leadsCreate: (body) => fetch(`${BASE}/crm/leads`,{
+    method:'POST',
+    headers:authHeaders(),
+    body: JSON.stringify(body),
+  }).then(handle),
+  leadsUpdate: (id, body) => fetch(`${BASE}/crm/leads/${encodeURIComponent(id)}`,{
+    method:'PUT',
+    headers:authHeaders(),
+    body: JSON.stringify(body),
+  }).then(handle),
+  leadsDelete: (id) => fetch(`${BASE}/crm/leads/${encodeURIComponent(id)}`,{
+    method:'DELETE',
+    headers:authHeaders(),
+  }).then(handle),
+
+  // Leaves
+  leavesList: (q={}) => {
+    const p = new URLSearchParams(q).toString();
+    return fetch(`${BASE}/crm/leaves${p?'?'+p:''}`,{ headers:authHeaders() }).then(handle);
+  },
+  leavesApply: (body) => fetch(`${BASE}/crm/leaves`,{
+    method:'POST',
+    headers:authHeaders(),
+    body: JSON.stringify(body),
+  }).then(handle),
+  leavesUpdate: (id, body) => fetch(`${BASE}/crm/leaves/${encodeURIComponent(id)}`,{
+    method:'PUT',
+    headers:authHeaders(),
+    body: JSON.stringify(body),
+  }).then(handle),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

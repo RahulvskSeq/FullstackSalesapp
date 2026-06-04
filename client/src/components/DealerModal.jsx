@@ -8556,6 +8556,84 @@ import { downloadDealerCard, shareDealerCard } from './dealerCard';
 import { notify, confirmDialog } from './Toast';
 import { Layers } from 'lucide-react';
 
+// ── Visits tab for this dealer (read-only timeline) ──────────────────────
+function DealerVisitsTab({ dealer }){
+  const [items, setItems]   = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [zoom, setZoom]     = useState('');
+
+  React.useEffect(()=>{
+    let cancelled = false;
+    (async()=>{
+      setLoading(true);
+      try {
+        const data = await api.visitsList({ dealerName: dealer.name || '' });
+        if(!cancelled) setItems(data || []);
+      } catch(e){ notify.error('Visits: ' + e.message); }
+      if(!cancelled) setLoading(false);
+    })();
+    return ()=>{ cancelled = true; };
+  }, [dealer?.name]);
+
+  return (
+    <div>
+      <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:10}}>
+        <div style={{fontSize:13, fontWeight:700}}>Field visits for {dealer.name}</div>
+        <span style={{fontSize:11, color:'var(--t3)'}}>· {items.length} total</span>
+      </div>
+      {loading ? (
+        <div style={{padding:14, color:'var(--t3)'}}>Loading…</div>
+      ) : items.length === 0 ? (
+        <div style={{padding:24, textAlign:'center', color:'var(--t3)', fontSize:13}}>
+          No visits logged for this dealer yet.<br/>
+          <span style={{fontSize:11}}>Salesmen can log visits from the CRM tab.</span>
+        </div>
+      ) : (
+        <div style={{display:'flex', flexDirection:'column', gap:8, maxHeight:520, overflowY:'auto'}}>
+          {items.map(v => (
+            <div key={v._id} style={{
+              display:'flex', alignItems:'flex-start', gap:10, padding:'10px 12px',
+              background:'var(--bg2)', borderRadius:8, borderLeft:'3px solid var(--acc)',
+            }}>
+              {v.photo
+                ? <img src={v.photo} alt="" onClick={()=>setZoom(v.photo)}
+                    style={{width:60, height:60, objectFit:'cover', borderRadius:6, cursor:'zoom-in', border:'1px solid var(--b2)', flexShrink:0}}/>
+                : <div style={{width:60, height:60, borderRadius:6, background:'var(--bg1)', display:'flex', alignItems:'center', justifyContent:'center', color:'var(--t3)', flexShrink:0}}>—</div>}
+              <div style={{flex:1, minWidth:0}}>
+                <div style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
+                  <span style={{fontSize:12, fontWeight:600}}>{v.userName || v.userId}</span>
+                  <span style={{marginLeft:'auto', fontSize:10, color:'var(--t3)'}}>
+                    {new Date(v.createdAt).toLocaleString('en-IN', { dateStyle:'medium', timeStyle:'short' })}
+                  </span>
+                </div>
+                {v.comment && <div style={{fontSize:12, color:'var(--t2)', marginTop:4, whiteSpace:'pre-wrap'}}>{v.comment}</div>}
+                {v.address && (
+                  <div style={{fontSize:10, color:'#a5b4fc', marginTop:4, display:'flex', alignItems:'center', gap:3}}>
+                    <MapPin size={10}/> {v.address}
+                  </div>
+                )}
+                {(v.lat || v.lng) && !v.address && (
+                  <div style={{fontSize:10, color:'var(--t3)', marginTop:4, display:'flex', alignItems:'center', gap:3}}>
+                    <MapPin size={10}/> {v.lat?.toFixed(4)}, {v.lng?.toFixed(4)}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {zoom && (
+        <div onClick={()=>setZoom('')} style={{
+          position:'fixed', inset:0, zIndex:10002, background:'rgba(0,0,0,0.85)',
+          display:'flex', alignItems:'center', justifyContent:'center', padding:24,
+        }}>
+          <img src={zoom} alt="" style={{maxWidth:'95vw', maxHeight:'92vh', borderRadius:10}}/>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAddNote,onUpdateNote,onDeleteNote,onLog,outstandingData=[],outFollowups=[],onFollowupSaved})=>{
   const {selectedMonthIdx,MO:ctxMO}=useMonth();
   const MO=ctxMO||MO_CONST;
@@ -8752,6 +8830,9 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
           </button>
           <button className={`tab ${tab==='samples'?'active':''}`} onClick={()=>setTab('samples')}>
                   📦 Samples
+                </button>
+                <button className={`tab ${tab==='visits'?'active':''}`} onClick={()=>setTab('visits')}>
+                  📍 Visits
                 </button>
                 <button className={`tab ${tab==='outstanding'?'active':''}`} onClick={()=>setTab('outstanding')} style={{color:outRecord?.latestOutstanding>0?'#f87171':'inherit',position:'relative'}}>
             Outstanding & Follow-ups {outRecord?.latestOutstanding>0&&<span style={{background:'#f87171',color:'#fff',borderRadius:8,padding:'1px 6px',fontSize:10,marginLeft:4}}>₹{Number(outRecord.latestOutstanding).toLocaleString('en-IN')}</span>}
@@ -8958,6 +9039,9 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
 
         {tab==='samples'&&(
           <SamplesTab dealer={dealer} currentUser={currentUser}/>
+        )}
+        {tab==='visits'&&(
+          <DealerVisitsTab dealer={dealer}/>
         )}
         {tab==='outstanding'&&(
           <div>
