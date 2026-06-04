@@ -163,7 +163,16 @@ import crmRoutes         from './routes/crm.js';
 dotenv.config();
 
 const app = express();
-app.use(cors({ origin:'*', credentials:true }));
+// CORS: echo the request Origin instead of returning '*'. The browser/WebView
+// spec rejects `Access-Control-Allow-Origin: *` together with
+// `Access-Control-Allow-Credentials: true`, which causes the Capacitor APK to
+// throw "Failed to fetch" even though the URL is reachable. Echoing the
+// actual origin (capacitor://localhost, https://localhost, https://vercel.app,
+// etc.) keeps credentials usable AND works on every client.
+app.use(cors({
+  origin: (origin, cb) => cb(null, origin || true), // reflect or allow non-browser callers
+  credentials: true,
+}));
 app.use(express.json({ limit:'50mb' }));
 app.use(express.urlencoded({ extended:true }));
 
