@@ -176,13 +176,28 @@ export default function LoginPage({users,onLogin,theme,toggleTheme}){
   const [serverOk,setServerOk]=useState(null); // null=checking, true=up, false=down
   const [showApiSettings, setShowApiSettings] = useState(false);
 
-  // Check if server is running
+  // Check if server is running. Mobile networks + Railway cold-start can
+  // easily take 5–8 seconds, so the previous 2-second cap was firing false
+  // negatives in the APK. We now try once with 12s, and if it fails (cold
+  // start) we wait 2s and retry once more.
   useEffect(()=>{
+    let cancelled = false;
     const BASE = getApiBase();
-    fetch(`${BASE}/health`, { signal: AbortSignal.timeout(2000) })
-      .then(r=>r.ok?r.json():null)
-      .then(d=>setServerOk(!!d?.ok))
-      .catch(()=>setServerOk(false));
+    const ping = (timeoutMs) =>
+      fetch(`${BASE}/health`, { signal: AbortSignal.timeout(timeoutMs), cache:'no-store' })
+        .then(r => r.ok ? r.json() : null)
+        .catch(()=>null);
+
+    (async () => {
+      let d = await ping(12000);
+      if(!d?.ok){
+        // Railway may have been asleep — wait then retry once with a longer cap
+        await new Promise(r => setTimeout(r, 2000));
+        d = await ping(15000);
+      }
+      if(!cancelled) setServerOk(!!d?.ok);
+    })();
+    return ()=>{ cancelled = true; };
   },[]);
 
   const submit = async () => {
