@@ -9,6 +9,9 @@ import Attendance from '../models/Attendance.js';
 import Visit      from '../models/Visit.js';
 import Lead       from '../models/Lead.js';
 import Leave      from '../models/Leave.js';
+import Task       from '../models/Task.js';
+import Ticket     from '../models/Ticket.js';
+import Counter    from '../models/Counter.js';
 import User       from '../models/User.js';
 import { protect, adminOnly } from '../middleware/auth.js';
 
@@ -425,6 +428,173 @@ router.put('/leaves/:id', protect, async (req, res) => {
     await l.save();
     res.json(l.toObject());
   } catch(e){ console.error('[CRM/leaves PUT]', e.message); res.status(500).json({ error:e.message }); }
+});
+
+
+// ───────────────────────────────── Tasks ──────────────────────────────────
+
+// POST /api/crm/tasks — admin creates a task and assigns it to a user
+router.post('/tasks', protect, adminOnly, async (req, res) => {
+  try {
+    const b = req.body || {};
+    if(!b.title || !b.title.trim()) return res.status(400).json({ error:'title required' });
+    let assignedName = '';
+    if(b.assignedTo){
+      const u = await User.findOne({ id:b.assignedTo }, 'name').lean();
+      assignedName = u?.name || '';
+    }
+    const me = await User.findOne({ id: req.user.id }, 'name').lean();
+    const doc = await Task.create({
+      title:       b.title.trim(),
+      description: b.description || '',
+      status:      b.status   || 'NEW',
+      priority:    b.priority || 'MEDIUM',
+      dueDate:     b.dueDate  || '',
+      assignedTo:  b.assignedTo || '',
+      assignedName,
+      createdBy:     req.user.id,
+      createdByName: me?.name || '',
+      refType:     b.refType || '',
+      refId:       b.refId   || '',
+      refName:     b.refName || '',
+      updates:     [],
+    });
+    res.json(doc);
+  } catch(e){ console.error('[CRM/tasks POST]', e.message); res.status(500).json({ error:e.message }); }
+});
+
+// GET /api/crm/tasks — admin: all, salesman: only theirs
+router.get('/tasks', protect, async (req, res) => {
+  try {
+    const q = {};
+    if(!isStaff(req)) q.assignedTo = req.user.id;
+    if(isStaff(req) && req.query.assignedTo) q.assignedTo = req.query.assignedTo;
+    if(req.query.status) q.status = req.query.status;
+    const items = await Task.find(q).sort({ updatedAt:-1 }).limit(500).lean();
+    res.json(items);
+  } catch(e){ res.status(500).json({ error:e.message }); }
+});
+
+// PUT /api/crm/tasks/:id — staff: full edit, salesman: only status + comment
+router.put('/tasks/:id', protect, async (req, res) => {
+  try {
+    const task = await Task.findById(req.params.id);
+    if(!task) return res.status(404).json({ error:'Not found' });
+    const staff = isStaff(req);
+    if(!staff && task.assignedTo !== req.user.id) return res.status(403).json({ error:'Not your task' });
+
+    const b = req.body || {};
+    const allowed = staff
+      ? ['title','description','status','priority','dueDate','assignedTo','refType','refId','refName']
+      : ['status'];
+    allowed.forEach(k => { if(b[k] !== undefined) task[k] = b[k]; });
+    if(staff && b.assignedTo !== undefined){
+      const u = await User.findOne({ id:b.assignedTo }, 'name').lean();
+      task.assignedName = u?.name || '';
+    }
+    if(b.update && (b.update.comment || b.update.status)){
+      const me = await User.findOne({ id: req.user.id }, 'name').lean();
+      task.updates.push({
+        by:      req.user.id,
+        byName:  me?.name || req.user.name || '',
+        comment: b.update.comment || '',
+        status:  b.update.status  || '',
+        at:      new Date(),
+      });
+      if(b.update.status) task.status = b.update.status;
+    }
+    await task.save();
+    res.json(task.toObject());
+  } catch(e){ console.error('[CRM/tasks PUT]', e.message); res.status(500).json({ error:e.message }); }
+});
+
+// DELETE /api/crm/tasks/:id — admin only
+router.delete('/tasks/:id', protect, adminOnly, async (req, res) => {
+  try { await Task.findByIdAndDelete(req.params.id); res.json({ ok:true }); }
+  catch(e){ res.status(500).json({ error:e.message }); }
+});
+
+// ───────────────────────────────── Tickets ────────────────────────────────
+
+// POST /api/crm/tickets — any authenticated user can raise a ticket
+router.post('/tickets', protect, async (req, res) => {
+  try {
+    const b = req.body || {};
+    if(!b.title || !b.title.trim()) return res.status(400).json({ error:'title required' });
+    if(b.screenshot && b.screenshot.length > PHOTO_MAX) return res.status(413).json({ error:'Screenshot too large' });
+    const num = await Counter.next('ticket', 4);
+    const ticketNo = 'STP-' + String(num).padStart(4, '0');
+    const me = await User.findOne({ id: req.user.id }, 'name').lean();
+    const doc = await Ticket.create({
+      ticketNo,
+      title:       b.title.trim(),
+      description: b.description || '',
+      screenshot:  b.screenshot  || '',
+      category:    b.category    || 'Bug',
+      status:      'OPEN',
+      priority:    b.priority    || 'MEDIUM',
+      createdBy:     req.user.id,
+      createdByName: me?.name || req.user.name || '',
+      updates:     [],
+    });
+    res.json(doc);
+  } catch(e){ console.error('[CRM/tickets POST]', e.message); res.status(500).json({ error:e.message }); }
+});
+
+// GET /api/crm/tickets — admin: all, others: only their own
+router.get('/tickets', protect, async (req, res) => {
+  try {
+    const q = {};
+    if(!isStaff(req)) q.createdBy = req.user.id;
+    if(req.query.status) q.status = req.query.status;
+    if(isStaff(req) && req.query.createdBy) q.createdBy = req.query.createdBy;
+    const items = await Ticket.find(q).sort({ createdAt:-1 }).limit(500).lean();
+    res.json(items);
+  } catch(e){ res.status(500).json({ error:e.message }); }
+});
+
+// PUT /api/crm/tickets/:id — staff: full edit, raiser: comment + screenshot only
+router.put('/tickets/:id', protect, async (req, res) => {
+  try {
+    const t = await Ticket.findById(req.params.id);
+    if(!t) return res.status(404).json({ error:'Not found' });
+    const staff = isStaff(req);
+    if(!staff && t.createdBy !== req.user.id) return res.status(403).json({ error:'Not your ticket' });
+
+    const b = req.body || {};
+    if(staff){
+      ['title','description','category','status','priority','assignedTo'].forEach(k => {
+        if(b[k] !== undefined) t[k] = b[k];
+      });
+      if(b.assignedTo !== undefined){
+        const u = await User.findOne({ id:b.assignedTo }, 'name').lean();
+        t.assignedName = u?.name || '';
+      }
+    }
+    if(b.update && (b.update.comment || b.update.status || b.update.screenshot)){
+      if(b.update.screenshot && b.update.screenshot.length > PHOTO_MAX){
+        return res.status(413).json({ error:'Screenshot too large' });
+      }
+      const me = await User.findOne({ id: req.user.id }, 'name').lean();
+      t.updates.push({
+        by:        req.user.id,
+        byName:    me?.name || req.user.name || '',
+        comment:   b.update.comment || '',
+        status:    b.update.status  || '',
+        screenshot:b.update.screenshot || '',
+        at:        new Date(),
+      });
+      if(staff && b.update.status) t.status = b.update.status;
+    }
+    await t.save();
+    res.json(t.toObject());
+  } catch(e){ console.error('[CRM/tickets PUT]', e.message); res.status(500).json({ error:e.message }); }
+});
+
+// DELETE /api/crm/tickets/:id — admin only
+router.delete('/tickets/:id', protect, adminOnly, async (req, res) => {
+  try { await Ticket.findByIdAndDelete(req.params.id); res.json({ ok:true }); }
+  catch(e){ res.status(500).json({ error:e.message }); }
 });
 
 export default router;

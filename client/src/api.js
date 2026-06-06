@@ -1816,6 +1816,36 @@ export const api = {
     }).then(handle);
   },
 
+  // Tasks
+  tasksList: (q={}) => {
+    const p = new URLSearchParams(q).toString();
+    return fetch(`${BASE}/crm/tasks${p?'?'+p:''}`,{ headers:authHeaders() }).then(handle);
+  },
+  tasksCreate: (body) => fetch(`${BASE}/crm/tasks`,{
+    method:'POST', headers:authHeaders(), body: JSON.stringify(body),
+  }).then(handle),
+  tasksUpdate: (id, body) => fetch(`${BASE}/crm/tasks/${encodeURIComponent(id)}`,{
+    method:'PUT', headers:authHeaders(), body: JSON.stringify(body),
+  }).then(handle),
+  tasksDelete: (id) => fetch(`${BASE}/crm/tasks/${encodeURIComponent(id)}`,{
+    method:'DELETE', headers:authHeaders(),
+  }).then(handle),
+
+  // Tickets (support / complaints)
+  ticketsList: (q={}) => {
+    const p = new URLSearchParams(q).toString();
+    return fetch(`${BASE}/crm/tickets${p?'?'+p:''}`,{ headers:authHeaders() }).then(handle);
+  },
+  ticketsCreate: (body) => fetch(`${BASE}/crm/tickets`,{
+    method:'POST', headers:authHeaders(), body: JSON.stringify(body),
+  }).then(handle),
+  ticketsUpdate: (id, body) => fetch(`${BASE}/crm/tickets/${encodeURIComponent(id)}`,{
+    method:'PUT', headers:authHeaders(), body: JSON.stringify(body),
+  }).then(handle),
+  ticketsDelete: (id) => fetch(`${BASE}/crm/tickets/${encodeURIComponent(id)}`,{
+    method:'DELETE', headers:authHeaders(),
+  }).then(handle),
+
   // Leaves
   leavesList: (q={}) => {
     const p = new URLSearchParams(q).toString();

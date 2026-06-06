@@ -5662,6 +5662,8 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
   );
   const [saving,  setSaving]  = useState(false);
   const [err,     setErr]     = useState('');
+  // Zoom modal for clicking on a payment-proof image in the history.
+  const [zoomImg, setZoomImg] = useState('');
 
   const mine = existingFollowups.filter(f=>
     f.dealerName?.toLowerCase().trim()===dealer.name?.toLowerCase().trim()
@@ -5687,6 +5689,56 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
   };
 
   const handleMark = async (id,status) => {
+    // When marking a follow-up as 'done' (collected), let the user attach an
+    // optional payment proof. We open a tiny inline file input. Cancel = skip.
+    if(status === 'done'){
+      // Use a one-off file input — auto-compressed to ≤900px JPEG.
+      const proofUrl = await new Promise((resolve) => {
+        const inp = document.createElement('input');
+        inp.type = 'file';
+        inp.accept = 'image/*';
+        inp.onchange = async (e) => {
+          const f = e.target.files?.[0];
+          if(!f){ resolve(''); return; }
+          try {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const img = new Image();
+              img.onload = () => {
+                const scale = Math.min(1, 900 / Math.max(img.width, img.height));
+                const w = Math.round(img.width * scale);
+                const h = Math.round(img.height * scale);
+                const c = document.createElement('canvas');
+                c.width = w; c.height = h;
+                c.getContext('2d').drawImage(img, 0, 0, w, h);
+                resolve(c.toDataURL('image/jpeg', 0.75));
+              };
+              img.onerror = () => resolve('');
+              img.src = reader.result;
+            };
+            reader.onerror = () => resolve('');
+            reader.readAsDataURL(f);
+          } catch{ resolve(''); }
+        };
+        // If the picker is dismissed without choosing, resolve empty after a tick
+        setTimeout(()=>{ try{ inp.click(); }catch{} }, 0);
+        // Safety: if user cancels the dialog, the change event never fires.
+        // Treat onfocus on body as cancel after ~1s.
+        const onFocus = () => {
+          setTimeout(()=>{
+            if(!inp.files || !inp.files[0]) resolve('');
+            window.removeEventListener('focus', onFocus);
+          }, 800);
+        };
+        window.addEventListener('focus', onFocus, { once:true });
+      });
+      const patch = { status, collectedAt: new Date() };
+      if(proofUrl) patch.paymentProof = proofUrl;
+      await api.updateFollowup(id, patch);
+      notify.success(proofUrl ? 'Marked collected (with proof attached)' : 'Marked collected');
+      onSaved();
+      return;
+    }
     await api.updateFollowup(id,{status}); onSaved();
   };
   const handleDelete = async (id) => {
@@ -5803,6 +5855,15 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
                         ))}
                       </div>
                     )}
+                    {/* Payment proof — shown only when collected with a proof */}
+                    {f.paymentProof && (
+                      <div style={{marginTop:6, display:'flex', alignItems:'center', gap:6}}>
+                        <img src={f.paymentProof} alt="payment proof"
+                          onClick={()=>setZoomImg(f.paymentProof)}
+                          style={{width:46, height:46, objectFit:'cover', borderRadius:6, border:'1px solid #15803d', cursor:'zoom-in'}}/>
+                        <span style={{fontSize:9, color:'#34d399', fontWeight:600}}>✓ Payment proof attached</span>
+                      </div>
+                    )}
                     <div style={{fontSize:9,color:'var(--t3)',marginTop:4}}>
                       {new Date(f.createdAt).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}
                     </div>
@@ -5810,8 +5871,9 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
                   <div style={{display:'flex',flexDirection:'column',gap:4}}>
                     {!isDone&&!isNoPickup&&(
                       <button onClick={()=>handleMark(f._id,'done')}
-                        style={{background:'none',border:'1px solid #34d399',color:'#34d399',borderRadius:4,padding:'3px 6px',cursor:'pointer',fontSize:10,display:'flex',alignItems:'center',gap:3}}>
-                        <Check size={9}/> Done
+                        title="Mark this payment as collected"
+                        style={{background:'rgba(52,211,153,0.10)',border:'1px solid #15803d',color:'#34d399',borderRadius:4,padding:'4px 8px',cursor:'pointer',fontSize:10,fontWeight:700,display:'flex',alignItems:'center',gap:4}}>
+                        <Check size={10}/> Mark Collected
                       </button>
                     )}
                     {/* <button onClick={()=>handleDelete(f._id)}
@@ -5825,6 +5887,14 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
           })}
         </div>
       </div>
+      {zoomImg && (
+        <div onClick={()=>setZoomImg('')} style={{
+          position:'fixed', inset:0, zIndex:10002, background:'rgba(0,0,0,0.85)',
+          display:'flex', alignItems:'center', justifyContent:'center', padding:24,
+        }}>
+          <img src={zoomImg} alt="payment proof" style={{maxWidth:'95vw', maxHeight:'92vh', borderRadius:10, boxShadow:'0 30px 60px rgba(0,0,0,0.6)'}}/>
+        </div>
+      )}
     </div>
   );
 }

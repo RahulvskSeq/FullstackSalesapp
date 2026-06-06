@@ -15381,7 +15381,7 @@
 // }
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { LayoutDashboard, Users, TrendingUp, Settings, LogOut, Bell, GitCompare, Menu, RefreshCw, Map, AlertTriangle, Upload, Edit3, Calendar, LogIn, ChevronDown, ShieldCheck, Shield, Palette, Check, Briefcase, Camera, ClipboardList, UserCheck, Plane } from 'lucide-react';
+import { LayoutDashboard, Users, TrendingUp, Settings, LogOut, Bell, GitCompare, Menu, RefreshCw, Map, AlertTriangle, Upload, Edit3, Calendar, LogIn, ChevronDown, ShieldCheck, Shield, Palette, Check, Briefcase, Camera, ClipboardList, UserCheck, Plane, FileSpreadsheet, LifeBuoy, CheckSquare } from 'lucide-react';
 import { DEFAULT_USERS, MO as MO_DEFAULT, CURRENT_MONTH_IDX as CURRENT_MONTH_IDX_DEFAULT, CURRENT_MONTH_LABEL as CURRENT_MONTH_LABEL_DEFAULT, CURRENT_MONTH_SHORT as CURRENT_MONTH_SHORT_DEFAULT } from './constants';
 import { pct, spct, pclr, uid, isoNow, storage, parseCSV, fetchCSV, parseOutstandingCSV } from './utils';
 import { api, dbDealerToApp, dbOutstandingToApp, saveToken, getToken } from './api';
@@ -15391,6 +15391,9 @@ import { MonthSelectorBar, Avatar, SkeletonLoader, LoadingScreen } from './compo
 import NotificationCenter, { notify, confirmDialog } from './components/Toast';
 import { THEMES, applyTheme, loadSavedTheme, saveTheme } from './themes';
 import CRM, { AttendancePage, VisitsPage, LeadsPage, LeavesPage } from './components/CRM';
+import Reports             from './components/Reports';
+import TasksPage           from './components/TasksPage';
+import TicketsPage         from './components/TicketsPage';
 import LoginPage         from './components/LoginPage';
 import Overview          from './components/Overview';
 import DealersList       from './components/DealersList';
@@ -15424,7 +15427,7 @@ const getCookie = () => {
 const clearCookie = () => { document.cookie = `${COOKIE_KEY}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`; };
 
 // ── Slug routing helpers ──────────────────────────────────
-const VALID_SCREENS = ['overview','dealers','monthly','compare','map','outstanding','upload','entry','followups','months','admin','crm','attendance','visits','leads','leaves'];
+const VALID_SCREENS = ['overview','dealers','monthly','compare','map','outstanding','upload','entry','followups','months','admin','crm','attendance','visits','leads','leaves','reports','tasks','tickets'];
 const getScreenFromUrl = () => {
   const hash = window.location.hash.replace('#/','').split('?')[0];
   return VALID_SCREENS.includes(hash) ? hash : 'overview';
@@ -16098,12 +16101,15 @@ export default function App(){
     {id:'months',label:'Manage Months',icon:Calendar,adminOnly:true},
     {id:'followups',label:'Follow-ups',icon:Bell,badge:overdueCount},
     {id:'attendance',label:'Attendance',icon:Camera},
-    // CRM is a collapsible group with Visits + Leads as children.
+    // CRM is a collapsible group with Visits + Leads + Tasks as children.
     { group:'crm', label:'CRM', icon:Briefcase, children:[
         {id:'visits', label:'Visits', icon:ClipboardList},
         {id:'leads',  label:'Leads',  icon:UserCheck},
+        {id:'tasks',  label:'Tasks',  icon:CheckSquare},
     ]},
-    {id:'leaves', label:'Leaves', icon:Plane},
+    {id:'leaves',  label:'Leaves',  icon:Plane},
+    {id:'tickets', label:'Support', icon:LifeBuoy},
+    ...(isStaff?[{id:'reports', label:'Reports', icon:FileSpreadsheet}]:[]),
     ...(isStaff?[{id:'admin',label:'Admin Panel',icon:Settings}]:[]),
   ];
 
@@ -16515,8 +16521,20 @@ export default function App(){
                 <div style={{fontSize:10,color:'var(--t3)',marginBottom:6}}>{taSnap} / {ttSnap} · {spct(ttSnap,taSnap)}</div>
                 <div className="prog-bar"><div className="prog-fill" style={{width:`${Math.min(sbP||0,100)}%`,background:pclr(sbP)}}/></div>
                 <div style={{marginTop:10,display:'flex',flexDirection:'column',gap:3}}>
-                  {Object.entries(allStatuses).sort((a,b)=>b[1]-a[1]).map(([s,c])=>{
-                    const statusColors={'ACTIVE':'#34d399','ACHIVERS':'#34d399','ACHIEVERS':'#34d399','KEY ACCOUNT':'#a78bfa','INACTIVE':'#fbbf24','RECENTLY INACTIVE':'#fb923c','DEAD':'#f87171'};
+                  {Object.entries(allStatuses).sort((a,b)=>{
+                    // Custom priority — top-tier customers first, then activity tiers, then dead.
+                    const order = {
+                      'STAR':0, 'KEY ACCOUNT':1,
+                      'ACHIEVER':2, 'ACHIEVERS':2, 'ACHIVERS':2,
+                      'ACTIVE':3,
+                      'RECENTLY INACTIVE':4, 'INACTIVE':5, 'DEAD':6,
+                    };
+                    const sa = a[0].toUpperCase(), sb = b[0].toUpperCase();
+                    const ra = order[sa] ?? 99, rb = order[sb] ?? 99;
+                    if(ra !== rb) return ra - rb;
+                    return b[1] - a[1]; // tie-break by larger count
+                  }).map(([s,c])=>{
+                    const statusColors={'STAR':'#fbbf24','KEY ACCOUNT':'#a78bfa','ACTIVE':'#34d399','ACHIVERS':'#34d399','ACHIEVERS':'#34d399','ACHIEVER':'#34d399','INACTIVE':'#fbbf24','RECENTLY INACTIVE':'#fb923c','DEAD':'#f87171'};
                     const cl=statusColors[s.toUpperCase()]||'#55546a';
                     return(<div key={s} style={{display:'flex',justifyContent:'space-between',fontSize:10}}>
                       <span style={{color:cl,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:110}}>{s}</span>
@@ -16566,6 +16584,9 @@ export default function App(){
                   {screen==='visits'     && <VisitsPage     dealers={myDealers} users={users} currentUser={currentUser}/>}
                   {screen==='leads'      && <LeadsPage      users={users} currentUser={currentUser}/>}
                   {screen==='leaves'     && <LeavesPage     users={users} currentUser={currentUser}/>}
+                  {screen==='reports' && isStaff && <Reports dealers={dealers} users={users} currentUser={currentUser} monthConfig={monthConfig} outstandingData={outstandingData}/>}
+                  {screen==='tasks'   && <TasksPage   users={users} currentUser={currentUser}/>}
+                  {screen==='tickets' && <TicketsPage users={users} currentUser={currentUser}/>}
                   {screen==='admin'&&isStaff&&<AdminPanel dealers={dealers} users={users} setUsers={setUsers} setShowUM={setShowUM} onSync={syncSheets} syncing={syncing} lastSync={lastSync} syncErrs={syncErrs} onNavigate={navigate} onOpenDealer={setEditingId} monthConfig={monthConfig} saveMonthConfig={saveMonthConfig} currentUser={currentUser} onLoginAs={(token, user, impersonatedBy)=>{
                     saveToken(token);
                     localStorage.setItem('stp_jwt', token);

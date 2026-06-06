@@ -52,7 +52,16 @@ router.post('/', protect, async (req,res) => {
 
 router.put('/:id', protect, async (req,res) => {
   try {
-    const f=await OutstandingFollowup.findByIdAndUpdate(req.params.id,req.body,{new:true});
+    const patch = { ...req.body };
+    // Reject oversized payment-proof images (5 MB cap)
+    if(patch.paymentProof && patch.paymentProof.length > 5 * 1024 * 1024){
+      return res.status(413).json({ error:'Payment proof too large (compress before upload)' });
+    }
+    // Stamp collectedAt when status flips to 'done'
+    if(patch.status === 'done'){
+      patch.collectedAt = patch.collectedAt || new Date();
+    }
+    const f=await OutstandingFollowup.findByIdAndUpdate(req.params.id, patch, {new:true});
     res.json(f);
   }catch(e){res.status(500).json({error:e.message});}
 });

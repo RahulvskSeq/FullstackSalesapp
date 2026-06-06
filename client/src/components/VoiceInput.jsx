@@ -50,37 +50,54 @@ function useVoice({ lang, onResult }){
   useEffect(()=>{ onResultRef.current = onResult; }, [onResult]);
 
   // ── Native (Capacitor APK) path ──────────────────────────────────────
+  // The Capacitor plugin in v6 stops listening automatically after ~7s of
+  // silence on Android and won't always re-fire `partialResults` cleanly,
+  // so we:
+  //   * keep the captured text in a ref (lastTextRef) updated on every
+  //     partialResults event
+  //   * also listen for `listeningState` so when Android stops automatically
+  //     we commit and update React state (so the user sees the change too)
+  //   * on user-tap stop, call SR.stop() and commit lastTextRef
+  const lastTextRef = useRef('');
   const startNative = async () => {
     try {
       const mod = await import('@capacitor-community/speech-recognition');
       const SR_PLUGIN = mod.SpeechRecognition;
-      // Permission flow — popup once, then granted
       try { await SR_PLUGIN.requestPermissions(); } catch{}
-      const { available } = await SR_PLUGIN.available();
-      if(!available){
+      let availResp = { available:false };
+      try { availResp = await SR_PLUGIN.available(); } catch{}
+      if(!availResp?.available){
         setError('Speech recognition not available on this device');
         return false;
       }
-      // Cleanup any previous listener
+      // Clean previous listeners to avoid duplicate commits
       try { await SR_PLUGIN.removeAllListeners(); } catch{}
-      // Both partial and final results route here; the plugin gives the LAST
-      // match for partial chunks, and the user-friendly "best" for the final.
-      // We append only when the segment finalises by tracking a known marker.
-      let lastFinal = '';
-      const handle = await SR_PLUGIN.addListener('partialResults', (data) => {
+
+      lastTextRef.current = '';
+      const commit = () => {
+        const text = lastTextRef.current?.trim();
+        if(text && onResultRef.current) onResultRef.current(text);
+        lastTextRef.current = '';
+      };
+
+      const partialHandle = await SR_PLUGIN.addListener('partialResults', (data) => {
         const matches = data?.matches || [];
         if(matches.length){
-          // Replace last partial with the new best guess (no double-append)
-          const text = matches[0] || '';
-          // We can't easily distinguish partial vs final on Android — instead
-          // wait for the listener to stop and finalize then. We DO commit if
-          // text grew significantly between callbacks.
-          if(text && text !== lastFinal){
-            lastFinal = text;
-          }
+          // Plugin gives the FULL guess for the current utterance — replace,
+          // don't append, so we don't get "hello hello hello".
+          lastTextRef.current = matches[0] || '';
         }
       });
-      nativeListenerRef.current = { handle, getFinal:()=>lastFinal };
+      const stateHandle = await SR_PLUGIN.addListener('listeningState', (data) => {
+        // Android can stop on its own after silence — capture that here.
+        if(data?.status === 'stopped'){
+          commit();
+          setRecording(false);
+        }
+      });
+
+      nativeListenerRef.current = { partialHandle, stateHandle, commit, SR_PLUGIN };
+
       await SR_PLUGIN.start({
         language: lang || 'en-IN',
         maxResults: 1,
@@ -98,13 +115,16 @@ function useVoice({ lang, onResult }){
     }
   };
   const stopNative = async () => {
+    const refSnap = nativeListenerRef.current;
     try {
-      const mod = await import('@capacitor-community/speech-recognition');
-      const SR_PLUGIN = mod.SpeechRecognition;
-      await SR_PLUGIN.stop();
-      // Commit whatever we captured
-      const text = nativeListenerRef.current?.getFinal?.() || '';
+      const SR_PLUGIN = refSnap?.SR_PLUGIN || (await import('@capacitor-community/speech-recognition')).SpeechRecognition;
+      // Best-effort: ask the plugin to stop. Some Android versions throw if
+      // listening already ended — ignore that.
+      try { await SR_PLUGIN.stop(); } catch{}
+      // Commit any captured text right away (don't wait for listeningState)
+      const text = lastTextRef.current?.trim();
       if(text && onResultRef.current) onResultRef.current(text);
+      lastTextRef.current = '';
       try { await SR_PLUGIN.removeAllListeners(); } catch{}
     } catch(e){
       // ignored — best-effort stop
