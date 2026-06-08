@@ -52,6 +52,8 @@ export default function TasksPage({ users, currentUser }){
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState('');
   const [filterUser, setFilterUser]     = useState('');
+  // Non-staff scope filter: mine | to-me | by-me
+  const [scope, setScope] = useState('mine');
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing]   = useState(null);
 
@@ -66,12 +68,13 @@ export default function TasksPage({ users, currentUser }){
       const q = {};
       if(filterStatus) q.status = filterStatus;
       if(isStaff && filterUser) q.assignedTo = filterUser;
+      if(!isStaff) q.scope = scope;
       const data = await api.tasksList(q);
       setItems(data || []);
     } catch(e){ notify.error('Load tasks: ' + e.message); }
     setLoading(false);
   };
-  useEffect(()=>{ load(); }, [filterStatus, filterUser]);
+  useEffect(()=>{ load(); }, [filterStatus, filterUser, scope]);
 
   const create = async () => {
     if(!form.title.trim()){ notify.error('Title required'); return; }
@@ -114,7 +117,7 @@ export default function TasksPage({ users, currentUser }){
             <option value="">All statuses</option>
             {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
-          {isStaff && (
+          {isStaff ? (
             <select className="inp" value={filterUser} onChange={e=>setFilterUser(e.target.value)}
               style={{padding:'4px 10px', fontSize:11, width:'auto'}}>
               <option value="">All assignees</option>
@@ -122,13 +125,20 @@ export default function TasksPage({ users, currentUser }){
                 <option key={u.id} value={u.id}>{u.name}</option>
               ))}
             </select>
+          ) : (
+            <select className="inp" value={scope} onChange={e=>setScope(e.target.value)}
+              style={{padding:'4px 10px', fontSize:11, width:'auto'}}
+              title="Filter your tasks">
+              <option value="mine">All my tasks</option>
+              <option value="to-me">Assigned to me</option>
+              <option value="by-me">Assigned by me</option>
+            </select>
           )}
-          {isStaff && (
-            <button onClick={()=>setShowForm(s=>!s)} className="btnp"
-              style={{display:'inline-flex', alignItems:'center', gap:4, padding:'4px 10px', fontSize:11}}>
-              <Plus size={11}/> New Task
-            </button>
-          )}
+          {/* Anyone can create + assign a task now */}
+          <button onClick={()=>setShowForm(s=>!s)} className="btnp"
+            style={{display:'inline-flex', alignItems:'center', gap:4, padding:'4px 10px', fontSize:11}}>
+            <Plus size={11}/> New Task
+          </button>
           <button onClick={()=>exportCSV(
             'Tasks_' + todayStr() + '.csv',
             ['Title','Status','Priority','AssignedTo','DueDate','CreatedBy','CreatedAt','Description'],
@@ -142,7 +152,7 @@ export default function TasksPage({ users, currentUser }){
           </button>
         </div>
 
-        {showForm && isStaff && (
+        {showForm && (
           <div style={{background:'var(--bg2)', borderRadius:8, padding:14, marginBottom:12, border:'1px solid var(--b2)'}}>
             <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px,1fr))', gap:10}}>
               <Field label="Title *"><input className="inp" value={form.title} onChange={e=>setForm({...form, title:e.target.value})}/></Field>
@@ -152,12 +162,16 @@ export default function TasksPage({ users, currentUser }){
                   {PRIORITIES.map(p => <option key={p}>{p}</option>)}
                 </select>
               </Field>
-              <Field label="Assign to salesman">
+              <Field label={isStaff ? 'Assign to' : 'Assign to salesman'}>
                 <select className="inp" value={form.assignedTo} onChange={e=>setForm({...form, assignedTo:e.target.value})}>
                   <option value="">— Unassigned —</option>
-                  {Object.values(users||{}).filter(u=>u.role==='salesman').map(u=>(
-                    <option key={u.id} value={u.id}>{u.name}</option>
-                  ))}
+                  {/* Salesman: can only assign to fellow salesmen (incl. self).
+                      Admin: can assign to anyone. */}
+                  {Object.values(users||{})
+                    .filter(u => isStaff ? (u.role === 'salesman') : (u.role === 'salesman'))
+                    .map(u => (
+                      <option key={u.id} value={u.id}>{u.name}{u.id === currentUser?.id ? ' (you)' : ''}</option>
+                    ))}
                 </select>
               </Field>
             </div>
@@ -183,6 +197,9 @@ export default function TasksPage({ users, currentUser }){
             {items.map(T => {
               const sc = STATUS_COLOR[T.status] || '#a5b4fc';
               const pc = PRIORITY_COLOR[T.priority] || '#a5b4fc';
+              const meId = currentUser?.id;
+              const iAmAssignee = T.assignedTo === meId;
+              const iAmCreator  = T.createdBy  === meId;
               return (
                 <div key={T._id} onClick={()=>setEditing(T)} style={{
                   cursor:'pointer', padding:'10px 12px', borderRadius:8,
@@ -193,6 +210,19 @@ export default function TasksPage({ users, currentUser }){
                     <div style={{fontSize:13, fontWeight:700}}>{T.title}</div>
                     <span style={{fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:3, background:sc+'22', color:sc}}>{T.status}</span>
                     <span style={{fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:3, background:pc+'22', color:pc}}>{T.priority}</span>
+                    {/* By you / To you / Both — quick context for the salesman */}
+                    {iAmAssignee && (
+                      <span style={{fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:3,
+                        background:'rgba(34,211,238,0.15)', color:'#22d3ee'}}>📥 TO YOU</span>
+                    )}
+                    {iAmCreator && !iAmAssignee && (
+                      <span style={{fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:3,
+                        background:'rgba(167,139,250,0.15)', color:'#a78bfa'}}>📤 BY YOU</span>
+                    )}
+                    {iAmAssignee && iAmCreator && (
+                      <span style={{fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:3,
+                        background:'rgba(251,191,36,0.15)', color:'#fbbf24'}}>SELF</span>
+                    )}
                     <div style={{flex:1}}/>
                     {T.assignedName && <span style={{fontSize:10, color:'var(--t3)'}}>→ {T.assignedName}</span>}
                   </div>
@@ -211,7 +241,7 @@ export default function TasksPage({ users, currentUser }){
 
       {editing && (
         <TaskDetailModal task={editing}
-          users={users} isStaff={isStaff}
+          users={users} isStaff={isStaff} currentUser={currentUser}
           onClose={()=>setEditing(null)}
           onSaved={()=>{ setEditing(null); load(); }}
           onDelete={()=>{ remove(editing._id); setEditing(null); }}/>
@@ -220,17 +250,24 @@ export default function TasksPage({ users, currentUser }){
   );
 }
 
-function TaskDetailModal({ task, users, isStaff, onClose, onSaved, onDelete }){
+function TaskDetailModal({ task, users, isStaff, onClose, onSaved, onDelete, currentUser }){
   const [draft, setDraft] = useState(task);
   const [comment, setComment] = useState('');
   const [newStatus, setNewStatus] = useState('');
   const [busy, setBusy] = useState(false);
 
+  const meId       = currentUser?.id;
+  const iAmCreator = task.createdBy === meId;
+  const iAmAssignee= task.assignedTo === meId;
+  // Edit-form access: staff OR the creator (creator can adjust due/priority/etc.)
+  const canEditFull = isStaff || iAmCreator;
+  const canDelete   = isStaff || iAmCreator;
+
   const save = async () => {
     setBusy(true);
     try {
       const body = {};
-      if(isStaff){
+      if(canEditFull){
         ['title','description','status','priority','dueDate','assignedTo'].forEach(k => { body[k] = draft[k]; });
       } else if(newStatus){ body.status = newStatus; }
       if(comment || newStatus){
@@ -251,11 +288,13 @@ function TaskDetailModal({ task, users, isStaff, onClose, onSaved, onDelete }){
         <div className="row" style={{marginBottom:12}}>
           <div style={{fontSize:17, fontWeight:700}}>{draft.title}</div>
           <span style={{fontSize:10, fontWeight:700, padding:'2px 7px', borderRadius:3, background:sc+'22', color:sc}}>{draft.status}</span>
+          {iAmAssignee && <span style={{fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:3, background:'rgba(34,211,238,0.15)', color:'#22d3ee'}}>📥 TO YOU</span>}
+          {iAmCreator && !iAmAssignee && <span style={{fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:3, background:'rgba(167,139,250,0.15)', color:'#a78bfa'}}>📤 BY YOU</span>}
           <div className="spacer"/>
           <button onClick={onClose} className="btn"><X size={13}/></button>
         </div>
 
-        {isStaff ? (
+        {canEditFull ? (
           <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px,1fr))', gap:10, marginBottom:14}}>
             <Field label="Title"><input className="inp" value={draft.title||''} onChange={e=>setDraft({...draft, title:e.target.value})}/></Field>
             <Field label="Due date"><input type="date" className="inp" value={draft.dueDate||''} onChange={e=>setDraft({...draft, dueDate:e.target.value})}/></Field>
@@ -273,7 +312,7 @@ function TaskDetailModal({ task, users, isStaff, onClose, onSaved, onDelete }){
               <select className="inp" value={draft.assignedTo||''} onChange={e=>setDraft({...draft, assignedTo:e.target.value})}>
                 <option value="">— Unassigned —</option>
                 {Object.values(users||{}).filter(u=>u.role==='salesman').map(u=>(
-                  <option key={u.id} value={u.id}>{u.name}</option>
+                  <option key={u.id} value={u.id}>{u.name}{u.id === meId ? ' (you)' : ''}</option>
                 ))}
               </select>
             </Field>
@@ -296,7 +335,7 @@ function TaskDetailModal({ task, users, isStaff, onClose, onSaved, onDelete }){
               {STATUSES.map(s => <option key={s} value={s}>Set: {s}</option>)}
             </select>
             <div style={{flex:1}}/>
-            {isStaff && <button onClick={onDelete} className="btn" style={{color:'#f87171', border:'1px solid #7f1d1d', fontSize:12, display:'inline-flex', alignItems:'center', gap:4}}><Trash2 size={11}/> Delete</button>}
+            {canDelete && <button onClick={onDelete} className="btn" style={{color:'#f87171', border:'1px solid #7f1d1d', fontSize:12, display:'inline-flex', alignItems:'center', gap:4}}><Trash2 size={11}/> Delete</button>}
             <button onClick={save} disabled={busy} className="btnp" style={{display:'inline-flex', alignItems:'center', gap:6}}>
               <Send size={12}/> {busy ? 'Saving…' : 'Save'}
             </button>

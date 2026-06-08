@@ -433,15 +433,23 @@ router.put('/leaves/:id', protect, async (req, res) => {
 
 // ───────────────────────────────── Tasks ──────────────────────────────────
 
-// POST /api/crm/tasks — admin creates a task and assigns it to a user
-router.post('/tasks', protect, adminOnly, async (req, res) => {
+// POST /api/crm/tasks — ANY authenticated user can create a task.
+// Salesmen can assign tasks to other salesmen (or themselves). Admins can
+// assign to anyone. Server enforces: a non-staff creator cannot assign to a
+// user with role > salesman (no escalation by abusing the task system).
+router.post('/tasks', protect, async (req, res) => {
   try {
     const b = req.body || {};
     if(!b.title || !b.title.trim()) return res.status(400).json({ error:'title required' });
     let assignedName = '';
     if(b.assignedTo){
-      const u = await User.findOne({ id:b.assignedTo }, 'name').lean();
-      assignedName = u?.name || '';
+      const u = await User.findOne({ id:b.assignedTo }, 'name role').lean();
+      if(!u) return res.status(400).json({ error:'Unknown assignee' });
+      // Non-staff can only assign to salesmen (incl. themselves)
+      if(!isStaff(req) && u.role !== 'salesman'){
+        return res.status(403).json({ error:'Salesmen can only assign tasks to other salesmen' });
+      }
+      assignedName = u.name || '';
     }
     const me = await User.findOne({ id: req.user.id }, 'name').lean();
     const doc = await Task.create({
@@ -463,30 +471,59 @@ router.post('/tasks', protect, adminOnly, async (req, res) => {
   } catch(e){ console.error('[CRM/tasks POST]', e.message); res.status(500).json({ error:e.message }); }
 });
 
-// GET /api/crm/tasks — admin: all, salesman: only theirs
+// GET /api/crm/tasks — admin: all. Others: tasks assigned to OR created by me.
+// Query params:
+//   ?status=...                     filter by status
+//   ?assignedTo=<userId>            (admin only) filter by assignee
+//   ?scope=mine|to-me|by-me|all     non-staff filter — default 'mine' = either
 router.get('/tasks', protect, async (req, res) => {
   try {
     const q = {};
-    if(!isStaff(req)) q.assignedTo = req.user.id;
-    if(isStaff(req) && req.query.assignedTo) q.assignedTo = req.query.assignedTo;
     if(req.query.status) q.status = req.query.status;
+    if(isStaff(req)){
+      if(req.query.assignedTo) q.assignedTo = req.query.assignedTo;
+    } else {
+      const scope = req.query.scope || 'mine';
+      if(scope === 'to-me')      q.assignedTo = req.user.id;
+      else if(scope === 'by-me') q.createdBy  = req.user.id;
+      else {
+        // 'mine' (default) = any task that touches me as creator OR assignee
+        q.$or = [{ assignedTo: req.user.id }, { createdBy: req.user.id }];
+      }
+    }
     const items = await Task.find(q).sort({ updatedAt:-1 }).limit(500).lean();
     res.json(items);
   } catch(e){ res.status(500).json({ error:e.message }); }
 });
 
-// PUT /api/crm/tasks/:id — staff: full edit, salesman: only status + comment
+// PUT /api/crm/tasks/:id — permissions:
+//   staff:    full edit + reassign + comment
+//   assignee: status + comment (no reassign / no title edit)
+//   creator:  status + comment + reassign (to another salesman) + delete-eligible
 router.put('/tasks/:id', protect, async (req, res) => {
   try {
     const task = await Task.findById(req.params.id);
     if(!task) return res.status(404).json({ error:'Not found' });
     const staff = isStaff(req);
-    if(!staff && task.assignedTo !== req.user.id) return res.status(403).json({ error:'Not your task' });
+    const isAssignee = task.assignedTo === req.user.id;
+    const isCreator  = task.createdBy  === req.user.id;
+    if(!staff && !isAssignee && !isCreator){
+      return res.status(403).json({ error:'Not your task' });
+    }
 
     const b = req.body || {};
-    const allowed = staff
-      ? ['title','description','status','priority','dueDate','assignedTo','refType','refId','refName']
-      : ['status'];
+    let allowed;
+    if(staff)            allowed = ['title','description','status','priority','dueDate','assignedTo','refType','refId','refName'];
+    else if(isCreator)   allowed = ['title','description','status','priority','dueDate','assignedTo'];
+    else /* assignee */  allowed = ['status'];
+
+    // Non-staff cannot reassign to an admin / superadmin
+    if(!staff && b.assignedTo !== undefined && b.assignedTo){
+      const u = await User.findOne({ id:b.assignedTo }, 'role name').lean();
+      if(!u) return res.status(400).json({ error:'Unknown assignee' });
+      if(u.role !== 'salesman') return res.status(403).json({ error:'Salesmen can only assign tasks to other salesmen' });
+      task.assignedName = u.name || '';
+    }
     allowed.forEach(k => { if(b[k] !== undefined) task[k] = b[k]; });
     if(staff && b.assignedTo !== undefined){
       const u = await User.findOne({ id:b.assignedTo }, 'name').lean();
@@ -508,10 +545,17 @@ router.put('/tasks/:id', protect, async (req, res) => {
   } catch(e){ console.error('[CRM/tasks PUT]', e.message); res.status(500).json({ error:e.message }); }
 });
 
-// DELETE /api/crm/tasks/:id — admin only
-router.delete('/tasks/:id', protect, adminOnly, async (req, res) => {
-  try { await Task.findByIdAndDelete(req.params.id); res.json({ ok:true }); }
-  catch(e){ res.status(500).json({ error:e.message }); }
+// DELETE /api/crm/tasks/:id — admin OR the original creator
+router.delete('/tasks/:id', protect, async (req, res) => {
+  try {
+    const t = await Task.findById(req.params.id);
+    if(!t) return res.status(404).json({ error:'Not found' });
+    if(!isStaff(req) && t.createdBy !== req.user.id){
+      return res.status(403).json({ error:'Only the creator or an admin can delete this task' });
+    }
+    await Task.findByIdAndDelete(req.params.id);
+    res.json({ ok:true });
+  } catch(e){ res.status(500).json({ error:e.message }); }
 });
 
 // ───────────────────────────────── Tickets ────────────────────────────────
