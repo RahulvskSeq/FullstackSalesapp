@@ -365,15 +365,18 @@ router.post('/upload', protect, adminOnly, upload.single('file'), async (req, re
     // is { name:1, salesman:1 } — so two dealers can share a name across
     // salesmen. Looking up by name only would collapse them, leading to a
     // salesman-update that violates the unique constraint (E11000).
-    const knownDealers = await Dealer.find({}, { name: 1, salesman: 1 }).lean();
+    //
+    // Load FULL docs (not a projection) so we can read existing target /
+    // monthlyData / etc. when computing diffs — otherwise a $set on
+    // monthlyData[label] would wipe sibling fields and per-row target writes
+    // couldn't compare against the prior value.
+    const knownDealers = await Dealer.find({}).lean();
     const dealerByNameSm = new Map();
     const dealerByLower  = new Map();
     for (const d of knownDealers) {
       const nm = String(d.name || '').trim().toLowerCase();
       const sm = String(d.salesman || '').trim().toLowerCase();
       dealerByNameSm.set(`${nm}|${sm}`, d);
-      // Keep name-only lookup as a fallback (first one wins). Only used when
-      // the row's salesman cell is blank.
       if (!dealerByLower.has(nm)) dealerByLower.set(nm, d);
     }
 
@@ -420,18 +423,30 @@ router.post('/upload', protect, adminOnly, upload.single('file'), async (req, re
         rowSaleRows.push({ cat, sub, qty });
       }
 
-      // ── dealer-master fields (only those columns present) ─────────
-      // Legacy single-value dealer.category / dealer.categoryType are no
-      // longer written here — the per-(dealer × sub-category) Sale rows are
-      // the source of truth for what the dealer sells.
+      // ── dealer-master fields (only when the cell has a real value) ────
+      // We distinguish "blank cell" (skip — don't wipe) from "0 / empty
+      // string" written deliberately. For numeric fields, only include the
+      // field when the cell is non-empty AND parses to a finite number.
+      // For string fields, only include when the cell trims to non-empty.
       const masterFields = {};
-      if (colInfo.some(c => c.role === 'city'))        masterFields.city        = String(get(row,'city')||'').trim();
-      if (colInfo.some(c => c.role === 'state'))       masterFields.state       = String(get(row,'state')||'').trim();
-      if (colInfo.some(c => c.role === 'zone'))        masterFields.zone        = String(get(row,'zone')||'').trim();
-      if (colInfo.some(c => c.role === 'status'))      masterFields.status      = String(get(row,'status')||'').trim() || 'ACTIVE';
-      if (colInfo.some(c => c.role === 'target'))      masterFields.target      = Number(get(row,'target')) || 0;
-      if (colInfo.some(c => c.role === 'creditDays'))  masterFields.creditDays  = Number(get(row,'creditDays')) || 0;
-      if (colInfo.some(c => c.role === 'creditLimit')) masterFields.creditLimit = Number(get(row,'creditLimit')) || 0;
+      const hasCell = role => {
+        const c = colInfo.find(x => x.role === role);
+        if (!c) return false;
+        const v = row[c.idx];
+        return !(v === undefined || v === null || v === '');
+      };
+      const numCell = role => {
+        const v = get(row, role);
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+      };
+      if (hasCell('city'))        masterFields.city        = String(get(row,'city')||'').trim();
+      if (hasCell('state'))       masterFields.state       = String(get(row,'state')||'').trim();
+      if (hasCell('zone'))        masterFields.zone        = String(get(row,'zone')||'').trim();
+      if (hasCell('status'))      masterFields.status      = String(get(row,'status')||'').trim() || 'ACTIVE';
+      if (hasCell('target')      && numCell('target')      !== null) masterFields.target      = numCell('target');
+      if (hasCell('creditDays')  && numCell('creditDays')  !== null) masterFields.creditDays  = numCell('creditDays');
+      if (hasCell('creditLimit') && numCell('creditLimit') !== null) masterFields.creditLimit = numCell('creditLimit');
 
       // Resolve dealer doc — prefer EXACT (name + salesman) match so we don't
       // collapse two dealers that share a name across different salesmen.
@@ -477,11 +492,12 @@ router.post('/upload', protect, adminOnly, upload.single('file'), async (req, re
       }
 
       if (dealerDoc) {
-        // Apply master-field updates only when something actually changed
+        // Apply master-field updates only when something actually changed.
+        // masterFields only contains keys whose cell was non-empty, so an
+        // explicit 0 (e.g. Target reset) is preserved here — we just don't
+        // overwrite when the value already matches.
         const updates = {};
         for (const [k, v] of Object.entries(masterFields)) {
-          // Don't wipe an existing non-empty field with a blank cell
-          if (v === '' || v === 0) continue;
           if (dealerDoc[k] !== v) updates[k] = v;
         }
         // NOTE: we deliberately do NOT overwrite an existing dealer's
