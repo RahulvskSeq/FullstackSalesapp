@@ -2,14 +2,27 @@
 // Every report builds its CSV client-side from data the app already has,
 // so no new server endpoint is needed. Each download is a single click.
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   FileSpreadsheet, Download, Calendar, Users, TrendingUp, Activity,
-  ClipboardList, UserCheck, Plane, AlertTriangle, Camera,
+  ClipboardList, UserCheck, Plane, AlertTriangle, Camera, Layers,
+  ChevronRight, ChevronDown,
 } from 'lucide-react';
 import { api } from '../api';
 import { notify } from './Toast';
 import { monthTarget, pct, spct } from '../utils';
+
+// "Jun-26" → "2026-06"
+const _moMonths = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+function moToYM(lbl) {
+  if (!lbl) return '';
+  const m = /^([A-Za-z]{3,})-(\d{2,4})$/.exec(String(lbl).trim());
+  if (!m) return '';
+  const mi = _moMonths.indexOf(m[1].slice(0,3).toLowerCase());
+  if (mi < 0) return '';
+  let y = +m[2]; if (y < 100) y += 2000;
+  return `${y}-${String(mi+1).padStart(2,'0')}`;
+}
 
 // CSV helper shared with the CRM exporter.
 function exportCSV(filename, headers, rows){
@@ -290,6 +303,10 @@ export default function Reports({ dealers, users, currentUser, monthConfig, outs
         icon={AlertTriangle} color="#f87171"
         onClick={downloadOutstanding}/>
 
+      {/* ── Category → Dealer drill-down ─────────────────────────────── */}
+      <div style={{fontSize:11, color:'var(--t3)', textTransform:'uppercase', letterSpacing:'.12em', marginTop:4}}>Category Drill-Down</div>
+      <CategoryDealerDrill rangeMonths={rangeMonths} users={users}/>
+
       {/* CRM reports */}
       <div style={{fontSize:11, color:'var(--t3)', textTransform:'uppercase', letterSpacing:'.12em', marginTop:4}}>CRM</div>
       <ReportCard title="Attendance Report"
@@ -308,6 +325,215 @@ export default function Reports({ dealers, users, currentUser, monthConfig, outs
         sub="All leave applications with approver and status"
         icon={Plane} color="#fb923c"
         onClick={downloadLeaves}/>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────── *
+ *  CategoryDealerDrill                                                    *
+ *                                                                         *
+ *  Lists every Category Type for the selected month range. Click one →    *
+ *  expands to show its sub-categories. Click a sub-category → shows the   *
+ *  exact dealers who gave sale in that sub-category, with quantity and    *
+ *  salesman, sorted by qty descending. Each level has a CSV export.       *
+ * ─────────────────────────────────────────────────────────────────────── */
+function CategoryDealerDrill({ rangeMonths, users }) {
+  const [loading, setLoading]   = useState(false);
+  const [rows, setRows]         = useState([]);        // raw Sale rows across months
+  const [openCat, setOpenCat]   = useState(null);
+  const [openSub, setOpenSub]   = useState(null);
+
+  // Fetch raw sale rows for the picked month range, once
+  useEffect(() => {
+    if (!rangeMonths || rangeMonths.length === 0) { setRows([]); return; }
+    const yms = rangeMonths.map(moToYM).filter(Boolean);
+    if (!yms.length) { setRows([]); return; }
+    const from = yms.slice().sort()[0];
+    const to   = yms.slice().sort().slice(-1)[0];
+    let cancelled = false;
+    setLoading(true);
+    api.salesRaw({ from, to, limit: 50000 })
+      .then(r => { if (!cancelled) setRows(r.rows || []); })
+      .catch(() => { if (!cancelled) setRows([]); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [rangeMonths.join('|')]);
+
+  // Roll up to category → { total, subs: { sub: { total, dealers: { name: { qty, sm } } } } }
+  const tree = useMemo(() => {
+    const out = new Map();
+    for (const r of rows) {
+      const cat = (r.category || '(No Category)').trim();
+      const sub = (r.subCategory || '(No Sub)').trim();
+      const dealer = (r.dealerName || '(Unknown)').trim();
+      const sm = (r.salesman || '').trim();
+      const qty = Number(r.qty) || 0;
+      if (!out.has(cat)) out.set(cat, { total: 0, subs: new Map() });
+      const C = out.get(cat);
+      C.total += qty;
+      if (!C.subs.has(sub)) C.subs.set(sub, { total: 0, dealers: new Map() });
+      const S = C.subs.get(sub);
+      S.total += qty;
+      const D = S.dealers.get(dealer) || { name: dealer, qty: 0, sm };
+      D.qty += qty;
+      if (!D.sm && sm) D.sm = sm;
+      S.dealers.set(dealer, D);
+    }
+    return out;
+  }, [rows]);
+
+  const totalSales = useMemo(() => {
+    let s = 0;
+    for (const v of tree.values()) s += v.total;
+    return s;
+  }, [tree]);
+
+  // Sorted category list, biggest first
+  const catList = useMemo(() => {
+    return [...tree.entries()]
+      .map(([name, v]) => ({ name, total: v.total, subs: v.subs }))
+      .sort((a, b) => b.total - a.total);
+  }, [tree]);
+
+  // CSV export of the entire flattened drill-down (cat × sub × dealer × qty)
+  const exportFlat = () => {
+    const out = [];
+    for (const [cat, C] of tree.entries()) {
+      for (const [sub, S] of C.subs.entries()) {
+        for (const D of S.dealers.values()) {
+          out.push([cat, sub, D.name, users[D.sm]?.name || D.sm || '', D.qty]);
+        }
+      }
+    }
+    if (!out.length) { notify.info('Nothing to export'); return; }
+    exportCSV(
+      'CategoryDealerDrill_' + new Date().toISOString().slice(0,10) + '.csv',
+      ['Category', 'Sub-Category', 'Dealer', 'Salesman', 'Qty'],
+      out,
+    );
+  };
+
+  return (
+    <div className="card" style={{display:'flex', flexDirection:'column', gap:8, borderLeft:'3px solid #f472b6'}}>
+      <div style={{display:'flex', alignItems:'center', gap:10, padding:'4px 0 8px'}}>
+        <div style={{
+          width:36, height:36, borderRadius:8,
+          background:'rgba(244,114,182,0.15)', color:'#f472b6',
+          display:'flex', alignItems:'center', justifyContent:'center',
+        }}>
+          <Layers size={18}/>
+        </div>
+        <div style={{flex:1}}>
+          <div style={{fontSize:13, fontWeight:700}}>Category → Sub-Category → Dealers</div>
+          <div style={{fontSize:11, color:'var(--t3)'}}>
+            Click a category to expand. Click a sub-category to see the exact dealers who gave sale in it.
+            {totalSales > 0 && <> · Total in range: <b style={{color:'#34d399'}}>{Number(totalSales).toLocaleString('en-IN')}</b></>}
+          </div>
+        </div>
+        <button className="btn" onClick={exportFlat} disabled={!rows.length}
+          style={{display:'inline-flex', alignItems:'center', gap:6, fontSize:11}}>
+          <Download size={12}/> Export CSV
+        </button>
+      </div>
+
+      {loading && <div style={{fontSize:12, color:'var(--t3)', padding:14, textAlign:'center'}}>Loading category sales…</div>}
+      {!loading && catList.length === 0 && (
+        <div style={{fontSize:12, color:'var(--t3)', padding:14, textAlign:'center', background:'var(--bg1)', borderRadius:8}}>
+          No category-wise sales found for this month range. Upload from Monthly Entry → Bulk Excel.
+        </div>
+      )}
+
+      {/* Category rows */}
+      <div style={{display:'flex', flexDirection:'column', gap:4}}>
+        {catList.map(C => {
+          const isOpen = openCat === C.name;
+          const pct = totalSales ? (C.total / totalSales * 100) : 0;
+          return (
+            <div key={C.name} style={{border:'1px solid var(--b1)', borderRadius:8, overflow:'hidden'}}>
+              <div
+                onClick={() => { setOpenCat(isOpen ? null : C.name); setOpenSub(null); }}
+                style={{
+                  display:'flex', alignItems:'center', gap:10,
+                  padding:'10px 12px', cursor:'pointer',
+                  background: isOpen ? 'rgba(99,102,241,.08)' : 'transparent',
+                }}>
+                {isOpen ? <ChevronDown size={14} color="var(--acc)"/> : <ChevronRight size={14} color="var(--t3)"/>}
+                <div style={{flex:1, fontSize:13, fontWeight:600}}>{C.name}</div>
+                <div style={{fontSize:11, color:'var(--t3)'}}>{[...C.subs.keys()].length} sub-cats</div>
+                <div style={{fontSize:11, color:'var(--t3)', width:60, textAlign:'right'}}>{pct.toFixed(1)}%</div>
+                <div style={{fontSize:14, fontWeight:700, color:'#34d399', minWidth:70, textAlign:'right'}}>
+                  {Number(C.total).toLocaleString('en-IN')}
+                </div>
+              </div>
+
+              {/* Sub-categories */}
+              {isOpen && (
+                <div style={{padding:'2px 12px 10px 28px', background:'var(--bg1)'}}>
+                  {[...C.subs.entries()].sort((a,b) => b[1].total - a[1].total).map(([subName, S]) => {
+                    const isSubOpen = openSub === C.name + '|' + subName;
+                    return (
+                      <div key={subName} style={{borderTop:'1px solid var(--b1)'}}>
+                        <div
+                          onClick={() => setOpenSub(isSubOpen ? null : C.name + '|' + subName)}
+                          style={{
+                            display:'flex', alignItems:'center', gap:10,
+                            padding:'8px 10px', cursor:'pointer',
+                            background: isSubOpen ? 'rgba(244,114,182,.06)' : 'transparent',
+                          }}>
+                          {isSubOpen ? <ChevronDown size={12} color="#f472b6"/> : <ChevronRight size={12} color="var(--t3)"/>}
+                          <div style={{flex:1, fontSize:12, fontWeight:500, color:'var(--t2)'}}>{subName}</div>
+                          <div style={{fontSize:11, color:'var(--t3)'}}>{S.dealers.size} dealers</div>
+                          <div style={{fontSize:13, fontWeight:700, color:'#a78bfa', minWidth:60, textAlign:'right'}}>
+                            {Number(S.total).toLocaleString('en-IN')}
+                          </div>
+                        </div>
+
+                        {/* Dealers list */}
+                        {isSubOpen && (
+                          <div style={{padding:'4px 8px 10px 24px'}}>
+                            <table style={{width:'100%', fontSize:12}}>
+                              <thead>
+                                <tr style={{color:'var(--t3)', fontSize:10, textTransform:'uppercase', letterSpacing:'.06em'}}>
+                                  <th style={{textAlign:'left', padding:'4px 6px'}}>Dealer</th>
+                                  <th style={{textAlign:'left', padding:'4px 6px'}}>Salesman</th>
+                                  <th style={{textAlign:'right', padding:'4px 6px'}}>Qty</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {[...S.dealers.values()].sort((a,b) => b.qty - a.qty).map(D => (
+                                  <tr key={D.name} style={{borderTop:'1px solid var(--b1)'}}>
+                                    <td style={{padding:'5px 6px', color:'var(--t1)', fontWeight:500}}>{D.name}</td>
+                                    <td style={{padding:'5px 6px', color:'var(--t3)'}}>{users[D.sm]?.name || D.sm || '—'}</td>
+                                    <td style={{padding:'5px 6px', textAlign:'right', color:'#34d399', fontWeight:600}}>
+                                      {Number(D.qty).toLocaleString('en-IN')}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                            <div style={{display:'flex', justifyContent:'flex-end', marginTop:6}}>
+                              <button className="btn" style={{fontSize:10, padding:'3px 8px'}}
+                                onClick={() => {
+                                  exportCSV(
+                                    'Dealers_' + C.name + '_' + subName + '.csv',
+                                    ['Dealer','Salesman','Qty'],
+                                    [...S.dealers.values()].sort((a,b)=>b.qty-a.qty).map(D=>[D.name, users[D.sm]?.name || D.sm || '', D.qty]),
+                                  );
+                                }}>
+                                <Download size={10}/> Download this slice
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
