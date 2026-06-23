@@ -1516,7 +1516,19 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
                       <td onClick={e=>e.stopPropagation()}>
                         <div style={{display:'flex',gap:5}}>
                           <button className="btne" onClick={e=>{e.stopPropagation();onEdit(x.id);}}>Open</button>
-                          {isAdmin&&<button className="btnd" onClick={e=>{e.stopPropagation();onDelete(x.id);}}><Trash2 size={11}/></button>}
+                          {isAdmin && (
+                            <button
+                              onClick={e=>{e.stopPropagation();onDelete(x.id);}}
+                              title={`Delete ${x.name} from database (admin only)`}
+                              style={{
+                                display:'inline-flex',alignItems:'center',gap:4,
+                                padding:'3px 8px',borderRadius:5,fontSize:11,fontWeight:600,
+                                color:'#fca5a5',background:'rgba(248,113,113,0.08)',
+                                border:'1px solid rgba(248,113,113,0.4)',cursor:'pointer',
+                              }}>
+                              <Trash2 size={11}/> Delete
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

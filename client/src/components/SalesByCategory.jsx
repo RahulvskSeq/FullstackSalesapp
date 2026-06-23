@@ -16,7 +16,7 @@ import { useGlobalCategoryFilter } from '../hooks/useGlobalCategoryFilter';
 
 const fmt = n => (n == null ? '—' : Number(n).toLocaleString('en-IN'));
 
-const SalesByCategory = ({ currentUser, dealers, onOpenDealer } = {}) => {
+const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[], onOpenDealer } = {}) => {
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
 
   // Build a name → dealerId index so clicking a dealer row in the pivot opens
@@ -181,6 +181,183 @@ const SalesByCategory = ({ currentUser, dealers, onOpenDealer } = {}) => {
 
   const filteredDealerRows   = dealerRowsAdj.filter(r   => !search || r.dealer.toLowerCase().includes(search.toLowerCase()));
   const filteredSalesmanRows = salesmanRowsAdj.filter(r => !search || r.salesman.toLowerCase().includes(search.toLowerCase()));
+
+  // ── Per-(salesman × category) volume targets — editable inline below ─
+  const [catTargets, setCatTargets] = useState(new Map());   // key: salesmanId|category → number
+  const targetsKey = (sm, c) => `${sm}|${c}`;
+  useEffect(() => {
+    if (!month) { setCatTargets(new Map()); return; }
+    let cancelled = false;
+    api.salesTargetsList(month)
+      .then(rows => {
+        if (cancelled) return;
+        const m = new Map();
+        for (const r of (rows || [])) m.set(targetsKey(r.salesmanId, r.category), Number(r.target) || 0);
+        setCatTargets(m);
+      })
+      .catch(() => { if (!cancelled) setCatTargets(new Map()); });
+    return () => { cancelled = true; };
+  }, [month]);
+
+  const setOneTarget = async (salesmanId, category, target) => {
+    const next = new Map(catTargets);
+    next.set(targetsKey(salesmanId, category), Number(target) || 0);
+    setCatTargets(next);
+    if (!isAdmin) return;
+    try {
+      await api.salesTargetSet({ salesmanId, category, month, target: Number(target) || 0 });
+    } catch(e) { notify.error(`Save target: ${e.message}`); }
+  };
+
+  // ── MTD Salesman × Category summary table ──────────────────────────────
+  // Built from the same Sale rows + the dealer roster. For each salesman:
+  //   • Region          = most common state across their dealers
+  //   • Per-category Ach = sum of qty in that category from sales data
+  //   • Total Target    = sum of dealer's per-month target for that month
+  //   • Achievement %   = totalAch / totalTarget × 100
+  //   • Billed Dealers  = count of dealers with sales > 0 for the month
+  //   • Outstanding     = sum of latestOutstanding across their dealers
+  const mtdSummary = useMemo(() => {
+    // Build a map salesmanId → { dealers[], stateCounts, target, dealersWithSales:Set, outstanding }
+    const out = new Map();
+    const lookupDealerOut = new Map();
+    for (const o of (outstandingData || [])) {
+      lookupDealerOut.set(String(o.name||'').toLowerCase().trim(), Number(o.latestOutstanding) || 0);
+    }
+    for (const d of dealers) {
+      const sm = d.salesman || '_none';
+      if (!out.has(sm)) {
+        out.set(sm, {
+          smId: sm,
+          smName: users[sm]?.name || sm,
+          stateCounts: {},
+          target: 0,
+          dealers: [],
+          dealersWithSales: new Set(),
+          outstanding: 0,
+          perCategory: {},
+        });
+      }
+      const e = out.get(sm);
+      e.dealers.push(d);
+      const st = (d.state || '').trim() || '(no region)';
+      e.stateCounts[st] = (e.stateCounts[st] || 0) + 1;
+      // Use the per-month target if set, else dealer's global target
+      const tgt = Number(d.monthTargets?.[/*current viewing*/ d._mtdIdx] || d.target || 0);
+      e.target += tgt;
+      const outAmt = lookupDealerOut.get(String(d.name||'').toLowerCase().trim()) || 0;
+      e.outstanding += outAmt;
+    }
+    // Walk the byDealer sales rows to add per-category achieved + billed-dealer count
+    for (const row of (byDealer.rows || [])) {
+      // Find the matching dealer record so we can attribute to a salesman
+      const d = dealers.find(x => String(x.name||'').toLowerCase().trim() === String(row.dealer||'').toLowerCase().trim());
+      const sm = d?.salesman || '_unknown';
+      if (!out.has(sm)) {
+        out.set(sm, {
+          smId: sm, smName: users[sm]?.name || sm,
+          stateCounts: {}, target: 0, dealers: [], dealersWithSales: new Set(),
+          outstanding: 0, perCategory: {},
+        });
+      }
+      const e = out.get(sm);
+      const dealerTotal = row.total || 0;
+      if (dealerTotal > 0) e.dealersWithSales.add(row.dealer);
+      for (const [cat, subs] of Object.entries(row.byCategory || {})) {
+        if (excluded.has(cat)) continue;
+        const qty = Object.values(subs).reduce((s,v) => s + (v||0), 0);
+        e.perCategory[cat] = (e.perCategory[cat] || 0) + qty;
+      }
+    }
+    // Resolve the "region" = most common state. Add per-category targets +
+    // recompute total target from them when any are set (else fall back to
+    // the dealer-level monthlyData total).
+    const rows = [...out.values()].map(e => {
+      let region = '—';
+      let topCount = 0;
+      for (const [st, c] of Object.entries(e.stateCounts)) {
+        if (c > topCount) { region = st; topCount = c; }
+      }
+      const totalAch = Object.values(e.perCategory).reduce((s,v) => s + v, 0);
+
+      // per-category target lookup
+      const perCatTarget = {};
+      let totalPerCatTarget = 0;
+      for (const c of categories) {
+        const t = catTargets.get(`${e.smId}|${c}`) || 0;
+        if (t > 0) { perCatTarget[c] = t; totalPerCatTarget += t; }
+      }
+      // Use sum of per-category targets when any exist, else dealer total
+      const effectiveTarget = totalPerCatTarget > 0 ? totalPerCatTarget : e.target;
+
+      return {
+        ...e,
+        region,
+        totalAch,
+        target: effectiveTarget,
+        dealerTargetSum: e.target,        // raw dealer-level total (for reference)
+        perCatTarget,                     // { catName: target }
+        billedDealerCount: e.dealersWithSales.size,
+        achievementPct: effectiveTarget > 0 ? Math.round(totalAch / effectiveTarget * 100) : null,
+      };
+    }).filter(e => e.smName !== '_none' && e.smName !== '_unknown')
+      .sort((a,b) => (a.region || '').localeCompare(b.region || '') || (b.totalAch - a.totalAch));
+    return rows;
+  }, [dealers, users, byDealer, excluded, outstandingData, catTargets, categories]);
+
+  // Group MTD rows by region for sub-totals
+  const mtdByRegion = useMemo(() => {
+    const map = new Map();
+    for (const r of mtdSummary) {
+      const k = r.region;
+      if (!map.has(k)) map.set(k, []);
+      map.get(k).push(r);
+    }
+    return [...map.entries()].map(([region, rows]) => {
+      const subtotal = {
+        target: rows.reduce((s,r) => s + (r.target||0), 0),
+        totalAch: rows.reduce((s,r) => s + (r.totalAch||0), 0),
+        billedDealerCount: rows.reduce((s,r) => s + (r.billedDealerCount||0), 0),
+        outstanding: rows.reduce((s,r) => s + (r.outstanding||0), 0),
+        perCategory: {},
+        perCatTarget: {},
+      };
+      for (const r of rows) {
+        for (const [c, q] of Object.entries(r.perCategory)) {
+          subtotal.perCategory[c] = (subtotal.perCategory[c] || 0) + q;
+        }
+        for (const [c, t] of Object.entries(r.perCatTarget || {})) {
+          subtotal.perCatTarget[c] = (subtotal.perCatTarget[c] || 0) + t;
+        }
+      }
+      subtotal.achievementPct = subtotal.target > 0
+        ? Math.round(subtotal.totalAch / subtotal.target * 100) : null;
+      return { region, rows, subtotal };
+    });
+  }, [mtdSummary]);
+
+  const mtdGrand = useMemo(() => {
+    const acc = {
+      target: 0, totalAch: 0, billedDealerCount: 0, outstanding: 0,
+      perCategory: {}, perCatTarget: {},
+    };
+    for (const r of mtdSummary) {
+      acc.target += r.target; acc.totalAch += r.totalAch;
+      acc.billedDealerCount += r.billedDealerCount; acc.outstanding += r.outstanding;
+      for (const [c, q] of Object.entries(r.perCategory)) {
+        acc.perCategory[c] = (acc.perCategory[c] || 0) + q;
+      }
+      for (const [c, t] of Object.entries(r.perCatTarget || {})) {
+        acc.perCatTarget[c] = (acc.perCatTarget[c] || 0) + t;
+      }
+    }
+    acc.achievementPct = acc.target > 0 ? Math.round(acc.totalAch / acc.target * 100) : null;
+    return acc;
+  }, [mtdSummary]);
+
+  const fmtL = n => !n ? '—' : Number(n).toLocaleString('en-IN');
+  const fmtL2 = n => !n ? '—' : (n / 100000).toFixed(2) + ' L';      // ₹ in Lakhs
+  const pctColor = p => p == null ? 'var(--t3)' : (p >= 80 ? '#34d399' : p >= 50 ? '#fbbf24' : '#f87171');
 
   // CSV export helpers
   const downloadCSV = (filename, headers, rows) => {
@@ -479,6 +656,166 @@ const SalesByCategory = ({ currentUser, dealers, onOpenDealer } = {}) => {
                 </tfoot>
               )}
             </table>
+          </div>
+
+          {/* ── MTD Sales Summary — Region × Salesman × Category ───────── */}
+          <div className="card" style={{padding:0, marginTop:14, overflow:'hidden', borderLeft:'3px solid #6366f1'}}>
+            <div style={{padding:'10px 14px', borderBottom:'1px solid var(--b1)', display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
+              <BarChart3 size={14} color="var(--acc)"/>
+              <div style={{fontSize:13, fontWeight:700}}>MTD Sales Summary — {month || '—'}</div>
+              <div style={{fontSize:11, color:'var(--t3)'}}>
+                · Region / Salesman × Category · Targets pulled from Monthly Entry · Outstanding from Outstanding section
+              </div>
+            </div>
+            <div style={{overflowX:'auto', maxHeight:'70vh'}}>
+              <table>
+                <thead>
+                  {/* Row 1: Region | Salesman | <CategoryName spanning 2 cols> ... | Total spanning 2 cols | MTD % | Dealers | Outstanding */}
+                  <tr style={{position:'sticky', top:0, background:'var(--bg2)', zIndex:2}}>
+                    <th rowSpan={2} style={{textAlign:'left', position:'sticky', left:0, background:'var(--bg2)', zIndex:3, minWidth:120}}>Region</th>
+                    <th rowSpan={2} style={{textAlign:'left', minWidth:140}}>Salesman</th>
+                    {categories.map(c => (
+                      <th key={'h-'+c} colSpan={2} style={{textAlign:'center', borderLeft:'1px solid var(--b1)', fontSize:11}}>{c}</th>
+                    ))}
+                    <th colSpan={2} style={{textAlign:'center', background:'rgba(99,102,241,.06)', borderLeft:'1px solid var(--b1)'}}>Total</th>
+                    <th rowSpan={2} style={{textAlign:'right', background:'rgba(251,191,36,.05)'}}>MTD %</th>
+                    <th rowSpan={2} style={{textAlign:'right'}}>Billed Dealers</th>
+                    <th rowSpan={2} style={{textAlign:'right'}}>Outstanding ₹</th>
+                  </tr>
+                  {/* Row 2: T | A pair under each category, T | A under Total */}
+                  <tr style={{position:'sticky', top:32, background:'var(--bg2)', zIndex:2}}>
+                    {categories.map(c => (
+                      <React.Fragment key={'sub-'+c}>
+                        <th style={{textAlign:'right', fontSize:9, color:'var(--acc)', borderLeft:'1px solid var(--b1)', minWidth:55}}>Target</th>
+                        <th style={{textAlign:'right', fontSize:9, color:'#34d399', minWidth:55}}>Ach</th>
+                      </React.Fragment>
+                    ))}
+                    <th style={{textAlign:'right', fontSize:10, color:'var(--acc)', fontWeight:800, borderLeft:'1px solid var(--b1)'}}>Target</th>
+                    <th style={{textAlign:'right', fontSize:10, color:'#34d399', fontWeight:800}}>Ach</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mtdByRegion.map(({ region, rows, subtotal }) => (
+                    <React.Fragment key={region}>
+                      {rows.map((r, i) => (
+                        <tr key={r.smId}>
+                          {i === 0 && (
+                            <td rowSpan={rows.length}
+                              style={{position:'sticky', left:0, background:'var(--bg2)', fontWeight:700, color:'var(--t1)', verticalAlign:'top'}}>
+                              {region}
+                            </td>
+                          )}
+                          <td style={{fontWeight:600}}>{r.smName}</td>
+                          {/* Per-category cells: Target | Ach SIDE-BY-SIDE.
+                              Target is editable inline for admins; saved to /api/sales/targets on blur. */}
+                          {categories.map(c => {
+                            const t = r.perCatTarget?.[c] || 0;
+                            const a = r.perCategory[c] || 0;
+                            return (
+                              <React.Fragment key={'pair-'+r.smId+c}>
+                                <td style={{textAlign:'right', padding:'2px 4px', borderLeft:'1px solid var(--b1)'}}>
+                                  {isAdmin ? (
+                                    <input
+                                      type="number"
+                                      defaultValue={t || ''}
+                                      placeholder="—"
+                                      onBlur={e => {
+                                        const newVal = Number(e.target.value) || 0;
+                                        if (newVal !== t) setOneTarget(r.smId, c, newVal);
+                                      }}
+                                      onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
+                                      style={{
+                                        width:60, textAlign:'right',
+                                        background:'transparent',
+                                        border: t > 0 ? '1px solid var(--b2)' : '1px dashed var(--b2)',
+                                        borderRadius:4, padding:'2px 4px',
+                                        fontSize:11, color: t > 0 ? 'var(--acc)' : 'var(--t3)',
+                                      }}/>
+                                  ) : (
+                                    <span style={{color: t ? 'var(--acc)' : 'var(--t3)', fontWeight:600}}>{t ? fmtL(t) : '—'}</span>
+                                  )}
+                                </td>
+                                <td style={{textAlign:'right', color: a?'#34d399':'var(--t3)', fontWeight: a?600:400}}>
+                                  {a ? fmtL(a) : '—'}
+                                </td>
+                              </React.Fragment>
+                            );
+                          })}
+                          {/* Total Target | Total Ach */}
+                          <td style={{textAlign:'right', fontWeight:700, color:'var(--acc)', borderLeft:'1px solid var(--b1)', background:'rgba(99,102,241,.04)'}}>{fmtL(r.target)}</td>
+                          <td style={{textAlign:'right', fontWeight:700, color:'#34d399', background:'rgba(52,211,153,.04)'}}>{fmtL(r.totalAch)}</td>
+                          <td style={{textAlign:'right', fontWeight:700, color: pctColor(r.achievementPct)}}>
+                            {r.achievementPct == null ? '—' : r.achievementPct + '%'}
+                          </td>
+                          <td style={{textAlign:'right'}}>{r.billedDealerCount || '—'}</td>
+                          <td style={{textAlign:'right', color: r.outstanding > 0 ? '#f87171' : 'var(--t3)'}}>
+                            {r.outstanding > 0 ? fmtL2(r.outstanding) : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                      {/* Region subtotal row — paired Target | Ach per category */}
+                      <tr style={{background:'var(--bg1)'}}>
+                        <td colSpan={2} style={{position:'sticky', left:0, background:'var(--bg1)', fontWeight:800, fontSize:11, color:'var(--t2)'}}>
+                          {region} Total
+                        </td>
+                        {categories.map(c => {
+                          const t = subtotal.perCatTarget?.[c] || 0;
+                          const a = subtotal.perCategory[c] || 0;
+                          return (
+                            <React.Fragment key={'srt-'+region+c}>
+                              <td style={{textAlign:'right', fontWeight:700, color: t?'var(--acc)':'var(--t3)', borderLeft:'1px solid var(--b1)'}}>{t?fmtL(t):'—'}</td>
+                              <td style={{textAlign:'right', fontWeight:700, color: a?'#34d399':'var(--t3)'}}>{a?fmtL(a):'—'}</td>
+                            </React.Fragment>
+                          );
+                        })}
+                        <td style={{textAlign:'right', fontWeight:800, color:'var(--acc)', borderLeft:'1px solid var(--b1)', background:'rgba(99,102,241,.06)'}}>{fmtL(subtotal.target)}</td>
+                        <td style={{textAlign:'right', fontWeight:800, color:'#34d399', background:'rgba(52,211,153,.06)'}}>{fmtL(subtotal.totalAch)}</td>
+                        <td style={{textAlign:'right', fontWeight:800, color: pctColor(subtotal.achievementPct)}}>
+                          {subtotal.achievementPct == null ? '—' : subtotal.achievementPct + '%'}
+                        </td>
+                        <td style={{textAlign:'right', fontWeight:700}}>{subtotal.billedDealerCount || '—'}</td>
+                        <td style={{textAlign:'right', fontWeight:700, color: subtotal.outstanding > 0 ? '#f87171' : 'var(--t3)'}}>
+                          {subtotal.outstanding > 0 ? fmtL2(subtotal.outstanding) : '—'}
+                        </td>
+                      </tr>
+                    </React.Fragment>
+                  ))}
+                </tbody>
+                {mtdSummary.length > 0 && (
+                  <tfoot>
+                    <tr style={{background:'rgba(99,102,241,.10)'}}>
+                      <td colSpan={2} style={{position:'sticky', left:0, background:'rgba(99,102,241,.10)', fontWeight:800}}>
+                        Grand Total
+                      </td>
+                      {categories.map(c => {
+                        const t = mtdGrand.perCatTarget?.[c] || 0;
+                        const a = mtdGrand.perCategory[c] || 0;
+                        return (
+                          <React.Fragment key={'gt-'+c}>
+                            <td style={{textAlign:'right', fontWeight:800, color: t?'var(--acc)':'var(--t3)', borderLeft:'1px solid var(--b1)'}}>{t?fmtL(t):'—'}</td>
+                            <td style={{textAlign:'right', fontWeight:800, color: a?'#34d399':'var(--t3)'}}>{a?fmtL(a):'—'}</td>
+                          </React.Fragment>
+                        );
+                      })}
+                      <td style={{textAlign:'right', fontWeight:800, color:'var(--acc)', borderLeft:'1px solid var(--b1)', background:'rgba(99,102,241,.12)'}}>{fmtL(mtdGrand.target)}</td>
+                      <td style={{textAlign:'right', fontWeight:800, color:'#34d399', background:'rgba(52,211,153,.12)'}}>{fmtL(mtdGrand.totalAch)}</td>
+                      <td style={{textAlign:'right', fontWeight:800, color: pctColor(mtdGrand.achievementPct)}}>
+                        {mtdGrand.achievementPct == null ? '—' : mtdGrand.achievementPct + '%'}
+                      </td>
+                      <td style={{textAlign:'right', fontWeight:800}}>{mtdGrand.billedDealerCount || '—'}</td>
+                      <td style={{textAlign:'right', fontWeight:800, color: mtdGrand.outstanding > 0 ? '#f87171' : 'var(--t3)'}}>
+                        {mtdGrand.outstanding > 0 ? fmtL2(mtdGrand.outstanding) : '—'}
+                      </td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+              {mtdSummary.length === 0 && (
+                <div style={{padding:24, textAlign:'center', color:'var(--t3)', fontSize:12}}>
+                  No salesman data yet for {month}.
+                </div>
+              )}
+            </div>
           </div>
         </>
       )}

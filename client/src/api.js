@@ -1933,6 +1933,11 @@ export const api = {
   // Raw Sale rows (paged). Used by trend charts that need cross-month data.
   salesRaw:          (q={})     => fetch(`${BASE}/sales/raw?${new URLSearchParams(q)}`,{headers:authHeaders()}).then(handle),
   salesDeleteMonth:  (m)        => fetch(`${BASE}/sales/month/${encodeURIComponent(m)}`,{method:'DELETE',headers:authHeaders()}).then(handle),
+
+  // ── Per-(salesman × category × month) volume targets ─────────────────
+  salesTargetsList:  (month)    => fetch(`${BASE}/sales/targets?month=${encodeURIComponent(month)}`,{headers:authHeaders()}).then(handle),
+  salesTargetSet:    (body)     => fetch(`${BASE}/sales/targets`,{method:'POST',headers:authHeaders(),body:JSON.stringify(body)}).then(handle),
+  salesTargetsBulk:  (items)    => fetch(`${BASE}/sales/targets/bulk`,{method:'POST',headers:authHeaders(),body:JSON.stringify({items})}).then(handle),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1998,6 +2003,7 @@ export const dbDealerToApp = (d, MO=[]) => {
     monthState,
     monthsWithData,
     monthlyData:   md,
+    updatedAt:     d.updatedAt || d.updated_at || null,   // last-edit timestamp
     achieved:      [...months].reverse().find(v=>v>0)||0,
     categoryBreakdown: {},
     source:        d.source||'db',

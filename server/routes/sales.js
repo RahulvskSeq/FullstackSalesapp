@@ -4,6 +4,7 @@ import XLSX from 'xlsx';
 import Sale from '../models/Sale.js';
 import Category from '../models/Category.js';
 import Dealer from '../models/Dealer.js';
+import SalesTarget from '../models/SalesTarget.js';
 import { protect, adminOnly } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -693,6 +694,50 @@ router.get('/dealer/:name', protect, async (req, res) => {
     grandTotal += r.qty;
   }
   res.json({ dealer: dealerName, months: [...byMonth.values()], grandTotal });
+});
+
+/* ----------------------------------------------------------------- *
+ *  Per-(salesman × category × month) volume targets                  *
+ *                                                                    *
+ *  GET  /api/sales/targets?month=YYYY-MM   → [{salesmanId, category, target}]
+ *  POST /api/sales/targets                 → upsert {salesmanId, category, month, target}
+ *  POST /api/sales/targets/bulk            → array of upserts in one round-trip
+ * ----------------------------------------------------------------- */
+router.get('/targets', protect, async (req, res) => {
+  const month = normMonth(req.query.month) || String(req.query.month || '');
+  const filter = month ? { month } : {};
+  const rows = await SalesTarget.find(filter).lean();
+  res.json(rows);
+});
+
+router.post('/targets', protect, adminOnly, async (req, res) => {
+  const { salesmanId, category, target } = req.body || {};
+  const month = normMonth(req.body?.month) || String(req.body?.month || '');
+  if (!salesmanId || !category || !month) {
+    return res.status(400).json({ error: 'salesmanId, category, month required' });
+  }
+  const updated = await SalesTarget.findOneAndUpdate(
+    { salesmanId, category, month },
+    { $set: { target: Number(target) || 0, setBy: req.user?.name || req.user?.email || '' } },
+    { new: true, upsert: true },
+  );
+  res.json(updated);
+});
+
+router.post('/targets/bulk', protect, adminOnly, async (req, res) => {
+  const items = Array.isArray(req.body?.items) ? req.body.items : [];
+  let upserted = 0;
+  for (const it of items) {
+    const month = normMonth(it.month) || String(it.month || '');
+    if (!it.salesmanId || !it.category || !month) continue;
+    await SalesTarget.findOneAndUpdate(
+      { salesmanId: it.salesmanId, category: it.category, month },
+      { $set: { target: Number(it.target) || 0, setBy: req.user?.name || req.user?.email || '' } },
+      { upsert: true },
+    );
+    upserted++;
+  }
+  res.json({ ok: true, upserted });
 });
 
 // DELETE /api/sales/month/:m  — admin only — wipe a month's sales

@@ -16633,7 +16633,7 @@ export default function App(){
                   {screen==='outstanding'&&<Outstanding dealers={myDealers} users={users} onOpenDealer={setEditingId} currentUser={currentUser} outstandingData={outstandingData} setOutstandingData={setOutstandingData}/>}
                   {screen==='upload'&&<UploadMonth users={users} currentUser={currentUser} onSuccess={()=>loadFromDB(activeMO)}/>}
                   {screen==='salesUpload' && isStaff && <SalesUpload currentUser={currentUser} onUploaded={()=>{}}/>}
-                  {screen==='salesCat'    && <SalesByCategory currentUser={currentUser} users={users} dealers={dealers} onOpenDealer={setEditingId}/>}
+                  {screen==='salesCat'    && <SalesByCategory currentUser={currentUser} users={users} dealers={dealers} outstandingData={outstandingData} onOpenDealer={setEditingId}/>}
                   {screen==='entry'&&<MonthlyEntry dealers={myDealers} users={users} currentUser={currentUser} onUpdateDealer={updateDealerFields} onSaved={()=>loadFromDB(activeMO)}/>}
                   {screen==='months'&&isStaff&&<ManageMonths dealers={dealers} users={users} currentUser={currentUser} monthConfig={monthConfig} saveMonthConfig={saveMonthConfig} loadFromDB={loadFromDB} onSync={syncSheets} syncing={syncing} lastSync={lastSync}/>}
                   {screen==='followups'&&<FollowupsHub notes={myNotes} dealers={myDealers} users={users} onUpdateNote={updateNote} onDeleteNote={deleteNote} onOpenDealer={setEditingId}/>}

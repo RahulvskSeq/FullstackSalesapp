@@ -1527,6 +1527,32 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate})=>{
   const hasGeoFilter=geoFilter.city||geoFilter.state;
   const viewingLabel=selectedMonthIdx===CURRENT_MONTH_IDX?`${selMoFull} (Current)`:selMoFull;
 
+  // ── Last-updated stamp ─────────────────────────────────────────────────
+  // Latest dealer.updatedAt across the visible roster → "when was achieved
+  // / target / status last touched". Falls back to nothing when the DB
+  // hasn't sent timestamps yet.
+  const lastUpdatedAt = useMemo(() => {
+    let max = 0;
+    for (const d of (dealers || [])) {
+      const t = d.updatedAt ? new Date(d.updatedAt).getTime() : 0;
+      if (t > max) max = t;
+    }
+    return max ? new Date(max) : null;
+  }, [dealers]);
+  const lastUpdatedLabel = useMemo(() => {
+    if (!lastUpdatedAt) return '';
+    const diffMs = Date.now() - lastUpdatedAt.getTime();
+    const sec  = Math.floor(diffMs/1000);
+    if (sec < 45)    return 'just now';
+    const min  = Math.floor(sec/60);
+    if (min < 60)    return `${min}m ago`;
+    const hr   = Math.floor(min/60);
+    if (hr  < 24)    return `${hr}h ago`;
+    const day  = Math.floor(hr/24);
+    if (day < 7)     return `${day}d ago`;
+    return lastUpdatedAt.toLocaleDateString('en-IN', { day:'numeric', month:'short' });
+  }, [lastUpdatedAt]);
+
   // `ta` is already filtered (myD.achieved was pre-adjusted per-dealer).
   // Use it directly — earlier the code subtracted `excludedQty` again here,
   // which double-counted. Keep aliases so the KPI JSX below doesn't need
@@ -1545,6 +1571,19 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate})=>{
           <div style={{fontSize:24,fontWeight:700,letterSpacing:'-0.02em'}}>
             {(currentUser.role==='admin'||currentUser.role==='superadmin')?'All Territories':'Your Territory'} — Overview
           </div>
+          {lastUpdatedLabel && (
+            <div style={{
+              fontSize:11, color:'var(--t3)', marginTop:4,
+              display:'inline-flex', alignItems:'center', gap:5,
+            }}
+              title={`Most recent change to any dealer's record: ${lastUpdatedAt.toLocaleString('en-IN')}`}>
+              <span style={{
+                width:6, height:6, borderRadius:'50%', background:'#34d399',
+                boxShadow:'0 0 6px rgba(52,211,153,0.5)',
+              }}/>
+              Last updated <b style={{color:'var(--t2)'}}>{lastUpdatedLabel}</b>
+            </div>
+          )}
         </div>
 
         {/* ── Include / exclude category filter — top-right ─────────── */}
