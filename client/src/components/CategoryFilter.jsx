@@ -40,6 +40,7 @@ const CategoryFilter = ({
   onToggle,
   onClear,
   onSelectOnly,
+  onSaveAsDefault,
   label = 'Categories',
   compact = false,
 }) => {
@@ -103,18 +104,40 @@ const CategoryFilter = ({
           Include categories
         </span>
         <div style={{flex:1}}/>
+        {onSaveAsDefault && (
+          <button
+            type="button"
+            onClick={() => {
+              onSaveAsDefault();
+              // micro-feedback — flash the button background
+              try {
+                const btn = event && event.currentTarget;
+                if (btn) {
+                  const prev = btn.style.background;
+                  btn.style.background = 'rgba(34,197,94,0.20)';
+                  setTimeout(() => { btn.style.background = prev; }, 600);
+                }
+              } catch {}
+            }}
+            title="Remember this set of unchecks as the default — it'll be applied automatically on every future page load."
+            style={{
+              fontSize:11, padding:'4px 9px', borderRadius:6,
+              border:'1px solid #15803d', background:'rgba(34,197,94,0.08)',
+              color:'#86efac', cursor:'pointer', fontWeight:600,
+            }}>
+            Save as default
+          </button>
+        )}
         <button
           type="button"
           onClick={()=>{ if(onClear) onClear(); }}
-          disabled={isAll}
+          title="Reset to the saved default (or include all categories if no default was saved)."
           style={{
             fontSize:11, padding:'4px 9px', borderRadius:6,
             border:'1px solid var(--b2)', background:'transparent',
-            color: isAll ? 'var(--t3)' : 'var(--acc)',
-            cursor: isAll ? 'default' : 'pointer',
-            opacity: isAll ? 0.55 : 1,
+            color:'var(--acc)', cursor:'pointer',
           }}>
-          Select all
+          Reset
         </button>
         {isMobile && (
           <button

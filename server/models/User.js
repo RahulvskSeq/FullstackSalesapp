@@ -20,5 +20,13 @@ const S = new mongoose.Schema({
   // search / dropdowns, but their historic records (visits, leads, sales
   // entries, dealers) remain intact in the DB.
   active:          { type:Boolean, default:true },
+  // Per-user UI preferences. Stored on the server so the user's choices
+  // survive APK reinstall, incognito, different browser, different device.
+  // `excludedCategories` is the live filter selection; `defaultExcludedCategories`
+  // is the "save as default" snapshot that gets re-applied on a Reset click.
+  prefs: {
+    excludedCategories:        { type:[String], default: [] },
+    defaultExcludedCategories: { type:[String], default: [] },
+  },
 }, { timestamps:true });
 export default mongoose.models.User || mongoose.model('User', S);

@@ -1652,6 +1652,14 @@ export const api = {
   login:    (id,pass) => fetch(`${BASE}/auth/login`,{method:'POST',headers:authHeaders(),body:JSON.stringify({id,pass})}).then(handle),
   getUsers:    ()      => fetch(`${BASE}/auth/users`,{headers:authHeaders()}).then(handle),
   getUsersAll: ()      => fetch(`${BASE}/auth/users?includeInactive=1`,{headers:authHeaders()}).then(handle),
+
+  // Per-user UI preferences (lives on the server so it survives APK reinstall,
+  // incognito, switching devices). Currently used for the global category filter.
+  getMyPrefs:   ()      => fetch(`${BASE}/auth/me/prefs`,{headers:authHeaders()}).then(handle),
+  updateMyPrefs:(patch) => fetch(`${BASE}/auth/me/prefs`,{
+    method:'PUT', headers:authHeaders(), body: JSON.stringify(patch),
+  }).then(handle),
+
   updateUser:  (id,d)  => fetch(`${BASE}/auth/users/${id}`,{method:'PUT',headers:authHeaders(),body:JSON.stringify(d)}).then(handle),
 
   getDealers:   (MO=[]) => fetch(`${BASE}/dealers?mo=${MO.join(',')}`,{headers:authHeaders()}).then(handle),
@@ -1738,6 +1746,16 @@ export const api = {
   // monthlyData entries are migrated to the canonical (older, non-upload)
   // dealer before the dupe is deleted.
   dedupeStripped: (dryRun=false) => fetch(`${BASE}/dealers/dedupe-stripped`,{
+    method:'POST',
+    headers:authHeaders(),
+    body: JSON.stringify({ dryRun }),
+  }).then(handle),
+
+  // Admin: re-write every dealer's city + state in a uniform Title Case format
+  // ('BANGALORE' → 'Bangalore', 'bangalore ' → 'Bangalore'). Returns counts +
+  // a sample of changes + a top-10 list of messy values. Pass dryRun:true
+  // to preview without writing.
+  normalizeCityState: (dryRun=false) => fetch(`${BASE}/dealers/normalize-city-state`,{
     method:'POST',
     headers:authHeaders(),
     body: JSON.stringify({ dryRun }),

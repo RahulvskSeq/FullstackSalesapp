@@ -402,6 +402,37 @@ export default function ManageMonths({
     } finally { setBusy(false); }
   };
 
+  // Re-write every dealer's city + state in uniform Title Case so that
+  // "BANGALORE", "bangalore ", "Bangalore" all become "Bangalore". Useful
+  // after a messy upload where the same city showed up in many capitalizations.
+  const handleNormalizeCityState = async () => {
+    setBusy(true); setMsg(null);
+    try {
+      const preview = await api.normalizeCityState(true);
+      if (!preview.cityFixed && !preview.stateFixed) {
+        showMsg('success', 'City and State are already uniform — nothing to fix.');
+        return;
+      }
+      const messyCitySample = (preview.messyCities || []).slice(0, 5).map(([v, n]) => `  • "${v}" — ${n} dealer(s)`).join('\n');
+      const messyStateSample = (preview.messyStates || []).slice(0, 5).map(([v, n]) => `  • "${v}" — ${n} dealer(s)`).join('\n');
+      const ok = await confirmDialog({
+        title: `Normalize ${preview.cityFixed} cities and ${preview.stateFixed} states?`,
+        message:
+          `This will trim extra spaces and convert to Title Case across the whole DB.\n\n` +
+          `Messy city examples that will be cleaned:\n${messyCitySample || '  (none)'}\n\n` +
+          `Messy state examples that will be cleaned:\n${messyStateSample || '  (none)'}\n\n` +
+          `${preview.cityFixed} city values and ${preview.stateFixed} state values will be re-written. No other field is touched.`,
+        confirmText: 'Yes, normalize',
+      });
+      if (!ok) return;
+      const r = await api.normalizeCityState(false);
+      showMsg('success', `Done. Cities fixed: ${r.cityFixed}, States fixed: ${r.stateFixed}. Reloading from DB…`);
+      if (loadFromDB) await loadFromDB(MO);
+    } catch (e) {
+      showMsg('error', 'Normalize failed: ' + e.message);
+    } finally { setBusy(false); }
+  };
+
   const handleRepairTargets = async () => {
     const ok = await confirmDialog({
       title: 'Repair targets?',
@@ -668,6 +699,18 @@ export default function ManageMonths({
               }}>
               <Trash2 size={13}/>
               Find Duplicates
+            </button>
+            <button onClick={handleNormalizeCityState} disabled={busy}
+              title="Re-write every dealer's City and State in uniform Title Case (e.g. BANGALORE → Bangalore). Run this once to clean up messy capitalizations from imports."
+              style={{
+                display:'flex', alignItems:'center', justifyContent:'center', gap:6,
+                background:'transparent', color:'#a5b4fc',
+                border:'1px solid #4338ca',
+                padding:'8px 10px', borderRadius:6, fontSize:11, fontWeight:700,
+                cursor: busy ? 'not-allowed' : 'pointer', whiteSpace:'nowrap',
+              }}>
+              <CheckCircle size={13}/>
+              Normalize City / State
             </button>
           </div>
         </div>

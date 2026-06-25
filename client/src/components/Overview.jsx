@@ -1355,7 +1355,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate})=>{
   }, [catRowsMo]);
 
   // Global filter shared with Sales by Category, Admin Panel, DealerModal etc.
-  const { excluded: catExcluded, toggle: toggleCatExcluded, clear: clearCatExcluded, set: setCatExcluded }
+  const { excluded: catExcluded, toggle: toggleCatExcluded, clear: clearCatExcluded, set: setCatExcluded, saveAsDefault: saveCatDefault }
     = useGlobalCategoryFilter();
   const excludedQty = useMemo(
     () => allCatTotals.filter(t => catExcluded.has(t.category)).reduce((s,t) => s + t.total, 0),
@@ -1623,6 +1623,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate})=>{
             excluded={catExcluded}
             onToggle={toggleCatExcluded}
             onClear={clearCatExcluded}
+            onSaveAsDefault={saveCatDefault}
             onSelectOnly={(cat)=>{
               // include only the selected category — exclude everything else
               setCatExcluded(new Set(allCatTotals.map(t=>t.category).filter(c=>c!==cat)));

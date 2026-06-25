@@ -54,6 +54,29 @@ router.get('/me', protect, async (req, res) => {
   res.json(user);
 });
 
+// GET /api/auth/me/prefs — fetch this user's UI preferences (category filter etc.)
+router.get('/me/prefs', protect, async (req, res) => {
+  const user = await User.findOne({ id:req.user.id }, 'prefs');
+  res.json(user?.prefs || { excludedCategories: [], defaultExcludedCategories: [] });
+});
+
+// PUT /api/auth/me/prefs — merge in partial pref updates
+// Body: { excludedCategories?: [String], defaultExcludedCategories?: [String] }
+router.put('/me/prefs', protect, async (req, res) => {
+  const set = {};
+  if (Array.isArray(req.body.excludedCategories)) {
+    set['prefs.excludedCategories'] = req.body.excludedCategories;
+  }
+  if (Array.isArray(req.body.defaultExcludedCategories)) {
+    set['prefs.defaultExcludedCategories'] = req.body.defaultExcludedCategories;
+  }
+  if (!Object.keys(set).length) return res.status(400).json({ error: 'No valid fields to update' });
+  const user = await User.findOneAndUpdate(
+    { id:req.user.id }, { $set: set }, { new:true, select:'prefs' }
+  );
+  res.json(user?.prefs || {});
+});
+
 // ── PUT /api/auth/users/:id ────────────────────────────────────────────────
 // Permission rules:
 //   - Salesman:   can edit ONLY themselves, ONLY their password

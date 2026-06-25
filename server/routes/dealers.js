@@ -638,6 +638,75 @@ router.post('/dedupe-stripped', protect, adminOnly, async (req, res) => {
   }
 });
 
+// ── POST /api/dealers/normalize-city-state — admin only ───────────────────
+// Re-writes every dealer's city + state in a uniform format:
+//   - trim leading / trailing whitespace
+//   - collapse internal whitespace to a single space
+//   - convert to Title Case (first letter of every word upper)
+// So "BANGALORE", "bangalore ", "Bangalore" all become "Bangalore".
+//
+// Skips rows already in canonical form. Does NOT touch any other field.
+// Body: { dryRun:true|false }
+router.post('/normalize-city-state', protect, adminOnly, async (req, res) => {
+  try {
+    const dryRun = req.body?.dryRun === true;
+    const titleCase = s => String(s || '')
+      .trim()
+      .replace(/\s+/g, ' ')
+      .toLowerCase()
+      .split(' ')
+      .map(w => w ? w[0].toUpperCase() + w.slice(1) : w)
+      .join(' ');
+
+    const all = await Dealer.find({}, { city:1, state:1 }).lean();
+    let cityFixed = 0, stateFixed = 0;
+    const cityBefore = new Map(), stateBefore = new Map();
+    const sample = [];
+
+    for (const d of all) {
+      const c0 = d.city  || '';
+      const s0 = d.state || '';
+      const c1 = titleCase(c0);
+      const s1 = titleCase(s0);
+      const cChanged = c0 !== c1;
+      const sChanged = s0 !== s1;
+      if (cChanged) {
+        cityFixed++;
+        cityBefore.set(c0, (cityBefore.get(c0) || 0) + 1);
+      }
+      if (sChanged) {
+        stateFixed++;
+        stateBefore.set(s0, (stateBefore.get(s0) || 0) + 1);
+      }
+      if ((cChanged || sChanged) && sample.length < 15) {
+        sample.push({ id: String(d._id), city: { from:c0, to:c1 }, state: { from:s0, to:s1 } });
+      }
+      if (!dryRun && (cChanged || sChanged)) {
+        const update = {};
+        if (cChanged) update.city = c1;
+        if (sChanged) update.state = s1;
+        await Dealer.updateOne({ _id: d._id }, { $set: update });
+      }
+    }
+
+    console.log(`[NORMALIZE-CITY-STATE] dryRun=${dryRun} cityFixed=${cityFixed} stateFixed=${stateFixed}`);
+    res.json({
+      ok: true,
+      dryRun,
+      dealersScanned: all.length,
+      cityFixed,
+      stateFixed,
+      sample,
+      // Top 10 messy city/state values (for the user to skim)
+      messyCities: [...cityBefore.entries()].sort((a,b)=>b[1]-a[1]).slice(0,10),
+      messyStates: [...stateBefore.entries()].sort((a,b)=>b[1]-a[1]).slice(0,10),
+    });
+  } catch (e) {
+    console.error('[NORMALIZE-CITY-STATE]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── DELETE /api/dealers/month/:label — admin only (DESTRUCTIVE) ────────────
 // Removes the monthlyData entry for the given label (e.g., "Jun-26") from
 // EVERY dealer. Use this when removing a future/empty month so that re-adding
