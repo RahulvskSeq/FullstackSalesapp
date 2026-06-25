@@ -1743,6 +1743,12 @@ export const api = {
     body: JSON.stringify({ dryRun }),
   }).then(handle),
 
+  // Lightweight ping — returns { lastUpdatedAt: ISO } for the most recently
+  // modified dealer in the DB. Used by the Overview's "Last updated on …"
+  // stamp so it reflects real DB writes (including ones from other users)
+  // and not the page-load time.
+  dealersLastUpdated: () => fetch(`${BASE}/dealers/last-updated`,{ headers:authHeaders() }).then(handle),
+
   // Admin: find and remove dealers whose name = "<canonical> <salesman first name>"
   // (e.g. "76 EAST pranav" when "76 EAST" already exists for salesman Pranav).
   // Migrates Sale rows to the canonical dealer before deleting.

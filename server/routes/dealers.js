@@ -80,6 +80,26 @@ const fmt = (d, MO=[]) => {
 // Staff = admin OR superadmin (both see everything). Salesmen only see their own.
 const isStaff = (req) => req.user?.role === 'admin' || req.user?.role === 'superadmin';
 
+// ── GET /api/dealers/last-updated ─────────────────────────────────────────
+// Lightweight ping — returns the timestamp of the most recently modified
+// dealer record in the DB (any field: Achieved / Target / Status / Zone /
+// City / etc.). The client polls this every minute so the "Last updated"
+// stamp on Overview reflects real DB writes, not the page-load time.
+//
+// Salesmen see only their own dealers; staff see everyone.
+router.get('/last-updated', protect, async (req, res) => {
+  try {
+    const filter = isStaff(req) ? {} : { salesman: req.user.id };
+    const latest = await Dealer.findOne(filter, { updatedAt: 1 })
+      .sort({ updatedAt: -1 })
+      .lean();
+    res.json({ lastUpdatedAt: latest?.updatedAt || null });
+  } catch (e) {
+    console.error('[DEALERS LAST-UPDATED]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.get('/', protect, async (req, res) => {
   try {
     const filter = isStaff(req)?{}:{salesman:req.user.id};

@@ -1528,17 +1528,33 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate})=>{
   const viewingLabel=selectedMonthIdx===CURRENT_MONTH_IDX?`${selMoFull} (Current)`:selMoFull;
 
   // ── Last-updated stamp ─────────────────────────────────────────────────
-  // Latest dealer.updatedAt across the visible roster → "when was achieved
-  // / target / status last touched". Falls back to nothing when the DB
-  // hasn't sent timestamps yet.
+  // Ping the server every 60s for the DB's most-recent dealer write time.
+  // This reflects the REAL last data-update moment (any user, any field —
+  // Achieved, Target, Status, Zone, etc.), not when this page was loaded.
+  const [dbLastUpdatedAt, setDbLastUpdatedAt] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const r = await api.dealersLastUpdated();
+        if (cancelled) return;
+        setDbLastUpdatedAt(r?.lastUpdatedAt ? new Date(r.lastUpdatedAt) : null);
+      } catch { /* network blip — keep showing the previous value */ }
+    };
+    tick();                                         // fire immediately on mount
+    const id = setInterval(tick, 60_000);           // and refresh every minute
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+  // Also fall back to the dealers prop in case the endpoint hasn't replied yet
   const lastUpdatedAt = useMemo(() => {
+    if (dbLastUpdatedAt) return dbLastUpdatedAt;
     let max = 0;
     for (const d of (dealers || [])) {
       const t = d.updatedAt ? new Date(d.updatedAt).getTime() : 0;
       if (t > max) max = t;
     }
     return max ? new Date(max) : null;
-  }, [dealers]);
+  }, [dbLastUpdatedAt, dealers]);
   const lastUpdatedLabel = useMemo(() => {
     if (!lastUpdatedAt) return '';
     const diffMs = Date.now() - lastUpdatedAt.getTime();
@@ -1551,6 +1567,14 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate})=>{
     const day  = Math.floor(hr/24);
     if (day < 7)     return `${day}d ago`;
     return lastUpdatedAt.toLocaleDateString('en-IN', { day:'numeric', month:'short' });
+  }, [lastUpdatedAt]);
+  // Full human-readable date + time, e.g. "25 Jun 2026, 2:32 PM"
+  const lastUpdatedFull = useMemo(() => {
+    if (!lastUpdatedAt) return '';
+    return lastUpdatedAt.toLocaleString('en-IN', {
+      day:'numeric', month:'short', year:'numeric',
+      hour:'numeric', minute:'2-digit', hour12:true,
+    });
   }, [lastUpdatedAt]);
 
   // `ta` is already filtered (myD.achieved was pre-adjusted per-dealer).
@@ -1571,17 +1595,23 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate})=>{
           <div style={{fontSize:24,fontWeight:700,letterSpacing:'-0.02em'}}>
             {(currentUser.role==='admin'||currentUser.role==='superadmin')?'All Territories':'Your Territory'} — Overview
           </div>
-          {lastUpdatedLabel && (
+          {lastUpdatedFull && (
             <div style={{
-              fontSize:11, color:'var(--t3)', marginTop:4,
-              display:'inline-flex', alignItems:'center', gap:5,
+              marginTop:8,
+              display:'inline-flex', alignItems:'center', gap:8,
+              padding:'6px 12px', borderRadius:8,
+              background:'rgba(52,211,153,0.10)',
+              border:'1px solid rgba(52,211,153,0.30)',
+              fontSize:12, color:'#86efac', fontWeight:600,
             }}
-              title={`Most recent change to any dealer's record: ${lastUpdatedAt.toLocaleString('en-IN')}`}>
+              title="Most recent change to any dealer's Target / Achieved / Status / Zone / etc.">
               <span style={{
-                width:6, height:6, borderRadius:'50%', background:'#34d399',
-                boxShadow:'0 0 6px rgba(52,211,153,0.5)',
+                width:8, height:8, borderRadius:'50%', background:'#34d399',
+                boxShadow:'0 0 8px rgba(52,211,153,0.7)',
               }}/>
-              Last updated <b style={{color:'var(--t2)'}}>{lastUpdatedLabel}</b>
+              <span style={{color:'var(--t3)', fontWeight:500}}>Last updated on</span>
+              <b style={{color:'#86efac'}}>{lastUpdatedFull}</b>
+              <span style={{color:'var(--t3)', fontWeight:500, fontSize:11}}>({lastUpdatedLabel})</span>
             </div>
           )}
         </div>
