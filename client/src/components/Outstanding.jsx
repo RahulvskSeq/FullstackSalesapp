@@ -5668,23 +5668,12 @@ const FOLLOWUP_REASONS = [
   'Others',
 ];
 
-function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMonth, prefillAmount, availableMonths = [] }) {
+function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMonth, prefillAmount }) {
   const [date,    setDate]    = useState(todayStr());
   const [reason,  setReason]  = useState('');     // preset reason from dropdown
   const [comment, setComment] = useState('');     // free-text note (only when reason === 'Others' or as add-on)
   const [amount,  setAmount]  = useState(
     typeof prefillAmount === 'number' ? prefillAmount : (dealer.latestOutstanding||0)
-  );
-  // Which month(s) does this comment apply to?
-  //   'one'    — only the month they clicked on (prefillMonth)
-  //   'all'    — every open month for this dealer
-  //   'custom' — pick specific months via checkboxes
-  const monthOpts = (availableMonths && availableMonths.length)
-    ? availableMonths
-    : (prefillMonth ? [prefillMonth] : []);
-  const [scope, setScope] = useState(prefillMonth ? 'one' : (monthOpts.length > 1 ? 'all' : 'one'));
-  const [customMonths, setCustomMonths] = useState(
-    () => new Set(prefillMonth ? [prefillMonth] : monthOpts)
   );
   const [saving,  setSaving]  = useState(false);
   const [err,     setErr]     = useState('');
@@ -5738,23 +5727,11 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
       } else {
         saved = note;
       }
-      // Decide which months this follow-up applies to.
-      // 'one'    → just the prefilled month (or none if nothing was clicked)
-      // 'all'    → every month with an outstanding amount for this dealer
-      // 'custom' → user-checked subset
-      let chosenMonths = [];
-      if (scope === 'one') {
-        chosenMonths = prefillMonth ? [prefillMonth] : [];
-      } else if (scope === 'all') {
-        chosenMonths = [...monthOpts];
-      } else {
-        chosenMonths = [...customMonths].filter(Boolean);
-      }
-      if (type === 'followup' && monthOpts.length > 0 && chosenMonths.length === 0) {
-        setSaving(false);
-        setErr('Pick at least one month to apply this to');
-        return;
-      }
+      // Tag the follow-up with whichever specific month the user clicked on
+      // (if they opened the popup from a month cell). Otherwise no month tag
+      // — the comment is still saved at the dealer level and will show up in
+      // the dealer's full history.
+      const chosenMonths = prefillMonth ? [prefillMonth] : [];
       await api.addFollowup({
         dealerName:   dealer.name,
         salesman:     dealer.matchedSalesman?.id || '',
@@ -5909,58 +5886,6 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
             </div>
           )}
 
-          {/* Apply-to months — only shown when there's something to choose */}
-          {monthOpts.length > 0 && (
-            <div style={{marginBottom:8, padding:'8px 10px', background:'rgba(99,102,241,0.06)', border:'1px solid rgba(99,102,241,0.20)', borderRadius:8}}>
-              <div style={{fontSize:10, color:'var(--t3)', textTransform:'uppercase', marginBottom:6}}>
-                Apply this comment to which month{monthOpts.length===1?'':'s'}?
-              </div>
-              <div style={{display:'flex', gap:6, flexWrap:'wrap', marginBottom: scope === 'custom' ? 8 : 0}}>
-                {prefillMonth && (
-                  <label style={{fontSize:11, display:'inline-flex', alignItems:'center', gap:4, cursor:'pointer', padding:'4px 8px', borderRadius:5, background: scope==='one'?'rgba(99,102,241,0.18)':'transparent', color: scope==='one'?'var(--acc)':'var(--t2)', fontWeight: scope==='one'?700:500}}>
-                    <input type="radio" name="scope" checked={scope==='one'} onChange={()=>setScope('one')} style={{margin:0}}/>
-                    Only {prefillMonth}
-                  </label>
-                )}
-                {monthOpts.length > 1 && (
-                  <label style={{fontSize:11, display:'inline-flex', alignItems:'center', gap:4, cursor:'pointer', padding:'4px 8px', borderRadius:5, background: scope==='all'?'rgba(99,102,241,0.18)':'transparent', color: scope==='all'?'var(--acc)':'var(--t2)', fontWeight: scope==='all'?700:500}}>
-                    <input type="radio" name="scope" checked={scope==='all'} onChange={()=>setScope('all')} style={{margin:0}}/>
-                    All {monthOpts.length} months
-                  </label>
-                )}
-                {monthOpts.length > 1 && (
-                  <label style={{fontSize:11, display:'inline-flex', alignItems:'center', gap:4, cursor:'pointer', padding:'4px 8px', borderRadius:5, background: scope==='custom'?'rgba(99,102,241,0.18)':'transparent', color: scope==='custom'?'var(--acc)':'var(--t2)', fontWeight: scope==='custom'?700:500}}>
-                    <input type="radio" name="scope" checked={scope==='custom'} onChange={()=>setScope('custom')} style={{margin:0}}/>
-                    Pick months…
-                  </label>
-                )}
-              </div>
-              {scope === 'custom' && (
-                <div style={{display:'flex', gap:6, flexWrap:'wrap'}}>
-                  {monthOpts.map(m => {
-                    const on = customMonths.has(m);
-                    return (
-                      <label key={m} style={{
-                        fontSize:11, display:'inline-flex', alignItems:'center', gap:4, cursor:'pointer',
-                        padding:'4px 8px', borderRadius:5,
-                        background: on ? 'rgba(34,197,94,0.18)' : 'var(--bg2)',
-                        border:'1px solid ' + (on ? 'rgba(34,197,94,0.5)' : 'var(--b1)'),
-                        color: on ? '#86efac' : 'var(--t2)', fontWeight: on?700:500,
-                      }}>
-                        <input type="checkbox" checked={on} onChange={()=>{
-                          const next = new Set(customMonths);
-                          on ? next.delete(m) : next.add(m);
-                          setCustomMonths(next);
-                        }} style={{margin:0}}/>
-                        {m}
-                      </label>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-
           {err&&<div style={{fontSize:11,color:'#f87171',marginBottom:8}}>{err}</div>}
 
           {/* Action buttons */}
@@ -6044,19 +5969,8 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
                       {new Date(f.createdAt).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}
                     </div>
                   </div>
-                  <div style={{display:'flex',flexDirection:'column',gap:4}}>
-                    {!isDone&&!isNoPickup&&(
-                      <button onClick={()=>handleMark(f._id,'done')}
-                        title="Mark this payment as collected"
-                        style={{background:'rgba(52,211,153,0.10)',border:'1px solid #15803d',color:'#34d399',borderRadius:4,padding:'4px 8px',cursor:'pointer',fontSize:10,fontWeight:700,display:'flex',alignItems:'center',gap:4}}>
-                        <Check size={10}/> Mark Collected
-                      </button>
-                    )}
-                    {/* <button onClick={()=>handleDelete(f._id)}
-                      style={{background:'none',border:'none',color:'var(--t3)',cursor:'pointer',padding:3}}>
-                      <Trash2 size={11}/>
-                    </button> */}
-                  </div>
+                  {/* Mark Collected button removed at user request — the
+                      Excel re-upload is the canonical way to clear a balance. */}
                 </div>
               </div>
             );
@@ -6716,11 +6630,6 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
           currentUser={currentUser}
           prefillMonth={popupContext?.month}
           prefillAmount={popupContext?.amount}
-          // Months this dealer currently has an outstanding amount for.
-          // Used by the "Apply to which month(s)?" picker in the modal.
-          availableMonths={Object.entries(activeDealer.monthlyOutstanding || {})
-            .filter(([, v]) => Number(v) > 0)
-            .map(([m]) => m)}
           onClose={()=>{ setActiveDealer(null); setPopupContext(null); }}
           onSaved={loadFollowups}
         />
