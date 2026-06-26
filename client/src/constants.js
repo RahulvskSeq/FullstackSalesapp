@@ -17,7 +17,7 @@
 
 export const DEFAULT_USERS = {
   admin:   { id:'admin',   name:'Admin',          pass:'admin123',   role:'admin',    color:'#a78bfa', ini:'AD', url:null,
-    // ↓ PUT YOUR OUTSTANDING SHEET CSV URL HERE (one sheet covers all dealers)
+    // ↓ PUT YOUR OUTSTANDING SHEET CSV URL HERE (one sheet covers all  dealers )
     url_outstanding: ''
   },
   pranav:  { id:'pranav',  name:'Pranav',          pass:'pranav123',  role:'salesman', color:'#818cf8', ini:'PR', url:'https://docs.google.com/spreadsheets/d/e/2PACX-1vSyKY3E32V3A_oVe-TLBVFTA_j5-z-mln0hcuUlzt1xM5LAwxpbFY3SoWKrNyKkVKvC0GN_Q6rc2HbP/pub?gid=851104587&single=true&output=csv', url_outstanding:null },
