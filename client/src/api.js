@@ -1596,18 +1596,31 @@
 // };
 
 
+// Production backend (Hostinger). Used as the default when the app is
+// running inside the Capacitor APK on a phone — no manual configuration
+// needed. Web/dev builds keep their existing fallbacks.
+const PROD_API_URL = 'https://sequence.salestracker.in/api';
+
+// Are we inside the Capacitor-wrapped Android app?
+const _isCapacitor = () =>
+  typeof window !== 'undefined' &&
+  window.Capacitor &&
+  typeof window.Capacitor.isNativePlatform === 'function' &&
+  window.Capacitor.isNativePlatform();
+
 // API base URL — resolved at MODULE LOAD:
-//   1. localStorage 'stp_api_url' (set via Settings screen) wins — lets one
-//      APK build work against any backend (dev, prod, etc.)
-//   2. Build-time VITE_API_URL
-//   3. Fall back to local dev
+//   1. localStorage 'stp_api_url' (set via Settings screen) wins — lets the
+//      same APK be pointed at any backend (dev, prod, etc.) without rebuilding.
+//   2. APK build: default to PROD_API_URL (Hostinger-hosted backend).
+//   3. Web/dev: build-time VITE_API_URL, else local dev URL.
 // Settings changes require a page reload to take effect (or use setApiBase
-// which also reloads automatically).
+// which reloads automatically).
 const _resolveBaseUrl = () => {
   try {
     const stored = (typeof localStorage !== 'undefined') ? localStorage.getItem('stp_api_url') : '';
     if(stored && stored.trim()) return stored.trim().replace(/\/$/, '');
   } catch {}
+  if (_isCapacitor()) return PROD_API_URL.replace(/\/$/, '');
   return (import.meta.env?.VITE_API_URL || 'http://localhost:5000/api').replace(/\/$/, '');
 };
 
@@ -1699,6 +1712,9 @@ export const api = {
   addFollowup:     (d)     => fetch(`${BASE}/followups`,{method:'POST',headers:authHeaders(),body:JSON.stringify(d)}).then(handle),
   updateFollowup:  (id,d)  => fetch(`${BASE}/followups/${id}`,{method:'PUT',headers:authHeaders(),body:JSON.stringify(d)}).then(handle),
   deleteFollowup:  (id)    => fetch(`${BASE}/followups/${id}`,{method:'DELETE',headers:authHeaders()}).then(handle),
+  // Admin: wipe EVERY follow-up so user can start fresh under the new
+  // month-tagged scheme. Outstanding amounts are NOT touched.
+  wipeAllFollowups:()      => fetch(`${BASE}/followups`,{method:'DELETE',headers:authHeaders()}).then(handle),
 
   // ── Samples ────────────────────────────────────────────────────────────────
   getSamples:      (zone)  => fetch(`${BASE}/samples${zone?'?zone='+encodeURIComponent(zone):''}`,{headers:authHeaders()}).then(handle),

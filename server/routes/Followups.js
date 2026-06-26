@@ -1,6 +1,6 @@
 import express from 'express';
 import mongoose from 'mongoose';
-import { protect } from '../middleware/auth.js';
+import { protect, adminOnly } from '../middleware/auth.js';
 // IMPORTANT: import the canonical schema from models/Outstandingfollowup.js
 // so new fields like `paymentProof`, `collectedAt`, `collectedAmount` are
 // recognised by Mongoose. Declaring the schema inline here used to cause it
@@ -35,9 +35,20 @@ router.get('/', protect, async (req,res) => {
 
 router.post('/', protect, async (req,res) => {
   try {
-    const {dealerName,salesman,amount,followupDate,comment,type}=req.body;
+    const { dealerName, salesman, amount, followupDate, comment, type, reason, months } = req.body;
     if(!dealerName||!followupDate) return res.status(400).json({error:'dealerName and followupDate required'});
-    const f=await OutstandingFollowup.create({dealerName,salesman:salesman||req.user.id,amount:amount||0,followupDate,comment:comment||'',type:type||'followup',createdBy:req.user.id,status:'pending'});
+    const f = await OutstandingFollowup.create({
+      dealerName,
+      salesman:      salesman || req.user.id,
+      amount:        amount || 0,
+      followupDate,
+      comment:       comment || '',
+      reason:        reason  || '',
+      months:        Array.isArray(months) ? months.filter(Boolean) : [],
+      type:          type || 'followup',
+      createdBy:     req.user.id,
+      status:        'pending',
+    });
     res.json(f);
   }catch(e){res.status(500).json({error:e.message});}
 });
@@ -61,6 +72,18 @@ router.put('/:id', protect, async (req,res) => {
 router.delete('/:id', protect, async (req,res) => {
   try { await OutstandingFollowup.findByIdAndDelete(req.params.id); res.json({ok:true}); }
   catch(e){res.status(500).json({error:e.message});}
+});
+
+// ── DELETE /api/followups (no id) — admin only, DESTRUCTIVE ───────────────
+// One-time wipe of every follow-up so the user can start fresh under the new
+// month-tagged scheme. Outstanding amounts (the `Outstanding` collection)
+// are NOT touched.
+router.delete('/', protect, adminOnly, async (req,res) => {
+  try {
+    const r = await OutstandingFollowup.deleteMany({});
+    console.log(`[FOLLOWUPS WIPE] deleted=${r.deletedCount}`);
+    res.json({ ok:true, deletedCount: r.deletedCount });
+  } catch(e){ res.status(500).json({error:e.message}); }
 });
 
 export default router;

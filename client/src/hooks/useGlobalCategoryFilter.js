@@ -53,13 +53,21 @@ function pushToServer(patch) {
 
 // One-time-per-page-load fetch from the server, which then overwrites
 // localStorage. Components mounted later read the synced value.
+//
+// Race-safe: if the user toggles a category WHILE the boot fetch is in
+// flight, we don't stomp their fresh selection with the server's value.
 let _bootFetched = false;
 async function bootSyncFromServer() {
   if (_bootFetched) return;
   _bootFetched = true;
+  const before = localStorage.getItem(STORAGE_KEY);
   try {
     const prefs = await api.getMyPrefs();
-    if (prefs && Array.isArray(prefs.excludedCategories)) {
+    // If the user toggled something during the fetch, the LS value won't
+    // match `before` anymore — leave it alone and let their toggle win.
+    const after = localStorage.getItem(STORAGE_KEY);
+    const localChangedMidFlight = before !== after;
+    if (!localChangedMidFlight && prefs && Array.isArray(prefs.excludedCategories)) {
       writeCurrent(new Set(prefs.excludedCategories));
     }
     if (prefs && Array.isArray(prefs.defaultExcludedCategories)) {

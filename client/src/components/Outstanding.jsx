@@ -5668,12 +5668,23 @@ const FOLLOWUP_REASONS = [
   'Others',
 ];
 
-function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMonth, prefillAmount }) {
+function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMonth, prefillAmount, availableMonths = [] }) {
   const [date,    setDate]    = useState(todayStr());
   const [reason,  setReason]  = useState('');     // preset reason from dropdown
   const [comment, setComment] = useState('');     // free-text note (only when reason === 'Others' or as add-on)
   const [amount,  setAmount]  = useState(
     typeof prefillAmount === 'number' ? prefillAmount : (dealer.latestOutstanding||0)
+  );
+  // Which month(s) does this comment apply to?
+  //   'one'    — only the month they clicked on (prefillMonth)
+  //   'all'    — every open month for this dealer
+  //   'custom' — pick specific months via checkboxes
+  const monthOpts = (availableMonths && availableMonths.length)
+    ? availableMonths
+    : (prefillMonth ? [prefillMonth] : []);
+  const [scope, setScope] = useState(prefillMonth ? 'one' : (monthOpts.length > 1 ? 'all' : 'one'));
+  const [customMonths, setCustomMonths] = useState(
+    () => new Set(prefillMonth ? [prefillMonth] : monthOpts)
   );
   const [saving,  setSaving]  = useState(false);
   const [err,     setErr]     = useState('');
@@ -5684,6 +5695,15 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
     f.dealerName?.toLowerCase().trim()===dealer.name?.toLowerCase().trim()
   ).sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
 
+  // Follow-up date cap — max 7 days from today. The native date picker
+  // enforces this via its `max` attribute, but we re-check at save time
+  // in case someone types a date directly.
+  const todayLocal = todayStr();
+  const maxFollowupDate = (() => {
+    const d = new Date(); d.setDate(d.getDate() + 7);
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  })();
+
   const handleAdd = async (type='followup') => {
     if(type==='followup' && !date){ setErr('Date required'); return; }
     // For follow-up entries: require either a preset reason or a comment when
@@ -5692,6 +5712,15 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
       if (!reason) { setErr('Pick a reason'); return; }
       if (reason === 'Others' && !(comment || '').trim()) {
         setErr('Add a note for the "Others" reason'); return;
+      }
+      // Enforce the 7-day cap server-side too
+      if (date > maxFollowupDate) {
+        setErr(`Follow-up date can't be more than 7 days from today (latest: ${maxFollowupDate})`);
+        return;
+      }
+      if (date < todayLocal) {
+        setErr(`Follow-up date can't be in the past`);
+        return;
       }
     }
     setSaving(true); setErr('');
@@ -5709,6 +5738,23 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
       } else {
         saved = note;
       }
+      // Decide which months this follow-up applies to.
+      // 'one'    → just the prefilled month (or none if nothing was clicked)
+      // 'all'    → every month with an outstanding amount for this dealer
+      // 'custom' → user-checked subset
+      let chosenMonths = [];
+      if (scope === 'one') {
+        chosenMonths = prefillMonth ? [prefillMonth] : [];
+      } else if (scope === 'all') {
+        chosenMonths = [...monthOpts];
+      } else {
+        chosenMonths = [...customMonths].filter(Boolean);
+      }
+      if (type === 'followup' && monthOpts.length > 0 && chosenMonths.length === 0) {
+        setSaving(false);
+        setErr('Pick at least one month to apply this to');
+        return;
+      }
       await api.addFollowup({
         dealerName:   dealer.name,
         salesman:     dealer.matchedSalesman?.id || '',
@@ -5717,6 +5763,7 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
         comment:      saved,
         type,
         reason:       type === 'followup' ? reason : '',
+        months:       chosenMonths,
       });
       setDate(todayStr()); setReason(''); setComment(''); setAmount(dealer.latestOutstanding||0);
       onSaved();
@@ -5812,8 +5859,22 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
           {/* Date + Amount */}
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
             <div>
-              <label style={{fontSize:10,color:'var(--t3)',display:'block',marginBottom:4,textTransform:'uppercase'}}>Next Follow-up Date</label>
-              <input type="date" className="inp" value={date} onChange={e=>setDate(e.target.value)} style={{width:'100%'}}/>
+              <label style={{fontSize:10,color:'var(--t3)',display:'block',marginBottom:4,textTransform:'uppercase'}}>
+                Next Follow-up Date
+                <span style={{color:'var(--t3)', fontWeight:400, marginLeft:6, textTransform:'none'}}>
+                  (within 7 days)
+                </span>
+              </label>
+              <input
+                type="date"
+                className="inp"
+                value={date}
+                min={todayLocal}
+                max={maxFollowupDate}
+                onChange={e=>setDate(e.target.value)}
+                title={`Pick any date between today and ${maxFollowupDate}`}
+                style={{width:'100%'}}
+              />
             </div>
             <div>
               <label style={{fontSize:10,color:'var(--t3)',display:'block',marginBottom:4,textTransform:'uppercase'}}>Expected Payment ₹</label>
@@ -5845,6 +5906,58 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
               <VoiceTextarea value={comment} onChange={setComment}
                 placeholder="Describe the reason… (tap 🎤 to speak)"
                 rows={2}/>
+            </div>
+          )}
+
+          {/* Apply-to months — only shown when there's something to choose */}
+          {monthOpts.length > 0 && (
+            <div style={{marginBottom:8, padding:'8px 10px', background:'rgba(99,102,241,0.06)', border:'1px solid rgba(99,102,241,0.20)', borderRadius:8}}>
+              <div style={{fontSize:10, color:'var(--t3)', textTransform:'uppercase', marginBottom:6}}>
+                Apply this comment to which month{monthOpts.length===1?'':'s'}?
+              </div>
+              <div style={{display:'flex', gap:6, flexWrap:'wrap', marginBottom: scope === 'custom' ? 8 : 0}}>
+                {prefillMonth && (
+                  <label style={{fontSize:11, display:'inline-flex', alignItems:'center', gap:4, cursor:'pointer', padding:'4px 8px', borderRadius:5, background: scope==='one'?'rgba(99,102,241,0.18)':'transparent', color: scope==='one'?'var(--acc)':'var(--t2)', fontWeight: scope==='one'?700:500}}>
+                    <input type="radio" name="scope" checked={scope==='one'} onChange={()=>setScope('one')} style={{margin:0}}/>
+                    Only {prefillMonth}
+                  </label>
+                )}
+                {monthOpts.length > 1 && (
+                  <label style={{fontSize:11, display:'inline-flex', alignItems:'center', gap:4, cursor:'pointer', padding:'4px 8px', borderRadius:5, background: scope==='all'?'rgba(99,102,241,0.18)':'transparent', color: scope==='all'?'var(--acc)':'var(--t2)', fontWeight: scope==='all'?700:500}}>
+                    <input type="radio" name="scope" checked={scope==='all'} onChange={()=>setScope('all')} style={{margin:0}}/>
+                    All {monthOpts.length} months
+                  </label>
+                )}
+                {monthOpts.length > 1 && (
+                  <label style={{fontSize:11, display:'inline-flex', alignItems:'center', gap:4, cursor:'pointer', padding:'4px 8px', borderRadius:5, background: scope==='custom'?'rgba(99,102,241,0.18)':'transparent', color: scope==='custom'?'var(--acc)':'var(--t2)', fontWeight: scope==='custom'?700:500}}>
+                    <input type="radio" name="scope" checked={scope==='custom'} onChange={()=>setScope('custom')} style={{margin:0}}/>
+                    Pick months…
+                  </label>
+                )}
+              </div>
+              {scope === 'custom' && (
+                <div style={{display:'flex', gap:6, flexWrap:'wrap'}}>
+                  {monthOpts.map(m => {
+                    const on = customMonths.has(m);
+                    return (
+                      <label key={m} style={{
+                        fontSize:11, display:'inline-flex', alignItems:'center', gap:4, cursor:'pointer',
+                        padding:'4px 8px', borderRadius:5,
+                        background: on ? 'rgba(34,197,94,0.18)' : 'var(--bg2)',
+                        border:'1px solid ' + (on ? 'rgba(34,197,94,0.5)' : 'var(--b1)'),
+                        color: on ? '#86efac' : 'var(--t2)', fontWeight: on?700:500,
+                      }}>
+                        <input type="checkbox" checked={on} onChange={()=>{
+                          const next = new Set(customMonths);
+                          on ? next.delete(m) : next.add(m);
+                          setCustomMonths(next);
+                        }} style={{margin:0}}/>
+                        {m}
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 
@@ -5898,6 +6011,14 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
                         color:isNoPickup?'#f87171':isDone?'#34d399':isOver?'#f87171':'var(--acc)'}}>
                         {isNoPickup?'📵 No Pickup':isDone?'✓ Done':isOver?`${Math.abs(days)}d overdue`:days===0?'Today':`${days}d left`}
                       </span>
+                      {Array.isArray(f.months) && f.months.length > 0 && (
+                        f.months.map(m => (
+                          <span key={m} style={{
+                            fontSize:10, padding:'1px 6px', borderRadius:4, fontWeight:700,
+                            background:'rgba(251,191,36,0.14)', color:'#fbbf24',
+                          }}>{m}</span>
+                        ))
+                      )}
                       {f.amount>0&&<span style={{fontSize:10,color:'#fbbf24',fontWeight:600}}>₹{Number(f.amount).toLocaleString('en-IN')}</span>}
                     </div>
                     {f.comment&&(
@@ -6260,6 +6381,38 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
           <button onClick={()=>fileRef.current?.click()} disabled={uploading} className="btnp" style={{display:'flex',alignItems:'center',gap:6}}>
             <Upload size={13}/>{uploading?'Uploading...':'Upload Outstanding'}
           </button>
+          <button onClick={async () => {
+            // One-time clean-slate wipe of every follow-up so the user can
+            // start fresh under the new month-tagged scheme. Outstanding
+            // amounts are NOT touched.
+            const ok = await confirmDialog({
+              title: 'Wipe ALL follow-up history?',
+              message:
+                'This deletes every comment, "Did not pick", scheduled follow-up, ' +
+                'and payment-collected entry for every dealer.\n\n' +
+                'Outstanding amounts and all other data are NOT touched. Use this ' +
+                'to start fresh now that follow-ups can be tagged by month.\n\n' +
+                'This cannot be undone.',
+              confirmText: 'Yes, wipe all follow-ups',
+              danger: true,
+            });
+            if (!ok) return;
+            try {
+              const r = await api.wipeAllFollowups();
+              setUploadMsg(`✓ Wiped ${r.deletedCount || 0} follow-up record${r.deletedCount===1?'':'s'}.`);
+              await loadFollowups();
+            } catch(e) {
+              setError('Wipe failed: ' + e.message);
+            }
+          }} style={{
+            display:'flex', alignItems:'center', gap:6,
+            background:'transparent', color:'#fca5a5',
+            border:'1px solid rgba(248,113,113,0.4)',
+            padding:'8px 12px', borderRadius:6, fontSize:12, fontWeight:600,
+            cursor:'pointer',
+          }}>
+            <Trash2 size={12}/> Wipe all follow-up history
+          </button>
           <button onClick={() => {
             // Build sample CSV in the exact format the upload route expects:
             //   first column = "Dealer Name", remaining columns = months
@@ -6563,6 +6716,11 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
           currentUser={currentUser}
           prefillMonth={popupContext?.month}
           prefillAmount={popupContext?.amount}
+          // Months this dealer currently has an outstanding amount for.
+          // Used by the "Apply to which month(s)?" picker in the modal.
+          availableMonths={Object.entries(activeDealer.monthlyOutstanding || {})
+            .filter(([, v]) => Number(v) > 0)
+            .map(([m]) => m)}
           onClose={()=>{ setActiveDealer(null); setPopupContext(null); }}
           onSaved={loadFollowups}
         />
