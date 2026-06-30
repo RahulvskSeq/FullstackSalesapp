@@ -299,42 +299,20 @@ export default function LoginPage({users:propUsers,onLogin,theme,toggleTheme}){
 
         <div className="card" style={{padding:28}}>
           <div className="field">
-            <label>User</label>
-            <select className="sel inp" style={{padding:'10px 12px'}} value={uid_} onChange={e=>{setUid(e.target.value);setErr('');}}>
-              <option value="">Choose...</option>
-              {/* Group by role so admins / superadmins are obvious */}
-              {(() => {
-                const groups = { superadmin:[], admin:[], salesman:[], other:[] };
-                allLoginUsers.forEach(u => {
-                  const k = (u.role === 'superadmin' || u.role === 'admin' || u.role === 'salesman') ? u.role : 'other';
-                  groups[k].push(u);
-                });
-                return (
-                  <>
-                    {groups.superadmin.length > 0 && (
-                      <optgroup label="Superadmin">
-                        {groups.superadmin.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                      </optgroup>
-                    )}
-                    {groups.admin.length > 0 && (
-                      <optgroup label="Admin">
-                        {groups.admin.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                      </optgroup>
-                    )}
-                    {groups.salesman.length > 0 && (
-                      <optgroup label="Salesmen">
-                        {groups.salesman.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                      </optgroup>
-                    )}
-                    {groups.other.length > 0 && (
-                      <optgroup label="Other">
-                        {groups.other.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                      </optgroup>
-                    )}
-                  </>
-                );
-              })()}
-            </select>
+            <label>Username</label>
+            <input
+              type="text"
+              className="inp"
+              style={{padding:'10px 12px'}}
+              value={uid_}
+              onChange={e=>{ setUid(e.target.value.trim().toLowerCase()); setErr(''); }}
+              onKeyDown={e=>e.key==='Enter'&&submit()}
+              placeholder="Enter your username"
+              autoComplete="username"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+            />
           </div>
           <div className="field">
             <label>Password</label>

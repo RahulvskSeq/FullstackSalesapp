@@ -107,10 +107,10 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
 
   // App-section features the admin can grant. Keys must match the
   // requireFeature() guards on the server.
+  // NOTE: Monthly Entry, Manage Months, and Upload Data are now hard-locked
+  // to superadmin only and intentionally NOT in this list — there's no way
+  // for an admin to delegate them.
   const FEATURE_OPTIONS = [
-    { key: 'monthlyEntry',     label: 'Monthly Entry',       desc: 'Edit per-dealer Achieved / Target, run the unified Excel upload' },
-    { key: 'manageMonths',     label: 'Manage Months',       desc: 'Dedupe dealers, normalize state/city, wipe month, repair targets' },
-    { key: 'uploadData',       label: 'Upload Data',         desc: 'Upload Outstanding Excel and other bulk imports' },
     { key: 'manageCategories', label: 'Manage Categories',   desc: 'Add/edit/delete categories + sub-categories in Admin Panel' },
   ];
 

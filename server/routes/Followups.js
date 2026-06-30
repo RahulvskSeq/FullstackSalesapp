@@ -1,6 +1,6 @@
 import express from 'express';
 import mongoose from 'mongoose';
-import { protect, adminOnly } from '../middleware/auth.js';
+import { protect, adminOnly, superAdminOnly } from '../middleware/auth.js';
 // IMPORTANT: import the canonical schema from models/Outstandingfollowup.js
 // so new fields like `paymentProof`, `collectedAt`, `collectedAmount` are
 // recognised by Mongoose. Declaring the schema inline here used to cause it
@@ -74,11 +74,12 @@ router.delete('/:id', protect, async (req,res) => {
   catch(e){res.status(500).json({error:e.message});}
 });
 
-// ── DELETE /api/followups (no id) — admin only, DESTRUCTIVE ───────────────
+// ── DELETE /api/followups (no id) — SUPERADMIN ONLY, DESTRUCTIVE ──────────
 // One-time wipe of every follow-up so the user can start fresh under the new
 // month-tagged scheme. Outstanding amounts (the `Outstanding` collection)
-// are NOT touched.
-router.delete('/', protect, adminOnly, async (req,res) => {
+// are NOT touched. Restricted to superadmin so a regular admin can't
+// accidentally (or maliciously) erase every comment in the database.
+router.delete('/', protect, superAdminOnly, async (req,res) => {
   try {
     const r = await OutstandingFollowup.deleteMany({});
     console.log(`[FOLLOWUPS WIPE] deleted=${r.deletedCount}`);

@@ -2,7 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import XLSX from 'xlsx';
 import mongoose from 'mongoose';
-import { protect, adminOnly, requireFeature } from '../middleware/auth.js';
+import { protect, adminOnly, superAdminOnly, requireFeature } from '../middleware/auth.js';
 
 const router = express.Router();
 const upload = multer({ storage:multer.memoryStorage(), limits:{ fileSize:10*1024*1024 } });
@@ -63,7 +63,7 @@ router.get('/', protect, async (req, res) => {
   } catch(e){ console.error('[OUTSTANDING]',e.message); res.status(500).json({error:e.message}); }
 });
 
-router.post('/upload', protect, adminOnly, requireFeature('uploadData'), upload.single('file'), async (req,res) => {
+router.post('/upload', protect, superAdminOnly, upload.single('file'), async (req,res) => {
   // IMPORTANT (data safety contract):
   //   This route ONLY touches the `Outstanding` collection (per-month amounts).
   //   It NEVER touches `OutstandingFollowup` — your comments, "Did not pick"

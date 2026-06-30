@@ -5,7 +5,7 @@ import Sale from '../models/Sale.js';
 import Category from '../models/Category.js';
 import Dealer from '../models/Dealer.js';
 import SalesTarget from '../models/SalesTarget.js';
-import { protect, adminOnly, requireFeature } from '../middleware/auth.js';
+import { protect, adminOnly, superAdminOnly, requireFeature } from '../middleware/auth.js';
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
@@ -294,7 +294,7 @@ router.get('/template', protect, async (req, res) => {
  *       status/zone/city/state/category/credit                       *
  *    3. EXPLODE sub-category cells into Sale line items              *
  * ----------------------------------------------------------------- */
-router.post('/upload', protect, adminOnly, requireFeature('monthlyEntry'), upload.single('file'), async (req, res) => {
+router.post('/upload', protect, superAdminOnly, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 

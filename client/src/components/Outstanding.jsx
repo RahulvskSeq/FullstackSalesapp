@@ -6295,38 +6295,38 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
           <button onClick={()=>fileRef.current?.click()} disabled={uploading} className="btnp" style={{display:'flex',alignItems:'center',gap:6}}>
             <Upload size={13}/>{uploading?'Uploading...':'Upload Outstanding'}
           </button>
-          <button onClick={async () => {
-            // One-time clean-slate wipe of every follow-up so the user can
-            // start fresh under the new month-tagged scheme. Outstanding
-            // amounts are NOT touched.
-            const ok = await confirmDialog({
-              title: 'Wipe ALL follow-up history?',
-              message:
-                'This deletes every comment, "Did not pick", scheduled follow-up, ' +
-                'and payment-collected entry for every dealer.\n\n' +
-                'Outstanding amounts and all other data are NOT touched. Use this ' +
-                'to start fresh now that follow-ups can be tagged by month.\n\n' +
-                'This cannot be undone.',
-              confirmText: 'Yes, wipe all follow-ups',
-              danger: true,
-            });
-            if (!ok) return;
-            try {
-              const r = await api.wipeAllFollowups();
-              setUploadMsg(`✓ Wiped ${r.deletedCount || 0} follow-up record${r.deletedCount===1?'':'s'}.`);
-              await loadFollowups();
-            } catch(e) {
-              setError('Wipe failed: ' + e.message);
-            }
-          }} style={{
-            display:'flex', alignItems:'center', gap:6,
-            background:'transparent', color:'#fca5a5',
-            border:'1px solid rgba(248,113,113,0.4)',
-            padding:'8px 12px', borderRadius:6, fontSize:12, fontWeight:600,
-            cursor:'pointer',
-          }}>
-            <Trash2 size={12}/> Wipe all follow-up history
-          </button>
+          {/* Wipe all follow-up history — SUPERADMIN ONLY (destructive). */}
+          {currentUser?.role === 'superadmin' && (
+            <button onClick={async () => {
+              const ok = await confirmDialog({
+                title: 'Wipe ALL follow-up history?',
+                message:
+                  'This deletes every comment, "Did not pick", scheduled follow-up, ' +
+                  'and payment-collected entry for every dealer.\n\n' +
+                  'Outstanding amounts and all other data are NOT touched. Use this ' +
+                  'to start fresh now that follow-ups can be tagged by month.\n\n' +
+                  'This cannot be undone.',
+                confirmText: 'Yes, wipe all follow-ups',
+                danger: true,
+              });
+              if (!ok) return;
+              try {
+                const r = await api.wipeAllFollowups();
+                setUploadMsg(`✓ Wiped ${r.deletedCount || 0} follow-up record${r.deletedCount===1?'':'s'}.`);
+                await loadFollowups();
+              } catch(e) {
+                setError('Wipe failed: ' + e.message);
+              }
+            }} style={{
+              display:'flex', alignItems:'center', gap:6,
+              background:'transparent', color:'#fca5a5',
+              border:'1px solid rgba(248,113,113,0.4)',
+              padding:'8px 12px', borderRadius:6, fontSize:12, fontWeight:600,
+              cursor:'pointer',
+            }}>
+              <Trash2 size={12}/> Wipe all follow-up history
+            </button>
+          )}
           <button onClick={() => {
             // Build sample CSV in the exact format the upload route expects:
             //   first column = "Dealer Name", remaining columns = months
