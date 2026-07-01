@@ -107,9 +107,9 @@ router.get('/template', protect, async (req, res) => {
     'Dealer ID',
     'Dealer Name', 'Salesman', 'City', 'State', 'Zone', 'Status',
     'Address', 'Pincode',
-    'Target', 'Credit Days', 'Credit Limit',
+    'Target', 'Achieved', 'Credit Days', 'Credit Limit',
   ];
-  const N_DEALER = DEALER_HEADERS.length;   // 12
+  const N_DEALER = DEALER_HEADERS.length;   // 13
 
   const wb = XLSX.utils.book_new();
 
@@ -202,6 +202,10 @@ router.get('/template', protect, async (req, res) => {
         d.address || '',
         d.pincode || '',
         Number(md.target || d.target || 0),
+        // Achieved: pre-fill from the dealer's stored monthlyData for this
+        // month so the export reflects whatever the user entered inline in
+        // Monthly Entry even when there's no category-level breakdown.
+        Number(md.achieved || 0),
         Number(md.creditDays  || d.creditDays  || 0),
         Number(md.creditLimit || d.creditLimit || 0),
         ...subCells,
@@ -245,6 +249,7 @@ router.get('/template', protect, async (req, res) => {
     { wch: 40 },  // Address
     { wch: 10 },  // Pincode
     { wch: 10 },  // Target
+    { wch: 10 },  // Achieved
     { wch: 10 },  // Credit Days
     { wch: 12 },  // Credit Limit
     ...subCols.map(() => ({ wch: 13 })),
@@ -373,6 +378,7 @@ router.post('/upload', protect, superAdminOnly, upload.single('file'), async (re
       else if (/^category\s*type$/i.test(v))                                role = 'ignore';   // legacy, dropped
       else if (/^sub\s*category$/i.test(v))                                 role = 'ignore';   // legacy, dropped
       else if (/^target$/i.test(v))                                         role = 'target';
+      else if (/^achieved$/i.test(v))                                       role = 'achieved';
       else if (/^credit\s*days$/i.test(v))                                  role = 'creditDays';
       else if (/^credit\s*limit$/i.test(v))                                 role = 'creditLimit';
       else if (/grand\s*total|^total$|^achieved$/i.test(v))                 role = 'ignore';
@@ -491,6 +497,9 @@ router.post('/upload', protect, superAdminOnly, upload.single('file'), async (re
       if (hasCell('target')      && numCell('target')      !== null) masterFields.target      = numCell('target');
       if (hasCell('creditDays')  && numCell('creditDays')  !== null) masterFields.creditDays  = numCell('creditDays');
       if (hasCell('creditLimit') && numCell('creditLimit') !== null) masterFields.creditLimit = numCell('creditLimit');
+      // "Achieved" column — user-entered total for the month. Overrides the
+      // sub-category sum when the user only fills the total (no breakdown).
+      const achievedCellRaw = hasCell('achieved') ? numCell('achieved') : null;
 
       // ── Resolve dealer doc ────────────────────────────────────────────
       // Priority order (so editing Name or Salesman never creates a dupe):
@@ -588,8 +597,18 @@ router.post('/upload', protect, superAdminOnly, upload.single('file'), async (re
             ? Object.fromEntries(dealerDoc.monthlyData)
             : (dealerDoc.monthlyData || {});
           const prev = md[monthLabel] || {};
+          // Achieved priority:
+          //   1. Sub-category sum (rowAchieved) — most precise when the user
+          //      filled category-level columns.
+          //   2. Explicit "Achieved" column value — when the user only wants
+          //      to update the month total without a breakdown.
+          //   3. Previously stored value — if neither is provided this row
+          //      just leaves the achieved as it was.
+          const finalAchieved = rowAchieved > 0
+            ? rowAchieved
+            : (achievedCellRaw !== null ? achievedCellRaw : (prev.achieved || 0));
           const entry = {
-            achieved:    rowAchieved || prev.achieved || 0,
+            achieved:    finalAchieved,
             target:      ('target' in masterFields ? masterFields.target : (prev.target || 0)),
             status:      masterFields.status ?? prev.status ?? '',
             zone:        masterFields.zone   ?? prev.zone   ?? '',
