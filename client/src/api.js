@@ -1792,6 +1792,13 @@ export const api = {
   // permissions editor to render a checkbox per state.
   dealerDistinctStates: () => fetch(`${BASE}/dealers/distinct-states`,{ headers:authHeaders() }).then(handle),
 
+  // Unique cities. Pass ?state=<name> to filter to one state's cities (useful
+  // when the admin scopes to a subset first).
+  dealerDistinctCities: (state) => fetch(
+    `${BASE}/dealers/distinct-cities${state?`?state=${encodeURIComponent(state)}`:''}`,
+    { headers:authHeaders() }
+  ).then(handle),
+
   // Admin: find and remove dealers whose name = "<canonical> <salesman first name>"
   // (e.g. "76 EAST pranav" when "76 EAST" already exists for salesman Pranav).
   // Migrates Sale rows to the canonical dealer before deleting.
@@ -2048,6 +2055,8 @@ export const dbDealerToApp = (d, MO=[]) => {
     state:         d.state||'',
     zone:          d.zone||'',
     status:        d.status||'ACTIVE',
+    address:       d.address||'',
+    pincode:       d.pincode||'',
     category:      d.category||'',
     categoryType:  d.categoryType||'',
     target:        d.target||0,

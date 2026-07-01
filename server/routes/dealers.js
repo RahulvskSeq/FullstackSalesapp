@@ -64,6 +64,7 @@ const fmt = (d, MO=[]) => {
   return {
     id:d._id?.toString(), name:d.name, salesman:d.salesman,
     city:d.city||'', state:d.state||'', zone:d.zone||'', status:d.status||'ACTIVE',
+    address:d.address||'', pincode:d.pincode||'',
     category:d.category||'', categoryType:d.categoryType||'', target:d.target||0,
     avg6m:d.avg6m||0, creditDays:d.creditDays||0, creditLimit:d.creditLimit||0,
     months, monthTargets, monthStatus, monthZone,
@@ -99,18 +100,19 @@ async function dealerScopeFilter(req) {
   const u = User ? await User.findOne({ id: req.user.id }, 'permissions').lean() : null;
   const p = u?.permissions || {};
   const hasStates   = Array.isArray(p.states)   && p.states.length   > 0;
+  const hasCities   = Array.isArray(p.cities)   && p.cities.length   > 0;
   const hasZones    = Array.isArray(p.zones)    && p.zones.length    > 0;
   const hasSalesmen = Array.isArray(p.salesmen) && p.salesmen.length > 0;
 
-  if (hasStates || hasZones || hasSalesmen) {
+  if (hasStates || hasCities || hasZones || hasSalesmen) {
     const filt = {};
-    // Case-insensitive + whitespace-tolerant match for state/zone — so a
-    // saved permission of "Kerala" still matches dealer rows stored as
-    // "kerala", "KERALA", "Kerala " etc. Without this, mixed casing in
-    // legacy uploads causes the scope to return zero dealers.
+    // Case-insensitive + whitespace-tolerant match. So a saved permission
+    // of "Bangalore" still matches dealer rows stored as "bangalore",
+    // "BANGALORE", "Bangalore " etc. Same trick handles legacy uploads.
     const escape = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const ciMatch = v => new RegExp('^\\s*' + escape(v) + '\\s*$', 'i');
     if (hasStates)   filt.state    = { $in: p.states.map(ciMatch) };
+    if (hasCities)   filt.city     = { $in: p.cities.map(ciMatch) };
     if (hasZones)    filt.zone     = { $in: p.zones.map(ciMatch) };
     if (hasSalesmen) filt.salesman = { $in: p.salesmen };   // salesman ids are already lowercase
     return filt;
@@ -129,7 +131,7 @@ async function dealerScopeFilter(req) {
 // Salesmen see only their own dealers; staff see everyone.
 // ── GET /api/dealers/distinct-states ──────────────────────────────────────
 // Returns the unique state list across the dealer roster so the permission
-// editor can render a checkbox for each one. Superadmin only.
+// editor can render a checkbox for each one. Admin+ only.
 router.get('/distinct-states', protect, async (req, res) => {
   if (req.user.role !== 'superadmin' && req.user.role !== 'admin') {
     return res.status(403).json({ error: 'Admin only' });
@@ -137,6 +139,23 @@ router.get('/distinct-states', protect, async (req, res) => {
   try {
     const states = await Dealer.distinct('state');
     res.json({ states: states.filter(s => s && s.trim()).sort() });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── GET /api/dealers/distinct-cities ──────────────────────────────────────
+// Unique cities in the dealer roster — used by the permission editor to
+// grant city-level access. Optionally filter by ?state=Karnataka to keep
+// the list focused when the admin is scoping to one state's cities.
+router.get('/distinct-cities', protect, async (req, res) => {
+  if (req.user.role !== 'superadmin' && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin only' });
+  }
+  try {
+    const q = req.query.state ? { state: new RegExp('^\\s*' + String(req.query.state).replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + '\\s*$', 'i') } : {};
+    const cities = await Dealer.distinct('city', q);
+    res.json({ cities: cities.filter(c => c && c.trim()).sort() });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

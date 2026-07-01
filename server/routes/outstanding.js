@@ -40,15 +40,17 @@ router.get('/', protect, async (req, res) => {
     const u = await User.findOne({ id: req.user.id }, 'permissions').lean();
     const p = u?.permissions || {};
     const hasStates   = Array.isArray(p.states)   && p.states.length   > 0;
+    const hasCities   = Array.isArray(p.cities)   && p.cities.length   > 0;
     const hasZones    = Array.isArray(p.zones)    && p.zones.length    > 0;
     const hasSalesmen = Array.isArray(p.salesmen) && p.salesmen.length > 0;
 
     let dealerFilter = {};
-    if (hasStates || hasZones || hasSalesmen) {
-      // Case-insensitive state/zone match — see dealers.js for rationale.
+    if (hasStates || hasCities || hasZones || hasSalesmen) {
+      // Case-insensitive state/city/zone match — see dealers.js for rationale.
       const escape = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const ciMatch = v => new RegExp('^\\s*' + escape(v) + '\\s*$', 'i');
       if (hasStates)   dealerFilter.state    = { $in: p.states.map(ciMatch) };
+      if (hasCities)   dealerFilter.city     = { $in: p.cities.map(ciMatch) };
       if (hasZones)    dealerFilter.zone     = { $in: p.zones.map(ciMatch) };
       if (hasSalesmen) dealerFilter.salesman = { $in: p.salesmen };
     } else if (req.user?.role === 'salesman') {

@@ -36,6 +36,7 @@ const S = new mongoose.Schema({
   // only see Karnataka + Tamil Nadu data without being a salesman.
   permissions: {
     states:    { type:[String], default: [] },   // empty = no state restriction
+    cities:    { type:[String], default: [] },   // empty = no city restriction (finer-grained than state)
     zones:     { type:[String], default: [] },   // empty = no zone restriction
     salesmen:  { type:[String], default: [] },   // empty = all salesmen
     // App-section access. Empty array uses role-based defaults

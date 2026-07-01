@@ -8900,7 +8900,8 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
             <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
               <StatusBadge status={dealer.status}/>
               {dealer.zone&&<span className="chip">{dealer.zone}</span>}
-              {(dealer.city||dealer.state)&&<span className="chip" style={{display:'inline-flex',alignItems:'center',gap:4}}><MapPin size={10}/> {[dealer.city,dealer.state].filter(Boolean).join(', ')}</span>}
+              {(dealer.city||dealer.state)&&<span className="chip" style={{display:'inline-flex',alignItems:'center',gap:4}}><MapPin size={10}/> {[dealer.city,dealer.state].filter(Boolean).join(', ')}{dealer.pincode?` — ${dealer.pincode}`:''}</span>}
+              {dealer.address&&<span className="chip" title={dealer.address} style={{display:'inline-flex',alignItems:'center',gap:4,maxWidth:340,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{dealer.address}</span>}
               {dealer.category&&<span className="chip" style={{color:'#818cf8',borderColor:'#818cf844'}}><Layers size={9} style={{display:'inline',verticalAlign:'middle',marginRight:3}}/>{dealer.category}{dealer.categoryType?` / ${dealer.categoryType}`:''}</span>}
               {isAdmin&&<span style={{fontSize:11,color:'var(--t3)'}}>· {users[dealer.salesman]?.name||dealer.salesman}</span>}
               {selectedMonthIdx!==CURRENT_MONTH_IDX&&<span style={{fontSize:10,background:'rgba(251,191,36,0.15)',color:'#fbbf24',padding:'2px 8px',borderRadius:4}}>Viewing {MO[selectedMonthIdx]}</span>}

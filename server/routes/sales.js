@@ -106,9 +106,10 @@ router.get('/template', protect, async (req, res) => {
   const DEALER_HEADERS = [
     'Dealer ID',
     'Dealer Name', 'Salesman', 'City', 'State', 'Zone', 'Status',
+    'Address', 'Pincode',
     'Target', 'Credit Days', 'Credit Limit',
   ];
-  const N_DEALER = DEALER_HEADERS.length;   // 10
+  const N_DEALER = DEALER_HEADERS.length;   // 12
 
   const wb = XLSX.utils.book_new();
 
@@ -198,6 +199,8 @@ router.get('/template', protect, async (req, res) => {
         md.state || d.state || '',
         md.zone  || d.zone  || '',
         md.status|| d.status|| 'ACTIVE',
+        d.address || '',
+        d.pincode || '',
         Number(md.target || d.target || 0),
         Number(md.creditDays  || d.creditDays  || 0),
         Number(md.creditLimit || d.creditLimit || 0),
@@ -239,6 +242,8 @@ router.get('/template', protect, async (req, res) => {
     { wch: 14 },  // State
     { wch: 12 },  // Zone
     { wch: 12 },  // Status
+    { wch: 40 },  // Address
+    { wch: 10 },  // Pincode
     { wch: 10 },  // Target
     { wch: 10 },  // Credit Days
     { wch: 12 },  // Credit Limit
@@ -362,6 +367,8 @@ router.post('/upload', protect, superAdminOnly, upload.single('file'), async (re
       else if (/^city$/i.test(v))                                           role = 'city';
       else if (/^state$/i.test(v))                                          role = 'state';
       else if (/^zone$/i.test(v))                                           role = 'zone';
+      else if (/^address$/i.test(v))                                        role = 'address';
+      else if (/^pincode$|^pin\s*code$|^zip$/i.test(v))                     role = 'pincode';
       else if (/^status$/i.test(v))                                         role = 'status';
       else if (/^category\s*type$/i.test(v))                                role = 'ignore';   // legacy, dropped
       else if (/^sub\s*category$/i.test(v))                                 role = 'ignore';   // legacy, dropped
@@ -478,6 +485,8 @@ router.post('/upload', protect, superAdminOnly, upload.single('file'), async (re
       if (hasCell('city'))        masterFields.city        = String(get(row,'city')||'').trim();
       if (hasCell('state'))       masterFields.state       = String(get(row,'state')||'').trim();
       if (hasCell('zone'))        masterFields.zone        = String(get(row,'zone')||'').trim();
+      if (hasCell('address'))     masterFields.address     = String(get(row,'address')||'').trim();
+      if (hasCell('pincode'))     masterFields.pincode     = String(get(row,'pincode')||'').trim();
       if (hasCell('status'))      masterFields.status      = String(get(row,'status')||'').trim() || 'ACTIVE';
       if (hasCell('target')      && numCell('target')      !== null) masterFields.target      = numCell('target');
       if (hasCell('creditDays')  && numCell('creditDays')  !== null) masterFields.creditDays  = numCell('creditDays');
@@ -697,10 +706,11 @@ async function monthFilter(req) {
   const u = await User.findOne({ id: req.user.id }, 'permissions').lean();
   const p = u?.permissions || {};
   const hasStates   = Array.isArray(p.states)   && p.states.length   > 0;
+  const hasCities   = Array.isArray(p.cities)   && p.cities.length   > 0;
   const hasZones    = Array.isArray(p.zones)    && p.zones.length    > 0;
   const hasSalesmen = Array.isArray(p.salesmen) && p.salesmen.length > 0;
 
-  if (hasStates || hasZones || hasSalesmen) {
+  if (hasStates || hasCities || hasZones || hasSalesmen) {
     // Resolve permitted dealer set by looking up dealers matching the
     // permission scope, then constrain the Sale aggregation to those
     // dealer names. Salesman/admin both go through this path when perms
@@ -710,6 +720,7 @@ async function monthFilter(req) {
     const escape = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const ciMatch = v => new RegExp('^\\s*' + escape(v) + '\\s*$', 'i');
     if (hasStates)   dealerFilt.state    = { $in: p.states.map(ciMatch) };
+    if (hasCities)   dealerFilt.city     = { $in: p.cities.map(ciMatch) };
     if (hasZones)    dealerFilt.zone     = { $in: p.zones.map(ciMatch) };
     if (hasSalesmen) dealerFilt.salesman = { $in: p.salesmen };
     const permitted = await Dealer.find(dealerFilt, 'name').lean();

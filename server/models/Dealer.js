@@ -66,6 +66,10 @@ const dealerSchema = new mongoose.Schema({
   state:        { type:String, default:'' },
   zone:         { type:String, default:'' },
   status:       { type:String, default:'ACTIVE' },
+  // Full postal address + PIN, used by the Map View / DealerModal for a
+  // more precise deep-drill and by external navigation apps.
+  address:      { type:String, default:'' },
+  pincode:      { type:String, default:'' },
   category:     { type:String, default:'' },
   categoryType: { type:String, default:'' },
   target:       { type:Number, default:0 },

@@ -31,11 +31,12 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
   // (user sees every state). Pre-populate the list of states from the dealer
   // roster on first open so the admin can tick the relevant ones.
   const [allStates,    setAllStates]    = useState([]);
+  const [allCities,    setAllCities]    = useState([]);
   const [createStates, setCreateStates] = useState(new Set());
+  const [createCities, setCreateCities] = useState(new Set());
   useEffect(() => {
-    api.dealerDistinctStates()
-      .then(r => setAllStates(r?.states || []))
-      .catch(() => {});
+    api.dealerDistinctStates().then(r => setAllStates(r?.states || [])).catch(() => {});
+    api.dealerDistinctCities().then(r => setAllCities(r?.cities || [])).catch(() => {});
   }, []);
 
   const colors = ['#818cf8','#34d399','#f472b6','#fb923c','#fbbf24','#22d3ee','#e879f9','#a78bfa','#f87171','#4ade80'];
@@ -58,7 +59,7 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
     setBusy(true);
     try {
       const ini = name.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
-      const permissions = { states: [...createStates], zones: [], salesmen: [] };
+      const permissions = { states: [...createStates], cities: [...createCities], zones: [], salesmen: [] };
       const newUser = await api.createUser({ id: idC, name, pass, role, color, ini, permissions });
       // Optimistically update local cache for instant feedback…
       setUsers({ ...users, [idC]: { id: idC, name, pass, role, color, ini, url: url.trim() || null, active:true, permissions } });
@@ -67,7 +68,7 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
       // server-side fields and persists across page reloads + other devices.
       onUsersChanged?.();
       refreshAll();
-      setName(''); setId(''); setPass(''); setUrl(''); setRole('salesman'); setCreateStates(new Set());
+      setName(''); setId(''); setPass(''); setUrl(''); setRole('salesman'); setCreateStates(new Set()); setCreateCities(new Set());
       flash('success', 'Created ' + name + ' (' + idC + '). Password: ' + pass);
     } catch(e){
       flash('error', 'Create failed: ' + e.message);
@@ -102,6 +103,7 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
   // ── Edit data-access + feature permissions ─────────────────────────────
   const [permsForUid,    setPermsForUid]    = useState(null);
   const [permsStates,    setPermsStates]    = useState(new Set());
+  const [permsCities,    setPermsCities]    = useState(new Set());
   const [permsFeatures,  setPermsFeatures]  = useState(new Set());
   const [permsSaving,    setPermsSaving]    = useState(false);
 
@@ -116,7 +118,8 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
 
   const openPermissions = (uid) => {
     const cur = allUsers[uid]?.permissions || {};
-    setPermsStates(new Set(Array.isArray(cur.states) ? cur.states : []));
+    setPermsStates(new Set(Array.isArray(cur.states)   ? cur.states   : []));
+    setPermsCities(new Set(Array.isArray(cur.cities)   ? cur.cities   : []));
     setPermsFeatures(new Set(Array.isArray(cur.features) ? cur.features : []));
     setPermsForUid(uid);
   };
@@ -126,6 +129,7 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
     try {
       const next = {
         states:   [...permsStates],
+        cities:   [...permsCities],
         zones:    [],
         salesmen: [],
         features: [...permsFeatures],
@@ -371,6 +375,9 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
                         <span style={{color:'#fbbf24'}}> {u.permissions.states.join(', ')}</span>
                       </>
                     )}
+                    {Array.isArray(u.permissions?.cities) && u.permissions.cities.length > 0 && (
+                      <> · <span style={{color:'#93c5fd'}}>Cities: {u.permissions.cities.join(', ')}</span></>
+                    )}
                   </div>
                 </div>
 
@@ -588,6 +595,40 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
                 })}
               </div>
             )}
+
+            {/* ── City-level permissions (finer than state) ────────────── */}
+            <div style={{fontSize:11, color:'var(--t3)', textTransform:'uppercase', letterSpacing:'.08em', marginBottom:6, marginTop:4}}>
+              Cities <span style={{textTransform:'none', fontWeight:400}}>(optional — for finer scoping)</span>
+            </div>
+            {allCities.length === 0 ? (
+              <div style={{fontSize:11, color:'var(--t3)', padding:'6px 0 12px'}}>No cities found in dealer data yet.</div>
+            ) : (
+              <div style={{
+                display:'flex', flexWrap:'wrap', gap:6, marginBottom:14,
+                padding:10, background:'var(--bg2)', borderRadius:6, maxHeight:200, overflowY:'auto',
+              }}>
+                {allCities.map(c => {
+                  const on = permsCities.has(c);
+                  return (
+                    <label key={c} style={{
+                      fontSize:11, display:'inline-flex', alignItems:'center', gap:4, cursor:'pointer',
+                      padding:'4px 8px', borderRadius:5,
+                      background: on ? 'rgba(59,130,246,0.18)' : 'transparent',
+                      border:'1px solid ' + (on ? 'rgba(59,130,246,0.5)' : 'var(--b1)'),
+                      color: on ? '#93c5fd' : 'var(--t2)', fontWeight: on?700:500,
+                    }}>
+                      <input type="checkbox" checked={on} onChange={()=>{
+                        const next = new Set(permsCities);
+                        on ? next.delete(c) : next.add(c);
+                        setPermsCities(next);
+                      }} style={{margin:0}}/>
+                      {c}
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+
             {/* ── App-section feature toggles ─────────────────────── */}
             <div style={{fontSize:11, color:'var(--t3)', textTransform:'uppercase', letterSpacing:'.08em', marginBottom:8, marginTop:4}}>
               App sections — grant access
@@ -623,7 +664,7 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
             </div>
 
             <div style={{display:'flex', gap:8, justifyContent:'flex-end'}}>
-              <button className="btn" onClick={() => { setPermsStates(new Set()); setPermsFeatures(new Set()); }}>Clear all</button>
+              <button className="btn" onClick={() => { setPermsStates(new Set()); setPermsCities(new Set()); setPermsFeatures(new Set()); }}>Clear all</button>
               <button className="btn" onClick={() => setPermsForUid(null)}>Cancel</button>
               <button className="btnp" onClick={savePermissions} disabled={permsSaving}>
                 {permsSaving ? 'Saving…' : 'Save permissions'}
