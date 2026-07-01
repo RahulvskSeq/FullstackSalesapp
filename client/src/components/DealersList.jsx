@@ -1391,8 +1391,8 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
   };
 
   const exportCsv=()=>{
-    const h=['Dealer','Salesman','Zone','City','State','Category','Cat Type','Status','Target','Achieved','Ach%',...MO,'Cr Days','Cr Limit'];
-    const rows=filtered.map(x=>[x.name,users[x.salesman]?.name||x.salesman,x.zone,x.city||'',x.state||'',x.category||'',x.categoryType||'',x.status,x.target,x.achieved,spct(x.target,x.achieved),...x.months,x.creditDays,x.creditLimit]);
+    const h=['Dealer','Salesman','Zone','City','State','Pincode','Address','Category','Cat Type','Status','Target','Achieved','Ach%',...MO,'Cr Days','Cr Limit'];
+    const rows=filtered.map(x=>[x.name,users[x.salesman]?.name||x.salesman,x.zone,x.city||'',x.state||'',x.pincode||'',x.address||'',x.category||'',x.categoryType||'',x.status,x.target,x.achieved,spct(x.target,x.achieved),...x.months,x.creditDays,x.creditLimit]);
     const csv=[h,...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
     const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download='dealers_'+Date.now()+'.csv';a.click();
   };
@@ -1481,6 +1481,7 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
                   {isAdmin&&<th>Salesman</th>}
                   {sh('zone','Zone')}
                   {sh('city','City')}{sh('state','State')}
+                  {sh('pincode','PIN')}<th style={{minWidth:180}}>Address</th>
                   {sh('category','Category')}{sh('categoryType','Cat Type')}
                   {sh('status','Status')}
                   {sh('target','Tgt')}{sh('achieved','Ach')}<th>%</th><th>Trend</th>
@@ -1501,6 +1502,8 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
                       <td style={{fontSize:11,color:'var(--t3)'}}>{x.zone||'—'}</td>
                       <td style={{fontSize:11,color:'var(--t2)'}}>{x.city||'—'}</td>
                       <td style={{fontSize:11,color:'var(--t2)'}}>{x.state||'—'}</td>
+                      <td style={{fontSize:11,color:'var(--t2)',fontFamily:'"JetBrains Mono", monospace'}}>{x.pincode||'—'}</td>
+                      <td title={x.address||''} style={{fontSize:11,color:'var(--t3)',maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{x.address||'—'}</td>
                       <td style={{fontSize:11,color:'#818cf8'}}>{x.category||'—'}</td>
                       <td style={{fontSize:11,color:'var(--t3)'}}>{x.categoryType||'—'}</td>
                       <td><StatusBadge status={x.status}/></td>

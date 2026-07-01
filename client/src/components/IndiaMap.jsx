@@ -1230,8 +1230,13 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
                               style={{cursor:'pointer', borderBottom:'1px solid '+T.bd1}}
                               onMouseEnter={e => e.currentTarget.style.background = T.bg2}
                               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                            <td style={{padding:'5px 8px', maxWidth:140}}>
+                            <td style={{padding:'5px 8px', maxWidth:180}}>
                               <div style={{fontWeight:600, color:T.t1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{d.name}</div>
+                              {(d.address || d.pincode) && (
+                                <div title={d.address || ''} style={{fontSize:9, color:T.t3, marginTop:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
+                                  {d.address ? d.address : ''}{(d.address && d.pincode) ? ' · ' : ''}{d.pincode ? d.pincode : ''}
+                                </div>
+                              )}
                             </td>
                             <td style={{padding:'5px 8px'}}>
                               {d.status && <span style={{fontSize:9, color:'#86efac', background:T.accBg, padding:'1px 6px', borderRadius:3, whiteSpace:'nowrap', border:'1px solid '+T.accD}}>{d.status}</span>}
