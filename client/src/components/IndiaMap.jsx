@@ -308,6 +308,14 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
 
   const [selected, setSelected]     = useState(null);
   const [selectedCity, setSelectedCity] = useState(null);
+  // Which "areas" (pincodes) are expanded inside the current city drill-down.
+  // A Set of pincode strings. Empty = no expansion; user clicks a pin to see
+  // its dealers, or "Show all" to reveal every dealer in the city.
+  const [expandedPincodes, setExpandedPincodes] = useState(new Set());
+  const [showAllDealers, setShowAllDealers]     = useState(true);
+  // Reset the area accordion whenever the user drills into a new city so we
+  // don't carry over stale pincodes from the previously selected city.
+  useEffect(() => { setExpandedPincodes(new Set()); setShowAllDealers(true); }, [selectedCity]);
   const [viewMode, setViewMode]     = useState('sales');
   const [showLabels, setShowLabels] = useState(true);    // our state name labels
   const [showCount, setShowCount]   = useState(true);
@@ -1200,9 +1208,110 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
                 <KpiCell label="Dealers" value={selectedCityObj.dealers.length} color={T.blue}/>
                 <KpiCell label="Target"  value={selectedCityObj.target ? fmtIN(selectedCityObj.target) : '—'} color={T.t2}/>
               </div>
+
+              {/* ── Areas (pincode-wise) grouping ──────────────────────
+                  Aggregates the city's dealers by their pincode so the
+                  admin can see which neighborhoods are driving sales.
+                  Each area is a collapsible card — click to see its
+                  dealers. Areas with no pincode fall into a "No PIN"
+                  bucket so no dealer is lost. */}
+              {(() => {
+                const areaMap = new Map();
+                for (const d of selectedCityObj.dealers) {
+                  const key = String(d.pincode || '').trim() || '__nopin__';
+                  if (!areaMap.has(key)) {
+                    areaMap.set(key, { pin: key === '__nopin__' ? 'No PIN' : key, dealers: [], total: 0, target: 0 });
+                  }
+                  const g = areaMap.get(key);
+                  g.dealers.push(d);
+                  g.total  += Number(d.months?.[selectedMonthIdx] || 0);
+                  g.target += Number(monthTarget(d, selectedMonthIdx) || 0);
+                }
+                const areas = [...areaMap.values()].sort((a,b) => b.total - a.total);
+                if (areas.length <= 1) return null;   // no benefit if everyone shares one pin
+                return (
+                  <div style={{marginBottom:12}}>
+                    <div style={{fontSize:10, color:T.t3, marginBottom:5, textTransform:'uppercase', letterSpacing:'.07em', display:'flex', alignItems:'center', gap:8}}>
+                      Areas · {areas.length} PIN{areas.length===1?'':'s'}
+                      <span style={{color:T.t3, textTransform:'none', fontWeight:400}}>· click any to expand</span>
+                    </div>
+                    <div style={{display:'grid', gap:4, maxHeight:220, overflowY:'auto', border:'1px solid '+T.bd1, borderRadius:6, padding:6}}>
+                      {areas.map(a => {
+                        const open = expandedPincodes.has(a.pin);
+                        const ap   = pct(a.target, a.total);
+                        return (
+                          <div key={a.pin} style={{borderRadius:5, border:'1px solid '+T.bd1, overflow:'hidden'}}>
+                            <button
+                              onClick={() => {
+                                const next = new Set(expandedPincodes);
+                                open ? next.delete(a.pin) : next.add(a.pin);
+                                setExpandedPincodes(next);
+                                setShowAllDealers(false);
+                              }}
+                              style={{
+                                width:'100%', display:'flex', alignItems:'center', gap:8,
+                                padding:'6px 10px', background: open ? T.bg2 : 'transparent',
+                                border:'none', cursor:'pointer', color:T.t1, textAlign:'left',
+                              }}>
+                              <span style={{fontSize:10, color:T.t3, minWidth:12}}>{open?'▼':'▶'}</span>
+                              <span style={{fontFamily:'"JetBrains Mono", monospace', fontSize:12, fontWeight:700, color:T.t1, minWidth:60}}>{a.pin}</span>
+                              <span style={{flex:1}}/>
+                              <span style={{fontSize:10, color:T.t3}}>{a.dealers.length} deal.</span>
+                              <span style={{fontSize:11, fontWeight:700, color:'#86efac', minWidth:60, textAlign:'right'}}>{fmtIN(a.total)}</span>
+                              {a.target > 0 && (
+                                <span style={{fontSize:10, color:pclr(ap), minWidth:40, textAlign:'right'}}>{spct(a.target, a.total)}</span>
+                              )}
+                            </button>
+                            {open && (
+                              <div style={{background:T.bg2, borderTop:'1px solid '+T.bd1}}>
+                                {a.dealers
+                                  .sort((x,y) => (y.months?.[selectedMonthIdx]||0) - (x.months?.[selectedMonthIdx]||0))
+                                  .map(d => {
+                                    const ach = d.months?.[selectedMonthIdx] || 0;
+                                    return (
+                                      <div key={d.id}
+                                        onClick={() => onOpenDealer?.(d.id)}
+                                        style={{
+                                          padding:'5px 10px 5px 30px', cursor:'pointer',
+                                          borderBottom:'1px solid '+T.bd1,
+                                          display:'flex', alignItems:'center', gap:8,
+                                        }}
+                                        onMouseEnter={e => e.currentTarget.style.background = T.bg1}
+                                        onMouseLeave={e => e.currentTarget.style.background = T.bg2}>
+                                        <div style={{flex:1, minWidth:0}}>
+                                          <div style={{fontSize:11, fontWeight:600, color:T.t1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{d.name}</div>
+                                          {d.address && (
+                                            <div title={d.address} style={{fontSize:9, color:T.t3, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{d.address}</div>
+                                          )}
+                                        </div>
+                                        <span style={{fontSize:11, fontWeight:700, color:'#86efac'}}>{fmtIN(ach)}</span>
+                                      </div>
+                                    );
+                                  })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <button
+                      onClick={() => setShowAllDealers(s => !s)}
+                      style={{
+                        marginTop:6, fontSize:11, padding:'4px 10px', borderRadius:5,
+                        background:'transparent', border:'1px solid '+T.bd1, color:T.t2, cursor:'pointer',
+                      }}>
+                      {showAllDealers ? 'Hide flat dealer list' : 'Show flat dealer list (all areas)'}
+                    </button>
+                  </div>
+                );
+              })()}
+
+              {showAllDealers && (
               <div style={{fontSize:10, color:T.t3, marginBottom:5, textTransform:'uppercase', letterSpacing:'.07em'}}>
                 Dealers ({selectedCityObj.dealers.length})
               </div>
+              )}
+              {showAllDealers && (
               <div style={{maxHeight:200, overflowY:'auto', border:'1px solid '+T.bd1, borderRadius:6}}>
                 <table style={{width:'100%', borderCollapse:'collapse', fontSize:11}}>
                   <thead>
@@ -1249,6 +1358,7 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
                   </tbody>
                 </table>
               </div>
+              )}
             </div>
           </div>
         )}
