@@ -19,6 +19,24 @@ export default function MapView({dealers,selectedMonthIdx}){
     return Object.entries(map).map(([name,v])=>({name,...v})).filter(x=>x.units>0).sort((a,b)=>b.units-a.units);
   },[dealers,selectedMonthIdx]);
 
+  // ── Area (Pincode) aggregation across ALL dealers, month-filtered ──────
+  // Groups sales by pincode so the user can see exactly WHICH neighborhood
+  // is driving each unit — a level below city, right down to the street PIN.
+  const areaData = useMemo(() => {
+    const map = {};
+    dealers.forEach(d => {
+      const pin = String(d.pincode || '').trim();
+      if (!pin) return;
+      const ach = Number(d.months?.[selectedMonthIdx] || 0);
+      if (!map[pin]) map[pin] = { pin, units: 0, dealers: 0, city: (d.city || '').trim(), state: (d.state || '').trim() };
+      map[pin].units   += ach;
+      map[pin].dealers += 1;
+    });
+    return Object.values(map)
+      .filter(x => x.units > 0 || x.dealers > 0)
+      .sort((a, b) => b.units - a.units);
+  }, [dealers, selectedMonthIdx]);
+
   const maxUnits=Math.max(...Object.values(stateData).map(x=>x.units),1);
   const states=Object.entries(stateData).filter(([,v])=>v.units>0).sort((a,b)=>b[1].units-a[1].units);
 
@@ -86,6 +104,44 @@ export default function MapView({dealers,selectedMonthIdx}){
               );
             })}
           </div>
+        </div>
+      )}
+
+      {/* ── By Area (Pincode) — top-level view ─────────────────────────── */}
+      {areaData.length > 0 && (
+        <div style={{marginTop:16, borderTop:'1px solid var(--b1)', paddingTop:14}}>
+          <div style={{fontSize:11, color:'var(--t3)', textTransform:'uppercase', letterSpacing:'.07em', marginBottom:10, display:'flex', alignItems:'center', gap:8}}>
+            <MapPin size={12} color="#818cf8"/> By Area (Pincode) — {areaData.length} PIN{areaData.length===1?'':'s'} with data
+            <span style={{color:'var(--t3)', textTransform:'none', fontWeight:400}}>· sorted by sales</span>
+          </div>
+          <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(220px, 1fr))', gap:8}}>
+            {areaData.slice(0, 30).map(a => {
+              const pctBar = Math.round((a.units / areaData[0].units) * 100);
+              return (
+                <div key={a.pin} style={{
+                  padding:'10px 12px', background:'var(--bg1)',
+                  border:'1px solid var(--b1)', borderRadius:8,
+                }}>
+                  <div style={{display:'flex', alignItems:'center', gap:6, marginBottom:4}}>
+                    <span style={{fontFamily:'"JetBrains Mono", monospace', fontSize:13, fontWeight:800, color:'var(--t1)'}}>{a.pin}</span>
+                    <span style={{fontSize:9, color:'var(--t3)', flex:1, textAlign:'right', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{a.city}{a.state?`, ${a.state}`:''}</span>
+                  </div>
+                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end', marginBottom:6}}>
+                    <div style={{fontSize:18, fontWeight:800, color:'#34d399', lineHeight:1}}>{a.units.toLocaleString('en-IN')}</div>
+                    <div style={{fontSize:10, color:'var(--t3)'}}>{a.dealers} dealer{a.dealers===1?'':'s'}</div>
+                  </div>
+                  <div style={{height:4, background:'var(--bg2)', borderRadius:2, overflow:'hidden'}}>
+                    <div style={{height:'100%', width:pctBar+'%', background:'linear-gradient(90deg,#818cf8,#34d399)', borderRadius:2, transition:'width .8s ease'}}/>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {areaData.length > 30 && (
+            <div style={{fontSize:11, color:'var(--t3)', textAlign:'center', marginTop:8}}>
+              Showing top 30 of {areaData.length} areas. Drill into a state / city to see all PINs in that region.
+            </div>
+          )}
         </div>
       )}
     </div>

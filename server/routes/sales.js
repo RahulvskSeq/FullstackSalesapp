@@ -392,6 +392,16 @@ router.post('/upload', protect, superAdminOnly, upload.single('file'), async (re
       return c ? row[c.idx] : undefined;
     };
 
+    // Diagnostic: log every recognised column + specifically whether the
+    // Address / Pincode / Achieved columns were found. Helps debug when a
+    // user says "I filled address in Excel but it's not updating."
+    const addressCol = colInfo.find(c => c.role === 'address');
+    const pincodeCol = colInfo.find(c => c.role === 'pincode');
+    console.log('[SALES UPLOAD] columns detected:',
+      colInfo.filter(c => c.role !== 'ignore' && c.role !== 'subcat')
+              .map(c => `${c.label}=>${c.role}`).join(', '));
+    console.log(`[SALES UPLOAD] address col: ${addressCol ? `idx ${addressCol.idx} ("${addressCol.label}")` : 'NOT FOUND'}, pincode col: ${pincodeCol ? `idx ${pincodeCol.idx} ("${pincodeCol.label}")` : 'NOT FOUND'}`);
+
     // Find dealer col index (used to skip blank rows)
     const dealerColIdx = colInfo.find(c => c.role === 'dealer')?.idx ?? 0;
 
@@ -493,6 +503,11 @@ router.post('/upload', protect, superAdminOnly, upload.single('file'), async (re
       if (hasCell('zone'))        masterFields.zone        = String(get(row,'zone')||'').trim();
       if (hasCell('address'))     masterFields.address     = String(get(row,'address')||'').trim();
       if (hasCell('pincode'))     masterFields.pincode     = String(get(row,'pincode')||'').trim();
+      // Diagnostic — log the first 3 rows' address/pincode parsing so the
+      // user can see whether the upload actually saw values in those columns.
+      if (i - dataStartIdx < 3) {
+        console.log(`[SALES UPLOAD] row ${i}: dealerName="${dealerName}" address="${masterFields.address ?? '(skipped)'}" pincode="${masterFields.pincode ?? '(skipped)'}"`);
+      }
       if (hasCell('status'))      masterFields.status      = String(get(row,'status')||'').trim() || 'ACTIVE';
       if (hasCell('target')      && numCell('target')      !== null) masterFields.target      = numCell('target');
       if (hasCell('creditDays')  && numCell('creditDays')  !== null) masterFields.creditDays  = numCell('creditDays');
@@ -627,7 +642,21 @@ router.post('/upload', protect, superAdminOnly, upload.single('file'), async (re
 
         if (Object.keys(updates).length) {
           try {
-            await Dealer.updateOne({ _id: dealerDoc._id }, { $set: updates });
+            // Diagnostic: show address/pincode inside the first few updates
+            // so we can prove whether they're reaching Mongoose or not.
+            if (i - dataStartIdx < 3 && ('address' in updates || 'pincode' in updates)) {
+              console.log(`[SALES UPLOAD] row ${i} → $set:`, JSON.stringify({
+                address: updates.address, pincode: updates.pincode
+              }));
+            }
+            // strict:false so Mongoose can't drop fields even if the schema
+            // was loaded before address/pincode were added (fresh restarts
+            // don't have this issue, but old process instances would).
+            await Dealer.updateOne(
+              { _id: dealerDoc._id },
+              { $set: updates },
+              { strict: false, runValidators: false }
+            );
             // Refresh in-memory copy + lookup maps so subsequent rows for
             // the same dealer see the latest values (esp. after rename).
             const prevNm = String(dealerDoc.name || '').trim().toLowerCase();
