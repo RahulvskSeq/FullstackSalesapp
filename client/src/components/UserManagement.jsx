@@ -35,8 +35,19 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
   const [createStates, setCreateStates] = useState(new Set());
   const [createCities, setCreateCities] = useState(new Set());
   useEffect(() => {
-    api.dealerDistinctStates().then(r => setAllStates(r?.states || [])).catch(() => {});
-    api.dealerDistinctCities().then(r => setAllCities(r?.cities || [])).catch(() => {});
+    // Case-insensitive de-dup so ALUVA / Aluva / aluva collapse into one
+    // canonical entry. Keeps the first occurrence's original casing.
+    const dedupCI = (arr) => {
+      const seen = new Map();
+      for (const v of (arr || [])) {
+        const key = String(v || '').trim().toLowerCase();
+        if (!key) continue;
+        if (!seen.has(key)) seen.set(key, v);
+      }
+      return [...seen.values()].sort((a,b) => String(a).localeCompare(String(b)));
+    };
+    api.dealerDistinctStates().then(r => setAllStates(dedupCI(r?.states))).catch(() => {});
+    api.dealerDistinctCities().then(r => setAllCities(dedupCI(r?.cities))).catch(() => {});
   }, []);
 
   const colors = ['#818cf8','#34d399','#f472b6','#fb923c','#fbbf24','#22d3ee','#e879f9','#a78bfa','#f87171','#4ade80'];
@@ -558,7 +569,13 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
       {/* ── Permissions modal (Edit existing user's data scope) ────────── */}
       {permsForUid && (
         <div className="overlay" style={{zIndex: 60}} onClick={e => e.target === e.currentTarget && setPermsForUid(null)}>
-          <div className="modal" style={{maxWidth: 480}}>
+          <div className="modal" style={{
+            maxWidth: 1100,           // was 480 — much wider so admins can scan hundreds of cities
+            width: '95vw',
+            maxHeight: '92vh',        // taller too, so the checkbox grid gets real screen
+            display: 'flex',
+            flexDirection: 'column',
+          }}>
             <div className="row" style={{marginBottom: 12}}>
               <div style={{fontSize:15, fontWeight:700, display:'flex', alignItems:'center', gap:8}}>
                 <MapPin size={14}/> Data Permissions
@@ -575,49 +592,76 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
               </div>
             ) : (
               <>
-                <input
-                  className="inp"
-                  value={permsStateSearch}
-                  onChange={e => setPermsStateSearch(e.target.value)}
-                  placeholder={`Search ${allStates.length} states…`}
-                  style={{marginBottom:6, fontSize:12}}
-                />
-                <div style={{
-                  display:'flex', flexWrap:'wrap', gap:6, marginBottom:14,
-                  padding:10, background:'var(--bg2)', borderRadius:6, maxHeight:300, overflowY:'auto',
-                }}>
-                  {(() => {
-                    const q = permsStateSearch.trim().toLowerCase();
-                    const filtered = q ? allStates.filter(s => s.toLowerCase().includes(q)) : allStates;
-                    if (filtered.length === 0) return (
-                      <div style={{fontSize:11, color:'var(--t3)', padding:'8px 4px'}}>No states match "{permsStateSearch}"</div>
-                    );
-                    return filtered.map(s => {
-                      const on = permsStates.has(s);
-                      return (
-                        <label key={s} style={{
-                          fontSize:11, display:'inline-flex', alignItems:'center', gap:4, cursor:'pointer',
-                          padding:'4px 8px', borderRadius:5,
-                          background: on ? 'rgba(34,197,94,0.18)' : 'transparent',
-                          border:'1px solid ' + (on ? 'rgba(34,197,94,0.5)' : 'var(--b1)'),
-                          color: on ? '#86efac' : 'var(--t2)', fontWeight: on?700:500,
-                        }}>
-                          <input type="checkbox" checked={on} onChange={()=>{
-                            const next = new Set(permsStates);
-                            on ? next.delete(s) : next.add(s);
-                            setPermsStates(next);
-                          }} style={{margin:0}}/>
-                          {s}
-                        </label>
-                      );
-                    });
-                  })()}
-                </div>
-                {permsStates.size > 0 && (
-                  <div style={{fontSize:10, color:'#86efac', marginBottom:12, marginTop:-8}}>
-                    ✓ {permsStates.size} state{permsStates.size===1?'':'s'} selected: {[...permsStates].join(', ')}
-                  </div>
-                )}
+                {(() => {
+                  const q = permsStateSearch.trim().toLowerCase();
+                  const filtered = q ? allStates.filter(s => s.toLowerCase().includes(q)) : allStates;
+                  const allSelected = filtered.length > 0 && filtered.every(s => permsStates.has(s));
+                  const toggleAll = () => {
+                    const next = new Set(permsStates);
+                    if (allSelected) { filtered.forEach(s => next.delete(s)); }
+                    else             { filtered.forEach(s => next.add(s)); }
+                    setPermsStates(next);
+                  };
+                  return (
+                    <>
+                      <div style={{display:'flex', gap:8, marginBottom:6, alignItems:'center'}}>
+                        <input
+                          className="inp"
+                          value={permsStateSearch}
+                          onChange={e => setPermsStateSearch(e.target.value)}
+                          placeholder={`Search ${allStates.length} states…`}
+                          style={{flex:1, fontSize:13}}
+                        />
+                        <button
+                          onClick={toggleAll}
+                          disabled={filtered.length === 0}
+                          className="btn"
+                          style={{
+                            fontSize:11, padding:'6px 10px', whiteSpace:'nowrap',
+                            background: allSelected ? 'rgba(34,197,94,0.15)' : 'transparent',
+                            color: allSelected ? '#86efac' : 'var(--t2)',
+                            borderColor: allSelected ? 'rgba(34,197,94,0.4)' : 'var(--b1)',
+                          }}
+                          title="Select or deselect every state currently visible in the list"
+                        >
+                          {allSelected ? '✓ ' : ''}Select {q ? `${filtered.length} filtered` : 'all'}
+                        </button>
+                      </div>
+                      <div style={{
+                        display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(180px, 1fr))', gap:6, marginBottom:14,
+                        padding:12, background:'var(--bg2)', borderRadius:6,
+                        maxHeight:220, overflowY:'auto', // fixed panel, scrolls independently
+                      }}>
+                        {filtered.length === 0 ? (
+                          <div style={{fontSize:11, color:'var(--t3)', padding:'8px 4px'}}>No states match "{permsStateSearch}"</div>
+                        ) : filtered.map(s => {
+                          const on = permsStates.has(s);
+                          return (
+                            <label key={s} style={{
+                              fontSize:12, display:'inline-flex', alignItems:'center', gap:6, cursor:'pointer',
+                              padding:'6px 10px', borderRadius:5,
+                              background: on ? 'rgba(34,197,94,0.18)' : 'transparent',
+                              border:'1px solid ' + (on ? 'rgba(34,197,94,0.5)' : 'var(--b1)'),
+                              color: on ? '#86efac' : 'var(--t2)', fontWeight: on?700:500,
+                            }}>
+                              <input type="checkbox" checked={on} onChange={()=>{
+                                const next = new Set(permsStates);
+                                on ? next.delete(s) : next.add(s);
+                                setPermsStates(next);
+                              }} style={{margin:0}}/>
+                              {s}
+                            </label>
+                          );
+                        })}
+                      </div>
+                      {permsStates.size > 0 && (
+                        <div style={{fontSize:10, color:'#86efac', marginBottom:12, marginTop:-8}}>
+                          ✓ {permsStates.size} state{permsStates.size===1?'':'s'} selected: {[...permsStates].join(', ')}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </>
             )}
 
@@ -629,49 +673,76 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
               <div style={{fontSize:11, color:'var(--t3)', padding:'6px 0 12px'}}>No cities found in dealer data yet.</div>
             ) : (
               <>
-                <input
-                  className="inp"
-                  value={permsCitySearch}
-                  onChange={e => setPermsCitySearch(e.target.value)}
-                  placeholder={`Search ${allCities.length} cities…`}
-                  style={{marginBottom:6, fontSize:12}}
-                />
-                <div style={{
-                  display:'flex', flexWrap:'wrap', gap:6, marginBottom:14,
-                  padding:10, background:'var(--bg2)', borderRadius:6, maxHeight:200, overflowY:'auto',
-                }}>
-                  {(() => {
-                    const q = permsCitySearch.trim().toLowerCase();
-                    const filtered = q ? allCities.filter(c => c.toLowerCase().includes(q)) : allCities;
-                    if (filtered.length === 0) return (
-                      <div style={{fontSize:11, color:'var(--t3)', padding:'8px 4px'}}>No cities match "{permsCitySearch}"</div>
-                    );
-                    return filtered.map(c => {
-                      const on = permsCities.has(c);
-                      return (
-                        <label key={c} style={{
-                          fontSize:11, display:'inline-flex', alignItems:'center', gap:4, cursor:'pointer',
-                          padding:'4px 8px', borderRadius:5,
-                          background: on ? 'rgba(59,130,246,0.18)' : 'transparent',
-                          border:'1px solid ' + (on ? 'rgba(59,130,246,0.5)' : 'var(--b1)'),
-                          color: on ? '#93c5fd' : 'var(--t2)', fontWeight: on?700:500,
-                        }}>
-                          <input type="checkbox" checked={on} onChange={()=>{
-                            const next = new Set(permsCities);
-                            on ? next.delete(c) : next.add(c);
-                            setPermsCities(next);
-                          }} style={{margin:0}}/>
-                          {c}
-                        </label>
-                      );
-                    });
-                  })()}
-                </div>
-                {permsCities.size > 0 && (
-                  <div style={{fontSize:10, color:'#93c5fd', marginBottom:12, marginTop:-8}}>
-                    ✓ {permsCities.size} cit{permsCities.size===1?'y':'ies'} selected: {[...permsCities].join(', ')}
-                  </div>
-                )}
+                {(() => {
+                  const q = permsCitySearch.trim().toLowerCase();
+                  const filtered = q ? allCities.filter(c => c.toLowerCase().includes(q)) : allCities;
+                  const allSelected = filtered.length > 0 && filtered.every(c => permsCities.has(c));
+                  const toggleAll = () => {
+                    const next = new Set(permsCities);
+                    if (allSelected) { filtered.forEach(c => next.delete(c)); }
+                    else             { filtered.forEach(c => next.add(c)); }
+                    setPermsCities(next);
+                  };
+                  return (
+                    <>
+                      <div style={{display:'flex', gap:8, marginBottom:6, alignItems:'center'}}>
+                        <input
+                          className="inp"
+                          value={permsCitySearch}
+                          onChange={e => setPermsCitySearch(e.target.value)}
+                          placeholder={`Search ${allCities.length} cities…`}
+                          style={{flex:1, fontSize:13}}
+                        />
+                        <button
+                          onClick={toggleAll}
+                          disabled={filtered.length === 0}
+                          className="btn"
+                          style={{
+                            fontSize:11, padding:'6px 10px', whiteSpace:'nowrap',
+                            background: allSelected ? 'rgba(59,130,246,0.15)' : 'transparent',
+                            color: allSelected ? '#93c5fd' : 'var(--t2)',
+                            borderColor: allSelected ? 'rgba(59,130,246,0.4)' : 'var(--b1)',
+                          }}
+                          title="Select or deselect every city currently visible in the list"
+                        >
+                          {allSelected ? '✓ ' : ''}Select {q ? `${filtered.length} filtered` : 'all'}
+                        </button>
+                      </div>
+                      <div style={{
+                        display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(180px, 1fr))', gap:6, marginBottom:14,
+                        padding:12, background:'var(--bg2)', borderRadius:6,
+                        maxHeight:280, overflowY:'auto',
+                      }}>
+                        {filtered.length === 0 ? (
+                          <div style={{fontSize:11, color:'var(--t3)', padding:'8px 4px'}}>No cities match "{permsCitySearch}"</div>
+                        ) : filtered.map(c => {
+                          const on = permsCities.has(c);
+                          return (
+                            <label key={c} style={{
+                              fontSize:12, display:'inline-flex', alignItems:'center', gap:6, cursor:'pointer',
+                              padding:'6px 10px', borderRadius:5,
+                              background: on ? 'rgba(59,130,246,0.18)' : 'transparent',
+                              border:'1px solid ' + (on ? 'rgba(59,130,246,0.5)' : 'var(--b1)'),
+                              color: on ? '#93c5fd' : 'var(--t2)', fontWeight: on?700:500,
+                            }}>
+                              <input type="checkbox" checked={on} onChange={()=>{
+                                const next = new Set(permsCities);
+                                on ? next.delete(c) : next.add(c);
+                                setPermsCities(next);
+                              }} style={{margin:0}}/>
+                              {c}
+                            </label>
+                          );
+                        })}
+                      </div>
+                      {permsCities.size > 0 && (
+                        <div style={{fontSize:10, color:'#93c5fd', marginBottom:12, marginTop:-8}}>
+                          ✓ {permsCities.size} cit{permsCities.size===1?'y':'ies'} selected: {[...permsCities].join(', ')}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </>
             )}
 
