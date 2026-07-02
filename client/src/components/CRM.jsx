@@ -4,7 +4,6 @@
 // Photos are downscaled to ≤900px and JPEG-encoded to keep payloads small.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import * as XLSX from 'xlsx';
 import {
   Camera, LogIn as IconIn, LogOut as IconOut, MapPin, Calendar, Plus,
   X, Phone, Mail, Building2, Trash2, Send, RefreshCw, Image as ImageIcon,
@@ -866,6 +865,21 @@ export function VisitsPage({ dealers, users, currentUser }){
                   const ss = s % 60;
                   return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}`;
                 };
+                // Photos: base64 data URIs bloat the file by hundreds of KB
+                // per row and are useless in a spreadsheet. Replace them with
+                // a short marker; keep real URLs/paths as-is.
+                const cleanPhoto = (p) => {
+                  if (!p) return '';
+                  const s = String(p);
+                  if (s.startsWith('data:image')) return '[photo captured]';
+                  return s;
+                };
+                // Purpose sometimes arrives wrapped like "[New Dealer Meet]"
+                // — strip the surrounding brackets for cleanliness.
+                const cleanPurpose = (p) => {
+                  if (!p) return '';
+                  return String(p).trim().replace(/^\[|\]$/g, '').trim();
+                };
                 rows.push([
                   '',                                                                 // User
                   '',                                                                 // Dealers Met
@@ -873,14 +887,14 @@ export function VisitsPage({ dealers, users, currentUser }){
                   user.active === false ? 'Inactive' : 'Active',                      // Status
                   user.role === 'salesman' ? 'Sales Executive' : (user.role || ''),   // Role
                   v.checkInTime  ? new Date(v.checkInTime)  : '',                     // In Date
-                  v.checkInPhoto  || v.photo || '',                                   // In Image
+                  cleanPhoto(v.checkInPhoto || v.photo),                              // In Image
                   v.checkInAddress || v.address || '',                                // In Address
-                  v.purpose || '',                                                    // Purpose
+                  cleanPurpose(v.purpose),                                            // Purpose
                   v.checkInNote || '',                                                // In Remarks
                   v.checkOutTime ? new Date(v.checkOutTime) : '',                     // Out Date
-                  v.checkOutPhoto || '',                                              // Out Image
+                  cleanPhoto(v.checkOutPhoto),                                        // Out Image
                   v.checkOutAddress || '',                                            // Out Address
-                  v.reason || v.purpose || '',                                        // Reason
+                  cleanPurpose(v.reason || v.purpose),                                // Reason
                   v.checkOutNote || v.comment || '',                                  // Out Remarks
                   secToHHMMSS(v.durationMinutes),                                     // Time Spent
                   v.dealerName || '',                                                 // Party
@@ -889,16 +903,30 @@ export function VisitsPage({ dealers, users, currentUser }){
                 ]);
               }
             }
-            const ws = XLSX.utils.aoa_to_sheet(rows);
-            ws['!cols'] = [
-              { wch: 24 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 18 },
-              { wch: 18 }, { wch: 34 }, { wch: 60 }, { wch: 22 }, { wch: 40 },
-              { wch: 18 }, { wch: 34 }, { wch: 60 }, { wch: 22 }, { wch: 60 },
-              { wch: 12 }, { wch: 34 }, { wch: 10 }, { wch: 10 },
-            ];
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, 'Visits');
-            XLSX.writeFile(wb, `Visits_${todayStr()}.xlsx`);
+            // Serialise to CSV (opens perfectly in Excel — no xlsx dep needed).
+            // Cells with commas, quotes, or newlines get quoted per RFC 4180.
+            const csvCell = (v) => {
+              if (v === null || v === undefined) return '';
+              let s;
+              if (v instanceof Date) {
+                // "YYYY-MM-DD HH:MM:SS" — Excel picks this up as a datetime.
+                const pad = n => String(n).padStart(2,'0');
+                s = `${v.getFullYear()}-${pad(v.getMonth()+1)}-${pad(v.getDate())} `
+                  + `${pad(v.getHours())}:${pad(v.getMinutes())}:${pad(v.getSeconds())}`;
+              } else {
+                s = String(v);
+              }
+              if (/[",\r\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
+              return s;
+            };
+            const csv = '﻿' + rows.map(r => r.map(csvCell).join(',')).join('\r\n');
+            const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
+            const url  = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Visits_${todayStr()}.csv`;
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
           }} className="btn" title="Export grouped Visit Report as Excel"
             style={{padding:'4px 10px', fontSize:11, display:'inline-flex', alignItems:'center', gap:4}}>
             <Download size={11}/> Export
