@@ -161,6 +161,73 @@ router.get('/distinct-cities', protect, async (req, res) => {
   }
 });
 
+// ── POST /api/dealers/permissions-from-excel ──────────────────────────────
+// Takes ANY uploaded Excel/CSV and auto-ticks the states + cities from it
+// that exist in the dealer roster. There is NO required format — every cell
+// in every column is checked against the canonical state/city lists (case-
+// insensitive). Whatever matches wins; everything else is ignored.
+router.post('/permissions-from-excel', protect, adminOnly, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'file required' });
+    const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+
+    // Fetch canonical state/city lists once.
+    const dbStates = (await Dealer.distinct('state')).filter(Boolean);
+    const dbCities = (await Dealer.distinct('city')).filter(Boolean);
+    const norm = s => String(s || '').trim().toLowerCase();
+    const stateMap = new Map(dbStates.map(s => [norm(s), s]));
+    const cityMap  = new Map(dbCities.map(c => [norm(c), c]));
+
+    // Walk EVERY sheet, EVERY row, EVERY cell.
+    const candidates = new Set();
+    for (const sheetName of wb.SheetNames) {
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: '', raw: false });
+      for (const row of rows) {
+        for (const cell of (row || [])) {
+          const v = String(cell || '').trim();
+          if (v) candidates.add(v);
+        }
+      }
+    }
+    if (!candidates.size) return res.status(400).json({ error: 'no data found in file' });
+
+    const matchedStates = new Set();
+    const matchedCities = new Set();
+    for (const cand of candidates) {
+      const k = norm(cand);
+      if (!k) continue;
+      if (stateMap.has(k)) matchedStates.add(stateMap.get(k));
+      if (cityMap.has(k))  matchedCities.add(cityMap.get(k));
+    }
+
+    // Diagnostic log — helps debug when a user says "no matches found".
+    console.log(
+      `[PERMS EXCEL] file="${req.file.originalname}" sheets=${wb.SheetNames.length} ` +
+      `cells=${candidates.size} matchedStates=${matchedStates.size} matchedCities=${matchedCities.size} ` +
+      `dbStates=${dbStates.length} dbCities=${dbCities.length}`
+    );
+    if (matchedStates.size === 0 && matchedCities.size === 0 && candidates.size > 0) {
+      console.log('[PERMS EXCEL] first 5 unmatched candidates:', [...candidates].slice(0, 5));
+      console.log('[PERMS EXCEL] first 5 db cities (canonical):', dbCities.slice(0, 5));
+    }
+
+    res.json({
+      matchedStates:   [...matchedStates].sort(),
+      matchedCities:   [...matchedCities].sort(),
+      totalCandidates: candidates.size,
+      matchedCount:    matchedStates.size + matchedCities.size,
+      // Return a small sample of unmatched candidates so the client toast
+      // can hint at spelling mismatches to the user.
+      unmatchedSample: matchedStates.size === 0 && matchedCities.size === 0
+        ? [...candidates].slice(0, 5)
+        : [],
+    });
+  } catch (e) {
+    console.error('[permissions-from-excel]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.get('/last-updated', protect, async (req, res) => {
   try {
     const filter = await dealerScopeFilter(req);

@@ -14,20 +14,41 @@ const isStaff = (req) => req.user?.role === 'admin' || req.user?.role === 'super
 
 router.get('/', protect, async (req,res) => {
   try {
-    if(isStaff(req)){
+    if (req.user?.role === 'superadmin') {
       return res.json(await OutstandingFollowup.find({}).sort({createdAt:-1}));
     }
-    const Dealer = mongoose.models.Dealer;
-    let myNames = new Set();
-    if(Dealer){
-      const myDealers = await Dealer.find({salesman:req.user.id},'name').lean();
-      myNames = new Set(myDealers.map(d=>d.name.toLowerCase().trim()));
+    // Priority-order permission resolution (same pattern as dealers.js).
+    const User   = (await import('../models/User.js')).default;
+    const Dealer = mongoose.models.Dealer || (await import('../models/Dealer.js')).default;
+    const u = await User.findOne({ id: req.user.id }, 'permissions').lean();
+    const p = u?.permissions || {};
+    const hasStates   = Array.isArray(p.states)   && p.states.length   > 0;
+    const hasCities   = Array.isArray(p.cities)   && p.cities.length   > 0;
+    const hasZones    = Array.isArray(p.zones)    && p.zones.length    > 0;
+    const hasSalesmen = Array.isArray(p.salesmen) && p.salesmen.length > 0;
+
+    let allowedNames = null;
+    if (hasStates || hasCities || hasZones || hasSalesmen) {
+      const filt = {};
+      const escape = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const ciMatch = v => new RegExp('^\\s*' + escape(v) + '\\s*$', 'i');
+      if (hasStates)   filt.state    = { $in: p.states.map(ciMatch) };
+      if (hasCities)   filt.city     = { $in: p.cities.map(ciMatch) };
+      if (hasZones)    filt.zone     = { $in: p.zones.map(ciMatch) };
+      if (hasSalesmen) filt.salesman = { $in: p.salesmen };
+      const dealers = await Dealer.find(filt, 'name').lean();
+      allowedNames = new Set(dealers.map(d => (d.name || '').toLowerCase().trim()));
+    } else if (req.user?.role === 'admin') {
+      return res.json(await OutstandingFollowup.find({}).sort({createdAt:-1}));
+    } else {
+      // Salesman default → own dealers only
+      const myDealers = await Dealer.find({ salesman: req.user.id }, 'name').lean();
+      allowedNames = new Set(myDealers.map(d => (d.name || '').toLowerCase().trim()));
     }
+
     const all = await OutstandingFollowup.find({}).sort({createdAt:-1});
-    const filtered = all.filter(f=>
-      myNames.has((f.dealerName||'').toLowerCase().trim()) ||
-      f.createdBy===req.user.id ||
-      f.salesman===req.user.id
+    const filtered = all.filter(f =>
+      allowedNames.has((f.dealerName || '').toLowerCase().trim())
     );
     res.json(filtered);
   }catch(e){console.error('[FOLLOWUPS]',e.message); res.status(500).json({error:e.message});}

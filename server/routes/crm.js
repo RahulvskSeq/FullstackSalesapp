@@ -26,6 +26,46 @@ const router = express.Router();
 const isStaff = (req) => req.user?.role === 'admin' || req.user?.role === 'superadmin';
 const todayStr = () => new Date().toISOString().slice(0,10);
 
+// Return the list of dealer NAMES a user is permitted to see based on their
+// permissions.states/cities/zones/salesmen. Superadmin gets null (see all).
+// If no perms are set, falls back to role default:
+//   • admin       → null (see all)
+//   • salesman    → dealers assigned to them
+// Result is a plain array of names (or null = no restriction).
+// Case-insensitive matching, same pattern as dealers.js.
+async function permittedDealerNames(req) {
+  if (req.user?.role === 'superadmin') return null;
+  try {
+    const Dealer = (await import('../models/Dealer.js')).default;
+    const u = await User.findOne({ id: req.user.id }, 'permissions').lean();
+    const p = u?.permissions || {};
+    const hasStates   = Array.isArray(p.states)   && p.states.length   > 0;
+    const hasCities   = Array.isArray(p.cities)   && p.cities.length   > 0;
+    const hasZones    = Array.isArray(p.zones)    && p.zones.length    > 0;
+    const hasSalesmen = Array.isArray(p.salesmen) && p.salesmen.length > 0;
+
+    if (hasStates || hasCities || hasZones || hasSalesmen) {
+      const filt = {};
+      const escape = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const ciMatch = v => new RegExp('^\\s*' + escape(v) + '\\s*$', 'i');
+      if (hasStates)   filt.state    = { $in: p.states.map(ciMatch) };
+      if (hasCities)   filt.city     = { $in: p.cities.map(ciMatch) };
+      if (hasZones)    filt.zone     = { $in: p.zones.map(ciMatch) };
+      if (hasSalesmen) filt.salesman = { $in: p.salesmen };
+      const dealers = await Dealer.find(filt, 'name').lean();
+      return dealers.map(d => d.name);
+    }
+    // No permissions set → role default
+    if (req.user?.role === 'admin') return null;   // admins see all
+    // Salesman → only their own dealers
+    const own = await Dealer.find({ salesman: req.user.id }, 'name').lean();
+    return own.map(d => d.name);
+  } catch (e) {
+    console.error('[permittedDealerNames]', e.message);
+    return [];   // fail closed — user sees nothing
+  }
+}
+
 // Quick safety: reject base64 payloads above ~5MB to keep DB happy.
 // Caller should compress on the client before sending.
 const PHOTO_MAX = 5 * 1024 * 1024;
@@ -193,8 +233,15 @@ router.post('/visits/:id/checkout', protect, async (req, res) => {
 router.get('/visits', protect, async (req, res) => {
   try {
     const q = {};
-    if(!isStaff(req)) q.userId = req.user.id;
-    else if(req.query.userId) q.userId = req.query.userId;
+    // Permission-first: if the user has state/city/salesman perms, constrain
+    // to the dealer names they're permitted to see. Falls back to role
+    // default (own dealers for salesman, all for admin).
+    const names = await permittedDealerNames(req);
+    if (names !== null) {
+      q.dealerName = names.length ? { $in: names } : { $in: ['__no_match__'] };
+    } else if (req.query.userId) {
+      q.userId = req.query.userId;
+    }
     if(req.query.dealerName){
       q.dealerName = new RegExp('^' + String(req.query.dealerName).replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + '$','i');
     }
@@ -251,11 +298,18 @@ router.post('/leads', protect, adminOnly, async (req, res) => {
   } catch(e){ console.error('[CRM/leads POST]', e.message); res.status(500).json({ error:e.message }); }
 });
 
-// GET /api/crm/leads — list (admin: all, salesman: assigned to me)
+// GET /api/crm/leads — list (admin: all, salesman: assigned to me).
+// Permission-first: users with state/city perms only see leads for dealers
+// in their permitted areas (regardless of who the lead is assigned to).
 router.get('/leads', protect, async (req, res) => {
   try {
     const q = {};
-    if(!isStaff(req)) q.assignedTo = req.user.id;
+    const names = await permittedDealerNames(req);
+    if (names !== null) {
+      q.dealerName = names.length ? { $in: names } : { $in: ['__no_match__'] };
+    } else if (!isStaff(req)) {
+      q.assignedTo = req.user.id;
+    }
     if(req.query.status) q.status = req.query.status;
     if(req.query.assignedTo && isStaff(req)) q.assignedTo = req.query.assignedTo;
     const items = await Lead.find(q).sort({ updatedAt:-1 }).limit(500).lean();
@@ -511,7 +565,13 @@ router.get('/tasks', protect, async (req, res) => {
   try {
     const q = {};
     if(req.query.status) q.status = req.query.status;
-    if(isStaff(req)){
+    // Permission-first: users with state/city perms only see tasks whose
+    // dealerName is in their permitted area set (regardless of assignee).
+    const names = await permittedDealerNames(req);
+    if (names !== null) {
+      q.dealerName = names.length ? { $in: names } : { $in: ['__no_match__'] };
+      if (isStaff(req) && req.query.assignedTo) q.assignedTo = req.query.assignedTo;
+    } else if(isStaff(req)){
       if(req.query.assignedTo) q.assignedTo = req.query.assignedTo;
     } else {
       const scope = req.query.scope || 'mine';

@@ -1799,6 +1799,23 @@ export const api = {
     { headers:authHeaders() }
   ).then(handle),
 
+  // Upload an Excel/CSV of city/state names for the User Permissions modal.
+  // Server matches each row against the dealer roster (case-insensitive) and
+  // returns the canonical state/city names to auto-tick.
+  //
+  // NOTE: DON'T include authHeaders() here — that helper forces
+  // 'Content-Type: application/json' which corrupts the multipart boundary
+  // the browser needs to set automatically. Pass Authorization only.
+  permissionsFromExcel: (file) => {
+    const form = new FormData();
+    form.append('file', file);
+    return fetch(`${BASE}/dealers/permissions-from-excel`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${getToken()}` },
+      body: form,
+    }).then(handle);
+  },
+
   // Admin: find and remove dealers whose name = "<canonical> <salesman first name>"
   // (e.g. "76 EAST pranav" when "76 EAST" already exists for salesman Pranav).
   // Migrates Sale rows to the canonical dealer before deleting.

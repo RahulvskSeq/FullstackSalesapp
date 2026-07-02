@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, UserPlus, LogIn, KeyRound, Link as LinkIcon, Trash2, Shield, ShieldCheck, Power, PowerOff, MapPin } from 'lucide-react';
 import { Avatar } from './UI';
 import { api } from '../api';
@@ -117,6 +117,10 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
   const [permsCities,    setPermsCities]    = useState(new Set());
   const [permsFeatures,  setPermsFeatures]  = useState(new Set());
   const [permsSaving,    setPermsSaving]    = useState(false);
+  // Bulk-upload of city/state permissions via Excel/CSV. State tracks the
+  // in-flight status so we can show a spinner + toast when the server replies.
+  const permsFileRef = useRef(null);
+  const [permsUploading, setPermsUploading] = useState(false);
   // Search boxes so admins can find a state / city fast when the list is
   // huge, then tick them without scrolling.
   const [permsStateSearch, setPermsStateSearch] = useState('');
@@ -586,6 +590,68 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
             <div style={{fontSize:12, color:'var(--t2)', marginBottom:10}}>
               Restrict <b>{allUsers[permsForUid]?.name}</b> to specific states. Leave everything unchecked to give full access.
             </div>
+
+            {/* ── Bulk-upload city/state permissions via Excel ─────────
+                Server scans EVERY cell in EVERY sheet of the uploaded file
+                and auto-ticks anything that matches a real state or city
+                in the dealer roster. No specific format required. */}
+            <div style={{
+              display:'flex', gap:8, alignItems:'center', flexWrap:'wrap',
+              padding:'10px 12px', background:'var(--bg1)', border:'1px dashed var(--b1)',
+              borderRadius:6, marginBottom:14,
+            }}>
+              <span style={{fontSize:12, color:'var(--t2)', fontWeight:600}}>
+                📥 Upload any sheet:
+              </span>
+              <input
+                ref={permsFileRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                style={{display:'none'}}
+                onChange={async (e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = '';
+                  if (!f) return;
+                  setPermsUploading(true);
+                  try {
+                    const r = await api.permissionsFromExcel(f);
+                    const stAdd = r.matchedStates || [];
+                    const ctAdd = r.matchedCities || [];
+                    if (!stAdd.length && !ctAdd.length) {
+                      const sample = (r.unmatchedSample || []).slice(0, 3).join(', ');
+                      flash('error',
+                        `No matching states/cities in the sheet. Scanned ${r.totalCandidates || 0} cells.` +
+                        (sample ? ` Sample values found: ${sample}` : '')
+                      );
+                      return;
+                    }
+                    // Merge into the current selection (don't overwrite).
+                    setPermsStates(prev => new Set([...prev, ...stAdd]));
+                    setPermsCities(prev => new Set([...prev, ...ctAdd]));
+                    const msgs = [];
+                    if (stAdd.length) msgs.push(`${stAdd.length} state${stAdd.length===1?'':'s'}`);
+                    if (ctAdd.length) msgs.push(`${ctAdd.length} cit${ctAdd.length===1?'y':'ies'}`);
+                    flash('success', `✓ Auto-ticked ${msgs.join(' + ')} (scanned ${r.totalCandidates} cells)`);
+                  } catch (err) {
+                    flash('error', 'Upload failed: ' + err.message);
+                  } finally {
+                    setPermsUploading(false);
+                  }
+                }}
+              />
+              <button
+                className="btnp"
+                onClick={() => permsFileRef.current?.click()}
+                disabled={permsUploading}
+                style={{fontSize:12, padding:'6px 12px'}}>
+                {permsUploading ? 'Reading…' : 'Choose file'}
+              </button>
+              <div style={{flex:1}}/>
+              <span style={{fontSize:10, color:'var(--t3)', fontStyle:'italic', maxWidth:320}}>
+                Any Excel/CSV — every cell is checked. Names matching a real state or city get auto-ticked.
+              </span>
+            </div>
+
             {allStates.length === 0 ? (
               <div style={{fontSize:12, color:'var(--t3)', padding:'12px 0'}}>
                 No states found in dealer data yet.
