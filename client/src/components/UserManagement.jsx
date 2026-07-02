@@ -106,6 +106,10 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
   const [permsCities,    setPermsCities]    = useState(new Set());
   const [permsFeatures,  setPermsFeatures]  = useState(new Set());
   const [permsSaving,    setPermsSaving]    = useState(false);
+  // Search boxes so admins can find a state / city fast when the list is
+  // huge, then tick them without scrolling.
+  const [permsStateSearch, setPermsStateSearch] = useState('');
+  const [permsCitySearch,  setPermsCitySearch]  = useState('');
 
   // App-section features the admin can grant. Keys must match the
   // requireFeature() guards on the server.
@@ -570,30 +574,51 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
                 No states found in dealer data yet.
               </div>
             ) : (
-              <div style={{
-                display:'flex', flexWrap:'wrap', gap:6, marginBottom:14,
-                padding:10, background:'var(--bg2)', borderRadius:6, maxHeight:300, overflowY:'auto',
-              }}>
-                {allStates.map(s => {
-                  const on = permsStates.has(s);
-                  return (
-                    <label key={s} style={{
-                      fontSize:11, display:'inline-flex', alignItems:'center', gap:4, cursor:'pointer',
-                      padding:'4px 8px', borderRadius:5,
-                      background: on ? 'rgba(34,197,94,0.18)' : 'transparent',
-                      border:'1px solid ' + (on ? 'rgba(34,197,94,0.5)' : 'var(--b1)'),
-                      color: on ? '#86efac' : 'var(--t2)', fontWeight: on?700:500,
-                    }}>
-                      <input type="checkbox" checked={on} onChange={()=>{
-                        const next = new Set(permsStates);
-                        on ? next.delete(s) : next.add(s);
-                        setPermsStates(next);
-                      }} style={{margin:0}}/>
-                      {s}
-                    </label>
-                  );
-                })}
-              </div>
+              <>
+                <input
+                  className="inp"
+                  value={permsStateSearch}
+                  onChange={e => setPermsStateSearch(e.target.value)}
+                  placeholder={`Search ${allStates.length} states…`}
+                  style={{marginBottom:6, fontSize:12}}
+                />
+                <div style={{
+                  display:'flex', flexWrap:'wrap', gap:6, marginBottom:14,
+                  padding:10, background:'var(--bg2)', borderRadius:6, maxHeight:300, overflowY:'auto',
+                }}>
+                  {(() => {
+                    const q = permsStateSearch.trim().toLowerCase();
+                    const filtered = q ? allStates.filter(s => s.toLowerCase().includes(q)) : allStates;
+                    if (filtered.length === 0) return (
+                      <div style={{fontSize:11, color:'var(--t3)', padding:'8px 4px'}}>No states match "{permsStateSearch}"</div>
+                    );
+                    return filtered.map(s => {
+                      const on = permsStates.has(s);
+                      return (
+                        <label key={s} style={{
+                          fontSize:11, display:'inline-flex', alignItems:'center', gap:4, cursor:'pointer',
+                          padding:'4px 8px', borderRadius:5,
+                          background: on ? 'rgba(34,197,94,0.18)' : 'transparent',
+                          border:'1px solid ' + (on ? 'rgba(34,197,94,0.5)' : 'var(--b1)'),
+                          color: on ? '#86efac' : 'var(--t2)', fontWeight: on?700:500,
+                        }}>
+                          <input type="checkbox" checked={on} onChange={()=>{
+                            const next = new Set(permsStates);
+                            on ? next.delete(s) : next.add(s);
+                            setPermsStates(next);
+                          }} style={{margin:0}}/>
+                          {s}
+                        </label>
+                      );
+                    });
+                  })()}
+                </div>
+                {permsStates.size > 0 && (
+                  <div style={{fontSize:10, color:'#86efac', marginBottom:12, marginTop:-8}}>
+                    ✓ {permsStates.size} state{permsStates.size===1?'':'s'} selected: {[...permsStates].join(', ')}
+                  </div>
+                )}
+              </>
             )}
 
             {/* ── City-level permissions (finer than state) ────────────── */}
@@ -603,30 +628,51 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
             {allCities.length === 0 ? (
               <div style={{fontSize:11, color:'var(--t3)', padding:'6px 0 12px'}}>No cities found in dealer data yet.</div>
             ) : (
-              <div style={{
-                display:'flex', flexWrap:'wrap', gap:6, marginBottom:14,
-                padding:10, background:'var(--bg2)', borderRadius:6, maxHeight:200, overflowY:'auto',
-              }}>
-                {allCities.map(c => {
-                  const on = permsCities.has(c);
-                  return (
-                    <label key={c} style={{
-                      fontSize:11, display:'inline-flex', alignItems:'center', gap:4, cursor:'pointer',
-                      padding:'4px 8px', borderRadius:5,
-                      background: on ? 'rgba(59,130,246,0.18)' : 'transparent',
-                      border:'1px solid ' + (on ? 'rgba(59,130,246,0.5)' : 'var(--b1)'),
-                      color: on ? '#93c5fd' : 'var(--t2)', fontWeight: on?700:500,
-                    }}>
-                      <input type="checkbox" checked={on} onChange={()=>{
-                        const next = new Set(permsCities);
-                        on ? next.delete(c) : next.add(c);
-                        setPermsCities(next);
-                      }} style={{margin:0}}/>
-                      {c}
-                    </label>
-                  );
-                })}
-              </div>
+              <>
+                <input
+                  className="inp"
+                  value={permsCitySearch}
+                  onChange={e => setPermsCitySearch(e.target.value)}
+                  placeholder={`Search ${allCities.length} cities…`}
+                  style={{marginBottom:6, fontSize:12}}
+                />
+                <div style={{
+                  display:'flex', flexWrap:'wrap', gap:6, marginBottom:14,
+                  padding:10, background:'var(--bg2)', borderRadius:6, maxHeight:200, overflowY:'auto',
+                }}>
+                  {(() => {
+                    const q = permsCitySearch.trim().toLowerCase();
+                    const filtered = q ? allCities.filter(c => c.toLowerCase().includes(q)) : allCities;
+                    if (filtered.length === 0) return (
+                      <div style={{fontSize:11, color:'var(--t3)', padding:'8px 4px'}}>No cities match "{permsCitySearch}"</div>
+                    );
+                    return filtered.map(c => {
+                      const on = permsCities.has(c);
+                      return (
+                        <label key={c} style={{
+                          fontSize:11, display:'inline-flex', alignItems:'center', gap:4, cursor:'pointer',
+                          padding:'4px 8px', borderRadius:5,
+                          background: on ? 'rgba(59,130,246,0.18)' : 'transparent',
+                          border:'1px solid ' + (on ? 'rgba(59,130,246,0.5)' : 'var(--b1)'),
+                          color: on ? '#93c5fd' : 'var(--t2)', fontWeight: on?700:500,
+                        }}>
+                          <input type="checkbox" checked={on} onChange={()=>{
+                            const next = new Set(permsCities);
+                            on ? next.delete(c) : next.add(c);
+                            setPermsCities(next);
+                          }} style={{margin:0}}/>
+                          {c}
+                        </label>
+                      );
+                    });
+                  })()}
+                </div>
+                {permsCities.size > 0 && (
+                  <div style={{fontSize:10, color:'#93c5fd', marginBottom:12, marginTop:-8}}>
+                    ✓ {permsCities.size} cit{permsCities.size===1?'y':'ies'} selected: {[...permsCities].join(', ')}
+                  </div>
+                )}
+              </>
             )}
 
             {/* ── App-section feature toggles ─────────────────────── */}

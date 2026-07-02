@@ -53,6 +53,54 @@ const getFeatureStateName = feature => {
 // ────────────────────────────────────────────────────────────────────────────
 // City coordinates (130+ major Indian cities)
 // ────────────────────────────────────────────────────────────────────────────
+// ── Pincode → coordinate lookup ─────────────────────────────────────────
+// Nominatim (OpenStreetMap) resolves an Indian PIN to a lat/lng. Results
+// are cached permanently in localStorage so we hit the API only once per
+// PIN in the app's lifetime. Nominatim's usage policy is ≤1 req/sec, so
+// requests are serialised through a tiny queue.
+const PIN_CACHE_KEY = 'stp_pincode_coords_v1';
+const _pinCache = (() => {
+  try { return JSON.parse(localStorage.getItem(PIN_CACHE_KEY) || '{}'); }
+  catch { return {}; }
+})();
+const _persistPinCache = () => {
+  try { localStorage.setItem(PIN_CACHE_KEY, JSON.stringify(_pinCache)); } catch {}
+};
+let _pinQueue = Promise.resolve();
+const _geocodePin = (pin) => {
+  if (_pinCache[pin] !== undefined) return Promise.resolve(_pinCache[pin]);
+  _pinQueue = _pinQueue.then(async () => {
+    if (_pinCache[pin] !== undefined) return;
+    try {
+      await new Promise(r => setTimeout(r, 1100));  // ≤1 req/sec
+      const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&countrycodes=in&postalcode=${encodeURIComponent(pin)}`;
+      const res = await fetch(url, { headers: { 'Accept-Language': 'en' } });
+      const arr = await res.json();
+      if (Array.isArray(arr) && arr.length && arr[0].lat && arr[0].lon) {
+        const a = arr[0].address || {};
+        // Pick the most specific locality-ish name Nominatim returns.
+        const area = a.suburb || a.neighbourhood || a.city_district
+                  || a.town || a.village || a.city || a.county || '';
+        _pinCache[pin] = {
+          lat: parseFloat(arr[0].lat),
+          lng: parseFloat(arr[0].lon),
+          area: String(area).trim(),
+        };
+      } else {
+        _pinCache[pin] = null;
+      }
+      _persistPinCache();
+    } catch {
+      _pinCache[pin] = null;
+    }
+  });
+  return _pinQueue.then(() => _pinCache[pin]);
+};
+// Reads the current cache value; returns undefined when the PIN hasn't
+// been fetched yet, null when Nominatim couldn't resolve it, or
+// {lat,lng,area}.
+const _pinCoord = (pin) => _pinCache[pin];
+
 const CITY_COORDS = {
   // Andhra Pradesh
   'visakhapatnam':[17.686,83.218],'vijayawada':[16.506,80.648],'guntur':[16.300,80.437],
@@ -298,6 +346,11 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
   const labelLyrRef= useRef([]);
   const cityLyrRef = useRef([]);
   const cityLblRef = useRef([]);
+  // Pincode (area) marker layer — shown only when the user drills into a
+  // city AND at least some of that city's dealers have GPS from CRM visits.
+  // Each pincode is plotted at the centroid of its dealers' locations.
+  const pincodeLyrRef = useRef([]);
+  const pincodeLblRef = useRef([]);
   const geoRef     = useRef(null);
   const placeLayerRef = useRef(null);   // map's built-in labels (cities/towns/roads)
   const districtGeoRef= useRef(null);   // cached all-India district GeoJSON
@@ -308,10 +361,17 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
 
   const [selected, setSelected]     = useState(null);
   const [selectedCity, setSelectedCity] = useState(null);
+  // Track the map's live zoom level so the pincode/area layer can appear
+  // automatically once the user zooms in past a threshold — no clicks needed.
+  const [mapZoom, setMapZoom] = useState(4);
   // Which "areas" (pincodes) are expanded inside the current city drill-down.
   // A Set of pincode strings. Empty = no expansion; user clicks a pin to see
   // its dealers, or "Show all" to reveal every dealer in the city.
   const [expandedPincodes, setExpandedPincodes] = useState(new Set());
+  // Which dealer's detail panel is showing on the right side of the map.
+  // Set by clicking a dealer in the accordion or a pincode marker; cleared
+  // via the X button. Independent of the drill-down state.
+  const [detailDealer, setDetailDealer] = useState(null);
   const [showAllDealers, setShowAllDealers]     = useState(true);
   // Reset the area accordion whenever the user drills into a new city so we
   // don't carry over stale pincodes from the previously selected city.
@@ -491,6 +551,15 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
     ).addTo(map);
 
     mapObjRef.current = map;
+    // Track live zoom so the pincode/area layer can auto-appear when the
+    // user zooms in without needing to click a state or city first.
+    setMapZoom(map.getZoom());
+    map.on('zoomend', () => setMapZoom(map.getZoom()));
+    // Also re-run the area layer effect when the user pans, by nudging the
+    // zoom-state to a fractional value that differs slightly (React skips
+    // updates for identical values, so we add a microscopic jitter to force
+    // the useEffect to re-evaluate the visible-bounds filter).
+    map.on('moveend', () => setMapZoom(z => z + 1e-9));
     setTimeout(() => map.invalidateSize(), 100);
     return () => { map.remove(); mapObjRef.current = null; stateLyrRef.current = null; placeLayerRef.current = null; baseTileRef.current = null; };
   }, [leafletReady, geoReady]);
@@ -746,6 +815,202 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
       cityLblRef.current.push(label);
     });
   }, [leafletReady, drillLevel, selected, cityData, maxCityVal, selectedCity]);
+
+  // ── Pincode-level markers (Area zoom) ────────────────────────────────────
+  // When a city is selected, group its dealers by pincode and plot a marker
+  // at each pincode's centroid using dealer.locLat/locLng (auto-captured on
+  // CRM visits). If NO dealer in that city has GPS, we simply don't draw
+  // anything — the side panel still shows the pincode list.
+  useEffect(() => {
+    if (!leafletReady || !mapObjRef.current) return;
+    const L = window.L, map = mapObjRef.current;
+
+    // Clear previous pincode markers
+    pincodeLyrRef.current.forEach(m => { try { map.removeLayer(m); } catch {} });
+    pincodeLyrRef.current = [];
+    pincodeLblRef.current.forEach(l => { try { l.remove(); } catch {} });
+    pincodeLblRef.current = [];
+
+    // Show pincode markers when EITHER:
+    //   (a) the user has drilled into a specific city, OR
+    //   (b) the map is zoomed in past level 8 — so casually scrolling the
+    //       wheel over any state or region reveals the PIN-level detail
+    //       automatically.
+    const zoomTrigger = mapZoom >= 8;
+    const cityTrigger = drillLevel === 'state' && !!selectedCity;
+    if (!zoomTrigger && !cityTrigger) return;
+
+    // Pool of candidate dealers (any dealer with a pincode is eligible —
+    // GPS is a bonus, not a requirement, so sales-only records still show).
+    //   - drilled into a city → just that city's dealers
+    //   - zoomed only        → every dealer, then filter by viewport after
+    //                          we've resolved coordinates below.
+    let poolDealers;
+    if (cityTrigger) {
+      const cityObj = cityData.find(c => c.name.toLowerCase() === selectedCity.toLowerCase());
+      if (!cityObj) return;
+      poolDealers = cityObj.dealers;
+    } else {
+      poolDealers = dealers;
+    }
+
+    // Group by pincode, aggregate sales, and resolve a coordinate:
+    //   1. Average the dealer GPS pins (dealer.locLat/locLng) if any exist —
+    //      most precise when CRM visits have been logged.
+    //   2. Fall back to the CITY_COORDS lookup so cities with no visits
+    //      still show markers based on sales.
+    //   3. Space multiple pincodes in the same city out in a small ring so
+    //      they don't overlap on the map.
+    const groups = new Map();
+    for (const d of poolDealers) {
+      const pin = String(d.pincode || '').trim();
+      if (!pin) continue;
+      if (!groups.has(pin)) groups.set(pin, { pin, dealers: [], total: 0, target: 0, latSum: 0, lngSum: 0, geoCount: 0, city: d.city || '' });
+      const g = groups.get(pin);
+      g.dealers.push(d);
+      g.total  += Number(d.months?.[selectedMonthIdx] || 0);
+      g.target += Number(monthTarget(d, selectedMonthIdx) || 0);
+      if (Number.isFinite(d.locLat) && Number.isFinite(d.locLng)) {
+        g.latSum += d.locLat;
+        g.lngSum += d.locLng;
+        g.geoCount++;
+      }
+    }
+    // Bucket pincodes by city so we can spread them in a ring when they
+    // share the same city center (avoids overlapping markers).
+    const byCity = new Map();
+    for (const g of groups.values()) {
+      const key = (g.city || '').toLowerCase();
+      if (!byCity.has(key)) byCity.set(key, []);
+      byCity.get(key).push(g);
+    }
+    // Resolve coordinates for every pincode group.
+    // Priority: real Nominatim geocode → dealer GPS avg → city center + ring.
+    const groupsArr = [];
+    const pinsToFetch = [];
+    for (const [cityKey, list] of byCity) {
+      const cityCoord = CITY_COORDS[cityKey];
+      list.sort((a, b) => b.total - a.total);
+      const ringR = 0.02;   // ~2 km at India latitudes
+      list.forEach((g, i) => {
+        let lat, lng, source = 'unknown', area = '';
+        // 1) Best: Nominatim-geocoded PIN centroid + area name
+        const nomCoord = _pinCoord(g.pin);
+        if (nomCoord && typeof nomCoord === 'object' && Number.isFinite(nomCoord.lat)) {
+          lat = nomCoord.lat;
+          lng = nomCoord.lng;
+          area = nomCoord.area || '';
+          source = 'pin';
+        } else if (g.geoCount > 0) {
+          // 2) Dealer GPS from CRM visits (only used if Nominatim missed)
+          lat = g.latSum / g.geoCount;
+          lng = g.lngSum / g.geoCount;
+          source = 'gps';
+        } else if (cityCoord) {
+          // 3) City center with a small ring offset so multiple PINs in the
+          // same city don't stack on top of each other.
+          const angle = (2 * Math.PI * i) / Math.max(list.length, 1);
+          lat = cityCoord[0] + ringR * Math.sin(angle);
+          lng = cityCoord[1] + ringR * Math.cos(angle);
+          source = 'city';
+        } else {
+          // No coord source available yet — but if Nominatim hasn't tried
+          // this PIN yet, queue a lookup and skip the marker for now.
+          if (nomCoord === undefined) pinsToFetch.push(g.pin);
+          return;
+        }
+        // Queue a Nominatim lookup for PINs we're currently placing via
+        // fallback, so subsequent renders can use the precise coordinate.
+        if (source !== 'pin' && nomCoord === undefined) pinsToFetch.push(g.pin);
+        // In zoom-only mode, drop pincodes outside the current viewport.
+        if (zoomTrigger && !cityTrigger) {
+          const bounds = map.getBounds();
+          if (!bounds.contains([lat, lng])) return;
+        }
+        groupsArr.push({ ...g, lat, lng, source, area });
+      });
+    }
+    // Fire off Nominatim lookups for the pincodes we don't have yet. When
+    // each resolves, nudge our state so the effect re-runs and the marker
+    // snaps to the accurate location.
+    if (pinsToFetch.length) {
+      pinsToFetch.forEach(pin => {
+        _geocodePin(pin).then(() => setMapZoom(z => z + 1e-9));
+      });
+    }
+    if (groupsArr.length === 0) return;
+    const maxPin = Math.max(...groupsArr.map(g => g.total), 1);
+
+    // Auto-zoom only when explicitly drilling into a city — never when the
+    // user is just scrolling around (they control zoom themselves then).
+    if (cityTrigger) {
+      try {
+        const centroids = groupsArr.map(g => [g.lat, g.lng]);
+        const bounds = L.latLngBounds(centroids);
+        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 13 });
+      } catch {}
+    }
+
+    for (const g of groupsArr) {
+      const { lat, lng } = g;
+      const ratio = g.total / maxPin;
+      const radius = Math.max(6, Math.min(22, 6 + ratio * 16));
+      const hasSales = g.total > 0;
+      // Amber highlight where sales exist, muted purple where they don't.
+      const fillColor = hasSales ? '#fbbf24' : '#818cf8';
+      const strokeColor = hasSales ? '#f59e0b' : '#a5b4fc';
+
+      const marker = L.circleMarker([lat, lng], {
+        radius,
+        fillColor,
+        color: strokeColor,
+        weight: hasSales ? 3 : 2,
+        fillOpacity: hasSales ? 0.95 : 0.75,
+      });
+      marker.bindTooltip(
+        '<div style="font-family:Inter,system-ui;background:#0c0c1e;border-radius:8px;padding:10px 12px;min-width:190px;color:#e2e0f0">' +
+        '<div style="font-size:12px;font-weight:800;color:' + (hasSales ? '#fbbf24' : '#a5b4fc') + ';margin-bottom:4px;padding-bottom:4px;border-bottom:1px solid #1e1e38">' +
+          (g.area ? g.area + ' · ' : '') + 'PIN ' + g.pin +
+          (g.city ? '<div style="font-size:10px;color:#a5a4b8;font-weight:500;margin-top:2px">' + g.city + '</div>' : '') +
+        '</div>' +
+        '<div style="font-size:11px;color:#a5a4b8;margin-bottom:2px">' +
+          '<b style="color:#86efac">Sales:</b> ' + fmtIN(g.total) +
+        '</div>' +
+        '<div style="font-size:11px;color:#a5a4b8;margin-bottom:2px">' +
+          '<b style="color:#e2e0f0">Dealers:</b> ' + g.dealers.length +
+          (g.target ? ' · <b>' + Math.round((g.total/g.target)*100) + '%</b> of target' : '') +
+        '</div>' +
+        '</div>',
+        { sticky: true, opacity: 1, className: 'stp-tooltip', direction: 'top' }
+      );
+      marker.on('click', () => {
+        setExpandedPincodes(prev => new Set([...prev, g.pin]));
+        setShowAllDealers(false);
+      });
+      marker.addTo(map);
+      pincodeLyrRef.current.push(marker);
+
+      // Permanent floating label — area name (highlighted amber where sales
+      // exist) + PIN + sales value. Users see the area name immediately
+      // without needing to hover.
+      const areaLabel = g.area
+        ? '<span class="lbl-area" style="color:' + (hasSales ? '#fbbf24' : '#a5b4fc') + ';font-weight:700">' + g.area + '</span> · '
+        : '';
+      const label = L.tooltip({
+        permanent: true, direction: 'top', offset: [0, -radius - 2],
+        className: 'stp-city-label', interactive: false, opacity: 1,
+      })
+        .setContent(
+          '<div class="stp-city-label-inner">' +
+            areaLabel + g.pin +
+            (hasSales ? '<span class="lbl-val" style="color:#fbbf24">' + fmtIN(g.total) + '</span>' : '') +
+          '</div>'
+        )
+        .setLatLng([lat, lng]);
+      label.addTo(map);
+      pincodeLblRef.current.push(label);
+    }
+  }, [leafletReady, drillLevel, selectedCity, cityData, selectedMonthIdx, mapZoom, dealers]);
 
   // ── Lazy-load India DISTRICT GeoJSON (only when first drill-down) ────────
   useEffect(() => {
@@ -1047,6 +1312,150 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
         {/* Map area */}
         <div style={{position:'relative', background:T.bg0}}>
           <div ref={mapRef} style={{height:'clamp(360px, 62vw, 600px)', width:'100%', background:T.bg0}}/>
+
+          {/* ── Right-side dealer detail panel ────────────────────────
+              Shows when the user clicks a dealer in the accordion or a
+              pincode marker's popup. Slides in from the right without
+              covering the map. */}
+          {detailDealer && (() => {
+            const d = detailDealer;
+            // Haversine distance to every other dealer with lat/lng, sorted.
+            const nearby = (() => {
+              if (!Number.isFinite(d.locLat) || !Number.isFinite(d.locLng)) return [];
+              const toRad = deg => deg * Math.PI / 180;
+              const R = 6371;
+              const hav = (aLat, aLng, bLat, bLng) => {
+                const dLat = toRad(bLat - aLat);
+                const dLng = toRad(bLng - aLng);
+                const s = Math.sin(dLat/2)**2 + Math.cos(toRad(aLat))*Math.cos(toRad(bLat))*Math.sin(dLng/2)**2;
+                return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1-s));
+              };
+              return dealers
+                .filter(x => x.id !== d.id && Number.isFinite(x.locLat) && Number.isFinite(x.locLng))
+                .map(x => ({...x, _dist: hav(d.locLat, d.locLng, x.locLat, x.locLng)}))
+                .filter(x => x._dist <= 15)
+                .sort((a,b) => a._dist - b._dist)
+                .slice(0, 8);
+            })();
+            const ach = d.months?.[selectedMonthIdx] || 0;
+            const tgt = monthTarget(d, selectedMonthIdx);
+            return (
+              <div style={{
+                position:'absolute', top:12, right:12, bottom:12, width:360, maxWidth:'92%',
+                background:'#0c0c1e', border:'1px solid '+T.bd1, borderRadius:12,
+                boxShadow:'0 20px 40px rgba(0,0,0,0.5)',
+                display:'flex', flexDirection:'column', zIndex:400,
+                overflow:'hidden',
+              }}>
+                {/* Header */}
+                <div style={{padding:'12px 14px', borderBottom:'1px solid '+T.bd1, display:'flex', alignItems:'center', gap:8}}>
+                  {d.city && (
+                    <span style={{fontSize:10, padding:'3px 8px', borderRadius:5, background:'rgba(129,140,248,0.15)', color:'#a5b4fc', fontWeight:800, textTransform:'uppercase', letterSpacing:'.05em'}}>{d.city}</span>
+                  )}
+                  {d.state && (
+                    <span style={{fontSize:10, padding:'3px 8px', borderRadius:5, background:T.bg2, color:T.t2, fontWeight:600}}>{d.state}</span>
+                  )}
+                  <div style={{flex:1}}/>
+                  <button
+                    onClick={() => onOpenDealer?.(d.id)}
+                    title="Open full dealer view"
+                    style={{background:'transparent', border:'1px solid '+T.bd1, borderRadius:5, color:T.t3, cursor:'pointer', padding:'3px 6px'}}>
+                    <ChevronRight size={12}/>
+                  </button>
+                  <button
+                    onClick={() => setDetailDealer(null)}
+                    title="Close"
+                    style={{background:'transparent', border:'1px solid '+T.bd1, borderRadius:5, color:T.t3, cursor:'pointer', padding:'3px 6px'}}>
+                    <X size={12}/>
+                  </button>
+                </div>
+
+                {/* Scrollable body */}
+                <div style={{flex:1, overflowY:'auto', padding:14, display:'flex', flexDirection:'column', gap:12}}>
+                  {/* Name */}
+                  <div style={{fontSize:16, fontWeight:800, color:T.t1, lineHeight:1.2}}>{d.name}</div>
+
+                  {/* KPI grid: City, Zone, PIN, Status */}
+                  <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:8}}>
+                    <div style={{padding:'10px 12px', background:'rgba(129,140,248,0.10)', border:'1px solid rgba(129,140,248,0.25)', borderRadius:8}}>
+                      <div style={{fontSize:14, fontWeight:800, color:'#a5b4fc', textTransform:'uppercase'}}>{d.city || '—'}</div>
+                      <div style={{fontSize:10, color:T.t3, marginTop:2}}>City</div>
+                    </div>
+                    <div style={{padding:'10px 12px', background:T.bg1, border:'1px solid '+T.bd1, borderRadius:8}}>
+                      <div style={{fontSize:14, fontWeight:800, color:T.t1, textTransform:'uppercase'}}>{d.zone || 'NONE'}</div>
+                      <div style={{fontSize:10, color:T.t3, marginTop:2}}>Zone</div>
+                    </div>
+                    <div style={{padding:'10px 12px', background:T.bg1, border:'1px solid '+T.bd1, borderRadius:8, gridColumn:'span 1'}}>
+                      <div style={{fontFamily:'"JetBrains Mono", monospace', fontSize:13, fontWeight:800, color:T.t1}}>{d.pincode || '—'}</div>
+                      <div style={{fontSize:10, color:T.t3, marginTop:2}}>Pincode</div>
+                    </div>
+                    <div style={{padding:'10px 12px', background:T.bg1, border:'1px solid '+T.bd1, borderRadius:8}}>
+                      <div style={{fontSize:14, fontWeight:800, color:T.t1, textTransform:'uppercase'}}>{d.status || 'NONE'}</div>
+                      <div style={{fontSize:10, color:T.t3, marginTop:2}}>Status</div>
+                    </div>
+                  </div>
+
+                  {/* State + Address rows */}
+                  <div>
+                    <div style={{display:'flex', gap:12, padding:'6px 0', borderBottom:'1px solid '+T.bd1}}>
+                      <div style={{fontSize:11, color:T.t3, width:80}}>State</div>
+                      <div style={{fontSize:11, color:T.t1, flex:1, textAlign:'right', fontWeight:600}}>{d.state || '—'}</div>
+                    </div>
+                    {d.address && (
+                      <div style={{display:'flex', gap:12, padding:'6px 0', borderBottom:'1px solid '+T.bd1}}>
+                        <div style={{fontSize:11, color:T.t3, width:80, flexShrink:0}}>Address</div>
+                        <div style={{fontSize:11, color:T.t1, flex:1, textAlign:'right', fontWeight:500, lineHeight:1.4}}>{d.address}</div>
+                      </div>
+                    )}
+                    <div style={{display:'flex', gap:12, padding:'6px 0', borderBottom:'1px solid '+T.bd1}}>
+                      <div style={{fontSize:11, color:T.t3, width:80}}>Salesman</div>
+                      <div style={{fontSize:11, color:T.t1, flex:1, textAlign:'right', fontWeight:600}}>{users?.[d.salesman]?.name || d.salesman || '—'}</div>
+                    </div>
+                    <div style={{display:'flex', gap:12, padding:'6px 0'}}>
+                      <div style={{fontSize:11, color:T.t3, width:80}}>Sales · Tgt</div>
+                      <div style={{fontSize:11, flex:1, textAlign:'right', fontWeight:700}}>
+                        <span style={{color:'#86efac'}}>{fmtIN(ach)}</span>
+                        <span style={{color:T.t3, fontWeight:400}}> / </span>
+                        <span style={{color:T.t2}}>{fmtIN(tgt)}</span>
+                        {tgt > 0 && (
+                          <span style={{color:pclr(pct(tgt,ach)), marginLeft:6}}> · {spct(tgt, ach)}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Nearby parties */}
+                  {nearby.length > 0 && (
+                    <div style={{border:'1px solid rgba(52,211,153,0.35)', borderRadius:10, padding:10, background:'rgba(52,211,153,0.05)'}}>
+                      <div style={{fontSize:10, fontWeight:800, color:'#86efac', textTransform:'uppercase', letterSpacing:'.08em', marginBottom:8, display:'flex', alignItems:'center', gap:6}}>
+                        💡 Nearby Parties (15 km)
+                      </div>
+                      <div style={{display:'flex', flexDirection:'column'}}>
+                        {nearby.map(n => (
+                          <div key={n.id}
+                            onClick={() => setDetailDealer(n)}
+                            style={{
+                              padding:'6px 0', borderBottom:'1px solid '+T.bd1,
+                              display:'flex', alignItems:'center', gap:8, cursor:'pointer',
+                            }}>
+                            <span style={{width:8, height:8, borderRadius:'50%', background:'#818cf8', flexShrink:0}}/>
+                            <span style={{flex:1, minWidth:0, fontSize:11, fontWeight:700, color:T.t1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{n.name}</span>
+                            <span style={{fontSize:9, color:T.t3, whiteSpace:'nowrap'}}>{n.city || ''}</span>
+                            <span style={{fontSize:11, color:'#86efac', fontWeight:800, whiteSpace:'nowrap'}}>{n._dist.toFixed(1)}km</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {nearby.length === 0 && Number.isFinite(d.locLat) && (
+                    <div style={{fontSize:10, color:T.t3, textAlign:'center', padding:6}}>
+                      No other geo-located dealers within 15 km.
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
           {(!leafletReady || !geoReady) && (
             <div style={{
               position:'absolute', inset:0, background:T.bg0,
@@ -1270,7 +1679,7 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
                                     const ach = d.months?.[selectedMonthIdx] || 0;
                                     return (
                                       <div key={d.id}
-                                        onClick={() => onOpenDealer?.(d.id)}
+                                        onClick={(e) => { e.stopPropagation(); setDetailDealer(d); }}
                                         style={{
                                           padding:'5px 10px 5px 30px', cursor:'pointer',
                                           borderBottom:'1px solid '+T.bd1,
