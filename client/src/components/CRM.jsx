@@ -4,6 +4,7 @@
 // Photos are downscaled to ≤900px and JPEG-encoded to keep payloads small.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import * as XLSX from 'xlsx';
 import {
   Camera, LogIn as IconIn, LogOut as IconOut, MapPin, Calendar, Plus,
   X, Phone, Mail, Building2, Trash2, Send, RefreshCw, Image as ImageIcon,
@@ -832,23 +833,73 @@ export function VisitsPage({ dealers, users, currentUser }){
               ))}
             </select>
           )}
-          <button onClick={()=>exportCSV(
-            'Visits_' + todayStr() + '.csv',
-            ['User','Party','Status','Date','CheckIn','CheckOut','DurationMin','CheckInAddress','CheckOutAddress','CheckInNote','DiscussionNotes'],
-            items.map(v => [
-              v.userName || v.userId,
-              v.dealerName,
-              v.status === 'completed' ? 'COMPLETED' : 'IN-PROGRESS',
-              v.dateStr || (v.createdAt||'').slice(0,10),
-              v.checkInTime  ? new Date(v.checkInTime ).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}) : '',
-              v.checkOutTime ? new Date(v.checkOutTime).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}) : '',
-              v.durationMinutes ?? '',
-              v.checkInAddress  || v.address || '',
-              v.checkOutAddress || '',
-              v.checkInNote || '',
-              v.checkOutNote || v.comment || '',
-            ])
-          )} className="btn" title="Export visits to Excel/CSV"
+          <button onClick={()=>{
+            // ── Grouped-by-user Visit Report (.xlsx) ──────────────────────
+            // Rows are grouped like this:
+            //   ┌ Header row     : [<User Name>, <total dealers met>, ...blanks]
+            //   ├ Visit row      : [ , , <UserID>, Active, <Role>, <In Date>, <In Image>, ...]
+            //   ├ Visit row      : ...
+            //   └ ...next user starts with a new header row.
+            const HEADERS = [
+              'User', 'Dealers Met', 'User ID', 'Status', 'Role',
+              'In Date', 'In Image', 'In Address', 'Purpose', 'In Remarks',
+              'Out Date', 'Out Image', 'Out Address', 'Reason', 'Out Remarks',
+              'Time Spent', 'Party', 'party ID', 'Device',
+            ];
+            // Bucket visits by salesman id, preserving the current display order.
+            const byUser = new Map();
+            for (const v of items) {
+              const uid = v.userId || v.salesman || '_none';
+              if (!byUser.has(uid)) byUser.set(uid, { userName: v.userName || users?.[uid]?.name || uid, list: [] });
+              byUser.get(uid).list.push(v);
+            }
+            const rows = [HEADERS];
+            for (const [uid, bucket] of byUser) {
+              // Group header row — only User + Dealers Met filled
+              rows.push([bucket.userName, bucket.list.length, ...Array(HEADERS.length - 2).fill('')]);
+              for (const v of bucket.list) {
+                const user = users?.[uid] || {};
+                const secToHHMMSS = (mins) => {
+                  const s = Math.max(0, Math.round((mins || 0) * 60));
+                  const h = Math.floor(s / 3600);
+                  const m = Math.floor((s % 3600) / 60);
+                  const ss = s % 60;
+                  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}`;
+                };
+                rows.push([
+                  '',                                                                 // User
+                  '',                                                                 // Dealers Met
+                  uid,                                                                // User ID
+                  user.active === false ? 'Inactive' : 'Active',                      // Status
+                  user.role === 'salesman' ? 'Sales Executive' : (user.role || ''),   // Role
+                  v.checkInTime  ? new Date(v.checkInTime)  : '',                     // In Date
+                  v.checkInPhoto  || v.photo || '',                                   // In Image
+                  v.checkInAddress || v.address || '',                                // In Address
+                  v.purpose || '',                                                    // Purpose
+                  v.checkInNote || '',                                                // In Remarks
+                  v.checkOutTime ? new Date(v.checkOutTime) : '',                     // Out Date
+                  v.checkOutPhoto || '',                                              // Out Image
+                  v.checkOutAddress || '',                                            // Out Address
+                  v.reason || v.purpose || '',                                        // Reason
+                  v.checkOutNote || v.comment || '',                                  // Out Remarks
+                  secToHHMMSS(v.durationMinutes),                                     // Time Spent
+                  v.dealerName || '',                                                 // Party
+                  v.dealerId || 0,                                                    // party ID
+                  v.device || 'Android',                                              // Device
+                ]);
+              }
+            }
+            const ws = XLSX.utils.aoa_to_sheet(rows);
+            ws['!cols'] = [
+              { wch: 24 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 18 },
+              { wch: 18 }, { wch: 34 }, { wch: 60 }, { wch: 22 }, { wch: 40 },
+              { wch: 18 }, { wch: 34 }, { wch: 60 }, { wch: 22 }, { wch: 60 },
+              { wch: 12 }, { wch: 34 }, { wch: 10 }, { wch: 10 },
+            ];
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Visits');
+            XLSX.writeFile(wb, `Visits_${todayStr()}.xlsx`);
+          }} className="btn" title="Export grouped Visit Report as Excel"
             style={{padding:'4px 10px', fontSize:11, display:'inline-flex', alignItems:'center', gap:4}}>
             <Download size={11}/> Export
           </button>
