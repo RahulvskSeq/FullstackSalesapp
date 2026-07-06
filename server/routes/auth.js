@@ -178,10 +178,19 @@ router.put('/users/:id', protect, async (req, res) => {
       const clean = arr => Array.isArray(arr)
         ? [...new Set(arr.map(v => String(v).trim()).filter(Boolean))]
         : [];
-      permsToWrite = { states: clean(p.states), zones: clean(p.zones), salesmen: clean(p.salesmen) };
+      permsToWrite = {
+        states:   clean(p.states),
+        cities:   clean(p.cities),      // ← was missing; caused city ticks to
+                                        //   silently drop on save while states saved fine
+        zones:    clean(p.zones),
+        salesmen: clean(p.salesmen),
+        features: clean(p.features),    // ← same story for the feature toggles
+      };
       update['permissions.states']   = permsToWrite.states;
+      update['permissions.cities']   = permsToWrite.cities;
       update['permissions.zones']    = permsToWrite.zones;
       update['permissions.salesmen'] = permsToWrite.salesmen;
+      update['permissions.features'] = permsToWrite.features;
     } else {
       update[k] = req.body[k];
     }

@@ -1728,7 +1728,63 @@ export const api = {
   markSampleGiven: (data)  => fetch(`${BASE}/samples/given`,{method:'POST',headers:{...authHeaders(),'Content-Type':'application/json'},body:JSON.stringify(data)}).then(handle),
   unmarkSample:    (id)    => fetch(`${BASE}/samples/given/${id}`,{method:'DELETE',headers:authHeaders()}).then(handle),
   uploadSamples:   (file)  => { const fd=new FormData(); fd.append('file',file); return fetch(`${BASE}/samples/upload`,{method:'POST',headers:{Authorization:`Bearer ${getToken()}`},body:fd}).then(handle); },
+  // Bulk upload: which dealer has which sample. See samples.js for format.
+  uploadSamplesGiven: (file) => { const fd=new FormData(); fd.append('file',file); return fetch(`${BASE}/samples/given/upload`,{method:'POST',headers:{Authorization:`Bearer ${getToken()}`},body:fd}).then(handle); },
+  // Download the ONE template — Company Name | Product | Zone format.
+  // Pre-filled with every existing SampleGiven record.
+  downloadSampleTemplate: async () => {
+    const res = await fetch(`${BASE}/samples/template`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    });
+    if (!res.ok) throw new Error('Download failed');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'Sample_by_Party_by_Zone.xlsx';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
+  // Download an Excel pre-populated with every dealer × every sample. Existing
+  // "given" pairs come pre-ticked so admin can see current state.
+  downloadSamplesGivenTemplate: async () => {
+    const res = await fetch(`${BASE}/samples/given/template`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    });
+    if (!res.ok) throw new Error('Download failed');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'Dealer_Samples_Template.xlsx';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
+  // One-shot cleanup that merges duplicate Sample master records where the
+  // parser previously mistook code ranges (like "OM 21 - 40") for zones.
+  cleanupSampleMaster: () => fetch(`${BASE}/samples/cleanup-master`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${getToken()}` },
+  }).then(handle),
+  // Template for the Sample Master upload (Sample Name | Zone | Category).
+  // Pre-populated with any existing master rows.
+  downloadSampleMasterTemplate: async () => {
+    const res = await fetch(`${BASE}/samples/master/template`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    });
+    if (!res.ok) throw new Error('Download failed');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'Sample_Master_Template.xlsx';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
   deleteSample:    (id)    => fetch(`${BASE}/samples/${id}`,{method:'DELETE',headers:authHeaders()}).then(handle),
+  // Nuclear: wipes entire Sample master AND every SampleGiven record.
+  // Superadmin-only on the server.
+  deleteAllSamples: ()     => fetch(`${BASE}/samples/all`,{method:'DELETE',headers:authHeaders()}).then(handle),
 
   getMonthConfig:  ()    => fetch(`${BASE}/settings/months`,{headers:authHeaders()}).then(handle).catch(()=>null),
   saveMonthConfig: (cfg) => fetch(`${BASE}/settings/months`,{method:'POST',headers:authHeaders(),body:JSON.stringify(cfg)}).then(handle).catch(()=>null),

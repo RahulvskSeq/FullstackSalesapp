@@ -137,8 +137,23 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
 
   const openPermissions = (uid) => {
     const cur = allUsers[uid]?.permissions || {};
-    setPermsStates(new Set(Array.isArray(cur.states)   ? cur.states   : []));
-    setPermsCities(new Set(Array.isArray(cur.cities)   ? cur.cities   : []));
+    // Canonicalise saved permission strings against the deduped roster lists.
+    // Without this, a saved "Bangalore" won't tick a checkbox that shows
+    // "BANGALORE" (the case that dedup kept), because Set.has() is case-
+    // sensitive. Case mismatches make the modal look empty even though the
+    // permission is safely stored on the server.
+    const toCanon = (savedList, canonList) => {
+      const map = new Map(canonList.map(v => [String(v || '').trim().toLowerCase(), v]));
+      const out = new Set();
+      for (const v of (Array.isArray(savedList) ? savedList : [])) {
+        const key = String(v || '').trim().toLowerCase();
+        if (!key) continue;
+        out.add(map.get(key) || v);   // fall back to raw value if roster missing
+      }
+      return out;
+    };
+    setPermsStates(toCanon(cur.states, allStates));
+    setPermsCities(toCanon(cur.cities, allCities));
     setPermsFeatures(new Set(Array.isArray(cur.features) ? cur.features : []));
     setPermsForUid(uid);
   };

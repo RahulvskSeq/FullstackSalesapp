@@ -1,14 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../api';
-import { Upload, Trash2, RefreshCw, Package, Plus } from 'lucide-react';
+import { Upload, Trash2, RefreshCw, Package, Plus, Download } from 'lucide-react';
 import { confirmDialog } from './Toast';
 
 export default function SampleMasterTab() {
   const [samples, setSamples] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [uploadingGiven, setUploadingGiven] = useState(false);
+  const [downloadingTpl, setDownloadingTpl] = useState(false);
   const [msg, setMsg] = useState('');
   const fileRef = useRef();
+  const givenFileRef = useRef();
 
   useEffect(() => { loadSamples(); }, []);
 
@@ -30,11 +33,49 @@ export default function SampleMasterTab() {
     setUploading(false);
   };
 
-  const deleteSample = async (id) => {
-    const ok = await confirmDialog({ title:'Delete this sample?', confirmText:'Delete', danger:true });
+  // Bulk upload of "dealer × sample" — which dealer already has which
+  // sample. Records show up as ticked in the DealerModal Samples tab.
+  const handleUploadGiven = async (file) => {
+    if (!file) return;
+    setUploadingGiven(true); setMsg('');
+    try {
+      const res = await api.uploadSamplesGiven(file);
+      setMsg(`✓ ${res.added || 0} sample assignments added, ${res.skipped || 0} already existed`);
+      await loadSamples();  // in case new samples were auto-created
+    } catch (e) { setMsg('Error: ' + e.message); }
+    setUploadingGiven(false);
+  };
+
+  const deleteSample = async (id, name) => {
+    const ok = await confirmDialog({
+      title: `Delete "${name}"?`,
+      message: 'Also removes this sample from every dealer\'s Samples tab.',
+      confirmText: 'Delete',
+      danger: true,
+    });
     if(!ok) return;
-    await api.deleteSample(id);
-    setSamples(s=>s.filter(x=>x._id!==id));
+    try {
+      await api.deleteSample(id);
+      setSamples(s => s.filter(x => x._id !== id));
+      setMsg('✓ Sample deleted');
+    } catch (e) { setMsg('Delete failed: ' + e.message); }
+  };
+
+  // Nuclear: wipe entire Sample master + all given records. Server enforces
+  // superadmin — non-superadmins will get a 403.
+  const deleteAll = async () => {
+    const ok = await confirmDialog({
+      title: 'Delete ALL samples from database?',
+      message: `This wipes every sample (${samples.length} rows) AND every dealer-sample-given record. Cannot be undone.`,
+      confirmText: 'Delete Everything',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      const r = await api.deleteAllSamples();
+      setMsg(`✓ Deleted ${r.samplesDeleted||0} samples + ${r.givenDeleted||0} given records`);
+      await loadSamples();
+    } catch (e) { setMsg('Delete failed: ' + e.message); }
   };
 
   const zones = [...new Set(samples.map(s=>s.zone))].sort();
@@ -63,21 +104,56 @@ export default function SampleMasterTab() {
       <div style={{marginBottom:16}}>
         <div style={{fontSize:14,fontWeight:600,marginBottom:4}}>Sample Master</div>
         <div style={{fontSize:12,color:'var(--t3)',marginBottom:12}}>
-          Upload Excel or add samples one by one
+          Excel format: <strong>Company Name | Product | Zone</strong>. Zone cell holds free tags like "All Zones", "ZONE 2 & 5", or "NEW DEALERS ONLY".
         </div>
         <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
-          <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}}
-            onChange={e=>{if(e.target.files[0])handleUpload(e.target.files[0]);e.target.value='';}}/>
-          <button onClick={()=>fileRef.current?.click()} disabled={uploading} className="btnp"
-            style={{display:'flex',alignItems:'center',gap:6}}>
-            <Upload size={13}/>{uploading?'Uploading...':'Upload Excel'}
+          {/* 1) Download the current state as an editable template. */}
+          <button
+            onClick={async () => {
+              setDownloadingTpl(true); setMsg('');
+              try { await api.downloadSampleTemplate(); setMsg('✓ Template downloaded'); }
+              catch (e) { setMsg('Download failed: ' + e.message); }
+              setDownloadingTpl(false);
+            }}
+            disabled={downloadingTpl}
+            className="btn"
+            style={{display:'flex',alignItems:'center',gap:6,color:'#fbbf24',border:'1px solid rgba(251,191,36,0.4)',padding:'8px 14px'}}>
+            <Download size={14}/>{downloadingTpl?'Building…':'Download Sample'}
           </button>
-          <button onClick={()=>setShowAdd(s=>!s)} className="btn"
-            style={{display:'flex',alignItems:'center',gap:6,color:'var(--acc)',border:'1px solid rgba(99,102,241,0.3)'}}>
-            <Plus size={13}/> Add Single Sample
+          {/* 2) Upload the filled-in file. Server handles both master
+              (via auto-create) and given records in one shot. */}
+          <input ref={givenFileRef} type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}}
+            onChange={e=>{if(e.target.files[0])handleUploadGiven(e.target.files[0]);e.target.value='';}}/>
+          <button onClick={()=>givenFileRef.current?.click()} disabled={uploadingGiven} className="btnp"
+            style={{display:'flex',alignItems:'center',gap:6,padding:'8px 14px'}}>
+            <Upload size={14}/>{uploadingGiven?'Uploading…':'Upload'}
           </button>
-          <button onClick={loadSamples} className="btn" style={{display:'flex',alignItems:'center',gap:6}}>
-            <RefreshCw size={13}/> Refresh
+          {/* One-shot cleanup — merge duplicate sample master entries that
+              were created by the earlier buggy parenthesis parser. Safe to
+              run repeatedly. */}
+          <button
+            onClick={async () => {
+              setMsg('');
+              try {
+                const r = await api.cleanupSampleMaster();
+                setMsg(`✓ Merged ${r.merged || 0} duplicate rows, kept ${r.kept || 0}`);
+                await loadSamples();
+              } catch (e) { setMsg('Cleanup failed: ' + e.message); }
+            }}
+            className="btn"
+            style={{display:'flex',alignItems:'center',gap:6,color:'var(--t3)',fontSize:11}}>
+            <RefreshCw size={12}/>Merge duplicates
+          </button>
+          {/* Nuclear "Delete All" — wipes master + given records. Server
+              gates by superadmin. Pushed to the right so it's not next to
+              regular actions. */}
+          <button
+            onClick={deleteAll}
+            className="btn"
+            style={{display:'flex',alignItems:'center',gap:6,color:'#f87171',
+              border:'1px solid rgba(248,113,113,0.4)',padding:'8px 14px',
+              fontSize:12,marginLeft:'auto'}}>
+            <Trash2 size={13}/>Delete All
           </button>
           {msg&&<span style={{fontSize:11,color:msg.startsWith('✓')?'#34d399':'#f87171'}}>{msg}</span>}
         </div>
@@ -177,9 +253,17 @@ export default function SampleMasterTab() {
                   <td><span style={{background:'rgba(99,102,241,0.1)',color:'var(--acc)',padding:'2px 8px',borderRadius:4,fontSize:11}}>{s.zone}</span></td>
                   <td style={{color:'var(--t3)',fontSize:11}}>{s.category||'—'}</td>
                   <td>
-                    <button onClick={()=>deleteSample(s._id)}
-                      style={{background:'none',border:'none',color:'var(--t3)',cursor:'pointer',padding:3}}>
-                      <Trash2 size={12}/>
+                    <button onClick={()=>deleteSample(s._id, s.name)}
+                      title="Delete this sample"
+                      style={{
+                        display:'flex', alignItems:'center', gap:4,
+                        background:'rgba(248,113,113,0.10)',
+                        border:'1px solid rgba(248,113,113,0.35)',
+                        color:'#f87171', cursor:'pointer',
+                        padding:'4px 10px', borderRadius:6,
+                        fontSize:11, fontWeight:600,
+                      }}>
+                      <Trash2 size={13}/>Delete
                     </button>
                   </td>
                 </tr>

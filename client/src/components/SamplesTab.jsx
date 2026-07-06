@@ -58,10 +58,23 @@ export default function SamplesTab({ dealer, currentUser }) {
     setToggling(t => { const n = { ...t }; delete n[sample._id]; return n; });
   };
 
-  // Filter samples to dealer's zone
-  const zoneSamples = dealerZone
-    ? samples.filter(s => s.zone.toLowerCase().trim() === dealerZone)
-    : samples;
+  // Filter samples to what applies to this dealer. The upload sheet uses
+  // free-form zone tags ("All Zones", "ZONE 2 & 5", "NEW DEALERS ONLY"),
+  // so an exact single-zone match is wrong. Rules:
+  //   • Sample zone blank / "General" / "All Zones"  → applies to every dealer.
+  //   • Sample zone contains the dealer's zone number (case-insensitive) → applies.
+  //   • Everything already given to this dealer → always shown (regardless of zone).
+  const zoneMatches = (sampleZone) => {
+    if (!dealerZone) return true;
+    const z = String(sampleZone || '').toLowerCase().trim();
+    if (!z || z === 'general' || z === 'all zones') return true;
+    // Extract digits from the dealer's zone ("ZONE 3" → "3") and check
+    // whether the sample's zone tag mentions that number.
+    const dealerZoneNum = (dealerZone.match(/\d+/) || [''])[0];
+    if (dealerZoneNum && z.includes(dealerZoneNum)) return true;
+    return z === dealerZone;
+  };
+  const zoneSamples = samples.filter(s => zoneMatches(s.zone) || given[s._id]);
 
   const givenCount   = zoneSamples.filter(s => given[s._id]).length;
   const totalCount   = zoneSamples.length;
@@ -122,11 +135,72 @@ export default function SamplesTab({ dealer, currentUser }) {
         </div>
       </div>
 
-      {/* Sample list — pending first, then given */}
+      {/* Sample list — GIVEN on top (samples this dealer already has),
+          then Pending below. Names shown clean (no strikethrough) so they
+          stay readable. */}
       <div style={{display:'flex',flexDirection:'column',gap:6}}>
-        {/* Pending */}
-        {pendingCount > 0 && (
+        {/* Given (shown first) */}
+        {givenCount > 0 && (
           <div style={{fontSize:10,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'.08em',marginBottom:2,marginTop:4}}>
+            ✅ Given ({givenCount})
+          </div>
+        )}
+        {zoneSamples.filter(s => given[s._id]).map(s => {
+          const g = given[s._id];
+          return (
+            <div key={s._id} style={{
+              display:'flex', alignItems:'center', gap:10,
+              padding:'10px 12px', borderRadius:8,
+              background:'rgba(52,211,153,0.06)',
+              border:'1px solid rgba(52,211,153,0.25)',
+              transition:'all .2s',
+            }}>
+              {/* Checked checkbox — click to uncheck */}
+              <button
+                onClick={() => toggle(s)}
+                disabled={toggling[s._id]}
+                style={{
+                  width:22, height:22, borderRadius:5,
+                  border:'2px solid #34d399',
+                  background:'#34d399',
+                  cursor:'pointer', flexShrink:0,
+                  display:'flex', alignItems:'center', justifyContent:'center',
+                  transition:'all .15s',
+                }}>
+                {toggling[s._id]
+                  ? <RefreshCw size={12} style={{animation:'spin .7s linear infinite',color:'#fff'}}/>
+                  : <span style={{color:'#fff',fontSize:13,lineHeight:1}}>✓</span>}
+              </button>
+
+              <div style={{flex:1,minWidth:0}}>
+                {/* Clean, readable name — no strikethrough. */}
+                <div style={{fontSize:13,fontWeight:600,color:'var(--t1)'}}>{s.name}</div>
+                <div style={{display:'flex',gap:6,alignItems:'center',marginTop:2}}>
+                  {s.category && <span style={{fontSize:10,color:'var(--t3)'}}>{s.category}</span>}
+                  {/* Zone tag from the upload sheet ("All Zones",
+                      "ZONE 2 & 5", "NEW DEALERS ONLY", etc.) */}
+                  {g.zone && g.zone !== 'General' && (
+                    <span style={{
+                      fontSize:9, padding:'1px 6px', borderRadius:3,
+                      background:'rgba(129,140,248,0.15)', color:'#a5b4fc',
+                      fontWeight:600, textTransform:'uppercase', letterSpacing:'.03em',
+                    }}>{g.zone}</span>
+                  )}
+                </div>
+              </div>
+
+              <div style={{textAlign:'right',flexShrink:0}}>
+                <div style={{fontSize:11,color:'#34d399',fontWeight:600}}>✓ Given</div>
+                <div style={{fontSize:9,color:'var(--t3)'}}>{g.givenDate}</div>
+                {g.notes && <div style={{fontSize:9,color:'var(--t3)',maxWidth:80,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{g.notes}</div>}
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Pending (shown below Given) */}
+        {pendingCount > 0 && (
+          <div style={{fontSize:10,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'.08em',marginBottom:2,marginTop:8}}>
             ⬜ Pending ({pendingCount})
           </div>
         )}
@@ -176,53 +250,6 @@ export default function SamplesTab({ dealer, currentUser }) {
             }}>Pending</span>
           </div>
         ))}
-
-        {/* Given */}
-        {givenCount > 0 && (
-          <div style={{fontSize:10,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'.08em',marginBottom:2,marginTop:8}}>
-            ✅ Given ({givenCount})
-          </div>
-        )}
-        {zoneSamples.filter(s => given[s._id]).map(s => {
-          const g = given[s._id];
-          return (
-            <div key={s._id} style={{
-              display:'flex', alignItems:'center', gap:10,
-              padding:'10px 12px', borderRadius:8,
-              background:'rgba(52,211,153,0.04)',
-              border:'1px solid rgba(52,211,153,0.15)',
-              opacity: 0.75, transition:'all .2s',
-            }}>
-              {/* Checked checkbox — click to uncheck */}
-              <button
-                onClick={() => toggle(s)}
-                disabled={toggling[s._id]}
-                style={{
-                  width:22, height:22, borderRadius:5,
-                  border:'2px solid #34d399',
-                  background:'#34d399',
-                  cursor:'pointer', flexShrink:0,
-                  display:'flex', alignItems:'center', justifyContent:'center',
-                  transition:'all .15s',
-                }}>
-                {toggling[s._id]
-                  ? <RefreshCw size={12} style={{animation:'spin .7s linear infinite',color:'#fff'}}/>
-                  : <span style={{color:'#fff',fontSize:13,lineHeight:1}}>✓</span>}
-              </button>
-
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:13,fontWeight:500,color:'var(--t1)',textDecoration:'line-through',opacity:.6}}>{s.name}</div>
-                {s.category && <div style={{fontSize:10,color:'var(--t3)'}}>{s.category}</div>}
-              </div>
-
-              <div style={{textAlign:'right',flexShrink:0}}>
-                <div style={{fontSize:11,color:'#34d399',fontWeight:600}}>✓ Given</div>
-                <div style={{fontSize:9,color:'var(--t3)'}}>{g.givenDate}</div>
-                {g.notes && <div style={{fontSize:9,color:'var(--t3)',maxWidth:80,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{g.notes}</div>}
-              </div>
-            </div>
-          );
-        })}
       </div>
     </div>
   );
