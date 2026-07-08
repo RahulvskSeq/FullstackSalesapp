@@ -5638,7 +5638,7 @@
 // }
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { RefreshCw, Search, X, Upload, Plus, Check, Trash2, Calendar, MessageSquare, Bell, Phone, PhoneMissed, Download } from 'lucide-react';
+import { RefreshCw, Search, X, Upload, Plus, Check, Trash2, Calendar, MessageSquare, Bell, Phone, PhoneMissed, Download, ChevronRight, ChevronDown } from 'lucide-react';
 import { fetchCSV, parseOutstandingCSV } from '../utils';
 import { api, dbOutstandingToApp } from '../api';
 import { Avatar, MultiSelect } from './UI';
@@ -6667,6 +6667,25 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
                                   )}
                                 </div>
 
+                                {/* Expand caret — right of the follow-up date.
+                                    Toggles an inline panel listing ALL comments,
+                                    follow-ups and collections for this dealer. */}
+                                {d.dealerFollowups.length > 0 && (
+                                  <button
+                                    onClick={(e)=>{ e.stopPropagation(); toggle(d.id); }}
+                                    title={isOpen ? 'Hide comments' : `Show all ${d.dealerFollowups.length} comments`}
+                                    style={{
+                                      background: isOpen ? 'rgba(99,102,241,0.12)' : 'transparent',
+                                      border:'1px solid var(--b2)', borderRadius:5, cursor:'pointer',
+                                      color: isOpen ? 'var(--acc)' : 'var(--t3)',
+                                      display:'inline-flex', alignItems:'center', gap:2,
+                                      padding:'2px 5px', fontSize:9, fontWeight:600, flexShrink:0,
+                                    }}>
+                                    {isOpen ? <ChevronDown size={11}/> : <ChevronRight size={11}/>}
+                                    {d.dealerFollowups.length}
+                                  </button>
+                                )}
+
                                 {/* Salesman badge OUTSIDE the chip — no
                                     border, sits to the right. */}
                                 {d.matchedSalesman && (
@@ -6735,7 +6754,59 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
                           )}
                         </td>
                       </tr>
-                      {/* Row no longer expands — dealer name + amount cells handle all actions */}
+                      {/* Inline expanded panel — read-only list of every
+                          comment / follow-up / collection for this dealer.
+                          Opened by the caret next to the follow-up date. */}
+                      {isOpen && (
+                        <tr className="os-expanded-row">
+                          <td colSpan={99} style={{
+                            background:'var(--bg2)',
+                            padding:'6px 10px 10px 96px',
+                            borderBottom:'1px solid var(--b1)',
+                            borderLeft:'2px solid var(--acc)',
+                          }}>
+                            <div style={{fontSize:10,fontWeight:700,color:'var(--t3)',textTransform:'uppercase',marginBottom:4}}>
+                              All comments & follow-ups ({d.dealerFollowups.length})
+                            </div>
+                            {[...d.dealerFollowups]
+                              .sort((a,b)=>new Date(b.createdAt||b.updatedAt||0)-new Date(a.createdAt||a.updatedAt||0))
+                              .map(f=>{
+                                const isNP  = f.type==='no-pickup'||f.comment?.startsWith('📵');
+                                const isCol = f.type==='collection';
+                                const created = f.createdAt ? new Date(f.createdAt).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'2-digit'}) : '';
+                                return(
+                                  <div key={f._id} style={{display:'flex',alignItems:'flex-start',gap:8,padding:'5px 0',borderTop:'1px solid var(--b1)'}}>
+                                    <span style={{flexShrink:0,marginTop:1}}>
+                                      {isNP ? <PhoneMissed size={11} color="#f87171"/>
+                                        : isCol ? <Check size={11} color="#34d399"/>
+                                        : f.type==='followup' ? <Calendar size={11} color="#34d399"/>
+                                        : <MessageSquare size={11} color="var(--acc)"/>}
+                                    </span>
+                                    <div style={{minWidth:0,flex:1}}>
+                                      <div style={{fontSize:11,color:'var(--t1)',whiteSpace:'pre-wrap',wordBreak:'break-word'}}>
+                                        {f.comment || (isCol ? `Collected ${fmt(f.amount)}` : '—')}
+                                      </div>
+                                      <div style={{fontSize:9,color:'var(--t3)',marginTop:1,display:'flex',gap:8,flexWrap:'wrap'}}>
+                                        {f.reason && f.reason!=='Others' && <span>{f.reason}</span>}
+                                        {f.followupDate && <span>📅 {f.followupDate}</span>}
+                                        {isCol && f.amount>0 && <span style={{color:'#34d399'}}>💰 {fmt(f.amount)}</span>}
+                                        {Array.isArray(f.months) && f.months.length>0 && <span>[{f.months.join(', ')}]</span>}
+                                        {created && <span>· {created}</span>}
+                                        {f.salesman && <span>· {f.salesman}</span>}
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            <div style={{marginTop:8}}>
+                              <button onClick={()=>setActiveDealer(d)} className="btn"
+                                style={{fontSize:11,display:'inline-flex',alignItems:'center',gap:4,padding:'4px 10px'}}>
+                                <Plus size={11} color="var(--acc)"/> Add / manage follow-up
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
                     </React.Fragment>
                   );
                 })}
