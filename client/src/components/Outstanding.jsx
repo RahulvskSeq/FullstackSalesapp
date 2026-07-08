@@ -5680,9 +5680,32 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
   // Zoom modal for clicking on a payment-proof image in the history.
   const [zoomImg, setZoomImg] = useState('');
 
+  // ── Collections (partial payments logged against this dealer) ───────────
+  // Each collection is stored as a follow-up record with type:'collection'
+  // (no backend change needed). The header's "Remaining" = outstanding minus
+  // the sum of all collections. `+ Add` reveals a small date+amount form.
+  const [showCollect,   setShowCollect]   = useState(false);
+  const [collectDate,   setCollectDate]   = useState(todayStr());
+  const [collectAmt,    setCollectAmt]    = useState('');
+  const [savingCollect, setSavingCollect] = useState(false);
+  const [collectErr,    setCollectErr]    = useState('');
+
   const mine = existingFollowups.filter(f=>
     f.dealerName?.toLowerCase().trim()===dealer.name?.toLowerCase().trim()
   ).sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
+
+  // The amount this popup works against: a specific month's outstanding when
+  // opened from a month cell, otherwise the dealer's latest outstanding.
+  const baseAmount = typeof prefillAmount === 'number' ? prefillAmount : (dealer.latestOutstanding || 0);
+  // Collection entries for this dealer (scoped to the clicked month if any).
+  const collections = mine
+    .filter(f => f.type === 'collection')
+    .filter(f => !prefillMonth || (Array.isArray(f.months) && f.months.includes(prefillMonth)))
+    .sort((a,b)=>new Date(b.followupDate||b.createdAt||0)-new Date(a.followupDate||a.createdAt||0));
+  const collectedTotal = collections.reduce((s,f)=>s+(Number(f.amount)||0),0);
+  const remaining = baseAmount - collectedTotal;
+  // History list excludes collections — they get their own section above.
+  const followupHistory = mine.filter(f => f.type !== 'collection');
 
   // Follow-up date cap — max 7 days from today. The native date picker
   // enforces this via its `max` attribute, but we re-check at save time
@@ -5746,6 +5769,41 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
       onSaved();
     } catch(e){ setErr(e.message); }
     setSaving(false);
+  };
+
+  // Log a collection (date + amount). Stored as a type:'collection' follow-up,
+  // then immediately marked 'done' so it never shows up as a pending/overdue
+  // follow-up elsewhere — it's a completed payment record, not a task.
+  const handleAddCollection = async () => {
+    const amt = Number(collectAmt) || 0;
+    if(!collectDate){ setCollectErr('Pick a date'); return; }
+    if(amt <= 0){ setCollectErr('Enter an amount greater than 0'); return; }
+    setSavingCollect(true); setCollectErr('');
+    try {
+      const created = await api.addFollowup({
+        dealerName:   dealer.name,
+        salesman:     dealer.matchedSalesman?.id || '',
+        amount:       amt,
+        followupDate: collectDate,
+        comment:      `💰 Collected ${fmt(amt)}`,
+        type:         'collection',
+        reason:       'Payment Collected',
+        months:       prefillMonth ? [prefillMonth] : [],
+      });
+      if(created?._id){
+        await api.updateFollowup(created._id, { status:'done', collectedAmount:amt, collectedAt:new Date() });
+      }
+      setCollectAmt(''); setCollectDate(todayStr()); setShowCollect(false);
+      notify.success(`Collection of ${fmt(amt)} logged`);
+      onSaved();
+    } catch(e){ setCollectErr(e.message); }
+    setSavingCollect(false);
+  };
+
+  const handleDeleteCollection = async (id) => {
+    const ok = await confirmDialog({ title:'Delete this collection entry?', confirmText:'Delete', danger:true });
+    if(!ok) return;
+    await api.deleteFollowup(id); onSaved();
   };
 
   const handleMark = async (id,status) => {
@@ -5814,9 +5872,21 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}}>
           <div>
             <div style={{fontSize:16,fontWeight:700}}>{dealer.name}</div>
-            {prefillMonth ? (
+            {collectedTotal > 0 ? (
+              <div style={{marginTop:2,display:'flex',alignItems:'baseline',gap:8,flexWrap:'wrap'}}>
+                <span style={{fontSize:13,fontWeight:700,color: remaining > 0 ? '#fbbf24' : '#34d399'}}>
+                  {prefillMonth ? `${prefillMonth} Remaining: ` : 'Remaining: '}{remaining > 0 ? fmt(remaining) : '₹0 ✓'}
+                </span>
+                <span style={{fontSize:11,color:'var(--t3)',textDecoration:'line-through'}}>
+                  Actual {fmt(baseAmount)}
+                </span>
+                <span style={{fontSize:11,color:'#34d399'}}>
+                  Collected {fmt(collectedTotal)}
+                </span>
+              </div>
+            ) : prefillMonth ? (
               <div style={{fontSize:12,color:'#fbbf24',marginTop:2,fontWeight:600}}>
-                {prefillMonth} Outstanding: {fmt(typeof prefillAmount === 'number' ? prefillAmount : 0)}
+                {prefillMonth} Outstanding: {fmt(baseAmount)}
               </div>
             ) : (
               <div style={{fontSize:12,color:'#f87171',marginTop:2}}>
@@ -5833,8 +5903,10 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
             <Plus size={13} color="var(--acc)"/> Add Follow-up / Comment
           </div>
 
-          {/* Date + Amount */}
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
+          {/* Date + Amount + a "＋" that opens the collection entry (right of
+              Expected Payment). A collection is money actually received; it
+              reduces the Remaining shown at the top of this popup. */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr auto',gap:10,marginBottom:10,alignItems:'end'}}>
             <div>
               <label style={{fontSize:10,color:'var(--t3)',display:'block',marginBottom:4,textTransform:'uppercase'}}>
                 Next Follow-up Date
@@ -5857,7 +5929,67 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
               <label style={{fontSize:10,color:'var(--t3)',display:'block',marginBottom:4,textTransform:'uppercase'}}>Expected Payment ₹</label>
               <input type="number" className="inp" value={amount} onChange={e=>setAmount(e.target.value)} placeholder="0" style={{width:'100%'}}/>
             </div>
+            <button
+              type="button"
+              onClick={()=>{ setShowCollect(s=>!s); setCollectErr(''); }}
+              title="Add collection (amount received) — updates Remaining at top"
+              className="btn"
+              style={{display:'flex',alignItems:'center',justifyContent:'center',height:40,padding:'0 14px',
+                color: showCollect ? '#fff' : 'var(--acc)',
+                background: showCollect ? 'var(--acc)' : 'transparent',
+                border:'1px solid var(--acc)',fontSize:18,fontWeight:700,lineHeight:1}}>
+              {showCollect ? '×' : '+'}
+            </button>
           </div>
+
+          {/* Collection entry — toggled by the ＋ next to Expected Payment. */}
+          {showCollect && (
+            <div style={{background:'var(--bg)',borderRadius:8,padding:10,marginBottom:10,border:'1px solid var(--acc)'}}>
+              <div style={{fontSize:11,fontWeight:600,color:'var(--acc)',marginBottom:8}}>💰 Add collection (amount received)</div>
+              <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'flex-end'}}>
+                <div style={{flex:'1 1 130px'}}>
+                  <label style={{fontSize:10,color:'var(--t3)',display:'block',marginBottom:4,textTransform:'uppercase'}}>Collection Date</label>
+                  <input type="date" className="inp" value={collectDate} max={todayStr()}
+                    onChange={e=>setCollectDate(e.target.value)} style={{width:'100%'}}/>
+                </div>
+                <div style={{flex:'1 1 130px'}}>
+                  <label style={{fontSize:10,color:'var(--t3)',display:'block',marginBottom:4,textTransform:'uppercase'}}> Collection Amount ₹</label>
+                  <input type="number" className="inp" value={collectAmt} placeholder="0"
+                    onChange={e=>setCollectAmt(e.target.value)} style={{width:'100%'}}/>
+                </div>
+                <button onClick={handleAddCollection} disabled={savingCollect} className="btnp"
+                  style={{display:'flex',alignItems:'center',gap:6,fontSize:12,whiteSpace:'nowrap'}}>
+                  {savingCollect?<RefreshCw size={11} style={{animation:'spin .7s linear infinite'}}/>:<Check size={11}/>}
+                  Save
+                </button>
+              </div>
+              {collectErr && <div style={{fontSize:11,color:'#f87171',marginTop:8}}>{collectErr}</div>}
+            </div>
+          )}
+
+          {/* Collection history + running total */}
+          {collections.length>0 && (
+            <div style={{marginBottom:10}}>
+              <div style={{fontSize:11,fontWeight:600,color:'#34d399',marginBottom:6}}>
+                💰 Collected {fmt(collectedTotal)} · Remaining {remaining>0?fmt(remaining):'₹0 ✓'}
+              </div>
+              <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                {collections.map(c=>(
+                  <div key={c._id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',
+                    background:'var(--bg)',borderRadius:8,padding:'6px 10px',fontSize:12}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8}}>
+                      <span style={{color:'#34d399',fontWeight:700}}>{fmt(Number(c.amount)||0)}</span>
+                      <span style={{color:'var(--t3)'}}>{c.followupDate}</span>
+                    </div>
+                    <button onClick={()=>handleDeleteCollection(c._id)} title="Delete collection"
+                      style={{background:'none',border:'none',color:'var(--t3)',cursor:'pointer',display:'flex'}}>
+                      <Trash2 size={13}/>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Reason dropdown — required. Picking "Others" reveals the
               free-text comment box for a custom note. */}
@@ -5905,12 +6037,12 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
         {/* History */}
         <div>
           <div style={{fontSize:12,fontWeight:600,color:'var(--t2)',marginBottom:10}}>
-            History ({mine.length})
+            History ({followupHistory.length})
           </div>
-          {mine.length===0&&(
+          {followupHistory.length===0&&(
             <div style={{textAlign:'center',padding:20,color:'var(--t3)',fontSize:12}}>No follow-ups yet</div>
           )}
-          {mine.map(f=>{
+          {followupHistory.map(f=>{
             const days   = daysUntil(f.followupDate);
             const isDone = f.status==='done';
             const isOver = !isDone && days<0;
