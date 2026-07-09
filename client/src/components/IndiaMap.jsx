@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { X, ChevronRight, Globe, Layers, Hash, Type, TrendingUp, Award, ArrowLeft, MapPin } from 'lucide-react';
+import { X, ChevronRight, ChevronDown, Globe, Layers, Hash, Type, TrendingUp, Award, ArrowLeft, MapPin, Sun } from 'lucide-react';
 import { MO } from '../constants';
 import { pct, spct, pclr, monthTarget } from '../utils';
 import { useMonth } from '../context';
@@ -43,6 +43,16 @@ const normalizeState = s => {
   const l = String(s).toLowerCase().trim();
   return STATE_ALIASES[l] || String(s).trim();
 };
+
+// ── HUBS — regional groupings of STATES. The Map View hub filter scopes all
+// data (map, lists, summary) to the states its hub contains. Add more hubs and
+// states here as needed — e.g. 'North Hub': ['Delhi','Punjab','Haryana'].
+const HUBS = {
+  'Karnataka Hub':  ['Karnataka'],
+  'Tamil Nadu Hub': ['Tamil Nadu'],
+  'Kerala Hub':     ['Kerala'],
+};
+const hubStateSet = (hub) => new Set((HUBS[hub] || []).map(s => String(s).toLowerCase().trim()));
 
 const getFeatureStateName = feature => {
   const p = feature?.properties || {};
@@ -241,6 +251,13 @@ const shortName = name => {
 // CSS for map labels + tooltips (DARK theme)
 const MAP_CSS = `
   .stp-mapview { font-family: Inter, system-ui, sans-serif; }
+  /* Side-by-side: map on the left, data panels on the right (stacks on mobile) */
+  .stp-split { display:grid; grid-template-columns:1fr; gap:10px; align-items:start; }
+  .stp-right-col { display:flex; flex-direction:column; gap:10px; min-width:0; }
+  @media (min-width: 1000px) {
+    .stp-split { grid-template-columns: minmax(0,1fr) 400px; }
+    /* Right column flows to its full height (no cropping) — the page scrolls. */
+  }
   .stp-state-label, .stp-city-label {
     background: transparent !important;
     border: none !important;
@@ -279,6 +296,14 @@ const MAP_CSS = `
     color: #86efac; font-weight: 800; font-size: 10px;
     display: block; margin-top: 1px;
   }
+  /* Light basemap: dark, clearly-readable labels on white */
+  .stp-mapview.lightmap .stp-state-label-inner { color:#0f172a; text-shadow:0 0 3px #fff,0 0 6px #fff,0 0 9px #fff; }
+  .stp-mapview.lightmap .stp-state-label-inner .lbl-val { color:#15803d; }
+  .stp-mapview.lightmap .stp-city-label-inner { background:#ffffff; color:#0f172a; border-color:#15803d; box-shadow:0 2px 8px rgba(0,0,0,.18); }
+  .stp-mapview.lightmap .stp-city-label-inner .lbl-val { color:#15803d; }
+  .stp-mapview.lightmap .leaflet-bar a { background-color:#ffffff !important; color:#0f172a !important; border-color:#d0d0d8 !important; }
+  /* Dim the light basemap so it's soft, not blinding white */
+  .stp-mapview.lightmap .leaflet-tile-pane { filter: brightness(0.88) contrast(1.03); }
   .stp-tooltip {
     background: #0c0c1e !important;
     border: 1px solid #22c55e44 !important;
@@ -337,7 +362,7 @@ const ToolBtn = ({active, onClick, icon:Icon, label, disabled=false}) => (
 // ────────────────────────────────────────────────────────────────────────────
 // Main component
 // ────────────────────────────────────────────────────────────────────────────
-export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
+export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDealer }) {
   const { selectedMonthIdx } = useMonth();
 
   const mapRef     = useRef(null);
@@ -392,10 +417,35 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
   const [showNames, setShowNames]   = useState(true);
   const [showPlaces, setShowPlaces] = useState(true);    // map's built-in places (cities/towns/roads)
   const [showDistricts, setShowDistricts] = useState(true); // district boundaries when drilled in
+  const [lightMap, setLightMap] = useState(true);           // light ("clear") basemap is the default
+  const [summaryView, setSummaryView] = useState(null);     // 'customers'|'sales'|'salesmen'|'zones'|null
   const [districtsReady, setDistrictsReady] = useState(false);
   const [hoverDistrict, setHoverDistrict]   = useState(null);
   const [leafletReady, setLeafletReady] = useState(false);
   const [geoReady, setGeoReady]         = useState(false);
+  const [hub, setHub] = useState('');   // '' = all hubs; otherwise a HUBS key
+  // Searchable city picker in the toolbar (shown when a state is selected).
+  const cityPickRef = useRef(null);
+  const [cityPickOpen, setCityPickOpen] = useState(false);
+  const [citySearch, setCitySearch] = useState('');
+
+  // Hub filter: scope every dealer used by the map to the hub's states.
+  // Because we shadow the `dealers` prop, ALL downstream aggregation
+  // (stateData, cityData, summary, lists, markers) is filtered automatically.
+  const dealers = useMemo(() => {
+    if(!hub) return allDealers;
+    const states = hubStateSet(hub);
+    return allDealers.filter(d => states.has((normalizeState(d.state) || '').toLowerCase()));
+  }, [allDealers, hub]);
+
+  // Reset the drill-down whenever the hub changes.
+  useEffect(() => { setSelected(null); setSelectedCity(null); setFocusArea(null); }, [hub]);
+  // Close the city picker on outside click; clear its search when it closes.
+  useEffect(() => {
+    const onDoc = (e) => { if(cityPickRef.current && !cityPickRef.current.contains(e.target)) setCityPickOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, []);
 
   const drillLevel = selected ? 'state' : 'india';
 
@@ -532,7 +582,9 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
     if(mapObjRef.current) return;
     const L = window.L;
     const map = L.map(mapRef.current, {
-      center:[22, 80], zoom:4.4, zoomControl:true, scrollWheelZoom:true,
+      // Wheel over the map zooms; the right data column scrolls independently,
+      // so the map no longer blocks reaching the lists.
+      center:[22, 80], zoom:4.4, zoomControl:true, scrollWheelZoom:true, doubleClickZoom:true,
       attributionControl:false, minZoom:3, maxZoom:18,
     });
 
@@ -687,6 +739,37 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
     if(showPlaces){ if(!map.hasLayer(placeLayerRef.current)) placeLayerRef.current.addTo(map); }
     else          { if(map.hasLayer(placeLayerRef.current))  map.removeLayer(placeLayerRef.current); }
   }, [showPlaces]);
+
+  // ── Light ("clear") vs dark basemap ─────────────────────────────────────
+  // Swaps the CartoDB tile set so districts + green fills stand out on a
+  // clean white background (like a BI dashboard), without re-creating the map.
+  useEffect(() => {
+    if(!leafletReady) return;
+    try {
+      if(baseTileRef.current){
+        baseTileRef.current.setUrl(lightMap
+          ? 'https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png'
+          : 'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png');
+      }
+      if(placeLayerRef.current){
+        placeLayerRef.current.setUrl(lightMap
+          ? 'https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png'
+          : 'https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png');
+      }
+      if(mapRef.current) mapRef.current.style.background = lightMap ? '#d9ddd9' : T.bg0;
+    } catch {}
+  }, [lightMap, leafletReady]);
+
+  // Recalculate the map size after the side-by-side layout mounts / on resize
+  // (Leaflet needs invalidateSize when its container width changes).
+  useEffect(() => {
+    if(!leafletReady || !mapObjRef.current) return;
+    const map = mapObjRef.current;
+    const fix = () => { try { map.invalidateSize(); } catch {} };
+    const t = setTimeout(fix, 120);
+    window.addEventListener('resize', fix);
+    return () => { clearTimeout(t); window.removeEventListener('resize', fix); };
+  }, [leafletReady]);
 
   // ── Render choropleth + state labels ─────────────────────────────────────
   useEffect(() => {
@@ -1093,7 +1176,11 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
       label.addTo(map);
       pincodeLblRef.current.push(label);
     }
-  }, [leafletReady, drillLevel, selectedCity, cityData, selectedMonthIdx, mapZoom, dealers, focusArea, districtData]);
+    // NOTE: districtData is intentionally NOT in the deps — it's declared
+    // later in the component, so listing it here would hit a temporal-dead-zone
+    // ReferenceError during render. focusArea + selectedMonthIdx already cover
+    // the cases where the district's dealers change.
+  }, [leafletReady, drillLevel, selectedCity, cityData, selectedMonthIdx, mapZoom, dealers, focusArea]);
 
   // ── Lazy-load India DISTRICT GeoJSON (only when first drill-down) ────────
   useEffect(() => {
@@ -1298,9 +1385,25 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
   // The opened district's aggregated data ({ name, dealers, total, target }).
   const districtObj = focusArea?.type === 'district' ? districtData[focusArea.name.toLowerCase()] : null;
 
+  // ── Summary box data — scoped to the CURRENT view (district → city → state → India)
+  const viewDealers =
+      focusArea?.type === 'district' ? (districtObj?.dealers || [])
+    : selectedCity                   ? (selectedCityObj?.dealers || [])
+    : selected                       ? (stateData[selected.toLowerCase()]?.dealers || [])
+    :                                  (dealers || []);
+  const viewLabel =
+      focusArea?.type === 'district' ? focusArea.name + ' district'
+    : selectedCity                   ? selectedCity
+    : selected                       ? selected
+    :                                  'All India';
+  const viewSales   = viewDealers.reduce((s,d)=>s+Number(d.months?.[selectedMonthIdx]||0),0);
+  const viewBilled  = viewDealers.filter(d=>Number(d.months?.[selectedMonthIdx]||0)>0).length;
+  const viewSalesmen= [...new Set(viewDealers.map(d=>d.salesman).filter(Boolean))];
+  const viewZones   = [...new Set(viewDealers.map(d=>(d.zone||'').trim()).filter(Boolean))];
+
   // ── Render ───────────────────────────────────────────────────────────────
   return (
-    <div className="fade stp-mapview" style={{padding:0, color:T.t1}}>
+    <div className={"fade stp-mapview" + (lightMap ? " lightmap" : "")} style={{padding:0, color:T.t1}}>
       {/* ── Breadcrumb ──────────────────────────────────────────────────── */}
       <div style={{display:'flex', alignItems:'center', gap:6, marginBottom:10, flexWrap:'wrap'}}>
         <Globe size={14} color={T.acc}/>
@@ -1375,10 +1478,12 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
         </KpiGroup>
       </div>
 
+      {/* ── Split: map (left) + data panels (right) ─────────────────────── */}
+      <div className="stp-split">
       {/* ── Map Card ──────────────────────────────────────────────────── */}
       <div style={{
         background:T.bg1, borderRadius:12, border:'1px solid '+T.bd1,
-        overflow:'hidden', marginBottom:10,
+        overflow:'hidden',
         boxShadow:'0 1px 2px rgba(0,0,0,.2)',
       }}>
         {/* Toolbar */}
@@ -1387,6 +1492,80 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
           borderBottom:'1px solid '+T.bd1,
           display:'flex', alignItems:'center', gap:8, flexWrap:'wrap',
         }}>
+          {/* Hub filter — scopes the whole map to a hub's states */}
+          <select
+            value={hub}
+            onChange={e => setHub(e.target.value)}
+            title="Filter by hub"
+            style={{
+              background: hub ? T.acc : T.bg1, color: hub ? '#fff' : T.t1,
+              border:'1px solid '+(hub ? T.acc : T.bd2),
+              borderRadius:8, padding:'6px 10px', fontSize:12, fontWeight:700, cursor:'pointer',
+            }}>
+            <option value="">🏢 All Hubs</option>
+            {Object.keys(HUBS).map(h => <option key={h} value={h}>{h}</option>)}
+          </select>
+
+          {/* Searchable city picker — shown when a state is selected */}
+          {drillLevel === 'state' && cityData.length > 0 && (() => {
+            const ql = citySearch.trim().toLowerCase();
+            const opts = (ql ? cityData.filter(c => c.name.toLowerCase().includes(ql)) : cityData).slice(0, 300);
+            const hl = (name) => {
+              if(!ql) return name;
+              const i = name.toLowerCase().indexOf(ql);
+              if(i < 0) return name;
+              return <>{name.slice(0,i)}<b style={{color:'#86efac'}}>{name.slice(i, i+ql.length)}</b>{name.slice(i+ql.length)}</>;
+            };
+            const pickCity = (c) => {
+              setSelectedCity(c.name);
+              const coords = CITY_COORDS[c.name.toLowerCase()];
+              if(coords){ const [lat,lng]=coords, dlt=0.25;
+                setFocusArea({ type:'city', name:c.name,
+                  holes:[[[lng-dlt,lat-dlt],[lng+dlt,lat-dlt],[lng+dlt,lat+dlt],[lng-dlt,lat+dlt],[lng-dlt,lat-dlt]]],
+                  boundsArr:[[lat-dlt,lng-dlt],[lat+dlt,lng+dlt]] });
+              }
+              setCityPickOpen(false); setCitySearch('');
+            };
+            return (
+              <div ref={cityPickRef} style={{position:'relative', width:180}}>
+                <button type="button" onClick={()=>setCityPickOpen(o=>!o)}
+                  style={{display:'flex', alignItems:'center', gap:6, width:'100%', textAlign:'left', cursor:'pointer',
+                    background:T.bg1, color: selectedCity ? T.t1 : T.t3, border:'1px solid '+T.bd2,
+                    borderRadius:8, padding:'6px 10px', fontSize:12, fontWeight:600}}>
+                  <MapPin size={12} style={{color:'#86efac', flexShrink:0}}/>
+                  <span style={{flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{selectedCity || 'Select city'}</span>
+                  {selectedCity && <X size={13} style={{color:T.t3, flexShrink:0}} onClick={(e)=>{ e.stopPropagation(); setSelectedCity(null); setFocusArea(null); }}/>}
+                  <ChevronDown size={13} style={{color:T.t3, flexShrink:0, transform: cityPickOpen?'rotate(180deg)':'none', transition:'transform .15s'}}/>
+                </button>
+                {cityPickOpen && (
+                  <div style={{position:'absolute', top:'calc(100% + 5px)', left:0, right:0, zIndex:100000,
+                    background:T.bg1, border:'1px solid '+T.bd2, borderRadius:10, boxShadow:'0 14px 34px rgba(0,0,0,0.5)', overflow:'hidden', minWidth:220}}>
+                    <div style={{padding:6, borderBottom:'1px solid '+T.bd1}}>
+                      <input autoFocus value={citySearch} onChange={e=>setCitySearch(e.target.value)}
+                        placeholder="Search city…"
+                        style={{width:'100%', background:T.bg2, color:T.t1, border:'1px solid '+T.bd2, borderRadius:7, padding:'7px 9px', fontSize:12}}/>
+                    </div>
+                    <div style={{maxHeight:260, overflowY:'auto'}}>
+                      {opts.length === 0
+                        ? <div style={{padding:'10px 12px', fontSize:11.5, color:T.t3}}>No matching city</div>
+                        : opts.map(c => (
+                          <div key={c.name} onClick={()=>pickCity(c)}
+                            style={{display:'flex', alignItems:'center', gap:8, padding:'9px 12px', fontSize:12.5, cursor:'pointer',
+                              color:T.t1, borderBottom:'1px solid '+T.bd1,
+                              background: selectedCity===c.name ? T.bg2 : 'transparent'}}
+                            onMouseEnter={e=>e.currentTarget.style.background=T.bg2}
+                            onMouseLeave={e=>e.currentTarget.style.background = selectedCity===c.name?T.bg2:'transparent'}>
+                            <span style={{flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{hl(c.name)}</span>
+                            <span style={{fontSize:11, fontWeight:700, color:'#86efac'}}>{fmtIN(c.total)}</span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           <select
             value={viewMode}
             onChange={e => setViewMode(e.target.value)}
@@ -1412,6 +1591,7 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
           {drillLevel === 'state' && (
             <ToolBtn active={showDistricts} icon={Layers} label="Districts" onClick={() => setShowDistricts(s => !s)}/>
           )}
+          <ToolBtn active={lightMap} icon={Sun} label="Light" onClick={() => setLightMap(s => !s)}/>
 
           <div style={{flex:1}}/>
 
@@ -1426,7 +1606,7 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
 
         {/* Map area */}
         <div style={{position:'relative', background:T.bg0}}>
-          <div ref={mapRef} style={{height:'clamp(360px, 62vw, 600px)', width:'100%', background:T.bg0}}/>
+          <div ref={mapRef} style={{height:'clamp(300px, 46vw, 460px)', width:'100%', background:T.bg0}}/>
 
           {/* ── Right-side dealer detail panel ────────────────────────
               Shows when the user clicks a dealer in the accordion or a
@@ -1654,10 +1834,112 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
             cursor:'pointer', boxShadow:'0 1px 2px rgba(0,0,0,.3)',
           }}>Compare Multiple Timelines</button>
         </div>
+
+        {/* ── Details below the map — top dealers in the current view ────── */}
+        <div style={{borderTop:'1px solid '+T.bd1, padding:'12px 14px'}}>
+          <div style={{fontSize:11, color:T.t3, textTransform:'uppercase', letterSpacing:'.06em', marginBottom:8, display:'flex', alignItems:'center', gap:8}}>
+            Top dealers · {viewLabel}
+            <span style={{color:T.t3, textTransform:'none', fontWeight:400}}>({viewDealers.length} customers · {fmtIN(viewSales)})</span>
+          </div>
+          {viewDealers.length === 0 ? (
+            <div style={{fontSize:12, color:T.t3, padding:'6px 0'}}>No dealer data in this view.</div>
+          ) : (
+            <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(220px, 1fr))', gap:8}}>
+              {[...viewDealers]
+                .sort((a,b)=>(b.months?.[selectedMonthIdx]||0)-(a.months?.[selectedMonthIdx]||0))
+                .slice(0, 8)
+                .map(d => {
+                  const ach = Number(d.months?.[selectedMonthIdx]||0);
+                  return (
+                    <div key={d.id} onClick={()=>onOpenDealer?.(d.id)}
+                      style={{display:'flex', alignItems:'center', gap:10, padding:'8px 10px', borderRadius:10,
+                        background:T.bg2, border:'1px solid '+T.bd1, cursor:'pointer'}}
+                      onMouseEnter={e=>e.currentTarget.style.borderColor=T.acc}
+                      onMouseLeave={e=>e.currentTarget.style.borderColor=T.bd1}>
+                      <div style={{flex:1, minWidth:0}}>
+                        <div style={{fontSize:12, fontWeight:600, color:T.t1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{d.name}</div>
+                        <div style={{fontSize:9, color:T.t3, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
+                          {[d.city, d.state].filter(Boolean).join(', ') || '—'} · {users?.[d.salesman]?.name || d.salesman || 'Unassigned'}
+                        </div>
+                      </div>
+                      <div style={{fontSize:13, fontWeight:700, color: ach>0?'#34d399':T.t3, whiteSpace:'nowrap'}}>{ach>0?fmtIN(ach):'—'}</div>
+                    </div>
+                  );
+                })}
+            </div>
+          )}
+          {/* Full dealer list for the current view — fills the space below the map */}
+          {viewDealers.length > 0 && (
+            <div style={{marginTop:12}}>
+              <div style={{fontSize:11, color:T.t3, textTransform:'uppercase', letterSpacing:'.06em', marginBottom:6}}>
+                All dealers · {viewLabel} ({viewDealers.length})
+              </div>
+              <div style={{border:'1px solid '+T.bd1, borderRadius:10, overflow:'hidden'}}>
+                <div style={{maxHeight:520, overflowY:'auto'}}>
+                  <table style={{width:'100%', borderCollapse:'collapse', fontSize:12}}>
+                    <thead>
+                      <tr style={{position:'sticky', top:0, background:T.bg2, zIndex:2}}>
+                        {[['Dealer','left'],['City','left'],['Salesman','left'],['Status','left'],['Sales','right']].map(([h,al])=>(
+                          <th key={h} style={{textAlign:al, padding:'8px 10px', color:T.t3, fontSize:9, fontWeight:700, textTransform:'uppercase', borderBottom:'1px solid '+T.bd1, whiteSpace:'nowrap'}}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...viewDealers].sort((a,b)=>(b.months?.[selectedMonthIdx]||0)-(a.months?.[selectedMonthIdx]||0)).map(d=>{
+                        const ach=Number(d.months?.[selectedMonthIdx]||0);
+                        return (
+                          <tr key={d.id} onClick={()=>onOpenDealer?.(d.id)} style={{cursor:'pointer', borderBottom:'1px solid '+T.bd1}}
+                            onMouseEnter={e=>e.currentTarget.style.background=T.bg2}
+                            onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                            <td style={{padding:'8px 10px', fontWeight:600, color:T.t1, maxWidth:220, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{d.name}</td>
+                            <td style={{padding:'8px 10px', color:T.t2, whiteSpace:'nowrap'}}>{d.city||'—'}</td>
+                            <td style={{padding:'8px 10px', color:T.t2, whiteSpace:'nowrap'}}>{users?.[d.salesman]?.name||d.salesman||'—'}</td>
+                            <td style={{padding:'8px 10px'}}>{d.status && <span style={{fontSize:9, color:'#86efac', background:T.accBg, border:'1px solid '+T.accD, padding:'1px 6px', borderRadius:4, whiteSpace:'nowrap'}}>{d.status}</span>}</td>
+                            <td style={{padding:'8px 10px', textAlign:'right', fontWeight:700, color: ach>0?'#34d399':T.t3, whiteSpace:'nowrap'}}>{ach>0?fmtIN(ach):'—'}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* ── Bottom row ──────────────────────────────────────────────────── */}
-      <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(280px, 1fr))', gap:10}}>
+      {/* ── Right column: data panels (drill: state → city → district) ──── */}
+      <div className="stp-right-col">
+        {/* ── Summary box — Total Customers / Sales / Salesmen / Zones ──────
+            Scoped to the current view. Click a tile to see the full list. */}
+        <div className="card" style={{padding:0, overflow:'hidden', background:T.bg1, border:'1px solid '+T.bd1}}>
+          <div style={{padding:'10px 12px', borderBottom:'1px solid '+T.bd1, display:'flex', alignItems:'center', gap:6, background:T.bg2}}>
+            <Award size={13} color={T.acc}/>
+            <span style={{fontSize:13, fontWeight:700, color:T.t1, flex:1}}>Summary</span>
+            <span style={{fontSize:11, color:T.t3, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:130}}>{viewLabel}</span>
+          </div>
+          <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, padding:10}}>
+            {[
+              { key:'customers', label:'Customers', val:viewDealers.length,        color:T.blue },
+              { key:'sales',     label:'Sales',     val:fmtIN(viewSales),           color:'#34d399' },
+              { key:'salesmen',  label:'Salesmen',  val:viewSalesmen.length,        color:'#fbbf24' },
+              { key:'zones',     label:'Zones',     val:viewZones.length,           color:'#a5b4fc' },
+            ].map(t => (
+              <button key={t.key} type="button" onClick={()=>setSummaryView(t.key)}
+                style={{
+                  textAlign:'left', cursor:'pointer', padding:'10px 12px', borderRadius:12,
+                  background:T.bg2, border:'1px solid '+T.bd1, transition:'border-color .15s',
+                }}
+                onMouseEnter={e=>e.currentTarget.style.borderColor=t.color}
+                onMouseLeave={e=>e.currentTarget.style.borderColor=T.bd1}>
+                <div style={{fontSize:10, color:T.t3, textTransform:'uppercase', letterSpacing:'.06em'}}>{t.label}</div>
+                <div style={{fontSize:20, fontWeight:800, color:t.color, marginTop:2}}>{t.val}</div>
+                <div style={{fontSize:9, color:T.t3, marginTop:2}}>tap to view →</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
         {drillLevel === 'state' && (
           <div className="card" style={{padding:0, overflow:'hidden', background:T.bg1, border:'1px solid '+T.bd1}}>
             <div style={{
@@ -1696,7 +1978,6 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
                           <div style={{display:'flex', alignItems:'center', gap:6, flex:1, minWidth:0}}>
                             <span style={{fontSize:10, color:T.t3, width:16, textAlign:'right'}}>{i+1}</span>
                             <span style={{fontSize:12, fontWeight:700, color:isSel ? '#86efac' : T.t1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{city.name}</span>
-                            {!hasCoord && <span style={{fontSize:9, color:T.hot2, background:'#3a2a05', padding:'0 4px', borderRadius:3, border:'1px solid #92400e'}}>no map</span>}
                           </div>
                           <div style={{display:'flex', gap:8, alignItems:'center'}}>
                             <span style={{fontSize:10, color:T.t3}}>{city.dealers.length}d</span>
@@ -2074,6 +2355,77 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
           ))}
         </div>
       </div>
+      </div>{/* /stp-split */}
+
+      {/* Summary drill-down modal — Customers / Sales / Salesmen / Zones list */}
+      {summaryView && (() => {
+        const close = () => setSummaryView(null);
+        const title = ({customers:'Customers', sales:'Customers · by sales', salesmen:'Salesmen', zones:'Zones'})[summaryView] || 'Details';
+        const dealerRows = [...viewDealers].sort((a,b)=>(b.months?.[selectedMonthIdx]||0)-(a.months?.[selectedMonthIdx]||0));
+        const group = (keyFn) => {
+          const m = {};
+          viewDealers.forEach(d => {
+            const k = keyFn(d) || '__none__';
+            if(!m[k]) m[k] = { key:k, dealers:0, sales:0, billed:0 };
+            m[k].dealers++;
+            const a = Number(d.months?.[selectedMonthIdx]||0);
+            m[k].sales += a; if(a>0) m[k].billed++;
+          });
+          return Object.values(m).sort((a,b)=>b.sales-a.sales);
+        };
+        const smGroups   = group(d => d.salesman);
+        const zoneGroups = group(d => (d.zone||'').trim());
+        return (
+          <div onClick={close} style={{position:'fixed', inset:0, background:'rgba(6,6,16,0.8)', backdropFilter:'blur(3px)',
+            zIndex:4000, display:'flex', alignItems:'center', justifyContent:'center', padding:16}}>
+            <div onClick={e=>e.stopPropagation()} style={{background:T.bg1, border:'1px solid '+T.bd1, borderRadius:16,
+              width:660, maxWidth:'96%', maxHeight:'86vh', display:'flex', flexDirection:'column', boxShadow:'0 24px 60px rgba(0,0,0,0.55)'}}>
+              <div style={{padding:'14px 16px', borderBottom:'1px solid '+T.bd1, display:'flex', alignItems:'center', gap:8}}>
+                <span style={{fontSize:15, fontWeight:800, color:T.t1, flex:1}}>
+                  {title} <span style={{fontWeight:500, color:T.t3, fontSize:12}}>· {viewLabel}</span>
+                </span>
+                <button onClick={close} style={{background:'none', border:'none', color:T.t3, cursor:'pointer'}}><X size={18}/></button>
+              </div>
+              <div style={{overflowY:'auto', padding:'4px 0'}}>
+                {(summaryView==='customers' || summaryView==='sales') && dealerRows.map(d => {
+                  const ach = Number(d.months?.[selectedMonthIdx]||0);
+                  return (
+                    <div key={d.id} onClick={()=>{ onOpenDealer?.(d.id); close(); }}
+                      style={{display:'flex', alignItems:'center', gap:10, padding:'9px 16px', borderBottom:'1px solid '+T.bd1, cursor:'pointer'}}
+                      onMouseEnter={e=>e.currentTarget.style.background=T.bg2}
+                      onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                      <div style={{flex:1, minWidth:0}}>
+                        <div style={{fontSize:13, fontWeight:600, color:T.t1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{d.name}</div>
+                        <div style={{fontSize:10, color:T.t3, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
+                          {[d.city, d.state].filter(Boolean).join(', ') || '—'} · {users?.[d.salesman]?.name || d.salesman || 'Unassigned'}
+                        </div>
+                      </div>
+                      {d.status && <span style={{fontSize:9, color:'#86efac', background:T.accBg, border:'1px solid '+T.accD, padding:'1px 7px', borderRadius:4, whiteSpace:'nowrap'}}>{d.status}</span>}
+                      <div style={{minWidth:72, textAlign:'right', fontSize:13, fontWeight:700, color: ach>0?'#34d399':T.t3}}>{ach>0?fmtIN(ach):'—'}</div>
+                    </div>
+                  );
+                })}
+                {summaryView==='salesmen' && smGroups.map(r => (
+                  <div key={r.key} style={{display:'flex', alignItems:'center', gap:10, padding:'10px 16px', borderBottom:'1px solid '+T.bd1}}>
+                    <div style={{flex:1, fontSize:13, fontWeight:600, color:T.t1}}>{r.key==='__none__'?'Unassigned':(users?.[r.key]?.name||r.key)}</div>
+                    <span style={{fontSize:11, color:T.blue}}>{r.dealers} cust.</span>
+                    <span style={{fontSize:11, color:'#fbbf24'}}>{r.billed} billed</span>
+                    <div style={{minWidth:82, textAlign:'right', fontSize:13, fontWeight:700, color:'#34d399'}}>{fmtIN(r.sales)}</div>
+                  </div>
+                ))}
+                {summaryView==='zones' && zoneGroups.map(r => (
+                  <div key={r.key} style={{display:'flex', alignItems:'center', gap:10, padding:'10px 16px', borderBottom:'1px solid '+T.bd1}}>
+                    <div style={{flex:1, fontSize:13, fontWeight:600, color:T.t1}}>{r.key==='__none__'?'No zone':r.key}</div>
+                    <span style={{fontSize:11, color:T.blue}}>{r.dealers} cust.</span>
+                    <div style={{minWidth:82, textAlign:'right', fontSize:13, fontWeight:700, color:'#34d399'}}>{fmtIN(r.sales)}</div>
+                  </div>
+                ))}
+                {viewDealers.length===0 && <div style={{padding:22, textAlign:'center', color:T.t3, fontSize:12}}>No data in this view.</div>}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

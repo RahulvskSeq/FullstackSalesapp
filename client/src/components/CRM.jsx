@@ -8,7 +8,7 @@ import {
   Camera, LogIn as IconIn, LogOut as IconOut, MapPin, Calendar, Plus,
   X, Phone, Mail, Building2, Trash2, Send, RefreshCw, Image as ImageIcon,
   CheckCircle2, AlertCircle, Briefcase, ClipboardList, Users as UsersIcon,
-  Filter, Upload, Download, Search,
+  Filter, Upload, Download, Search, ChevronDown,
 } from 'lucide-react';
 import { api } from '../api';
 import { Avatar } from './UI';
@@ -509,6 +509,9 @@ export function VisitsPage({ dealers, users, currentUser }){
   // button, and a preview modal shown after the photo is taken.
   const ciCamRef = useRef(null);
   const [ciPreview, setCiPreview] = useState(false);
+  // Styled existing-dealer dropdown (replaces the native datalist).
+  const ciDealerRef = useRef(null);
+  const [ciDealerOpen, setCiDealerOpen] = useState(false);
   // Which required fields are missing — used to highlight them in red when the
   // user taps Check in without filling everything.
   const [ciMissing, setCiMissing] = useState({ dealer:false, purpose:false });
@@ -526,12 +529,24 @@ export function VisitsPage({ dealers, users, currentUser }){
   const [items,   setItems]   = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterUser, setFilterUser] = useState('');
-  const [partyQuery, setPartyQuery] = useState('');   // search visit history by party/dealer name
+  const [partyQuery, setPartyQuery] = useState('');   // the SELECTED party (filters history); '' = all
+  const [partySearch, setPartySearch] = useState(''); // text typed inside the dropdown to filter options
+  const [partyOpen,  setPartyOpen]  = useState(false); // party-name dropdown open?
+  const partyBoxRef  = useRef(null);
   const [visitLimit, setVisitLimit] = useState(5);    // how many recent visits to show (5/10/20/All)
   const [zoom, setZoom] = useState('');
   // Tick once per minute so the active-visit clock updates
   const [, setTick] = useState(0);
   useEffect(()=>{ const t = setInterval(()=>setTick(x=>x+1), 60000); return ()=>clearInterval(t); }, []);
+  // Close the party dropdown when clicking outside of it.
+  useEffect(()=>{
+    const onDoc = (e)=>{
+      if(partyBoxRef.current && !partyBoxRef.current.contains(e.target)) setPartyOpen(false);
+      if(ciDealerRef.current && !ciDealerRef.current.contains(e.target)) setCiDealerOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return ()=>document.removeEventListener('mousedown', onDoc);
+  }, []);
 
   const load = async () => {
     setLoading(true);
@@ -921,15 +936,54 @@ export function VisitsPage({ dealers, users, currentUser }){
                 style={ciMissing.dealer ? { borderColor:'#f87171', boxShadow:'0 0 0 1px #f87171' } : undefined}
                 autoFocus/>
             ) : (
-              <>
-                <input className="inp" list="crm-dealer-list" placeholder="Party / Dealer name"
-                  value={ciDealer}
-                  onChange={e=>{ setCiDealer(e.target.value); if(ciMissing.dealer) setCiMissing(m=>({...m, dealer:false})); }}
-                  style={ciMissing.dealer ? { borderColor:'#f87171', boxShadow:'0 0 0 1px #f87171' } : undefined}/>
-                <datalist id="crm-dealer-list">
-                  {myDealerOptions.map(n => <option key={n} value={n}/>)}
-                </datalist>
-              </>
+              <div ref={ciDealerRef} style={{position:'relative'}}>
+                <div style={{position:'relative', display:'flex', alignItems:'center'}}>
+                  <input className="inp" placeholder="Party / Dealer name"
+                    value={ciDealer}
+                    onChange={e=>{ setCiDealer(e.target.value); setCiDealerOpen(true); if(ciMissing.dealer) setCiMissing(m=>({...m, dealer:false})); }}
+                    onFocus={()=>setCiDealerOpen(true)}
+                    style={{width:'100%', ...(ciMissing.dealer ? { borderColor:'#f87171', boxShadow:'0 0 0 2px #f87171' } : {})}}/>
+                  {ciDealer && (
+                    <button type="button" title="Clear"
+                      onClick={()=>{ setCiDealer(''); setCiDealerOpen(true); }}
+                      style={{position:'absolute', right:36, background:'none', border:'none', color:'var(--t3)', cursor:'pointer', padding:0, display:'flex'}}>
+                      <X size={15}/>
+                    </button>
+                  )}
+                  <ChevronDown size={16} onClick={()=>setCiDealerOpen(o=>!o)}
+                    style={{position:'absolute', right:12, color:'var(--t3)', cursor:'pointer',
+                      transform: ciDealerOpen?'rotate(180deg)':'none', transition:'transform .15s ease'}}/>
+                </div>
+                {ciDealerOpen && (() => {
+                  const ql = ciDealer.trim().toLowerCase();
+                  const opts = (ql ? myDealerOptions.filter(n => n.toLowerCase().includes(ql)) : myDealerOptions).slice(0, 200);
+                  const hl = (name) => {
+                    if(!ql) return name;
+                    const i = name.toLowerCase().indexOf(ql);
+                    if(i < 0) return name;
+                    return <>{name.slice(0,i)}<b style={{color:'var(--acc)'}}>{name.slice(i, i+ciDealer.trim().length)}</b>{name.slice(i+ciDealer.trim().length)}</>;
+                  };
+                  return (
+                    <div style={{position:'absolute', top:'calc(100% + 5px)', left:0, right:0, zIndex:60,
+                      background:'var(--bg1)', border:'1px solid var(--b2)', borderRadius:12,
+                      boxShadow:'0 14px 34px rgba(0,0,0,0.5)', overflow:'hidden', maxHeight:270, overflowY:'auto'}}>
+                      {opts.length === 0 ? (
+                        <div style={{padding:'12px 14px', fontSize:12, color:'var(--t3)'}}>No matching dealer — use “+ New Dealer”.</div>
+                      ) : opts.map(n => (
+                        <div key={n} onClick={()=>{ setCiDealer(n); setCiDealerOpen(false); if(ciMissing.dealer) setCiMissing(m=>({...m, dealer:false})); }}
+                          style={{padding:'11px 14px', fontSize:13, cursor:'pointer', color:'var(--t1)',
+                            borderBottom:'1px solid var(--b1)',
+                            background: n===ciDealer ? 'var(--bg2)' : 'transparent',
+                            overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}
+                          onMouseEnter={e=>e.currentTarget.style.background='var(--bg2)'}
+                          onMouseLeave={e=>e.currentTarget.style.background = n===ciDealer?'var(--bg2)':'transparent'}>
+                          {hl(n)}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
             )}
             {ciMissing.dealer && (
               <div style={{fontSize:11, color:'#f87171', marginTop:-4}}>
@@ -983,19 +1037,80 @@ export function VisitsPage({ dealers, users, currentUser }){
             <Calendar size={13}/> Visit history {items.length ? `(${items.length})` : ''}
           </div>
           <div className="spacer"/>
-          {/* Search visit history by party / dealer name */}
-          <div style={{position:'relative', display:'inline-flex', alignItems:'center'}}>
-            <Search size={12} style={{position:'absolute', left:8, color:'var(--t3)', pointerEvents:'none'}}/>
-            <input className="inp" value={partyQuery} onChange={e=>setPartyQuery(e.target.value)}
-              placeholder="Search party name…"
-              style={{padding:'4px 24px 4px 26px', fontSize:11, width:170}}/>
-            {partyQuery && (
-              <button type="button" onClick={()=>setPartyQuery('')} title="Clear"
-                style={{position:'absolute', right:6, background:'none', border:'none', color:'var(--t3)', cursor:'pointer', padding:0, display:'flex'}}>
-                <X size={12}/>
-              </button>
-            )}
-          </div>
+          {/* Party dropdown: "Select a name" trigger → search + bold-match list */}
+          {(() => {
+            const allParties = [...new Set(items.map(v => v.dealerName).filter(Boolean))].sort();
+            const qraw = partySearch.trim();
+            const ql = qraw.toLowerCase();
+            const opts = (ql ? allParties.filter(n => n.toLowerCase().includes(ql)) : allParties).slice(0, 200);
+            // Bold the matched portion of a name.
+            const hl = (name) => {
+              if(!ql) return name;
+              const i = name.toLowerCase().indexOf(ql);
+              if(i < 0) return name;
+              return <>{name.slice(0,i)}<b style={{color:'var(--t1)'}}>{name.slice(i, i+qraw.length)}</b>{name.slice(i+qraw.length)}</>;
+            };
+            return (
+              <div ref={partyBoxRef} style={{position:'relative', width:210}}>
+                {/* Trigger */}
+                <button type="button" onClick={()=>setPartyOpen(o=>!o)} className="inp"
+                  style={{display:'flex', alignItems:'center', gap:6, width:'100%', textAlign:'left', cursor:'pointer',
+                    padding:'8px 10px', borderRadius:10, fontSize:12,
+                    color: partyQuery ? 'var(--t1)' : 'var(--t3)'}}>
+                  <span style={{flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
+                    {partyQuery || 'Select a name'}
+                  </span>
+                  {partyQuery && (
+                    <X size={13} style={{color:'var(--t3)', flexShrink:0}}
+                      onClick={(e)=>{ e.stopPropagation(); setPartyQuery(''); setPartySearch(''); }}/>
+                  )}
+                  <ChevronDown size={14} style={{color:'var(--t3)', flexShrink:0,
+                    transform: partyOpen?'rotate(180deg)':'none', transition:'transform .15s ease'}}/>
+                </button>
+
+                {/* Dropdown */}
+                {partyOpen && (
+                  <div style={{position:'absolute', top:'calc(100% + 5px)', left:0, right:0, zIndex:60,
+                    background:'var(--bg1)', border:'1px solid var(--b2)', borderRadius:12,
+                    boxShadow:'0 14px 34px rgba(0,0,0,0.5)', overflow:'hidden'}}>
+                    {/* Search inside the dropdown */}
+                    <div style={{position:'relative', padding:8, borderBottom:'1px solid var(--b1)'}}>
+                      <input className="inp" autoFocus value={partySearch}
+                        onChange={e=>setPartySearch(e.target.value)}
+                        placeholder="Type to filter…"
+                        style={{width:'100%', padding:'8px 30px 8px 10px', fontSize:12, borderRadius:8}}/>
+                      {partySearch && (
+                        <button type="button" onClick={()=>setPartySearch('')}
+                          style={{position:'absolute', right:16, top:'50%', transform:'translateY(-50%)',
+                            background:'none', border:'none', color:'var(--t3)', cursor:'pointer', display:'flex', padding:0}}>
+                          <X size={13}/>
+                        </button>
+                      )}
+                    </div>
+                    {/* Options */}
+                    <div style={{maxHeight:240, overflowY:'auto'}}>
+                      {opts.length === 0 ? (
+                        <div style={{padding:'11px 13px', fontSize:11.5, color:'var(--t3)'}}>No matching party</div>
+                      ) : opts.map(n => {
+                        const sel = n === partyQuery;
+                        return (
+                          <div key={n} onClick={()=>{ setPartyQuery(n); setPartySearch(''); setPartyOpen(false); }}
+                            style={{padding:'10px 13px', fontSize:12.5, cursor:'pointer', color:'var(--t2)',
+                              borderBottom:'1px solid var(--b1)',
+                              background: sel ? 'var(--bg2)' : 'transparent',
+                              overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}
+                            onMouseEnter={e=>e.currentTarget.style.background='var(--bg2)'}
+                            onMouseLeave={e=>e.currentTarget.style.background = sel?'var(--bg2)':'transparent'}>
+                            {hl(n)}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
           {isStaff && (
             <select className="inp" value={filterUser} onChange={e=>setFilterUser(e.target.value)}
               style={{padding:'4px 10px', fontSize:11, width:'auto'}}>
