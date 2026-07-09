@@ -158,7 +158,7 @@ async function reverseGeocode(lat, lng){
 
 // Reusable: AUTOMATIC location capture. Fetches GPS on mount, reverse-geocodes
 // to a human address, and just shows the captured info. No manual button.
-function LocationCapture({ loc, setLoc }){
+function LocationCapture({ loc, setLoc, hidden=false }){
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const fetchLocation = async () => {
@@ -174,6 +174,10 @@ function LocationCapture({ loc, setLoc }){
     setBusy(false);
   };
   useEffect(()=>{ fetchLocation(); /* eslint-disable-next-line */ }, []);
+
+  // Silent mode: GPS is still captured (the effect above ran), but nothing is
+  // rendered — the location box is hidden from the user.
+  if(hidden) return null;
 
   const okay = loc && loc.lat != null;
   return (
@@ -487,6 +491,7 @@ const VISIT_PURPOSES = [
 
 export function VisitsPage({ dealers, users, currentUser }){
   const isStaff = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
+  const isSuper = currentUser?.role === 'superadmin';
 
   // Check-in form state
   const [ciPhoto, setCiPhoto] = useState('');
@@ -500,6 +505,10 @@ export function VisitsPage({ dealers, users, currentUser }){
   const [ciNewDealerMode, setCiNewDealerMode] = useState(false);
   // Purpose of Visit — required preset reason for every check-in.
   const [ciPurpose, setCiPurpose] = useState('');
+  // Camera-first check-in: a hidden <input capture> opened by the Check-in
+  // button, and a preview modal shown after the photo is taken.
+  const ciCamRef = useRef(null);
+  const [ciPreview, setCiPreview] = useState(false);
 
   // Check-out form state (per active visit)
   const [coPhoto, setCoPhoto] = useState('');
@@ -582,6 +591,29 @@ export function VisitsPage({ dealers, users, currentUser }){
     return sum;
   }, 0);
 
+  // Step 1 of the easy flow: validate the form, then open the camera directly.
+  const startCheckIn = () => {
+    if(!ciDealer.trim()){
+      notify.error(ciNewDealerMode ? 'Type the new dealer name' : 'Party / Dealer name required');
+      return;
+    }
+    if(!ciPurpose){ notify.error('Pick a Purpose of Visit'); return; }
+    ciCamRef.current?.click();   // open the phone camera
+  };
+  // Step 2: photo taken → compress → show it in a confirm modal.
+  const onCiPhotoPicked = async (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if(!f) return;
+    setCiBusy(true);
+    try {
+      const dataUrl = await fileToCompressedDataURL(f);
+      setCiPhoto(dataUrl);
+      setCiPreview(true);
+    } catch(err){ notify.error('Photo: ' + err.message); }
+    setCiBusy(false);
+  };
+
   const checkIn = async () => {
     if(!ciDealer.trim()){
       notify.error(ciNewDealerMode ? 'Type the new dealer name' : 'Party / Dealer name required');
@@ -613,6 +645,7 @@ export function VisitsPage({ dealers, users, currentUser }){
       notify.success('Checked in — visit started');
       setCiDealer(''); setCiNote(''); setCiPhoto(''); setCiPurpose('');
       setCiNewDealerMode(false);
+      setCiPreview(false);
       load();
     } catch(e){ notify.error('Check-in: ' + e.message); }
     setCiBusy(false);
@@ -646,6 +679,22 @@ export function VisitsPage({ dealers, users, currentUser }){
     try {
       await api.visitsDelete(id);
       notify.success('Visit deleted');
+      load();
+    } catch(e){ notify.error(e.message); }
+  };
+
+  // Superadmin: correct a stuck visit (salesman forgot to check out) by
+  // force-closing it, which frees them to start a fresh visit.
+  const forceCloseVisit = async (id) => {
+    const ok = await confirmDialog({
+      title:'Reset this stuck visit?',
+      message:'This force-closes the visit (marks it checked out now) so the salesman can start a fresh check-in. Use this when someone forgot to check out.',
+      confirmText:'Reset / Close',
+    });
+    if(!ok) return;
+    try {
+      await api.visitsForceClose(id);
+      notify.success('Visit reset — salesman can check in again');
       load();
     } catch(e){ notify.error(e.message); }
   };
@@ -801,17 +850,18 @@ export function VisitsPage({ dealers, users, currentUser }){
 
             <VoiceTextarea placeholder="Quick note (optional)"
               value={ciNote} onChange={setCiNote} rows={3}/>
-            <div className="crm-row">
-              <PhotoCapture photo={ciPhoto} setPhoto={setCiPhoto} label="Take check-in photo"/>
-              <LocationCapture loc={ciLoc} setLoc={setCiLoc}/>
-              <button onClick={checkIn}
-                disabled={ciBusy || !ciDealer.trim() || !ciPurpose || !ciPhoto}
-                className="btnp"
-                title={!ciPurpose ? 'Pick a Purpose of Visit' : ''}
-                style={{display:'inline-flex', alignItems:'center', justifyContent:'center', gap:6}}>
-                <IconIn size={13}/> {ciBusy ? 'Saving…' : 'Check in'}
-              </button>
-            </div>
+            {/* GPS is captured silently in the background — box hidden. */}
+            <LocationCapture loc={ciLoc} setLoc={setCiLoc} hidden/>
+            {/* Hidden camera — the Check-in button opens it directly. */}
+            <input ref={ciCamRef} type="file" accept="image/*" capture="environment"
+              style={{display:'none'}} onChange={onCiPhotoPicked}/>
+            <button onClick={startCheckIn}
+              disabled={ciBusy || !ciDealer.trim() || !ciPurpose}
+              className="btnp"
+              title={!ciPurpose ? 'Pick a Purpose of Visit' : ''}
+              style={{display:'inline-flex', alignItems:'center', justifyContent:'center', gap:6, width:'100%'}}>
+              <IconIn size={13}/> {ciBusy ? 'Opening camera…' : 'Check in'}
+            </button>
           </div>
         </div>
       )}
@@ -946,7 +996,11 @@ export function VisitsPage({ dealers, users, currentUser }){
               const inAddr  = v.checkInAddress  || v.address || '';
               const outAddr = v.checkOutAddress || '';
               const inNote  = v.checkInNote  || '';
-              const outNote = v.checkOutNote || v.comment || '';
+              // Hide any auto/force-close placeholder log (starts with "⏱"),
+              // including old records saved before this was cleaned up.
+              const rawOut  = v.checkOutNote || v.comment || '';
+              const outNote = /^⏱/.test(rawOut.trim()) ? '' : rawOut;
+              const autoClosed = v.autoClosed || /^⏱/.test((v.checkOutNote||'').trim());
               return (
                 <div key={v._id} style={{
                   display:'flex', flexDirection:'column', gap:8, padding:'10px 12px',
@@ -962,6 +1016,10 @@ export function VisitsPage({ dealers, users, currentUser }){
                       background: v.status==='in-progress' ? 'rgba(251,191,36,0.15)' : 'rgba(52,211,153,0.15)',
                       color:      v.status==='in-progress' ? '#fbbf24' : '#34d399',
                     }}>{v.status === 'in-progress' ? 'IN PROGRESS' : 'COMPLETED'}</span>
+                    {v.status === 'completed' && autoClosed && (
+                      <span style={{fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:3, background:'rgba(148,163,184,0.15)', color:'#94a3b8'}}
+                        title="Closed without a check-out (forgot to check out / reset by admin)">AUTO-CLOSED</span>
+                    )}
                     <span style={{marginLeft:'auto', fontSize:11, color:'var(--t2)', fontWeight:700}}>
                       {fmtDuration(dur)}
                     </span>
@@ -1011,9 +1069,17 @@ export function VisitsPage({ dealers, users, currentUser }){
                     </div>
                   )}
 
-                  {/* Delete — staff only (salesmen can't tamper history) */}
+                  {/* Footer actions — staff only (salesmen can't tamper history) */}
                   {isStaff && (
-                    <div style={{display:'flex', justifyContent:'flex-end'}}>
+                    <div style={{display:'flex', justifyContent:'flex-end', gap:14, alignItems:'center'}}>
+                      {/* Superadmin: reset a stuck / forgotten-checkout visit so
+                          the salesman can start fresh. */}
+                      {isSuper && v.status === 'in-progress' && (
+                        <button onClick={()=>forceCloseVisit(v._id)} title="Force-close this stuck visit so the salesman can check in again"
+                          style={{background:'none', border:'1px solid #fbbf24', borderRadius:6, color:'#fbbf24', cursor:'pointer', padding:'4px 10px', fontSize:11, display:'inline-flex', alignItems:'center', gap:4}}>
+                          <RefreshCw size={11}/> Reset / Force close
+                        </button>
+                      )}
                       <button onClick={()=>removeVisit(v._id)} title="Delete visit"
                         style={{background:'none', border:'none', color:'#f87171', cursor:'pointer', padding:4, fontSize:11, display:'inline-flex', alignItems:'center', gap:4}}>
                         <Trash2 size={11}/> Delete
@@ -1027,6 +1093,39 @@ export function VisitsPage({ dealers, users, currentUser }){
         )}
       </div>
       <ImageModal src={zoom} onClose={()=>setZoom('')}/>
+
+      {/* Photo-preview confirm modal — the easy check-in flow:
+          Check in → camera → take photo → this preview → Confirm. */}
+      {ciPreview && (
+        <div onClick={()=>!ciBusy && setCiPreview(false)}
+          style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.78)', zIndex:3000,
+            display:'flex', alignItems:'center', justifyContent:'center', padding:16}}>
+          <div onClick={e=>e.stopPropagation()}
+            style={{background:'var(--bg1)', border:'1px solid var(--b2)', borderRadius:14, padding:16,
+              width:380, maxWidth:'94%', display:'flex', flexDirection:'column', gap:12}}>
+            <div style={{fontSize:14, fontWeight:700, display:'flex', alignItems:'center', gap:6}}>
+              <Camera size={15}/> Confirm check-in photo
+            </div>
+            {ciPhoto && (
+              <img src={ciPhoto} alt="check-in"
+                style={{width:'100%', borderRadius:10, maxHeight:360, objectFit:'cover'}}/>
+            )}
+            <div style={{fontSize:12, color:'var(--t2)'}}>
+              <b style={{color:'var(--t1)'}}>{ciDealer || '—'}</b>{ciPurpose ? ' · ' + ciPurpose : ''}
+            </div>
+            <div style={{display:'flex', gap:10}}>
+              <button onClick={()=>ciCamRef.current?.click()} disabled={ciBusy} className="btn"
+                style={{flex:1, display:'inline-flex', alignItems:'center', justifyContent:'center', gap:6, padding:'10px'}}>
+                <Camera size={13}/> Retake
+              </button>
+              <button onClick={checkIn} disabled={ciBusy || !ciPhoto} className="btnp"
+                style={{flex:2, display:'inline-flex', alignItems:'center', justifyContent:'center', gap:6, padding:'10px'}}>
+                <IconIn size={13}/> {ciBusy ? 'Checking in…' : 'Confirm Check in'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

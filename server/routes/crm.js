@@ -14,7 +14,7 @@ import Task       from '../models/Task.js';
 import Ticket     from '../models/Ticket.js';
 import Counter    from '../models/Counter.js';
 import User       from '../models/User.js';
-import { protect, adminOnly } from '../middleware/auth.js';
+import { protect, adminOnly, superAdminOnly } from '../middleware/auth.js';
 
 // CSV / Excel bulk-upload — re-use the same memory storage pattern as the
 // dealers upload route. 10MB cap.
@@ -127,13 +127,34 @@ router.post('/visits', protect, async (req, res) => {
     // Guard: a salesman can only have ONE in-progress visit at a time. They
     // must check out of the current one before starting a new visit. Admins
     // are also bound by this for their own personal check-ins.
-    const open = await Visit.findOne({ userId: req.user.id, status: 'in-progress' }).lean();
+    //
+    // BUT: if the open visit is stale — checked in on a previous day, or left
+    // open for more than 16 hours — the salesman clearly forgot to check out.
+    // Rather than block them forever, we AUTO-CLOSE the stale visit here so the
+    // new check-in can proceed. This is the "next day it just refreshes" behavior.
+    const open = await Visit.findOne({ userId: req.user.id, status: 'in-progress' });
     if(open){
-      return res.status(409).json({
-        error: 'You are already checked in at "' + open.dealerName + '". Please check out before starting a new visit.',
-        activeVisitId: open._id,
-        activeDealer:  open.dealerName,
-      });
+      const today = todayStr();
+      const ageMs = Date.now() - new Date(open.checkInTime || open.createdAt || Date.now()).getTime();
+      const stale = (open.dateStr && open.dateStr !== today) || ageMs > 16 * 60 * 60 * 1000;
+      if(stale){
+        const now = new Date();
+        open.status        = 'completed';
+        open.checkOutTime  = now;
+        // No placeholder discussion note — the salesman never entered one.
+        open.checkOutNote  = '';
+        const start = open.checkInTime ? new Date(open.checkInTime).getTime() : now.getTime();
+        open.durationMinutes = Math.max(0, Math.round((now.getTime() - start) / 60000));
+        open.autoClosed = true;
+        await open.save();
+        console.log('[VISIT] auto-closed stale visit ' + open._id + ' for ' + req.user.id);
+      } else {
+        return res.status(409).json({
+          error: 'You are already checked in at "' + open.dealerName + '". Please check out before starting a new visit.',
+          activeVisitId: open._id,
+          activeDealer:  open.dealerName,
+        });
+      }
     }
     const me = await User.findOne({ id: req.user.id }, 'id name').lean();
     const doc = await Visit.create({
@@ -226,6 +247,29 @@ router.post('/visits/:id/checkout', protect, async (req, res) => {
     await v.save();
     res.json(v.toObject());
   } catch(e){ console.error('[CRM/visits checkout]', e.message); res.status(500).json({ error:e.message }); }
+});
+
+// POST /api/crm/visits/:id/force-close — SUPERADMIN: correct a stuck visit.
+// Closes an in-progress visit that a salesman forgot to check out of, WITHOUT
+// requiring discussion notes, so the salesman is freed up to start fresh.
+router.post('/visits/:id/force-close', protect, superAdminOnly, async (req, res) => {
+  try {
+    const v = await Visit.findById(req.params.id);
+    if(!v) return res.status(404).json({ error:'Visit not found' });
+    if(v.status === 'completed') return res.status(400).json({ error:'Visit is already completed' });
+    const now = new Date();
+    v.status         = 'completed';
+    v.checkOutTime   = now;
+    // Do NOT inject any placeholder text — it would render as a fake
+    // "Discussion" note. Only keep a real note if the admin typed one.
+    v.checkOutNote   = (req.body?.note && req.body.note.trim()) || '';
+    const start = v.checkInTime ? new Date(v.checkInTime).getTime() : now.getTime();
+    v.durationMinutes = Math.max(0, Math.round((now.getTime() - start) / 60000));
+    v.autoClosed = true;   // flag so the UI can show a small badge instead
+    await v.save();
+    console.log('[VISIT] force-closed visit ' + v._id + ' by ' + req.user.id);
+    res.json(v.toObject());
+  } catch(e){ console.error('[CRM/visits force-close]', e.message); res.status(500).json({ error:e.message }); }
 });
 
 // GET /api/crm/visits — list

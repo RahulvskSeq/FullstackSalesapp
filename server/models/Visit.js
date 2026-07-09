@@ -40,6 +40,11 @@ const S = new mongoose.Schema({
   // Cached: durationMinutes once completed. Computed server-side at checkout.
   durationMinutes: { type:Number, default:0 },
 
+  // True when the visit was closed automatically (forgot to check out, then
+  // checked in again later) or force-closed by a superadmin — rather than
+  // through a normal check-out with discussion notes.
+  autoClosed: { type:Boolean, default:false },
+
   // ── Legacy single-shot fields (kept so old documents still render) ──
   comment:    { type:String, default:'' },        // legacy: pre-checkout combined comment
   photo:      { type:String, default:'' },        // legacy

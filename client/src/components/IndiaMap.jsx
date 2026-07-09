@@ -821,6 +821,9 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
     cityLblRef.current = [];
 
     if(drillLevel !== 'state') return;
+    // When a district is opened, don't draw the state-wide city markers or
+    // re-fit to the whole state — only the district's own pincode markers show.
+    if(focusArea?.type === 'district') return;
 
     try {
       const feat = geoRef.current?.features?.find(f => {
@@ -889,7 +892,7 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
       label.addTo(map);
       cityLblRef.current.push(label);
     });
-  }, [leafletReady, drillLevel, selected, cityData, maxCityVal, selectedCity]);
+  }, [leafletReady, drillLevel, selected, cityData, maxCityVal, selectedCity, focusArea]);
 
   // ── Pincode-level markers (Area zoom) ────────────────────────────────────
   // When a city is selected, group its dealers by pincode and plot a marker
@@ -913,7 +916,8 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
     //       automatically.
     const zoomTrigger = mapZoom >= 8;
     const cityTrigger = drillLevel === 'state' && !!selectedCity;
-    if (!zoomTrigger && !cityTrigger) return;
+    const districtTrigger = drillLevel === 'state' && focusArea?.type === 'district';
+    if (!zoomTrigger && !cityTrigger && !districtTrigger) return;
 
     // Pool of candidate dealers (any dealer with a pincode is eligible —
     // GPS is a bonus, not a requirement, so sales-only records still show).
@@ -921,7 +925,11 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
     //   - zoomed only        → every dealer, then filter by viewport after
     //                          we've resolved coordinates below.
     let poolDealers;
-    if (cityTrigger) {
+    if (districtTrigger) {
+      // A district is open → show ONLY that district's dealers, nothing outside.
+      const dObj = districtData[focusArea.name.toLowerCase()];
+      poolDealers = dObj?.dealers || [];
+    } else if (cityTrigger) {
       const cityObj = cityData.find(c => c.name.toLowerCase() === selectedCity.toLowerCase());
       if (!cityObj) return;
       poolDealers = cityObj.dealers;
@@ -998,7 +1006,7 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
         // fallback, so subsequent renders can use the precise coordinate.
         if (source !== 'pin' && nomCoord === undefined) pinsToFetch.push(g.pin);
         // In zoom-only mode, drop pincodes outside the current viewport.
-        if (zoomTrigger && !cityTrigger) {
+        if (zoomTrigger && !cityTrigger && !districtTrigger) {
           const bounds = map.getBounds();
           if (!bounds.contains([lat, lng])) return;
         }
@@ -1085,7 +1093,7 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
       label.addTo(map);
       pincodeLblRef.current.push(label);
     }
-  }, [leafletReady, drillLevel, selectedCity, cityData, selectedMonthIdx, mapZoom, dealers]);
+  }, [leafletReady, drillLevel, selectedCity, cityData, selectedMonthIdx, mapZoom, dealers, focusArea, districtData]);
 
   // ── Lazy-load India DISTRICT GeoJSON (only when first drill-down) ────────
   useEffect(() => {
@@ -1185,9 +1193,12 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
       pane: 'districtPane',
       style: feature => {
         const dname = (getDistrictName(feature) || '').toLowerCase();
-        // When a district is "opened", hide all the other districts.
-        if(focusArea?.type === 'district' && focusArea.name.toLowerCase() !== dname){
-          return { opacity:0, fillOpacity:0, weight:0 };
+        if(focusArea?.type === 'district'){
+          // Hide every other district…
+          if(focusArea.name.toLowerCase() !== dname) return { opacity:0, fillOpacity:0, weight:0 };
+          // …and show the opened district as a clean edge only (no fill), so
+          // its inner detail/markers read clearly.
+          return { color:'#34d399', weight:2.5, dashArray:'', fillColor:'transparent', fillOpacity:0, opacity:1 };
         }
         const d     = districtData[dname];
         const ratio = d && maxDistrictVal ? d.total / maxDistrictVal : 0;

@@ -1946,6 +1946,12 @@ export const api = {
     method:'DELETE',
     headers:authHeaders(),
   }).then(handle),
+  // Superadmin: force-close a stuck in-progress visit (salesman forgot to check out).
+  visitsForceClose: (id, body={}) => fetch(`${BASE}/crm/visits/${encodeURIComponent(id)}/force-close`,{
+    method:'POST',
+    headers:authHeaders(),
+    body: JSON.stringify(body),
+  }).then(handle),
 
   // Leads
   leadsList: (q={}) => {
