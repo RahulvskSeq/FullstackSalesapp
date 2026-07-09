@@ -5777,6 +5777,8 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
   const handleAddCollection = async () => {
     const amt = Number(collectAmt) || 0;
     if(!collectDate){ setCollectErr('Pick a date'); return; }
+    if(collectDate < todayLocal){ setCollectErr("Date can't be in the past"); return; }
+    if(collectDate > maxFollowupDate){ setCollectErr(`Date can't be more than 7 days from today (latest: ${maxFollowupDate})`); return; }
     if(amt <= 0){ setCollectErr('Enter an amount greater than 0'); return; }
     setSavingCollect(true); setCollectErr('');
     try {
@@ -5785,7 +5787,7 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
         salesman:     dealer.matchedSalesman?.id || '',
         amount:       amt,
         followupDate: collectDate,
-        comment:      `💰 Collected ${fmt(amt)}`,
+        comment:      `💰 To be collected ${fmt(amt)} by ${collectDate}`,
         type:         'collection',
         reason:       'Payment Collected',
         months:       prefillMonth ? [prefillMonth] : [],
@@ -5794,7 +5796,7 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
         await api.updateFollowup(created._id, { status:'done', collectedAmount:amt, collectedAt:new Date() });
       }
       setCollectAmt(''); setCollectDate(todayStr()); setShowCollect(false);
-      notify.success(`Collection of ${fmt(amt)} logged`);
+      notify.success(`${fmt(amt)} added to be collected`);
       onSaved();
     } catch(e){ setCollectErr(e.message); }
     setSavingCollect(false);
@@ -5874,14 +5876,14 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
             <div style={{fontSize:16,fontWeight:700}}>{dealer.name}</div>
             {collectedTotal > 0 ? (
               <div style={{marginTop:2,display:'flex',alignItems:'baseline',gap:8,flexWrap:'wrap'}}>
-                <span style={{fontSize:13,fontWeight:700,color: remaining > 0 ? '#fbbf24' : '#34d399'}}>
-                  {prefillMonth ? `${prefillMonth} Remaining: ` : 'Remaining: '}{remaining > 0 ? fmt(remaining) : '₹0 ✓'}
-                </span>
-                <span style={{fontSize:11,color:'var(--t3)',textDecoration:'line-through'}}>
-                  Actual {fmt(baseAmount)}
+                <span style={{fontSize:13,fontWeight:700,color:'#fbbf24'}}>
+                  {prefillMonth ? `${prefillMonth} Outstanding: ` : 'Outstanding: '}{fmt(baseAmount)}
                 </span>
                 <span style={{fontSize:11,color:'#34d399'}}>
-                  Collected {fmt(collectedTotal)}
+                  To be collected {fmt(collectedTotal)}
+                </span>
+                <span style={{fontSize:11,color:'var(--t3)'}}>
+                  Remaining {remaining > 0 ? fmt(remaining) : '₹0'}
                 </span>
               </div>
             ) : prefillMonth ? (
@@ -5945,15 +5947,17 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
           {/* Collection entry — toggled by the ＋ next to Expected Payment. */}
           {showCollect && (
             <div style={{background:'var(--bg)',borderRadius:8,padding:10,marginBottom:10,border:'1px solid var(--acc)'}}>
-              <div style={{fontSize:11,fontWeight:600,color:'var(--acc)',marginBottom:8}}>💰 Add collection (amount received)</div>
+              <div style={{fontSize:11,fontWeight:600,color:'var(--acc)',marginBottom:8}}>💰 Amount to be collected</div>
               <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'flex-end'}}>
                 <div style={{flex:'1 1 130px'}}>
-                  <label style={{fontSize:10,color:'var(--t3)',display:'block',marginBottom:4,textTransform:'uppercase'}}>Collection Date</label>
-                  <input type="date" className="inp" value={collectDate} max={todayStr()}
+                  <label style={{fontSize:10,color:'var(--t3)',display:'block',marginBottom:4,textTransform:'uppercase'}}>
+                    Collect By Date <span style={{textTransform:'none',fontWeight:400}}>(within 7 days)</span>
+                  </label>
+                  <input type="date" className="inp" value={collectDate} min={todayLocal} max={maxFollowupDate}
                     onChange={e=>setCollectDate(e.target.value)} style={{width:'100%'}}/>
                 </div>
                 <div style={{flex:'1 1 130px'}}>
-                  <label style={{fontSize:10,color:'var(--t3)',display:'block',marginBottom:4,textTransform:'uppercase'}}> Collection Amount ₹</label>
+                  <label style={{fontSize:10,color:'var(--t3)',display:'block',marginBottom:4,textTransform:'uppercase'}}>Amount to be Collected ₹</label>
                   <input type="number" className="inp" value={collectAmt} placeholder="0"
                     onChange={e=>setCollectAmt(e.target.value)} style={{width:'100%'}}/>
                 </div>
@@ -5971,7 +5975,7 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
           {collections.length>0 && (
             <div style={{marginBottom:10}}>
               <div style={{fontSize:11,fontWeight:600,color:'#34d399',marginBottom:6}}>
-                💰 Collected {fmt(collectedTotal)} · Remaining {remaining>0?fmt(remaining):'₹0 ✓'}
+                💰 To be collected {fmt(collectedTotal)} · Remaining {remaining>0?fmt(remaining):'₹0'}
               </div>
               <div style={{display:'flex',flexDirection:'column',gap:6}}>
                 {collections.map(c=>(

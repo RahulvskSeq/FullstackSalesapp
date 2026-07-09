@@ -357,10 +357,18 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
   const districtLyrRef= useRef(null);   // current districts polygon layer
   const districtLblRef= useRef([]);     // current district name labels
   const maskLyrRef    = useRef(null);   // mask polygon that hides everything outside selected state
+  const focusLyrRef   = useRef(null);   // mask that isolates a clicked city/district ("open" view)
   const baseTileRef   = useRef(null);   // base dark tiles ref (so we can hide them when drilled)
 
   const [selected, setSelected]     = useState(null);
   const [selectedCity, setSelectedCity] = useState(null);
+  // A city or district that's been "opened" (isolated) into its own map view.
+  // { type:'city'|'district', name, holes:[ ring[[lng,lat]...] ], boundsArr:[[latS,lngW],[latN,lngE]] }
+  const [focusArea, setFocusArea] = useState(null);
+  // Right-side panel filters for an opened district: salesman filter and the
+  // view mode (aggregate by salesman, or a flat dealer list).
+  const [panelSalesman, setPanelSalesman] = useState('');       // '' = all salesmen
+  const [panelMode, setPanelMode]         = useState('salesman'); // 'salesman' | 'dealer'
   // Track the map's live zoom level so the pincode/area layer can appear
   // automatically once the user zooms in past a threshold — no clicks needed.
   const [mapZoom, setMapZoom] = useState(4);
@@ -376,6 +384,8 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
   // Reset the area accordion whenever the user drills into a new city so we
   // don't carry over stale pincodes from the previously selected city.
   useEffect(() => { setExpandedPincodes(new Set()); setShowAllDealers(true); }, [selectedCity]);
+  // Clear the side-panel salesman filter each time a new area is opened.
+  useEffect(() => { setPanelSalesman(''); }, [focusArea]);
   const [viewMode, setViewMode]     = useState('sales');
   const [showLabels, setShowLabels] = useState(true);    // our state name labels
   const [showCount, setShowCount]   = useState(true);
@@ -613,6 +623,56 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
 
   }, [leafletReady, geoReady, drillLevel, selected]);
 
+  // ── "Open" a clicked city/district: mask everything outside it and lock
+  //    the view to it — a dedicated area view, not just a zoom. Clearing the
+  //    focus restores the parent state view. ────────────────────────────────
+  useEffect(() => {
+    if(!leafletReady || !mapObjRef.current) return;
+    const L = window.L, map = mapObjRef.current;
+
+    if(focusLyrRef.current){ try { focusLyrRef.current.remove(); } catch {} focusLyrRef.current = null; }
+
+    if(!focusArea){
+      // Focus cleared → restore the parent state view (or release at India).
+      try {
+        if(selected && geoRef.current){
+          const feat = geoRef.current.features.find(f => {
+            const n = getFeatureStateName(f);
+            return n && n.toLowerCase() === selected.toLowerCase();
+          });
+          if(feat){
+            const b = L.geoJSON(feat).getBounds().pad(0.05);
+            map.setMaxBounds(b);
+            map.fitBounds(b, { padding:[20,20], maxZoom:9 });
+          }
+        } else {
+          map.setMaxBounds(null);
+        }
+      } catch {}
+      return;
+    }
+
+    // World polygon with the focused area punched out as a hole, filled with
+    // the background so only the clicked city/district remains visible.
+    const worldRing = [[-180,-85.05],[180,-85.05],[180,85.05],[-180,85.05],[-180,-85.05]];
+    const maskFeature = {
+      type:'Feature', properties:{},
+      geometry:{ type:'Polygon', coordinates:[worldRing, ...focusArea.holes] },
+    };
+    focusLyrRef.current = L.geoJSON(maskFeature, {
+      pane:'maskPane', interactive:false,
+      style:{ color:'transparent', weight:0, fillColor:T.bg0, fillOpacity:1 },
+    }).addTo(map);
+
+    try {
+      if(focusArea.boundsArr){
+        const b = L.latLngBounds(focusArea.boundsArr);
+        map.setMaxBounds(b.pad(0.15));
+        map.fitBounds(b, { padding:[20,20], maxZoom: focusArea.type === 'city' ? 11 : 10 });
+      }
+    } catch {}
+  }, [focusArea, leafletReady, selected]);
+
   // ── Release the bounds lock when returning to India view ────────────────
   useEffect(() => {
     if(drillLevel === 'india' && mapObjRef.current){
@@ -652,6 +712,12 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
         const value = key ? getVal(key) : 0;
         const ratio = maxStateVal ? value / maxStateVal : 0;
         const isSel = selected && name && selected.toLowerCase() === name.toLowerCase();
+
+        // When a single district is "opened", hide the whole state polygon so
+        // only that district remains visible.
+        if(focusArea?.type === 'district'){
+          return { color:'transparent', weight:0, fillOpacity:0, opacity:0 };
+        }
 
         // When drilled into a state, other states are hidden by the mask
         // anyway, but keep them invisible/non-interactive to be safe.
@@ -742,7 +808,7 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
         } catch {}
       });
     }
-  }, [leafletReady, geoReady, stateData, viewMode, maxStateVal, selected, showLabels, showCount, showNames, drillLevel, selectedMonthIdx]);
+  }, [leafletReady, geoReady, stateData, viewMode, maxStateVal, selected, showLabels, showCount, showNames, drillLevel, selectedMonthIdx, focusArea]);
 
   // ── Render CITY markers when drilled in ──────────────────────────────────
   useEffect(() => {
@@ -797,7 +863,16 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
         { sticky:true, opacity:1, className:'stp-tooltip', direction:'top' }
       );
 
-      marker.on('click', () => setSelectedCity(city.name));
+      marker.on('click', () => {
+        setSelectedCity(city.name);
+        // Open (isolate) the clicked city as its own map view.
+        const [lat, lng] = coords, dlt = 0.25;
+        setFocusArea({
+          type:'city', name:city.name,
+          holes:[[[lng-dlt,lat-dlt],[lng+dlt,lat-dlt],[lng+dlt,lat+dlt],[lng-dlt,lat+dlt],[lng-dlt,lat-dlt]]],
+          boundsArr:[[lat-dlt,lng-dlt],[lat+dlt,lng+dlt]],
+        });
+      });
       marker.addTo(map);
       cityLyrRef.current.push(marker);
 
@@ -1110,6 +1185,10 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
       pane: 'districtPane',
       style: feature => {
         const dname = (getDistrictName(feature) || '').toLowerCase();
+        // When a district is "opened", hide all the other districts.
+        if(focusArea?.type === 'district' && focusArea.name.toLowerCase() !== dname){
+          return { opacity:0, fillOpacity:0, weight:0 };
+        }
         const d     = districtData[dname];
         const ratio = d && maxDistrictVal ? d.total / maxDistrictVal : 0;
         return {
@@ -1141,6 +1220,21 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
         layer.on({
           mouseover: e => { e.target.setStyle({ weight:2.5, fillOpacity:0.75, dashArray:'' }); setHoverDistrict(dname); },
           mouseout:  e => { if(districtLyrRef.current) districtLyrRef.current.resetStyle(e.target); setHoverDistrict(null); },
+          // Open (isolate) the clicked district as its own map view.
+          click:     e => {
+            const geom = feature.geometry, holes = [];
+            if(geom?.type === 'Polygon')           geom.coordinates.forEach((r,i)=>{ if(i===0) holes.push(r); });
+            else if(geom?.type === 'MultiPolygon') geom.coordinates.forEach(p=>holes.push(p[0]));
+            if(!holes.length) return;
+            // Bounds straight from the ring coords (reliable, no Leaflet dep).
+            let minLat=90, maxLat=-90, minLng=180, maxLng=-180;
+            holes.forEach(r => r.forEach(([lng,lat]) => {
+              if(lat<minLat) minLat=lat; if(lat>maxLat) maxLat=lat;
+              if(lng<minLng) minLng=lng; if(lng>maxLng) maxLng=lng;
+            }));
+            setSelectedCity(null);
+            setFocusArea({ type:'district', name:dname, holes, boundsArr:[[minLat,minLng],[maxLat,maxLng]] });
+          },
         });
       },
     }).addTo(map);
@@ -1151,6 +1245,7 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
       try {
         const dname = getDistrictName(f);
         if(!dname) return;
+        if(focusArea?.type === 'district' && dname.toLowerCase() !== focusArea.name.toLowerCase()) return;
         const tmp = L.geoJSON(f);
         const center = tmp.getBounds().getCenter();
         const d = districtData[dname.toLowerCase()];
@@ -1168,7 +1263,7 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
         districtLblRef.current.push(label);
       } catch {}
     });
-  }, [leafletReady, drillLevel, selected, showDistricts, districtsReady, districtData, maxDistrictVal]);
+  }, [leafletReady, drillLevel, selected, showDistricts, districtsReady, districtData, maxDistrictVal, focusArea]);
 
   const districtList = useMemo(
     () => Object.values(districtData).sort((a,b) => b.total - a.total),
@@ -1179,6 +1274,7 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
   const backToIndia = () => {
     setSelected(null);
     setSelectedCity(null);
+    setFocusArea(null);
     try {
       if(mapObjRef.current){
         mapObjRef.current.setMaxBounds(null);   // release the state lock
@@ -1188,6 +1284,8 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
   };
 
   const selectedCityObj = selectedCity ? cityData.find(c => c.name.toLowerCase() === selectedCity.toLowerCase()) : null;
+  // The opened district's aggregated data ({ name, dealers, total, target }).
+  const districtObj = focusArea?.type === 'district' ? districtData[focusArea.name.toLowerCase()] : null;
 
   // ── Render ───────────────────────────────────────────────────────────────
   return (
@@ -1201,13 +1299,19 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
         {selected && (
           <>
             <ChevronRight size={13} color={T.t3}/>
-            <span style={{color: selectedCity ? T.acc : T.t1, fontSize:13, fontWeight:800, cursor:'pointer'}} onClick={() => setSelectedCity(null)}>{selected}</span>
+            <span style={{color: (selectedCity||focusArea) ? T.acc : T.t1, fontSize:13, fontWeight:800, cursor:'pointer'}} onClick={() => { setSelectedCity(null); setFocusArea(null); }}>{selected}</span>
           </>
         )}
         {selectedCity && (
           <>
             <ChevronRight size={13} color={T.t3}/>
             <span style={{color:T.t1, fontSize:13, fontWeight:800}}>{selectedCity}</span>
+          </>
+        )}
+        {focusArea?.type === 'district' && (
+          <>
+            <ChevronRight size={13} color={T.t3}/>
+            <span style={{color:T.t1, fontSize:13, fontWeight:800}}>{focusArea.name} <span style={{fontWeight:500, color:T.t3}}>District</span></span>
           </>
         )}
         {selected && (
@@ -1768,6 +1872,118 @@ export default function IndiaMap({ dealers=[], users={}, onOpenDealer }) {
                 </table>
               </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Opened DISTRICT panel — salesman-wise / dealer-wise ──────────── */}
+        {drillLevel === 'state' && districtObj && (
+          <div className="card" style={{padding:0, overflow:'hidden', background:T.bg1, border:'1px solid '+T.bd1}}>
+            <div style={{padding:'10px 12px', background:'#0e2a1a', borderBottom:'1px solid #14532d', display:'flex', alignItems:'center', gap:8}}>
+              <div style={{width:8, height:8, borderRadius:'50%', background:'#34d399'}}/>
+              <span style={{fontSize:13, fontWeight:700, color:'#86efac', flex:1}}>{districtObj.name} <span style={{fontWeight:500, color:T.t3, fontSize:11}}>District</span></span>
+              <button onClick={() => setFocusArea(null)} style={{background:'none', border:'none', color:T.t3, cursor:'pointer'}}>
+                <X size={13}/>
+              </button>
+            </div>
+            <div style={{padding:12}}>
+              {(() => {
+                const all     = districtObj.dealers || [];
+                const dealers = panelSalesman ? all.filter(d => (d.salesman||'') === panelSalesman) : all;
+                const salesmen = [...new Set(all.map(d => d.salesman).filter(Boolean))]
+                  .sort((a,b) => (users?.[a]?.name||a).localeCompare(users?.[b]?.name||b));
+                const totalSales = dealers.reduce((s,d) => s + Number(d.months?.[selectedMonthIdx]||0), 0);
+                const qty = dealers.filter(d => Number(d.months?.[selectedMonthIdx]||0) > 0).length;
+
+                // Aggregate by salesman for the "By salesman" view.
+                const bySm = {};
+                dealers.forEach(d => {
+                  const k = d.salesman || '__none__';
+                  if(!bySm[k]) bySm[k] = { salesman:k, dealers:0, sales:0, qty:0 };
+                  bySm[k].dealers++;
+                  const a = Number(d.months?.[selectedMonthIdx]||0);
+                  bySm[k].sales += a;
+                  if(a > 0) bySm[k].qty++;
+                });
+                const smRows = Object.values(bySm).sort((a,b) => b.sales - a.sales);
+
+                return (
+                  <>
+                    <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:6, marginBottom:10}}>
+                      <KpiCell label="Sales"   value={fmtIN(totalSales)} color="#86efac"/>
+                      <KpiCell label="Dealers" value={dealers.length}    color={T.blue}/>
+                      <KpiCell label="Qty"     value={qty}               color="#fbbf24"/>
+                    </div>
+
+                    {/* Salesman filter + view toggle */}
+                    <div style={{display:'flex', gap:6, marginBottom:10, flexWrap:'wrap'}}>
+                      <select value={panelSalesman} onChange={e => setPanelSalesman(e.target.value)}
+                        style={{flex:'1 1 120px', background:T.bg2, color:T.t1, border:'1px solid '+T.bd1, borderRadius:6, padding:'5px 8px', fontSize:11}}>
+                        <option value="">All salesmen ({all.length})</option>
+                        {salesmen.map(s => <option key={s} value={s}>{users?.[s]?.name || s}</option>)}
+                      </select>
+                      <div style={{display:'flex', border:'1px solid '+T.bd1, borderRadius:6, overflow:'hidden'}}>
+                        {['salesman','dealer'].map(m => (
+                          <button key={m} onClick={() => setPanelMode(m)}
+                            style={{fontSize:11, padding:'5px 10px', border:'none', cursor:'pointer',
+                              background: panelMode===m ? T.acc : 'transparent',
+                              color: panelMode===m ? '#fff' : T.t2, textTransform:'capitalize'}}>
+                            By {m}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Table */}
+                    <div style={{maxHeight:280, overflowY:'auto', border:'1px solid '+T.bd1, borderRadius:6}}>
+                      <table style={{width:'100%', borderCollapse:'collapse', fontSize:11}}>
+                        <thead>
+                          <tr style={{position:'sticky', top:0, background:T.bg2, zIndex:2}}>
+                            {(panelMode==='salesman'
+                              ? [['Salesman','left'],['Dealers','right'],['Sales','right'],['Qty','right']]
+                              : [['Dealer','left'],['Salesman','left'],['Sales','right']]
+                            ).map(([h,al]) => (
+                              <th key={h} style={{textAlign:al, padding:'5px 8px', color:T.t3, fontSize:9, fontWeight:700, textTransform:'uppercase', borderBottom:'1px solid '+T.bd1}}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {panelMode==='salesman'
+                            ? smRows.map(r => (
+                                <tr key={r.salesman} style={{borderBottom:'1px solid '+T.bd1, cursor:'pointer'}}
+                                  onClick={() => setPanelSalesman(r.salesman==='__none__' ? '' : r.salesman)}
+                                  onMouseEnter={e => e.currentTarget.style.background = T.bg2}
+                                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                                  <td style={{padding:'5px 8px', fontWeight:600, color:T.t1}}>{r.salesman==='__none__' ? 'Unassigned' : (users?.[r.salesman]?.name || r.salesman)}</td>
+                                  <td style={{padding:'5px 8px', textAlign:'right', color:T.blue}}>{r.dealers}</td>
+                                  <td style={{padding:'5px 8px', textAlign:'right', fontWeight:700, color:'#86efac'}}>{fmtIN(r.sales)}</td>
+                                  <td style={{padding:'5px 8px', textAlign:'right', color:'#fbbf24'}}>{r.qty}</td>
+                                </tr>
+                              ))
+                            : [...dealers].sort((a,b)=>(b.months?.[selectedMonthIdx]||0)-(a.months?.[selectedMonthIdx]||0)).map(d => {
+                                const ach = d.months?.[selectedMonthIdx] || 0;
+                                return (
+                                  <tr key={d.id} onClick={() => onOpenDealer?.(d.id)} style={{borderBottom:'1px solid '+T.bd1, cursor:'pointer'}}
+                                    onMouseEnter={e => e.currentTarget.style.background = T.bg2}
+                                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                                    <td style={{padding:'5px 8px', maxWidth:150}}>
+                                      <div style={{fontWeight:600, color:T.t1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{d.name}</div>
+                                      {d.city && <div style={{fontSize:9, color:T.t3}}>{d.city}</div>}
+                                    </td>
+                                    <td style={{padding:'5px 8px', color:T.t2}}>{users?.[d.salesman]?.name || d.salesman || '—'}</td>
+                                    <td style={{padding:'5px 8px', textAlign:'right', fontWeight:700, color:'#86efac'}}>{fmtIN(ach)}</td>
+                                  </tr>
+                                );
+                              })}
+                          {dealers.length===0 && (
+                            <tr><td colSpan={panelMode==='salesman'?4:3} style={{padding:16, textAlign:'center', color:T.t3}}>No dealers{panelSalesman?' for this salesman':''} in this district.</td></tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           </div>
         )}

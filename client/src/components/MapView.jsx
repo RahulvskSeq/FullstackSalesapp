@@ -107,8 +107,8 @@ export default function MapView({dealers,selectedMonthIdx}){
         </div>
       )}
 
-      {/* ── By Area (Pincode) — top-level view ─────────────────────────── */}
-      {areaData.length > 0 && (
+      {/* ── By Area (Pincode) — top-level view · HIDDEN (commented out on request) ─── */}
+      {/* areaData.length > 0 && (
         <div style={{marginTop:16, borderTop:'1px solid var(--b1)', paddingTop:14}}>
           <div style={{fontSize:11, color:'var(--t3)', textTransform:'uppercase', letterSpacing:'.07em', marginBottom:10, display:'flex', alignItems:'center', gap:8}}>
             <MapPin size={12} color="#818cf8"/> By Area (Pincode) — {areaData.length} PIN{areaData.length===1?'':'s'} with data
@@ -143,7 +143,7 @@ export default function MapView({dealers,selectedMonthIdx}){
             </div>
           )}
         </div>
-      )}
+      )} */}
     </div>
   );
 }
