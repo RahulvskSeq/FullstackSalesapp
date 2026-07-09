@@ -8,7 +8,7 @@ import {
   Camera, LogIn as IconIn, LogOut as IconOut, MapPin, Calendar, Plus,
   X, Phone, Mail, Building2, Trash2, Send, RefreshCw, Image as ImageIcon,
   CheckCircle2, AlertCircle, Briefcase, ClipboardList, Users as UsersIcon,
-  Filter, Upload, Download,
+  Filter, Upload, Download, Search,
 } from 'lucide-react';
 import { api } from '../api';
 import { Avatar } from './UI';
@@ -509,6 +509,9 @@ export function VisitsPage({ dealers, users, currentUser }){
   // button, and a preview modal shown after the photo is taken.
   const ciCamRef = useRef(null);
   const [ciPreview, setCiPreview] = useState(false);
+  // Which required fields are missing — used to highlight them in red when the
+  // user taps Check in without filling everything.
+  const [ciMissing, setCiMissing] = useState({ dealer:false, purpose:false });
 
   // Check-out form state (per active visit)
   const [coPhoto, setCoPhoto] = useState('');
@@ -520,6 +523,7 @@ export function VisitsPage({ dealers, users, currentUser }){
   const [items,   setItems]   = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterUser, setFilterUser] = useState('');
+  const [partyQuery, setPartyQuery] = useState('');   // search visit history by party/dealer name
   const [zoom, setZoom] = useState('');
   // Tick once per minute so the active-visit clock updates
   const [, setTick] = useState(0);
@@ -593,11 +597,17 @@ export function VisitsPage({ dealers, users, currentUser }){
 
   // Step 1 of the easy flow: validate the form, then open the camera directly.
   const startCheckIn = () => {
-    if(!ciDealer.trim()){
-      notify.error(ciNewDealerMode ? 'Type the new dealer name' : 'Party / Dealer name required');
+    const missing = { dealer: !ciDealer.trim(), purpose: !ciPurpose };
+    if(missing.dealer || missing.purpose){
+      setCiMissing(missing);
+      notify.error(
+        missing.dealer && missing.purpose ? 'Enter the dealer name and pick a purpose'
+        : missing.dealer ? (ciNewDealerMode ? 'Type the new dealer name' : 'Party / Dealer name required')
+        : 'Pick a Purpose of Visit'
+      );
       return;
     }
-    if(!ciPurpose){ notify.error('Pick a Purpose of Visit'); return; }
+    setCiMissing({ dealer:false, purpose:false });
     ciCamRef.current?.click();   // open the phone camera
   };
   // Step 2: photo taken → compress → show it in a confirm modal.
@@ -760,9 +770,27 @@ export function VisitsPage({ dealers, users, currentUser }){
         </div>
       ) : (
         // No active visit — show check-in form
-        <div className="card">
-          <div style={{fontSize:13, fontWeight:700, marginBottom:10, display:'flex', alignItems:'center', gap:8}}>
-            <IconIn size={14}/> Check in to a party
+        <div className="card crm-checkin" style={{borderRadius:18}}>
+          <style>{`
+            .crm-checkin input.inp, .crm-checkin select.inp, .crm-checkin textarea {
+              border-radius: 13px !important;
+              padding: 12px 14px !important;
+              background: var(--bg2);
+              border: 1px solid var(--b2);
+              transition: border-color .15s ease, box-shadow .15s ease;
+            }
+            .crm-checkin input.inp:focus, .crm-checkin select.inp:focus, .crm-checkin textarea:focus {
+              border-color: var(--acc);
+              box-shadow: 0 0 0 3px rgba(99,102,241,0.18);
+              outline: none;
+            }
+            .crm-checkin .btnp { border-radius: 14px; }
+          `}</style>
+          <div style={{fontSize:14, fontWeight:800, marginBottom:12, display:'flex', alignItems:'center', gap:8}}>
+            <span style={{width:30, height:30, borderRadius:'50%', background:'rgba(99,102,241,0.15)', display:'inline-flex', alignItems:'center', justifyContent:'center'}}>
+              <IconIn size={15} style={{color:'var(--acc)'}}/>
+            </span>
+            Check in to a party
           </div>
           <div style={{display:'flex', flexDirection:'column', gap:8}}>
             {/* Nearby dealer suggestions — built from GPS once a fix lands.
@@ -771,7 +799,7 @@ export function VisitsPage({ dealers, users, currentUser }){
                 is near yet. Tap a pill → name fills in instantly. */}
             {nearbyDealers.length > 0 && (
               <div style={{
-                background:'var(--bg2)', borderRadius:8, padding:'8px 10px',
+                background:'var(--bg2)', borderRadius:14, padding:'10px 12px',
                 border:'1px solid var(--b2)',
               }}>
                 <div style={{fontSize:10, color:'var(--t3)', textTransform:'uppercase', letterSpacing:'.1em', marginBottom:6}}>
@@ -804,26 +832,28 @@ export function VisitsPage({ dealers, users, currentUser }){
             {/* Existing-dealer vs New-dealer toggle. New-dealer mode swaps the
                 autocomplete input for a plain text box so salesman can type
                 a name that isn't in the roster yet. */}
-            <div style={{display:'flex', gap:6, flexWrap:'wrap'}}>
+            <div style={{display:'flex', gap:8, padding:4, background:'var(--bg2)', borderRadius:14, border:'1px solid var(--b2)'}}>
               <button type="button"
                 onClick={()=>{ setCiNewDealerMode(false); setCiDealer(''); }}
                 style={{
-                  flex:1, minWidth:140,
-                  padding:'7px 12px', borderRadius:8, fontSize:12, fontWeight:600, cursor:'pointer',
-                  background: !ciNewDealerMode ? 'rgba(99,102,241,.15)' : 'var(--bg2)',
-                  border: '1px solid ' + (!ciNewDealerMode ? 'var(--acc)' : 'var(--b2)'),
-                  color: !ciNewDealerMode ? 'var(--acc)' : 'var(--t2)',
+                  flex:1, minWidth:120,
+                  padding:'9px 12px', borderRadius:11, fontSize:12.5, fontWeight:700, cursor:'pointer',
+                  background: !ciNewDealerMode ? 'var(--acc)' : 'transparent',
+                  border: 'none',
+                  color: !ciNewDealerMode ? '#fff' : 'var(--t2)',
+                  transition:'all .15s ease',
                 }}>
                 Existing Dealer
               </button>
               <button type="button"
                 onClick={()=>{ setCiNewDealerMode(true); setCiDealer(''); }}
                 style={{
-                  flex:1, minWidth:140,
-                  padding:'7px 12px', borderRadius:8, fontSize:12, fontWeight:600, cursor:'pointer',
-                  background: ciNewDealerMode ? 'rgba(251,191,36,.15)' : 'var(--bg2)',
-                  border: '1px solid ' + (ciNewDealerMode ? '#fbbf24' : 'var(--b2)'),
-                  color: ciNewDealerMode ? '#fbbf24' : 'var(--t2)',
+                  flex:1, minWidth:120,
+                  padding:'9px 12px', borderRadius:11, fontSize:12.5, fontWeight:700, cursor:'pointer',
+                  background: ciNewDealerMode ? '#fbbf24' : 'transparent',
+                  border: 'none',
+                  color: ciNewDealerMode ? '#111' : 'var(--t2)',
+                  transition:'all .15s ease',
                 }}>
                 + New Dealer
               </button>
@@ -831,22 +861,37 @@ export function VisitsPage({ dealers, users, currentUser }){
 
             {ciNewDealerMode ? (
               <input className="inp" placeholder="Type new dealer / party name"
-                value={ciDealer} onChange={e=>setCiDealer(e.target.value)} autoFocus/>
+                value={ciDealer}
+                onChange={e=>{ setCiDealer(e.target.value); if(ciMissing.dealer) setCiMissing(m=>({...m, dealer:false})); }}
+                style={ciMissing.dealer ? { borderColor:'#f87171', boxShadow:'0 0 0 1px #f87171' } : undefined}
+                autoFocus/>
             ) : (
               <>
                 <input className="inp" list="crm-dealer-list" placeholder="Party / Dealer name"
-                  value={ciDealer} onChange={e=>setCiDealer(e.target.value)}/>
+                  value={ciDealer}
+                  onChange={e=>{ setCiDealer(e.target.value); if(ciMissing.dealer) setCiMissing(m=>({...m, dealer:false})); }}
+                  style={ciMissing.dealer ? { borderColor:'#f87171', boxShadow:'0 0 0 1px #f87171' } : undefined}/>
                 <datalist id="crm-dealer-list">
                   {myDealerOptions.map(n => <option key={n} value={n}/>)}
                 </datalist>
               </>
             )}
+            {ciMissing.dealer && (
+              <div style={{fontSize:11, color:'#f87171', marginTop:-4}}>
+                {ciNewDealerMode ? 'Type the new dealer name' : 'Party / Dealer name is required'}
+              </div>
+            )}
 
             {/* Purpose of Visit — required */}
-            <select className="inp" value={ciPurpose} onChange={e=>setCiPurpose(e.target.value)}>
+            <select className="inp" value={ciPurpose}
+              onChange={e=>{ setCiPurpose(e.target.value); if(ciMissing.purpose) setCiMissing(m=>({...m, purpose:false})); }}
+              style={ciMissing.purpose ? { borderColor:'#f87171', boxShadow:'0 0 0 1px #f87171' } : undefined}>
               <option value="">— Purpose of Visit —</option>
               {VISIT_PURPOSES.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
+            {ciMissing.purpose && (
+              <div style={{fontSize:11, color:'#f87171', marginTop:-4}}>Pick a Purpose of Visit</div>
+            )}
 
             <VoiceTextarea placeholder="Quick note (optional)"
               value={ciNote} onChange={setCiNote} rows={3}/>
@@ -857,10 +902,20 @@ export function VisitsPage({ dealers, users, currentUser }){
               style={{display:'none'}} onChange={onCiPhotoPicked}/>
             <button onClick={startCheckIn}
               disabled={ciBusy || !ciDealer.trim() || !ciPurpose}
-              className="btnp"
               title={!ciPurpose ? 'Pick a Purpose of Visit' : ''}
-              style={{display:'inline-flex', alignItems:'center', justifyContent:'center', gap:6, width:'100%'}}>
-              <IconIn size={13}/> {ciBusy ? 'Opening camera…' : 'Check in'}
+              style={{
+                display:'inline-flex', alignItems:'center', justifyContent:'center', gap:8, width:'100%',
+                padding:'14px', borderRadius:15, border:'none', cursor:'pointer',
+                fontSize:15, fontWeight:800, color:'#fff', marginTop:2,
+                background:'linear-gradient(135deg, #6366f1, #818cf8)',
+                boxShadow:'0 8px 22px rgba(99,102,241,0.35)',
+                opacity: (ciBusy || !ciDealer.trim() || !ciPurpose) ? 0.55 : 1,
+                transition:'opacity .15s ease, transform .1s ease',
+              }}
+              onMouseDown={e=>e.currentTarget.style.transform='scale(0.985)'}
+              onMouseUp={e=>e.currentTarget.style.transform='scale(1)'}
+              onMouseLeave={e=>e.currentTarget.style.transform='scale(1)'}>
+              <IconIn size={16}/> {ciBusy ? 'Opening camera…' : 'Check in'}
             </button>
           </div>
         </div>
@@ -873,6 +928,19 @@ export function VisitsPage({ dealers, users, currentUser }){
             <Calendar size={13}/> Visit history {items.length ? `(${items.length})` : ''}
           </div>
           <div className="spacer"/>
+          {/* Search visit history by party / dealer name */}
+          <div style={{position:'relative', display:'inline-flex', alignItems:'center'}}>
+            <Search size={12} style={{position:'absolute', left:8, color:'var(--t3)', pointerEvents:'none'}}/>
+            <input className="inp" value={partyQuery} onChange={e=>setPartyQuery(e.target.value)}
+              placeholder="Search party name…"
+              style={{padding:'4px 24px 4px 26px', fontSize:11, width:170}}/>
+            {partyQuery && (
+              <button type="button" onClick={()=>setPartyQuery('')} title="Clear"
+                style={{position:'absolute', right:6, background:'none', border:'none', color:'var(--t3)', cursor:'pointer', padding:0, display:'flex'}}>
+                <X size={12}/>
+              </button>
+            )}
+          </div>
           {isStaff && (
             <select className="inp" value={filterUser} onChange={e=>setFilterUser(e.target.value)}
               style={{padding:'4px 10px', fontSize:11, width:'auto'}}>
@@ -985,11 +1053,16 @@ export function VisitsPage({ dealers, users, currentUser }){
             <RefreshCw size={11}/>
           </button>
         </div>
-        {loading ? <div style={{padding:14, color:'var(--t3)'}}>Loading…</div> : items.length === 0 ? (
+        {(() => {
+          const q = partyQuery.trim().toLowerCase();
+          const shown = q ? items.filter(v => (v.dealerName||'').toLowerCase().includes(q)) : items;
+          return loading ? <div style={{padding:14, color:'var(--t3)'}}>Loading…</div> : items.length === 0 ? (
           <div style={{padding:14, color:'var(--t3)', textAlign:'center'}}>No visits yet.</div>
+        ) : shown.length === 0 ? (
+          <div style={{padding:14, color:'var(--t3)', textAlign:'center'}}>No visits for “{partyQuery}”.</div>
         ) : (
           <div style={{display:'flex', flexDirection:'column', gap:8, maxHeight:540, overflowY:'auto'}}>
-            {items.map(v => {
+            {shown.map(v => {
               const ciPhoto = v.checkInPhoto  || v.photo || '';
               const coPhoto = v.checkOutPhoto || '';
               const dur     = v.status === 'completed' ? (v.durationMinutes || 0) : liveDuration(v.checkInTime);
@@ -1090,7 +1163,8 @@ export function VisitsPage({ dealers, users, currentUser }){
               );
             })}
           </div>
-        )}
+        );
+        })()}
       </div>
       <ImageModal src={zoom} onClose={()=>setZoom('')}/>
 
@@ -1098,29 +1172,59 @@ export function VisitsPage({ dealers, users, currentUser }){
           Check in → camera → take photo → this preview → Confirm. */}
       {ciPreview && (
         <div onClick={()=>!ciBusy && setCiPreview(false)}
-          style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.78)', zIndex:3000,
-            display:'flex', alignItems:'center', justifyContent:'center', padding:16}}>
+          style={{position:'fixed', inset:0, background:'rgba(6,6,16,0.82)', backdropFilter:'blur(4px)',
+            zIndex:3000, display:'flex', alignItems:'center', justifyContent:'center', padding:16}}>
           <div onClick={e=>e.stopPropagation()}
-            style={{background:'var(--bg1)', border:'1px solid var(--b2)', borderRadius:14, padding:16,
-              width:380, maxWidth:'94%', display:'flex', flexDirection:'column', gap:12}}>
-            <div style={{fontSize:14, fontWeight:700, display:'flex', alignItems:'center', gap:6}}>
-              <Camera size={15}/> Confirm check-in photo
+            style={{
+              background:'var(--bg1)', border:'1px solid var(--b2)', borderRadius:22,
+              padding:18, width:380, maxWidth:'94%',
+              display:'flex', flexDirection:'column', gap:14,
+              boxShadow:'0 24px 60px rgba(0,0,0,0.55)',
+            }}>
+            {/* Header */}
+            <div style={{display:'flex', alignItems:'center', gap:8}}>
+              <div style={{width:30, height:30, borderRadius:'50%', background:'rgba(99,102,241,0.15)',
+                display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0}}>
+                <Camera size={15} style={{color:'var(--acc)'}}/>
+              </div>
+              <div style={{fontSize:14, fontWeight:800, color:'var(--t1)', flex:1}}>Confirm check-in</div>
+              <button onClick={()=>!ciBusy && setCiPreview(false)} disabled={ciBusy}
+                style={{background:'none', border:'none', color:'var(--t3)', cursor:'pointer', padding:2, lineHeight:1}}>
+                <X size={18}/>
+              </button>
             </div>
+
+            {/* Rounded photo */}
             {ciPhoto && (
-              <img src={ciPhoto} alt="check-in"
-                style={{width:'100%', borderRadius:10, maxHeight:360, objectFit:'cover'}}/>
+              <div style={{position:'relative', borderRadius:20, overflow:'hidden',
+                border:'1px solid var(--b2)', boxShadow:'0 8px 24px rgba(0,0,0,0.35)'}}>
+                <img src={ciPhoto} alt="check-in"
+                  style={{width:'100%', maxHeight:340, objectFit:'cover', display:'block'}}/>
+                {/* soft bottom gradient with the dealer + purpose over the photo */}
+                <div style={{position:'absolute', left:0, right:0, bottom:0, padding:'22px 14px 12px',
+                  background:'linear-gradient(to top, rgba(0,0,0,0.72), rgba(0,0,0,0))'}}>
+                  <div style={{fontSize:14, fontWeight:800, color:'#fff', textShadow:'0 1px 3px rgba(0,0,0,0.6)',
+                    overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{ciDealer || '—'}</div>
+                  {ciPurpose && (
+                    <div style={{marginTop:4, display:'inline-flex', alignItems:'center', gap:5,
+                      background:'rgba(99,102,241,0.9)', color:'#fff', fontSize:10, fontWeight:700,
+                      padding:'2px 9px', borderRadius:999}}>{ciPurpose}</div>
+                  )}
+                </div>
+              </div>
             )}
-            <div style={{fontSize:12, color:'var(--t2)'}}>
-              <b style={{color:'var(--t1)'}}>{ciDealer || '—'}</b>{ciPurpose ? ' · ' + ciPurpose : ''}
-            </div>
+
+            {/* Actions */}
             <div style={{display:'flex', gap:10}}>
               <button onClick={()=>ciCamRef.current?.click()} disabled={ciBusy} className="btn"
-                style={{flex:1, display:'inline-flex', alignItems:'center', justifyContent:'center', gap:6, padding:'10px'}}>
-                <Camera size={13}/> Retake
+                style={{flex:1, display:'inline-flex', alignItems:'center', justifyContent:'center', gap:6,
+                  padding:'11px', borderRadius:12, fontWeight:600}}>
+                <Camera size={14}/> Retake
               </button>
               <button onClick={checkIn} disabled={ciBusy || !ciPhoto} className="btnp"
-                style={{flex:2, display:'inline-flex', alignItems:'center', justifyContent:'center', gap:6, padding:'10px'}}>
-                <IconIn size={13}/> {ciBusy ? 'Checking in…' : 'Confirm Check in'}
+                style={{flex:2, display:'inline-flex', alignItems:'center', justifyContent:'center', gap:6,
+                  padding:'11px', borderRadius:12, fontWeight:700}}>
+                <IconIn size={14}/> {ciBusy ? 'Checking in…' : 'Confirm Check in'}
               </button>
             </div>
           </div>
