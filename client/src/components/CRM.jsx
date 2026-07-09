@@ -518,12 +518,16 @@ export function VisitsPage({ dealers, users, currentUser }){
   const [coLoc,   setCoLoc]   = useState({ lat:null, lng:null });
   const [coNote,  setCoNote]  = useState('');
   const [coBusy,  setCoBusy]  = useState(false);
+  const coCamRef = useRef(null);
+  const [coPreview, setCoPreview] = useState(false);
+  const [coMissing, setCoMissing] = useState(false);   // discussion note missing
 
   // List
   const [items,   setItems]   = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterUser, setFilterUser] = useState('');
   const [partyQuery, setPartyQuery] = useState('');   // search visit history by party/dealer name
+  const [visitLimit, setVisitLimit] = useState(5);    // how many recent visits to show (5/10/20/All)
   const [zoom, setZoom] = useState('');
   // Tick once per minute so the active-visit clock updates
   const [, setTick] = useState(0);
@@ -661,6 +665,30 @@ export function VisitsPage({ dealers, users, currentUser }){
     setCiBusy(false);
   };
 
+  // Step 1: require the discussion note, then open the camera directly.
+  const startCheckOut = () => {
+    if(!coNote || !coNote.trim()){
+      setCoMissing(true);
+      notify.error('Discussion notes are required at check-out');
+      return;
+    }
+    setCoMissing(false);
+    coCamRef.current?.click();
+  };
+  // Step 2: photo taken → compress → show confirm modal.
+  const onCoPhotoPicked = async (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if(!f) return;
+    setCoBusy(true);
+    try {
+      const dataUrl = await fileToCompressedDataURL(f);
+      setCoPhoto(dataUrl);
+      setCoPreview(true);
+    } catch(err){ notify.error('Photo: ' + err.message); }
+    setCoBusy(false);
+  };
+
   const checkOut = async () => {
     if(!myActive) return;
     if(!coNote || !coNote.trim()){ notify.error('Discussion notes are required at check-out'); return; }
@@ -678,6 +706,7 @@ export function VisitsPage({ dealers, users, currentUser }){
       });
       notify.success('Checked out — visit completed');
       setCoNote(''); setCoPhoto(''); setCoLoc({ lat:null, lng:null });
+      setCoPreview(false);
       load();
     } catch(e){ notify.error('Check-out: ' + e.message); }
     setCoBusy(false);
@@ -745,27 +774,53 @@ export function VisitsPage({ dealers, users, currentUser }){
 
       {/* Active visit — show check-out card */}
       {myActive ? (
-        <div className="card" style={{borderColor:'#fbbf24'}}>
-          <div style={{fontSize:13, fontWeight:700, marginBottom:6, display:'flex', alignItems:'center', gap:8, color:'#fbbf24'}}>
-            <ClipboardList size={14}/> Currently visiting · {myActive.dealerName}
+        <div className="card crm-checkin" style={{borderColor:'#fbbf24', borderRadius:18}}>
+          <style>{`
+            .crm-checkin textarea, .crm-checkin input.inp, .crm-checkin select.inp {
+              border-radius: 13px !important; transition: border-color .15s ease, box-shadow .15s ease;
+            }
+            .crm-checkin textarea:focus { border-color:var(--acc); box-shadow:0 0 0 3px rgba(99,102,241,0.18); outline:none; }
+          `}</style>
+          <div style={{fontSize:14, fontWeight:800, marginBottom:6, display:'flex', alignItems:'center', gap:8, color:'#fbbf24'}}>
+            <span style={{width:30, height:30, borderRadius:'50%', background:'rgba(251,191,36,0.15)', display:'inline-flex', alignItems:'center', justifyContent:'center'}}>
+              <ClipboardList size={15}/>
+            </span>
+            Currently visiting · {myActive.dealerName}
           </div>
-          <div style={{fontSize:11, color:'var(--t3)', marginBottom:10}}>
+          <div style={{fontSize:11, color:'var(--t3)', marginBottom:12}}>
             Checked in at {fmtClock(myActive.checkInTime)} · {fmtDuration(liveDuration(myActive.checkInTime))} elapsed
             {myActive.checkInAddress ? ' · ' + myActive.checkInAddress : ''}
           </div>
           <div style={{display:'flex', flexDirection:'column', gap:8}}>
-            <VoiceTextarea
-              placeholder="REQUIRED: what was discussed in the meeting…"
-              value={coNote} onChange={setCoNote} rows={6}/>
-            <div className="crm-row">
-              <PhotoCapture photo={coPhoto} setPhoto={setCoPhoto} label="Take check-out photo"/>
-              <LocationCapture loc={coLoc} setLoc={setCoLoc}/>
-              <button onClick={checkOut} disabled={coBusy || !coNote.trim() || !coPhoto} className="btnp"
-                style={{display:'inline-flex', alignItems:'center', justifyContent:'center', gap:6,
-                        background:'#dc2626', borderColor:'#b91c1c'}}>
-                <IconOut size={13}/> {coBusy ? 'Saving…' : 'Check out'}
-              </button>
+            <div style={coMissing ? { borderRadius:13, boxShadow:'0 0 0 2px #f87171' } : undefined}>
+              <VoiceTextarea
+                placeholder="REQUIRED: what was discussed in the meeting…"
+                value={coNote}
+                onChange={(val)=>{ setCoNote(val); if(coMissing) setCoMissing(false); }}
+                rows={6}/>
             </div>
+            {coMissing && (
+              <div style={{fontSize:11, color:'#f87171', marginTop:-4}}>Discussion notes are required to check out</div>
+            )}
+            {/* GPS captured silently — box hidden. */}
+            <LocationCapture loc={coLoc} setLoc={setCoLoc} hidden/>
+            {/* Hidden camera — the Check-out button opens it directly. */}
+            <input ref={coCamRef} type="file" accept="image/*" capture="environment"
+              style={{display:'none'}} onChange={onCoPhotoPicked}/>
+            <button onClick={startCheckOut} disabled={coBusy}
+              style={{
+                display:'inline-flex', alignItems:'center', justifyContent:'center', gap:8, width:'100%',
+                padding:'14px', borderRadius:15, border:'none', cursor:'pointer',
+                fontSize:15, fontWeight:800, color:'#fff', marginTop:2,
+                background:'linear-gradient(135deg, #dc2626, #ef4444)',
+                boxShadow:'0 8px 22px rgba(220,38,38,0.35)',
+                opacity: coBusy ? 0.6 : 1, transition:'opacity .15s ease, transform .1s ease',
+              }}
+              onMouseDown={e=>e.currentTarget.style.transform='scale(0.985)'}
+              onMouseUp={e=>e.currentTarget.style.transform='scale(1)'}
+              onMouseLeave={e=>e.currentTarget.style.transform='scale(1)'}>
+              <IconOut size={16}/> {coBusy ? 'Opening camera…' : 'Check out'}
+            </button>
           </div>
         </div>
       ) : (
@@ -950,6 +1005,15 @@ export function VisitsPage({ dealers, users, currentUser }){
               ))}
             </select>
           )}
+          {/* How many recent visits to show */}
+          <select className="inp" value={visitLimit} onChange={e=>setVisitLimit(Number(e.target.value))}
+            title="How many recent visits to show"
+            style={{padding:'4px 10px', fontSize:11, width:'auto'}}>
+            <option value={5}>Last 5</option>
+            <option value={10}>Last 10</option>
+            <option value={20}>Last 20</option>
+            <option value={100000}>All</option>
+          </select>
           <button onClick={()=>{
             // ── Grouped-by-user Visit Report (.xlsx) ──────────────────────
             // Rows are grouped like this:
@@ -1055,13 +1119,14 @@ export function VisitsPage({ dealers, users, currentUser }){
         </div>
         {(() => {
           const q = partyQuery.trim().toLowerCase();
-          const shown = q ? items.filter(v => (v.dealerName||'').toLowerCase().includes(q)) : items;
+          const matched = q ? items.filter(v => (v.dealerName||'').toLowerCase().includes(q)) : items;
+          const shown = matched.slice(0, visitLimit);
           return loading ? <div style={{padding:14, color:'var(--t3)'}}>Loading…</div> : items.length === 0 ? (
           <div style={{padding:14, color:'var(--t3)', textAlign:'center'}}>No visits yet.</div>
-        ) : shown.length === 0 ? (
+        ) : matched.length === 0 ? (
           <div style={{padding:14, color:'var(--t3)', textAlign:'center'}}>No visits for “{partyQuery}”.</div>
         ) : (
-          <div style={{display:'flex', flexDirection:'column', gap:8, maxHeight:540, overflowY:'auto'}}>
+          <div style={{display:'flex', flexDirection:'column', gap:10}}>
             {shown.map(v => {
               const ciPhoto = v.checkInPhoto  || v.photo || '';
               const coPhoto = v.checkOutPhoto || '';
@@ -1076,8 +1141,9 @@ export function VisitsPage({ dealers, users, currentUser }){
               const autoClosed = v.autoClosed || /^⏱/.test((v.checkOutNote||'').trim());
               return (
                 <div key={v._id} style={{
-                  display:'flex', flexDirection:'column', gap:8, padding:'10px 12px',
-                  background:'var(--bg2)', borderRadius:8,
+                  display:'flex', flexDirection:'column', gap:8, padding:'12px 14px',
+                  background:'var(--bg2)', borderRadius:14,
+                  border:'1px solid var(--b2)',
                   borderLeft:'3px solid ' + (v.status === 'in-progress' ? '#fbbf24' : '#34d399'),
                 }}>
                   {/* Header line */}
@@ -1162,6 +1228,11 @@ export function VisitsPage({ dealers, users, currentUser }){
                 </div>
               );
             })}
+            {matched.length > shown.length && (
+              <div style={{textAlign:'center', fontSize:11, color:'var(--t3)', padding:'2px 0'}}>
+                Showing last {shown.length} of {matched.length} · use the dropdown above to see more
+              </div>
+            )}
           </div>
         );
         })()}
@@ -1225,6 +1296,54 @@ export function VisitsPage({ dealers, users, currentUser }){
                 style={{flex:2, display:'inline-flex', alignItems:'center', justifyContent:'center', gap:6,
                   padding:'11px', borderRadius:12, fontWeight:700}}>
                 <IconIn size={14}/> {ciBusy ? 'Checking in…' : 'Confirm Check in'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Check-OUT photo-preview confirm modal (mirrors check-in). */}
+      {coPreview && (
+        <div onClick={()=>!coBusy && setCoPreview(false)}
+          style={{position:'fixed', inset:0, background:'rgba(6,6,16,0.82)', backdropFilter:'blur(4px)',
+            zIndex:3000, display:'flex', alignItems:'center', justifyContent:'center', padding:16}}>
+          <div onClick={e=>e.stopPropagation()}
+            style={{background:'var(--bg1)', border:'1px solid var(--b2)', borderRadius:22, padding:18,
+              width:380, maxWidth:'94%', display:'flex', flexDirection:'column', gap:14,
+              boxShadow:'0 24px 60px rgba(0,0,0,0.55)'}}>
+            <div style={{display:'flex', alignItems:'center', gap:8}}>
+              <div style={{width:30, height:30, borderRadius:'50%', background:'rgba(220,38,38,0.15)',
+                display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0}}>
+                <Camera size={15} style={{color:'#ef4444'}}/>
+              </div>
+              <div style={{fontSize:14, fontWeight:800, color:'var(--t1)', flex:1}}>Confirm check-out</div>
+              <button onClick={()=>!coBusy && setCoPreview(false)} disabled={coBusy}
+                style={{background:'none', border:'none', color:'var(--t3)', cursor:'pointer', padding:2, lineHeight:1}}>
+                <X size={18}/>
+              </button>
+            </div>
+            {coPhoto && (
+              <div style={{position:'relative', borderRadius:20, overflow:'hidden',
+                border:'1px solid var(--b2)', boxShadow:'0 8px 24px rgba(0,0,0,0.35)'}}>
+                <img src={coPhoto} alt="check-out" style={{width:'100%', maxHeight:340, objectFit:'cover', display:'block'}}/>
+                <div style={{position:'absolute', left:0, right:0, bottom:0, padding:'22px 14px 12px',
+                  background:'linear-gradient(to top, rgba(0,0,0,0.72), rgba(0,0,0,0))'}}>
+                  <div style={{fontSize:14, fontWeight:800, color:'#fff', textShadow:'0 1px 3px rgba(0,0,0,0.6)',
+                    overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{myActive?.dealerName || '—'}</div>
+                </div>
+              </div>
+            )}
+            <div style={{display:'flex', gap:10}}>
+              <button onClick={()=>coCamRef.current?.click()} disabled={coBusy} className="btn"
+                style={{flex:1, display:'inline-flex', alignItems:'center', justifyContent:'center', gap:6, padding:'11px', borderRadius:12, fontWeight:600}}>
+                <Camera size={14}/> Retake
+              </button>
+              <button onClick={checkOut} disabled={coBusy || !coPhoto}
+                style={{flex:2, display:'inline-flex', alignItems:'center', justifyContent:'center', gap:6, padding:'11px',
+                  borderRadius:12, border:'none', cursor:'pointer', color:'#fff', fontWeight:700,
+                  background:'linear-gradient(135deg, #dc2626, #ef4444)',
+                  opacity: (coBusy || !coPhoto) ? 0.6 : 1}}>
+                <IconOut size={14}/> {coBusy ? 'Checking out…' : 'Confirm Check out'}
               </button>
             </div>
           </div>
