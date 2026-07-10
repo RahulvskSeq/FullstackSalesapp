@@ -298,10 +298,68 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
     }
   };
 
+  // Superadmin: change an existing user's role (e.g. Admin → Employee).
+  const changeRole = async (uid, newRole) => {
+    const u = allUsers[uid];
+    if(!u || u.role === newRole) return;
+    try {
+      await api.updateUser(uid, { role: newRole });
+      const upd = { ...u, role: newRole };
+      setAllUsers({ ...allUsers, [uid]: upd });
+      if(users[uid]) setUsers({ ...users, [uid]: upd });
+      flash('success', (u.name || uid) + ' is now ' + newRole);
+    } catch(e){ flash('error', e.message || 'Could not change role'); }
+  };
+
+  // Rename a user.
+  const renameUser = async (uid) => {
+    const u = allUsers[uid]; if(!u) return;
+    const nn = window.prompt('New name for ' + (u.name || uid) + ':', u.name || '');
+    if(nn === null) return;
+    const name = nn.trim(); if(!name || name === u.name) return;
+    try {
+      await api.updateUser(uid, { name });
+      const upd = { ...u, name };
+      setAllUsers({ ...allUsers, [uid]: upd });
+      if(users[uid]) setUsers({ ...users, [uid]: upd });
+      flash('success', 'Renamed to ' + name);
+    } catch(e){ flash('error', e.message || 'Rename failed'); }
+  };
+
+  // Reassign a (resigned) salesman's dealers & records to another user.
+  const reassignSalesman = async (uid) => {
+    const u = allUsers[uid]; if(!u) return;
+    const list = Object.values(allUsers)
+      .filter(x => x.id !== uid && x.active !== false)
+      .map(x => x.id + ' — ' + x.name).join('\n');
+    const raw = window.prompt(
+      'Reassign ALL dealers & records from "' + (u.name || uid) + '" to which user?\n' +
+      'Type the target user id:\n\n' + list
+    );
+    if(raw === null) return;
+    const toId = String(raw).trim();
+    if(!toId) return;
+    if(!allUsers[toId]){ flash('error', 'No user with id "' + toId + '"'); return; }
+    if(toId === uid){ flash('error', 'Pick a different user'); return; }
+    if(!window.confirm(
+      'Move ALL dealers, sales, follow-ups, visits, attendance, tasks & leads\nfrom "' +
+      (u.name||uid) + '" → "' + (allUsers[toId].name||toId) + '"?\n\nThis cannot be auto-undone.'
+    )) return;
+    try {
+      const r = await api.reassignSalesman(uid, toId);
+      const m = r?.moved || {};
+      flash('success',
+        'Moved to ' + (allUsers[toId].name||toId) + ': ' +
+        (m.dealers||0) + ' dealers, ' + (m.sales||0) + ' sales, ' + (m.followups||0) + ' follow-ups, ' +
+        (m.visits||0) + ' visits, ' + (m.tasks||0) + ' tasks, ' + (m.leads||0) + ' leads. Reload / Sync to see updated data.');
+    } catch(e){ flash('error', e.message || 'Reassign failed'); }
+  };
+
   // Allowed roles in the create form
   const createRoleOptions = isSuperAdmin
     ? [
         { v:'salesman',   label:'Salesman' },
+        { v:'employee',   label:'Employee' },
         { v:'admin',      label:'Admin' },
         { v:'superadmin', label:'Superadmin' },
       ]
@@ -315,8 +373,8 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
     const aA = a.active !== false ? 0 : 1;
     const bA = b.active !== false ? 0 : 1;
     if(aA !== bA) return aA - bA;
-    const order = { superadmin: 0, admin: 1, salesman: 2 };
-    const aR = order[a.role] ?? 3, bR = order[b.role] ?? 3;
+    const order = { superadmin: 0, admin: 1, employee: 2, salesman: 3 };
+    const aR = order[a.role] ?? 4, bR = order[b.role] ?? 4;
     if(aR !== bR) return aR - bR;
     return (a.name || '').localeCompare(b.name || '');
   });
@@ -324,6 +382,7 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
   const roleBadge = (r) => {
     if(r === 'superadmin') return { label:'SUPERADMIN', color:'#fbbf24', bg:'rgba(251,191,36,0.12)', icon:ShieldCheck };
     if(r === 'admin')      return { label:'ADMIN',      color:'#a5b4fc', bg:'rgba(99,102,241,0.12)', icon:Shield };
+    if(r === 'employee')   return { label:'EMPLOYEE',   color:'#22d3ee', bg:'rgba(34,211,238,0.12)', icon:Shield };
     return                       { label:'SALESMAN',   color:'#86efac', bg:'rgba(34,197,94,0.12)', icon:null };
   };
 
@@ -417,6 +476,15 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
 
                 {/* Action buttons */}
                 {isSuperAdmin && !isSelf && (
+                  <select value={u.role} onChange={e=>changeRole(u.id, e.target.value)} title="Change role"
+                    style={{fontSize:11, padding:'4px 6px', borderRadius:5, background:'var(--bg1)', color:'var(--t1)', border:'1px solid var(--b2)', cursor:'pointer'}}>
+                    <option value="salesman">Salesman</option>
+                    <option value="employee">Employee</option>
+                    <option value="admin">Admin</option>
+                    <option value="superadmin">Superadmin</option>
+                  </select>
+                )}
+                {isSuperAdmin && !isSelf && (
                   <button onClick={()=>loginAs(u.id)} title={'Log in as ' + u.name}
                     style={{
                       display:'flex', alignItems:'center', gap:4,
@@ -429,6 +497,15 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
                 )}
                 {canManage(u) && (
                   <>
+                    <button className="btn" style={{fontSize:11, padding:'4px 8px'}} onClick={()=>renameUser(u.id)} title="Rename user">
+                      ✎
+                    </button>
+                    {(u.role === 'salesman' || u.role === 'employee') && (
+                      <button className="btn" style={{fontSize:11, padding:'4px 8px', color:'#fbbf24', border:'1px solid rgba(251,191,36,0.35)'}}
+                        onClick={()=>reassignSalesman(u.id)} title="Reassign this user's dealers & records to another user (e.g. on resignation)">
+                        ⇄ Reassign
+                      </button>
+                    )}
                     <button className="btn" style={{fontSize:11, padding:'4px 8px'}} onClick={()=>reset(u.id)} title="Reset password">
                       <KeyRound size={11}/>
                     </button>
@@ -440,10 +517,10 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
                         <Shield size={11}/>
                       </button>
                     )}
-                    {(u.role === 'admin' || u.role === 'salesman') && (
+                    {(u.role === 'admin' || u.role === 'salesman' || u.role === 'employee') && (
                       <>
                         <button className="btn" style={{fontSize:11, padding:'4px 8px'}} onClick={()=>openPermissions(u.id)}
-                          title="Data permissions — restrict which states this user can see">
+                          title="Data permissions & sections this user can use">
                           <MapPin size={11}/>
                         </button>
                         <button className="btn" style={{fontSize:11, padding:'4px 8px'}} onClick={()=>debugPermissions(u.id)}

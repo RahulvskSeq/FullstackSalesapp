@@ -632,7 +632,7 @@ import { MO as MO_DEFAULT } from '../constants';
 import { num, pct, spct, pclr, monthTarget } from '../utils';
 import { api } from '../api';
 import { Avatar } from './UI';
-import { confirmDialog } from './Toast';
+import { confirmDialog, notify } from './Toast';
 
 const STATUSES = ['STAR','ACTIVE','KEY ACCOUNT','ACHIVERS','REACTIVE','INACTIVE','DEAD','NEW','PROSPECT'];
 
@@ -848,6 +848,41 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
   const moIdx = MO.indexOf(month);
   const salesmen = Object.values(users).filter(u => u.role === 'salesman');
 
+  // Replace / reassign the currently-selected salesman — move ALL their
+  // dealers & records to another salesman (e.g. when someone resigns). After
+  // this the target salesman sees all the data.
+  const replaceSalesman = async () => {
+    if(!isAdmin || salesman === 'all') return;
+    const from = salesman;
+    const fromName = users[from]?.name || from;
+    const list = Object.values(users)
+      .filter(u => u.id !== from && u.active !== false)
+      .map(u => u.id + ' — ' + u.name).join('\n');
+    const raw = window.prompt(
+      'Replace "' + fromName + '" — move ALL their dealers & records to which user?\n' +
+      'Type the target user id:\n\n' + list
+    );
+    if(raw === null) return;
+    const toId = String(raw).trim();
+    if(!toId || !users[toId]){ notify.error('No user with id "' + toId + '"'); return; }
+    if(toId === from){ notify.error('Pick a different user'); return; }
+    const ok = await confirmDialog({
+      title: 'Replace salesman?',
+      message: 'Move all dealers, sales, follow-ups, visits, attendance, tasks & leads from "' +
+        fromName + '" → "' + (users[toId]?.name || toId) + '"? This cannot be auto-undone.',
+      confirmText: 'Replace', danger: true,
+    });
+    if(!ok) return;
+    try {
+      const r = await api.reassignSalesman(from, toId);
+      const m = r?.moved || {};
+      notify.success('Moved ' + (m.dealers||0) + ' dealers (+' + (m.sales||0) + ' sales, ' +
+        (m.followups||0) + ' follow-ups, ' + (m.visits||0) + ' visits) to ' + (users[toId]?.name || toId));
+      setSalesman(toId);          // switch the view to the new salesman
+      if(onSaved) onSaved();      // reload dealers so the change is visible
+    } catch(e){ notify.error(e.message || 'Replace failed'); }
+  };
+
   const filtered = useMemo(() => {
     let d = dealers;
     if(salesman !== 'all') d = d.filter(x => x.salesman === salesman);
@@ -966,9 +1001,10 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
       return;
     }
 
-    // Columns: include Salesman column when exporting "All Salesmen" so an admin
-    // can edit a combined file. Otherwise it's a clean per-salesman sheet.
-    const includeSalesman = (salesman === 'all');
+    // Columns: include the editable Salesman column for admins in BOTH the
+    // "All Salesmen" and single-salesman exports — so an admin can change a
+    // dealer's salesman in the sheet and re-upload to reassign it.
+    const includeSalesman = isAdmin;
     const headers = [
       ...(includeSalesman ? ['Salesman'] : []),
       'Dealer Name', 'City', 'State', 'Zone', 'Status',
@@ -1079,6 +1115,15 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
                 </select>
                 <ChevronDown size={13} style={{position:'absolute',right:8,top:'50%',transform:'translateY(-50%)',color:'var(--t3)',pointerEvents:'none'}}/>
               </div>
+              {salesman !== 'all' && (
+                <button type="button" onClick={replaceSalesman}
+                  title="Replace this salesman — move all their dealers & records to another user"
+                  style={{marginTop:6, display:'inline-flex', alignItems:'center', gap:5, fontSize:11, fontWeight:700,
+                    color:'#fbbf24', background:'rgba(251,191,36,0.10)', border:'1px solid rgba(251,191,36,0.35)',
+                    borderRadius:7, padding:'6px 10px', cursor:'pointer'}}>
+                  ⇄ Replace salesman
+                </button>
+              )}
             </div>
           )}
 

@@ -79,7 +79,7 @@ const fmt = (d, MO=[]) => {
 };
 
 // Staff = admin OR superadmin (both see everything). Salesmen only see their own.
-const isStaff = (req) => req.user?.role === 'admin' || req.user?.role === 'superadmin';
+const isStaff = (req) => req.user?.role === 'admin' || req.user?.role === 'superadmin' || req.user?.role === 'employee';
 
 // ── Build the role + permission scoped Mongo filter for dealer reads ──────
 // Logic (priority order):
@@ -277,7 +277,7 @@ router.post('/upload', protect, upload.single('file'), async (req,res) => {
     // includes a Salesman column (All-Salesmen upload). We compare on the
     // lowercased, space-stripped form so "Rakesh Boriwal" matches "RAKESH BORIWAL".
     let nameToId = null;
-    if(isAllMode){
+    if(isStaff(req)){   // staff uploads may carry a per-row Salesman column in either mode
       const User = mongoose.models.User || (await import('../models/User.js')).default;
       if(User){
         const allUsers = await User.find({ role:'salesman' }, 'id name').lean();
@@ -303,19 +303,20 @@ router.post('/upload', protect, upload.single('file'), async (req,res) => {
       const name=find('dealername','dealer name','name','party','firm');
       if(!name||name.length<2||/^[\d\s,]+$/.test(name)){results.skipped++;continue;}
 
-      // Per-row salesman resolution
+      // Per-row salesman resolution. A Salesman column is honored whenever it's
+      // present (both all-mode and single-mode), so editing it in the sheet
+      // reassigns the dealer. Falls back to smId when absent (single mode).
       let rowSm = smId;
-      if(isAllMode){
-        const rawSm = find('salesman','sales man','sm');
-        if(rawSm && nameToId){
-          const norm = rawSm.toLowerCase().replace(/\s+/g,' ').trim();
-          const found = nameToId.get(norm) || nameToId.get(norm.replace(/\s+/g,''));
-          if(found) rowSm = found;
-          else { results.skipped++; results.errors.push(`${name}: unknown salesman "${rawSm}"`); continue; }
-        } else {
-          // All mode but no Salesman column on row — skip to avoid mis-assigning
-          results.skipped++; results.errors.push(`${name}: missing Salesman column`); continue;
-        }
+      const rawSm = find('salesman','sales man','sm');
+      if(rawSm && nameToId){
+        const norm = rawSm.toLowerCase().replace(/\s+/g,' ').trim();
+        const found = nameToId.get(norm) || nameToId.get(norm.replace(/\s+/g,''));
+        if(found) rowSm = found;
+        else if(isAllMode){ results.skipped++; results.errors.push(`${name}: unknown salesman "${rawSm}"`); continue; }
+        // single mode + unrecognized name in column → keep the selected salesman
+      } else if(isAllMode){
+        // All mode with no Salesman column on the row — skip to avoid mis-assigning
+        results.skipped++; results.errors.push(`${name}: missing Salesman column`); continue;
       }
 
       const monthData={achieved:findNum('achieved','ach','qty','sales'),target:findNum('target','tgt'),status:find('status')||'ACTIVE',zone:find('zone'),category:find('categorytype','category'),categoryType:find('subcategory','subcat'),city:find('city'),state:find('state')};
@@ -344,22 +345,41 @@ router.post('/upload', protect, upload.single('file'), async (req,res) => {
           results.updated++;
           bump('updated', rowSm);
         } else {
-          // New dealer created by monthly upload.
-          // IMPORTANT: do NOT seed the global target from this month's target.
-          // That would cause this month's value to leak to other months via
-          // the smart-target fallback. The per-month target lives in
-          // monthlyData[month].target where it belongs.
-          await Dealer.create({
-            name, salesman:rowSm,
-            city:monthData.city||'', state:monthData.state||'', zone:monthData.zone||'',
-            status:monthData.status||'ACTIVE',
-            category:monthData.category||'', categoryType:monthData.categoryType||'',
-            target: 0,   // leave baseline empty; only sheet-sync seeds it
-            monthlyData:{[month]:monthData},
-            source:'upload',
-          });
-          results.added++;
-          bump('added', rowSm);
+          // No dealer with (name, rowSm). If a same-named dealer exists under a
+          // DIFFERENT salesman, the admin changed the Salesman column to
+          // REASSIGN it — move it (keeping its history) instead of duplicating.
+          const sameName = await Dealer.find({ name: rx }).limit(2);
+          if (isStaff(req) && sameName.length === 1) {
+            const d0 = sameName[0];
+            d0.salesman = rowSm;                 // reassign to the new salesman
+            if(!d0.monthlyData) d0.monthlyData = new Map();
+            d0.monthlyData.set(month, monthData);
+            d0.markModified('monthlyData');
+            if(monthData.city)  d0.city  = monthData.city;
+            if(monthData.state) d0.state = monthData.state;
+            if(monthData.zone)  d0.zone  = monthData.zone;
+            d0.source = 'upload';
+            await d0.save();
+            results.updated++;
+            bump('updated', rowSm);
+          } else {
+            // New dealer created by monthly upload.
+            // IMPORTANT: do NOT seed the global target from this month's target.
+            // That would cause this month's value to leak to other months via
+            // the smart-target fallback. The per-month target lives in
+            // monthlyData[month].target where it belongs.
+            await Dealer.create({
+              name, salesman:rowSm,
+              city:monthData.city||'', state:monthData.state||'', zone:monthData.zone||'',
+              status:monthData.status||'ACTIVE',
+              category:monthData.category||'', categoryType:monthData.categoryType||'',
+              target: 0,   // leave baseline empty; only sheet-sync seeds it
+              monthlyData:{[month]:monthData},
+              source:'upload',
+            });
+            results.added++;
+            bump('added', rowSm);
+          }
         }
       }catch(e){
         console.error('[UPLOAD] dealer error:', name, e.message);

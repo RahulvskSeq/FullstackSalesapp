@@ -16,7 +16,7 @@ const noteSchema = new mongoose.Schema({
 const Note = mongoose.models.Note || mongoose.model('Note', noteSchema);
 
 // Staff = admin OR superadmin (both see all notes)
-const isStaff = (req) => req.user?.role === 'admin' || req.user?.role === 'superadmin';
+const isStaff = (req) => req.user?.role === 'admin' || req.user?.role === 'superadmin' || req.user?.role === 'employee';
 
 router.get('/', protect, async (req,res) => {
   try {

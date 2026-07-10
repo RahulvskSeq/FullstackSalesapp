@@ -780,7 +780,7 @@ async function monthFilter(req) {
   }
 
   // No explicit permissions — fall back to role default.
-  if (role === 'admin') {
+  if (role === 'admin' || role === 'employee') {
     if (req.query.salesman) f.salesman = req.query.salesman;
   } else if (req.user?.id) {
     f.salesman = req.user.id;

@@ -10,7 +10,7 @@ import OutstandingFollowup from '../models/Outstandingfollowup.js';
 const router = express.Router();
 
 // Staff = admin OR superadmin (both see all follow-ups)
-const isStaff = (req) => req.user?.role === 'admin' || req.user?.role === 'superadmin';
+const isStaff = (req) => req.user?.role === 'admin' || req.user?.role === 'superadmin' || req.user?.role === 'employee';
 
 router.get('/', protect, async (req,res) => {
   try {
@@ -38,7 +38,7 @@ router.get('/', protect, async (req,res) => {
       if (hasSalesmen) filt.salesman = { $in: p.salesmen };
       const dealers = await Dealer.find(filt, 'name').lean();
       allowedNames = new Set(dealers.map(d => (d.name || '').toLowerCase().trim()));
-    } else if (req.user?.role === 'admin') {
+    } else if (req.user?.role === 'admin' || req.user?.role === 'employee') {
       return res.json(await OutstandingFollowup.find({}).sort({createdAt:-1}));
     } else {
       // Salesman default → own dealers only

@@ -36,7 +36,7 @@ router.get('/', protect, async (req, res) => {
 });
 
 // Staff = admin OR superadmin (both see all sample records)
-const isStaff = (req) => req.user?.role === 'admin' || req.user?.role === 'superadmin';
+const isStaff = (req) => req.user?.role === 'admin' || req.user?.role === 'superadmin' || req.user?.role === 'employee';
 
 // GET /api/samples/given — get all given records
 router.get('/given', protect, async (req, res) => {

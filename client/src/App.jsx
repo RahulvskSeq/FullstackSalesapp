@@ -15778,7 +15778,7 @@ export default function App(){
   },[currentUser]);
 
   // Staff = admin OR superadmin (both see all dealers/notes)
-  const isStaff = currentUser?.role==='admin' || currentUser?.role==='superadmin';
+  const isStaff = currentUser?.role==='admin' || currentUser?.role==='superadmin' || currentUser?.role==='employee';
 
   // Apply the global category filter to the dealer set BEFORE per-user scoping.
   // Every screen reads `dealer.months[currentMonthIdx]`; the hook substitutes
@@ -16493,7 +16493,7 @@ export default function App(){
             <Avatar user={currentUser} size={26}/>
             <div className="hide-sm" style={{display:'flex',flexDirection:'column'}}>
               <div style={{fontSize:12,fontWeight:600,color:'var(--t1)',lineHeight:1.1,whiteSpace:'nowrap'}}>{currentUser.name}</div>
-              <div style={{fontSize:10,color:'var(--t3)'}}>{currentUser.role==='superadmin'?'Superadmin':currentUser.role==='admin'?'Admin':'Sales'}</div>
+              <div style={{fontSize:10,color:'var(--t3)'}}>{currentUser.role==='superadmin'?'Superadmin':currentUser.role==='admin'?'Admin':currentUser.role==='employee'?'Employee':'Sales'}</div>
             </div>
 
             {/* ── Sign out — always visible, icon + text on desktop ── */}
@@ -16625,7 +16625,7 @@ export default function App(){
                 <Avatar user={currentUser} size={30}/>
                 <div style={{flex:1, minWidth:0}}>
                   <div style={{fontSize:12, fontWeight:600, color:'var(--t1)', lineHeight:1.1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>{currentUser.name}</div>
-                  <div style={{fontSize:10, color:'var(--t3)'}}>{currentUser.role==='superadmin'?'Superadmin':currentUser.role==='admin'?'Admin':'Sales'}</div>
+                  <div style={{fontSize:10, color:'var(--t3)'}}>{currentUser.role==='superadmin'?'Superadmin':currentUser.role==='admin'?'Admin':currentUser.role==='employee'?'Employee':'Sales'}</div>
                 </div>
                 <button onClick={handleLogout} className="btn"
                   title="Sign out"

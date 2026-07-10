@@ -225,9 +225,9 @@ router.post('/users', protect, adminOnly, async (req, res) => {
   if(exists) return res.status(400).json({ error:'User already exists' });
 
   const wantRole = role || 'salesman';
-  // Only superadmin can create admins or other superadmins
-  if(req.user.role !== 'superadmin' && (wantRole === 'admin' || wantRole === 'superadmin')){
-    return res.status(403).json({ error:'Only superadmin can create admins or superadmins' });
+  // Only superadmin can create elevated roles (employee/admin/superadmin).
+  if(req.user.role !== 'superadmin' && (wantRole === 'employee' || wantRole === 'admin' || wantRole === 'superadmin')){
+    return res.status(403).json({ error:'Only superadmin can create employees, admins or superadmins' });
   }
 
   const doc = {
@@ -245,6 +245,41 @@ router.post('/users', protect, adminOnly, async (req, res) => {
   }
   const user = await User.create(doc);
   res.json(user);
+});
+
+// ── POST /api/auth/users/:id/reassign ──────────────────────────────────────
+// Move a salesman's dealers AND all their related records to another user —
+// e.g. when a salesman resigns. Reassigns: dealers, sales, outstanding
+// follow-ups, visits, attendance, tasks and leads. Admin/superadmin only.
+router.post('/users/:id/reassign', protect, adminOnly, async (req, res) => {
+  try {
+    const fromId = req.params.id;
+    const toId = String(req.body?.toId || '').trim();
+    if(!toId) return res.status(400).json({ error:'toId (target salesman) required' });
+    if(toId === fromId) return res.status(400).json({ error:'Source and target are the same user' });
+    const to = await User.findOne({ id: toId }, 'id name').lean();
+    if(!to) return res.status(404).json({ error:'Target user not found' });
+    const toName = to.name || toId;
+
+    const moved = {};
+    const Dealer = (await import('../models/Dealer.js')).default;
+    moved.dealers = (await Dealer.updateMany({ salesman: fromId }, { $set:{ salesman: toId } })).modifiedCount || 0;
+
+    // Best-effort for the rest — a missing collection shouldn't abort the move.
+    const tryMove = async (key, path, filter, set) => {
+      try { const M = (await import(path)).default; moved[key] = (await M.updateMany(filter, { $set:set })).modifiedCount || 0; }
+      catch(e){ console.warn('[REASSIGN] ' + key + ' skipped:', e.message); moved[key] = 0; }
+    };
+    await tryMove('sales',      '../models/Sale.js',                { salesman: fromId }, { salesman: toId });
+    await tryMove('followups',  '../models/Outstandingfollowup.js', { salesman: fromId }, { salesman: toId });
+    await tryMove('visits',     '../models/Visit.js',               { userId: fromId },   { userId: toId, userName: toName });
+    await tryMove('attendance', '../models/Attendance.js',          { userId: fromId },   { userId: toId, userName: toName });
+    await tryMove('tasks',      '../models/Task.js',                { assignedTo: fromId },{ assignedTo: toId });
+    await tryMove('leads',      '../models/Lead.js',                { assignedTo: fromId },{ assignedTo: toId });
+
+    console.log('[REASSIGN] ' + fromId + ' → ' + toId, moved);
+    res.json({ ok:true, from:fromId, to:toId, toName, moved });
+  } catch(e){ console.error('[REASSIGN]', e.message); res.status(500).json({ error:e.message }); }
 });
 
 // ── DELETE /api/auth/users/:id ─────────────────────────────────────────────

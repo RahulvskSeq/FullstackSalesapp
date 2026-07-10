@@ -1679,6 +1679,7 @@ export const api = {
   }).then(handle),
 
   updateUser:  (id,d)  => fetch(`${BASE}/auth/users/${id}`,{method:'PUT',headers:authHeaders(),body:JSON.stringify(d)}).then(handle),
+  reassignSalesman: (fromId, toId) => fetch(`${BASE}/auth/users/${encodeURIComponent(fromId)}/reassign`,{method:'POST',headers:authHeaders(),body:JSON.stringify({toId})}).then(handle),
 
   getDealers:   (MO=[]) => fetch(`${BASE}/dealers?mo=${MO.join(',')}`,{headers:authHeaders()}).then(handle),
   createDealer: (d)     => fetch(`${BASE}/dealers`,{method:'POST',headers:authHeaders(),body:JSON.stringify(d)}).then(handle),

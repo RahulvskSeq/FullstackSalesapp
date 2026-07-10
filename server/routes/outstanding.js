@@ -25,7 +25,7 @@ const toPlain = (doc) => {
 };
 
 // Staff = admin OR superadmin (both see all outstanding)
-const isStaff = (req) => req.user?.role === 'admin' || req.user?.role === 'superadmin';
+const isStaff = (req) => req.user?.role === 'admin' || req.user?.role === 'superadmin' || req.user?.role === 'employee';
 
 router.get('/', protect, async (req, res) => {
   try {

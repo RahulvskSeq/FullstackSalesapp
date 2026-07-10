@@ -23,7 +23,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits:{ fileSize:10*10
 const router = express.Router();
 
 // Helper: admin OR superadmin (same set we use elsewhere)
-const isStaff = (req) => req.user?.role === 'admin' || req.user?.role === 'superadmin';
+const isStaff = (req) => req.user?.role === 'admin' || req.user?.role === 'superadmin' || req.user?.role === 'employee';
 const todayStr = () => new Date().toISOString().slice(0,10);
 
 // Return the list of dealer NAMES a user is permitted to see based on their
@@ -56,7 +56,7 @@ async function permittedDealerNames(req) {
       return dealers.map(d => d.name);
     }
     // No permissions set → role default
-    if (req.user?.role === 'admin') return null;   // admins see all
+    if (req.user?.role === 'admin' || req.user?.role === 'employee') return null;   // admins/employees see all
     // Salesman → only their own dealers
     const own = await Dealer.find({ salesman: req.user.id }, 'name').lean();
     return own.map(d => d.name);
@@ -281,11 +281,20 @@ router.get('/visits', protect, async (req, res) => {
     // to the dealer names they're permitted to see. Falls back to role
     // default (own dealers for salesman, all for admin).
     const names = await permittedDealerNames(req);
-    if (names !== null) {
-      q.dealerName = names.length ? { $in: names } : { $in: ['__no_match__'] };
-    } else if (req.query.userId) {
+    if (req.query.userId) {
+      // Staff filtering to a specific user's visits.
       q.userId = req.query.userId;
+    } else if (names !== null) {
+      // Scoped user (salesman / regional manager): ALWAYS include their OWN
+      // visits — this covers NEW-dealer visits whose dealerName isn't in the
+      // roster yet (otherwise the salesman couldn't see their active visit or
+      // check out). Plus any dealers their permissions allow.
+      q.$or = [
+        { userId: req.user.id },
+        { dealerName: names.length ? { $in: names } : { $in: ['__no_match__'] } },
+      ];
     }
+    // else names === null and no userId filter → admin/superadmin sees all.
     if(req.query.dealerName){
       q.dealerName = new RegExp('^' + String(req.query.dealerName).replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + '$','i');
     }

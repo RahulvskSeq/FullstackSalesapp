@@ -5,9 +5,11 @@ const S = new mongoose.Schema({
   pass:            { type:String, required:true },
   // Roles (ascending privilege):
   //   salesman   — sees only their own dealers, follow-ups, monthly entries
+  //   employee   — admin-level VISIBILITY (sees all data) but cannot manage users,
+  //                delete, sync or upload; sections granted per-user via permissions.features
   //   admin      — sees all data, can manage salesmen, cannot manage admins/superadmins, cannot impersonate
   //   superadmin — full access including managing all users and impersonating any user
-  role:            { type:String, enum:['salesman','admin','superadmin'], default:'salesman' },
+  role:            { type:String, enum:['salesman','employee','admin','superadmin'], default:'salesman' },
   color:           { type:String, default:'#818cf8' },
   ini:             { type:String, default:'??' },
   url:             { type:String, default:null },
