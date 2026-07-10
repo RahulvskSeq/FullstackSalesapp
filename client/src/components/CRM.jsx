@@ -310,10 +310,27 @@ export function AttendancePage({ users, currentUser }){
     .sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt));
   const lastType = todays.length ? todays[todays.length-1].type : null;
 
-  // Step 1: validate, then open the camera directly.
-  const startPunch = (type) => {
+  // Step 1: validate + REQUIRE a GPS fix (prompts for permission / asks the
+  // user to turn on location), then open the camera.
+  const startPunch = async (type) => {
     if(type === 'in'  && lastType === 'in'){ notify.error('Already checked in — check out first'); return; }
     if(type === 'out' && lastType !== 'in'){ notify.error('Check in first'); return; }
+    setBusy(true);
+    let l = loc;
+    if(l.lat == null){
+      // Fetch now — this triggers the OS/browser location permission prompt.
+      const r = await getLocation();
+      if(r.lat != null){
+        const geo = await reverseGeocode(r.lat, r.lng);
+        l = { ...r, ...geo };
+        setLoc(l);
+      }
+    }
+    setBusy(false);
+    if(l.lat == null){
+      notify.error('Turn on GPS / Location and allow access to mark attendance, then try again.');
+      return;
+    }
     setPendingType(type);
     attCamRef.current?.click();
   };
