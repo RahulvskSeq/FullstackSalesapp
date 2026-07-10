@@ -351,7 +351,8 @@ router.post('/upload', protect, upload.single('file'), async (req,res) => {
           const sameName = await Dealer.find({ name: rx }).limit(2);
           if (isStaff(req) && sameName.length === 1) {
             const d0 = sameName[0];
-            d0.salesman = rowSm;                 // reassign to the new salesman
+            const oldSm = d0.salesman;           // remember for moving related records
+            d0.salesman = rowSm;                 // reassign the dealer
             if(!d0.monthlyData) d0.monthlyData = new Map();
             d0.monthlyData.set(month, monthData);
             d0.markModified('monthlyData');
@@ -360,6 +361,16 @@ router.post('/upload', protect, upload.single('file'), async (req,res) => {
             if(monthData.zone)  d0.zone  = monthData.zone;
             d0.source = 'upload';
             await d0.save();
+            // Also move this dealer's SALES and OUTSTANDING FOLLOW-UPS to the
+            // new salesman so their whole footprint follows the reassignment.
+            try {
+              const Sale = mongoose.models.Sale || (await import('../models/Sale.js')).default;
+              await Sale.updateMany({ dealerName: rx, salesman: oldSm }, { $set:{ salesman: rowSm } });
+            } catch(e){ console.warn('[UPLOAD reassign] sales move failed:', e.message); }
+            try {
+              const F = (await import('../models/Outstandingfollowup.js')).default;
+              await F.updateMany({ dealerName: rx, salesman: oldSm }, { $set:{ salesman: rowSm } });
+            } catch(e){ console.warn('[UPLOAD reassign] followups move failed:', e.message); }
             results.updated++;
             bump('updated', rowSm);
           } else {
