@@ -15626,6 +15626,19 @@ export default function App(){
     })();
   },[]);
 
+  // When the logged-in user SWITCHES (relogin / login-as on the same browser),
+  // drop the previous user's cached dealers/notes/outstanding so one user's
+  // (possibly unscoped) data never leaks into another user's session. The
+  // scoped loadFromDB() then repopulates for the new user.
+  const prevUserIdRef = useRef(null);
+  useEffect(()=>{
+    const id = currentUser?.id || null;
+    if(prevUserIdRef.current !== null && prevUserIdRef.current !== id){
+      setDealers([]); setNotes([]); setOutstandingData([]); setOutFollowups([]);
+    }
+    prevUserIdRef.current = id;
+  },[currentUser?.id]);
+
   // ── Persist ───────────────────────────────────────────────
   useEffect(()=>{storage.set('users',users);},[users]);
   useEffect(()=>{storage.set('dealers',dealers);},[dealers]);
@@ -15665,6 +15678,10 @@ export default function App(){
     clearCookie();
     localStorage.removeItem('stp_impersonating');
     setImpersonatingFrom(null);
+    // Clear this user's cached data so the NEXT user who logs in on the same
+    // browser doesn't boot with the previous user's (possibly unscoped) dealers.
+    // setDealers([]) triggers the persist effect which writes [] to storage.
+    setDealers([]); setNotes([]); setOutstandingData([]); setOutFollowups([]);
     setScreen('overview');
     window.history.replaceState({screen:'overview'}, '', '#/overview');
   },[]);
@@ -15790,7 +15807,16 @@ export default function App(){
 
   const myDealers=useMemo(()=>{
     if(!currentUser)return[];
-    return isStaff?dealersGloballyFiltered:dealersGloballyFiltered.filter(d=>d.salesman===currentUser.id);
+    if(isStaff) return dealersGloballyFiltered;
+    // A salesman with data-scope permissions (state/city/zone/salesman) is
+    // already scoped correctly by the SERVER — it returns own + permitted
+    // dealers. Re-filtering to own-only here would drop the permitted ones,
+    // so trust the server list when any permission is set.
+    const perm = currentUser.permissions || {};
+    const hasScope = ['states','cities','zones','salesmen']
+      .some(k => Array.isArray(perm[k]) && perm[k].length > 0);
+    if(hasScope) return dealersGloballyFiltered;
+    return dealersGloballyFiltered.filter(d=>d.salesman===currentUser.id);
   },[dealersGloballyFiltered,currentUser,isStaff]);
 
   const myNotes=useMemo(()=>{

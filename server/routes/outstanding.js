@@ -49,9 +49,12 @@ router.get('/', protect, async (req, res) => {
       // Case-insensitive state/city/zone match — see dealers.js for rationale.
       const escape = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const ciMatch = v => new RegExp('^\\s*' + escape(v) + '\\s*$', 'i');
-      if (hasStates)   dealerFilter.state    = { $in: p.states.map(ciMatch) };
-      if (hasCities)   dealerFilter.city     = { $in: p.cities.map(ciMatch) };
-      if (hasZones)    dealerFilter.zone     = { $in: p.zones.map(ciMatch) };
+      // Geography OR among itself; salesmen AND-narrows (see dealers.js).
+      const geo = [];
+      if (hasStates) geo.push({ state: { $in: p.states.map(ciMatch) } });
+      if (hasCities) geo.push({ city:  { $in: p.cities.map(ciMatch) } });
+      if (hasZones)  geo.push({ zone:  { $in: p.zones.map(ciMatch) } });
+      if (geo.length) dealerFilter.$or = geo;
       if (hasSalesmen) dealerFilter.salesman = { $in: p.salesmen };
     } else if (req.user?.role === 'salesman') {
       dealerFilter = { salesman: req.user.id };

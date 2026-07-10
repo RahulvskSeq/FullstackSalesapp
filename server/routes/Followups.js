@@ -29,12 +29,15 @@ router.get('/', protect, async (req,res) => {
 
     let allowedNames = null;
     if (hasStates || hasCities || hasZones || hasSalesmen) {
-      const filt = {};
       const escape = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const ciMatch = v => new RegExp('^\\s*' + escape(v) + '\\s*$', 'i');
-      if (hasStates)   filt.state    = { $in: p.states.map(ciMatch) };
-      if (hasCities)   filt.city     = { $in: p.cities.map(ciMatch) };
-      if (hasZones)    filt.zone     = { $in: p.zones.map(ciMatch) };
+      // Geography OR among itself; salesmen AND-narrows (see dealers.js).
+      const filt = {};
+      const geo = [];
+      if (hasStates) geo.push({ state: { $in: p.states.map(ciMatch) } });
+      if (hasCities) geo.push({ city:  { $in: p.cities.map(ciMatch) } });
+      if (hasZones)  geo.push({ zone:  { $in: p.zones.map(ciMatch) } });
+      if (geo.length) filt.$or = geo;
       if (hasSalesmen) filt.salesman = { $in: p.salesmen };
       const dealers = await Dealer.find(filt, 'name').lean();
       allowedNames = new Set(dealers.map(d => (d.name || '').toLowerCase().trim()));

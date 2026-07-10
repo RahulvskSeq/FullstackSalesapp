@@ -18,6 +18,9 @@ const buildLoginResponse = (user, extraTokenClaims = {}) => {
       id: user.id, name: user.name, role: user.role,
       color: user.color, ini: user.ini,
       url: user.url, url2: user.url2, url_outstanding: user.url_outstanding,
+      // Include the data-scope permissions so the client knows a salesman is
+      // permission-scoped (and shouldn't be re-filtered to own dealers only).
+      permissions: user.permissions || {},
     },
     ...(extraTokenClaims.impersonatedBy ? { impersonatedBy: extraTokenClaims.impersonatedBy } : {}),
   };
@@ -237,10 +240,15 @@ router.post('/users', protect, adminOnly, async (req, res) => {
     ini: ini || name.slice(0, 2).toUpperCase(),
   };
   if (permissions && typeof permissions === 'object') {
+    const clean = arr => Array.isArray(arr)
+      ? [...new Set(arr.map(v => String(v).trim()).filter(Boolean))]
+      : [];
     doc.permissions = {
-      states:   Array.isArray(permissions.states)   ? permissions.states   : [],
-      zones:    Array.isArray(permissions.zones)    ? permissions.zones    : [],
-      salesmen: Array.isArray(permissions.salesmen) ? permissions.salesmen : [],
+      states:   clean(permissions.states),
+      cities:   clean(permissions.cities),    // ← was dropped on create; city ticks vanished
+      zones:    clean(permissions.zones),
+      salesmen: clean(permissions.salesmen),
+      features: clean(permissions.features),  // ← same story for feature toggles
     };
   }
   const user = await User.create(doc);

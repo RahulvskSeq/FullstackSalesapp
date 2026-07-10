@@ -105,15 +105,21 @@ async function dealerScopeFilter(req) {
   const hasSalesmen = Array.isArray(p.salesmen) && p.salesmen.length > 0;
 
   if (hasStates || hasCities || hasZones || hasSalesmen) {
-    const filt = {};
     // Case-insensitive + whitespace-tolerant match. So a saved permission
     // of "Bangalore" still matches dealer rows stored as "bangalore",
     // "BANGALORE", "Bangalore " etc. Same trick handles legacy uploads.
     const escape = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const ciMatch = v => new RegExp('^\\s*' + escape(v) + '\\s*$', 'i');
-    if (hasStates)   filt.state    = { $in: p.states.map(ciMatch) };
-    if (hasCities)   filt.city     = { $in: p.cities.map(ciMatch) };
-    if (hasZones)    filt.zone     = { $in: p.zones.map(ciMatch) };
+    // Geography (states/cities/zones) → OR among themselves so granting a few
+    // territories shows dealers in ANY of them. Salesmen is a SEPARATE grant
+    // and is AND-combined (narrows within the territory) so a broad salesman
+    // list can't blow the scope open to every dealer.
+    const filt = {};
+    const geo = [];
+    if (hasStates) geo.push({ state: { $in: p.states.map(ciMatch) } });
+    if (hasCities) geo.push({ city:  { $in: p.cities.map(ciMatch) } });
+    if (hasZones)  geo.push({ zone:  { $in: p.zones.map(ciMatch) } });
+    if (geo.length) filt.$or = geo;
     if (hasSalesmen) filt.salesman = { $in: p.salesmen };   // salesman ids are already lowercase
     return filt;
   }
@@ -1115,7 +1121,14 @@ router.get('/:id', protect, async (req,res) => {
   try {
     const d=await Dealer.findById(req.params.id).lean();
     if(!d) return res.status(404).json({error:'Not found'});
-    if(!isStaff(req)&&d.salesman!==req.user.id) return res.status(403).json({error:'Not your dealer'});
+    // Allow if staff, if it's the user's own dealer, OR if the dealer falls
+    // within the user's permission scope (state/city/zone/salesman) — so a
+    // salesman granted a city/state can open those dealers' details too.
+    if(!isStaff(req) && d.salesman!==req.user.id){
+      const scope = await dealerScopeFilter(req);
+      const inScope = await Dealer.exists({ _id: d._id, ...scope });
+      if(!inScope) return res.status(403).json({error:'Not your dealer'});
+    }
     res.json(fmt(d,req.query.mo?.split(',')||[]));
   }catch(e){res.status(500).json({error:e.message});}
 });
