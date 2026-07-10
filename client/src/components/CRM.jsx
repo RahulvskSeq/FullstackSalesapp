@@ -289,6 +289,10 @@ export function AttendancePage({ users, currentUser }){
   const [busy, setBusy]     = useState(false);
   const [filterUser, setFilterUser] = useState('');
   const [zoom, setZoom]     = useState('');
+  // Camera-first punch flow (like Visits): button → camera → preview → confirm.
+  const attCamRef = useRef(null);
+  const [attPreview, setAttPreview] = useState(false);
+  const [pendingType, setPendingType] = useState(null); // 'in' | 'out'
 
   const load = async () => {
     setLoading(true);
@@ -306,6 +310,27 @@ export function AttendancePage({ users, currentUser }){
     .sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt));
   const lastType = todays.length ? todays[todays.length-1].type : null;
 
+  // Step 1: validate, then open the camera directly.
+  const startPunch = (type) => {
+    if(type === 'in'  && lastType === 'in'){ notify.error('Already checked in — check out first'); return; }
+    if(type === 'out' && lastType !== 'in'){ notify.error('Check in first'); return; }
+    setPendingType(type);
+    attCamRef.current?.click();
+  };
+  // Step 2: photo taken → compress → show confirm modal.
+  const onAttPhoto = async (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if(!f) return;
+    setBusy(true);
+    try {
+      const dataUrl = await fileToCompressedDataURL(f);
+      setPhoto(dataUrl);
+      setAttPreview(true);
+    } catch(err){ notify.error('Photo: ' + err.message); }
+    setBusy(false);
+  };
+
   const punch = async (type) => {
     if(!photo){ notify.error('Capture a photo first'); return; }
     setBusy(true);
@@ -318,7 +343,7 @@ export function AttendancePage({ users, currentUser }){
         state:   loc.state   || '',
       });
       notify.success(type === 'in' ? 'Checked in' : 'Checked out');
-      setPhoto(''); setNote('');
+      setPhoto(''); setNote(''); setAttPreview(false);
       load();
     } catch(e){ notify.error('Punch: ' + e.message); }
     setBusy(false);
@@ -338,31 +363,37 @@ export function AttendancePage({ users, currentUser }){
         <div style={{fontSize:13, fontWeight:700, marginBottom:10, display:'flex', alignItems:'center', gap:8}}>
           <Briefcase size={14}/> Mark your attendance — {fmtDate(new Date())}
         </div>
-        <div className="crm-row">
-          <PhotoCapture photo={photo} setPhoto={setPhoto} label="Take selfie"/>
-          <LocationCapture loc={loc} setLoc={setLoc}/>
-          <div style={{flex:'1 1 200px', minWidth:160}}>
-            <VoiceInput placeholder="Note (optional) — tap 🎤 to speak"
-              value={note} onChange={setNote}/>
-          </div>
-          <button onClick={()=>punch('in')} disabled={busy || !photo || lastType === 'in'}
-            className="btnp"
+        {/* GPS captured silently in the background — no visible box. */}
+        <LocationCapture loc={loc} setLoc={setLoc} hidden/>
+        {/* Hidden front camera — a button opens it directly (selfie). */}
+        <input ref={attCamRef} type="file" accept="image/*" capture="user"
+          style={{display:'none'}} onChange={onAttPhoto}/>
+        <div style={{marginBottom:10}}>
+          <VoiceInput placeholder="Note (optional) — tap 🎤 to speak"
+            value={note} onChange={setNote}/>
+        </div>
+        <div style={{display:'flex', gap:10, flexWrap:'wrap'}}>
+          <button onClick={()=>startPunch('in')} disabled={busy || lastType === 'in'}
             style={{
-              display:'inline-flex', alignItems:'center', gap:6,
-              opacity:(!photo || lastType==='in') ? 0.5 : 1,
-              cursor:(!photo || lastType==='in') ? 'not-allowed' : 'pointer',
+              flex:'1 1 160px', display:'inline-flex', alignItems:'center', justifyContent:'center', gap:8,
+              padding:'14px', borderRadius:14, border:'none', cursor: lastType==='in'?'not-allowed':'pointer',
+              fontSize:15, fontWeight:800, color:'#fff',
+              background:'linear-gradient(135deg,#16a34a,#22c55e)',
+              boxShadow:'0 8px 22px rgba(34,197,94,0.3)',
+              opacity:(busy || lastType==='in') ? 0.5 : 1,
             }}>
-            <IconIn size={13}/> Check In
+            <IconIn size={16}/> Check In
           </button>
-          <button onClick={()=>punch('out')} disabled={busy || !photo || lastType !== 'in'}
-            className="btn"
+          <button onClick={()=>startPunch('out')} disabled={busy || lastType !== 'in'}
             style={{
-              display:'inline-flex', alignItems:'center', gap:6,
-              background:'#dc2626', color:'#fff', border:'1px solid #b91c1c',
-              opacity:(!photo || lastType !== 'in') ? 0.5 : 1,
-              cursor:(!photo || lastType !== 'in') ? 'not-allowed' : 'pointer',
+              flex:'1 1 160px', display:'inline-flex', alignItems:'center', justifyContent:'center', gap:8,
+              padding:'14px', borderRadius:14, border:'none', cursor: lastType!=='in'?'not-allowed':'pointer',
+              fontSize:15, fontWeight:800, color:'#fff',
+              background:'linear-gradient(135deg,#dc2626,#ef4444)',
+              boxShadow:'0 8px 22px rgba(220,38,38,0.3)',
+              opacity:(busy || lastType!=='in') ? 0.5 : 1,
             }}>
-            <IconOut size={13}/> Check Out
+            <IconOut size={16}/> Check Out
           </button>
         </div>
         {todays.length > 0 && (
@@ -448,6 +479,52 @@ export function AttendancePage({ users, currentUser }){
         )}
       </div>
       <ImageModal src={zoom} onClose={()=>setZoom('')}/>
+
+      {/* Selfie preview confirm modal — camera → this → confirm. */}
+      {attPreview && (
+        <div onClick={()=>!busy && setAttPreview(false)}
+          style={{position:'fixed', inset:0, background:'rgba(6,6,16,0.82)', backdropFilter:'blur(4px)',
+            zIndex:3000, display:'flex', alignItems:'center', justifyContent:'center', padding:16}}>
+          <div onClick={e=>e.stopPropagation()}
+            style={{background:'var(--bg1)', border:'1px solid var(--b2)', borderRadius:22, padding:18,
+              width:360, maxWidth:'94%', display:'flex', flexDirection:'column', gap:14,
+              boxShadow:'0 24px 60px rgba(0,0,0,0.55)'}}>
+            <div style={{display:'flex', alignItems:'center', gap:8}}>
+              <div style={{width:30, height:30, borderRadius:'50%',
+                background: pendingType==='in' ? 'rgba(34,197,94,0.15)' : 'rgba(220,38,38,0.15)',
+                display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0}}>
+                <Camera size={15} style={{color: pendingType==='in' ? '#22c55e' : '#ef4444'}}/>
+              </div>
+              <div style={{fontSize:14, fontWeight:800, color:'var(--t1)', flex:1}}>
+                Confirm {pendingType === 'in' ? 'Check In' : 'Check Out'}
+              </div>
+              <button onClick={()=>!busy && setAttPreview(false)} disabled={busy}
+                style={{background:'none', border:'none', color:'var(--t3)', cursor:'pointer', padding:2, lineHeight:1}}>
+                <X size={18}/>
+              </button>
+            </div>
+            {photo && (
+              <img src={photo} alt="selfie"
+                style={{width:'100%', borderRadius:20, maxHeight:340, objectFit:'cover',
+                  border:'1px solid var(--b2)', boxShadow:'0 8px 24px rgba(0,0,0,0.35)'}}/>
+            )}
+            <div style={{display:'flex', gap:10}}>
+              <button onClick={()=>attCamRef.current?.click()} disabled={busy} className="btn"
+                style={{flex:1, display:'inline-flex', alignItems:'center', justifyContent:'center', gap:6, padding:'11px', borderRadius:12, fontWeight:600}}>
+                <Camera size={14}/> Retake
+              </button>
+              <button onClick={()=>punch(pendingType)} disabled={busy || !photo}
+                style={{flex:2, display:'inline-flex', alignItems:'center', justifyContent:'center', gap:6, padding:'11px',
+                  borderRadius:12, border:'none', cursor:'pointer', color:'#fff', fontWeight:700,
+                  background: pendingType==='in' ? 'linear-gradient(135deg,#16a34a,#22c55e)' : 'linear-gradient(135deg,#dc2626,#ef4444)',
+                  opacity:(busy || !photo) ? 0.6 : 1}}>
+                {pendingType === 'in' ? <IconIn size={14}/> : <IconOut size={14}/>}
+                {busy ? 'Saving…' : (pendingType === 'in' ? 'Confirm Check In' : 'Confirm Check Out')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
