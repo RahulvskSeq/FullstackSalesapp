@@ -309,12 +309,38 @@ export function AttendancePage({ users, currentUser }){
   const todays = items.filter(x => x.userId === currentUser.id && x.dateStr === todayStr())
     .sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt));
   const lastType = todays.length ? todays[todays.length-1].type : null;
+  // The most recent check-IN today (for the "currently checked in" card).
+  const lastIn = [...todays].reverse().find(t => t.type === 'in');
+  const lastInPhoto = lastIn?.photo || lastIn?.checkInPhoto || '';
+  // One check-in + one check-out per day. Once both are done, attendance is
+  // complete for the day and no more punches are allowed.
+  const hasIn  = todays.some(t => t.type === 'in');
+  const hasOut = todays.some(t => t.type === 'out');
+  const lastOut = [...todays].reverse().find(t => t.type === 'out');
+  const dayDone = hasIn && hasOut;
+
+  // Group history into ONE chip per user per day (IN + OUT together).
+  const groupedHistory = useMemo(() => {
+    const map = new Map();
+    for(const x of items){
+      const day = x.dateStr || String(x.createdAt || '').slice(0, 10);
+      const key = (x.userId || '') + '|' + day;
+      if(!map.has(key)) map.set(key, { key, userId:x.userId, userName:x.userName, day, in:null, out:null, ts:0 });
+      const g = map.get(key);
+      if(x.type === 'in')  g.in  = x;
+      if(x.type === 'out') g.out = x;
+      const t = new Date(x.createdAt || 0).getTime();
+      if(t > g.ts) g.ts = t;
+    }
+    return [...map.values()].sort((a,b) => b.ts - a.ts);
+  }, [items]);
 
   // Step 1: validate + REQUIRE a GPS fix (prompts for permission / asks the
   // user to turn on location), then open the camera.
   const startPunch = async (type) => {
-    if(type === 'in'  && lastType === 'in'){ notify.error('Already checked in — check out first'); return; }
-    if(type === 'out' && lastType !== 'in'){ notify.error('Check in first'); return; }
+    if(type === 'in'  && hasIn){ notify.error('You have already checked in today'); return; }
+    if(type === 'out' && !hasIn){ notify.error('Check in first'); return; }
+    if(type === 'out' && hasOut){ notify.error('You have already checked out today'); return; }
     setBusy(true);
     let l = loc;
     if(l.lat == null){
@@ -389,29 +415,57 @@ export function AttendancePage({ users, currentUser }){
           <VoiceInput placeholder="Note (optional) — tap 🎤 to speak"
             value={note} onChange={setNote}/>
         </div>
+        {/* Status strip — check-in / check-out selfies once punched */}
+        {(hasIn || hasOut) && (
+          <div style={{display:'flex', alignItems:'center', gap:12, flexWrap:'wrap', marginBottom:12,
+            background:'var(--bg2)', border:'1px solid '+(dayDone ? 'var(--b2)' : '#15803d'), borderRadius:16, padding:12}}>
+            {lastInPhoto && (
+              <img src={lastInPhoto} alt="in" onClick={()=>setZoom(lastInPhoto)}
+                style={{width:56, height:56, borderRadius:12, objectFit:'cover', border:'2px solid #22c55e', cursor:'pointer'}}/>
+            )}
+            {(lastOut?.photo) && (
+              <img src={lastOut.photo} alt="out" onClick={()=>setZoom(lastOut.photo)}
+                style={{width:56, height:56, borderRadius:12, objectFit:'cover', border:'2px solid #ef4444', cursor:'pointer'}}/>
+            )}
+            <div style={{flex:1, minWidth:120}}>
+              <div style={{fontSize:13, fontWeight:800, color: dayDone ? 'var(--t1)' : '#34d399'}}>
+                {dayDone ? '✓ Attendance complete for today' : '● Currently checked in'}
+              </div>
+              <div style={{fontSize:11, color:'var(--t3)', marginTop:2}}>
+                In {lastIn ? new Date(lastIn.createdAt).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}) : '—'}
+                {' · '}Out {lastOut ? new Date(lastOut.createdAt).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}) : '—'}
+              </div>
+            </div>
+          </div>
+        )}
+        {/* Both buttons ALWAYS visible — just disabled when not applicable */}
         <div style={{display:'flex', gap:10, flexWrap:'wrap'}}>
-          <button onClick={()=>startPunch('in')} disabled={busy || lastType === 'in'}
-            style={{
-              flex:'1 1 160px', display:'inline-flex', alignItems:'center', justifyContent:'center', gap:8,
-              padding:'14px', borderRadius:14, border:'none', cursor: lastType==='in'?'not-allowed':'pointer',
-              fontSize:15, fontWeight:800, color:'#fff',
-              background:'linear-gradient(135deg,#16a34a,#22c55e)',
-              boxShadow:'0 8px 22px rgba(34,197,94,0.3)',
-              opacity:(busy || lastType==='in') ? 0.5 : 1,
-            }}>
-            <IconIn size={16}/> Check In
-          </button>
-          <button onClick={()=>startPunch('out')} disabled={busy || lastType !== 'in'}
-            style={{
-              flex:'1 1 160px', display:'inline-flex', alignItems:'center', justifyContent:'center', gap:8,
-              padding:'14px', borderRadius:14, border:'none', cursor: lastType!=='in'?'not-allowed':'pointer',
-              fontSize:15, fontWeight:800, color:'#fff',
-              background:'linear-gradient(135deg,#dc2626,#ef4444)',
-              boxShadow:'0 8px 22px rgba(220,38,38,0.3)',
-              opacity:(busy || lastType!=='in') ? 0.5 : 1,
-            }}>
-            <IconOut size={16}/> Check Out
-          </button>
+          {(() => {
+            const inDisabled  = busy || hasIn;
+            const outDisabled = busy || !hasIn || hasOut;
+            return (<>
+              <button onClick={()=>startPunch('in')} disabled={inDisabled}
+                style={{
+                  flex:'1 1 160px', display:'inline-flex', alignItems:'center', justifyContent:'center', gap:8,
+                  padding:'14px', borderRadius:14, border:'none', cursor: inDisabled?'not-allowed':'pointer',
+                  fontSize:15, fontWeight:800, color:'#fff',
+                  background:'linear-gradient(135deg,#16a34a,#22c55e)',
+                  boxShadow:'0 8px 22px rgba(34,197,94,0.3)', opacity: inDisabled ? 0.4 : 1,
+                }}>
+                <IconIn size={16}/> Check In
+              </button>
+              <button onClick={()=>startPunch('out')} disabled={outDisabled}
+                style={{
+                  flex:'1 1 160px', display:'inline-flex', alignItems:'center', justifyContent:'center', gap:8,
+                  padding:'14px', borderRadius:14, border:'none', cursor: outDisabled?'not-allowed':'pointer',
+                  fontSize:15, fontWeight:800, color:'#fff',
+                  background:'linear-gradient(135deg,#dc2626,#ef4444)',
+                  boxShadow:'0 8px 22px rgba(220,38,38,0.3)', opacity: outDisabled ? 0.4 : 1,
+                }}>
+                <IconOut size={16}/> Check Out
+              </button>
+            </>);
+          })()}
         </div>
         {todays.length > 0 && (
           <div style={{marginTop:10, fontSize:12, color:'var(--t3)'}}>
@@ -462,33 +516,41 @@ export function AttendancePage({ users, currentUser }){
         {loading ? <div style={{padding:14, color:'var(--t3)'}}>Loading…</div> : items.length === 0 ? (
           <div style={{padding:14, color:'var(--t3)', textAlign:'center'}}>No attendance yet.</div>
         ) : (
-          <div style={{display:'flex', flexDirection:'column', gap:6, maxHeight:480, overflowY:'auto'}}>
-            {items.map(x => (
-              <div key={x._id} style={{
-                display:'flex', alignItems:'center', gap:10, padding:'8px 10px',
-                background:'var(--bg2)', borderRadius:8,
-                borderLeft:'3px solid ' + (x.type==='in' ? '#34d399' : '#fbbf24'),
-              }}>
-                {x.photo
-                  ? <img src={x.photo} alt="" onClick={()=>setZoom(x.photo)}
-                      style={{width:40, height:40, objectFit:'cover', borderRadius:6, cursor:'zoom-in', border:'1px solid var(--b2)'}}/>
-                  : <div style={{width:40, height:40, borderRadius:6, background:'var(--bg1)', display:'flex', alignItems:'center', justifyContent:'center', color:'var(--t3)'}}><ImageIcon size={16}/></div>}
-                <div style={{flex:1, minWidth:0}}>
-                  <div style={{fontSize:12, fontWeight:600}}>
-                    {x.userName || x.userId} ·{' '}
-                    <span style={{color: x.type==='in' ? '#34d399' : '#fbbf24'}}>
-                      {x.type === 'in' ? 'IN' : 'OUT'}
-                    </span>
-                  </div>
+          <div style={{display:'flex', flexDirection:'column', gap:8, maxHeight:480, overflowY:'auto'}}>
+            {groupedHistory.map(g => (
+              <div key={g.key} style={{background:'var(--bg2)', borderRadius:10, padding:'10px 12px', border:'1px solid var(--b2)'}}>
+                {/* Header: user + day */}
+                <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:8}}>
+                  <div style={{fontSize:12, fontWeight:700}}>{g.userName || g.userId}</div>
                   <div style={{fontSize:10, color:'var(--t3)'}}>
-                    {fmtTime(x.createdAt)}
+                    {fmtDate(new Date(g.in?.createdAt || g.out?.createdAt || g.day))}
                   </div>
-                  {x.address && (
-                    <div style={{fontSize:10, color:'#a5b4fc', marginTop:2, display:'flex', alignItems:'center', gap:3}}>
-                      <MapPin size={9}/> {x.address}
-                    </div>
-                  )}
-                  {x.note && <div style={{fontSize:11, color:'var(--t2)', marginTop:2}}>{x.note}</div>}
+                </div>
+                {/* IN + OUT side by side in ONE chip */}
+                <div style={{display:'flex', gap:10, flexWrap:'wrap'}}>
+                  {['in','out'].map(type => {
+                    const rec = g[type];
+                    const color = type === 'in' ? '#34d399' : '#fbbf24';
+                    return (
+                      <div key={type} style={{flex:'1 1 220px', minWidth:190, display:'flex', gap:8, padding:8,
+                        borderRadius:8, background:'var(--bg1)', borderLeft:'3px solid '+(rec ? color : 'var(--b2)'),
+                        opacity: rec ? 1 : 0.55}}>
+                        {rec?.photo
+                          ? <img src={rec.photo} alt="" onClick={()=>setZoom(rec.photo)}
+                              style={{width:44, height:44, objectFit:'cover', borderRadius:6, cursor:'zoom-in', border:'1px solid var(--b2)', flexShrink:0}}/>
+                          : <div style={{width:44, height:44, borderRadius:6, background:'var(--bg2)', display:'flex', alignItems:'center', justifyContent:'center', color:'var(--t3)', flexShrink:0}}><ImageIcon size={16}/></div>}
+                        <div style={{flex:1, minWidth:0}}>
+                          <div style={{fontSize:11, fontWeight:800, color}}>{type === 'in' ? 'IN' : 'OUT'}</div>
+                          <div style={{fontSize:10, color:'var(--t3)'}}>{rec ? fmtTime(rec.createdAt) : '—'}</div>
+                          {rec?.address && (
+                            <div title={rec.address} style={{fontSize:9, color:'#a5b4fc', marginTop:2, display:'flex', alignItems:'center', gap:3, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
+                              <MapPin size={8} style={{flexShrink:0}}/> {rec.address}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             ))}
