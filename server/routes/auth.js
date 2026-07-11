@@ -153,13 +153,12 @@ router.put('/users/:id', protect, async (req, res) => {
       // editing own profile
       allowed = ['url','url2','url_outstanding','pass','name','color','ini'];
     } else if(target.role === 'salesman') {
-      // admin editing a salesman — can also activate / deactivate and grant
-      // state-based data permissions
-      allowed = ['url','url2','url_outstanding','pass','name','color','ini','approver','active','permissions'];
+      // admin editing a salesman — can activate / deactivate, but NOT grant
+      // data permissions (only superadmin may set permissions).
+      allowed = ['url','url2','url_outstanding','pass','name','color','ini','approver','active'];
     } else if(target.role === 'admin') {
-      // Admins can grant / change data-access permissions for other admins,
-      // but not promote them to superadmin or change their role.
-      allowed = ['permissions','active'];
+      // Admins can (de)activate other admins but cannot set permissions or role.
+      allowed = ['active'];
     } else {
       return res.status(403).json({ error:'Admins cannot edit other admins or superadmins' });
     }
@@ -188,12 +187,14 @@ router.put('/users/:id', protect, async (req, res) => {
         zones:    clean(p.zones),
         salesmen: clean(p.salesmen),
         features: clean(p.features),    // ← same story for the feature toggles
+        pages:    clean(p.pages),       // left-nav page access allowlist
       };
       update['permissions.states']   = permsToWrite.states;
       update['permissions.cities']   = permsToWrite.cities;
       update['permissions.zones']    = permsToWrite.zones;
       update['permissions.salesmen'] = permsToWrite.salesmen;
       update['permissions.features'] = permsToWrite.features;
+      update['permissions.pages']    = permsToWrite.pages;
     } else {
       update[k] = req.body[k];
     }
@@ -239,7 +240,8 @@ router.post('/users', protect, adminOnly, async (req, res) => {
     color: color || '#818cf8',
     ini: ini || name.slice(0, 2).toUpperCase(),
   };
-  if (permissions && typeof permissions === 'object') {
+  // Only superadmin can attach data permissions at creation time.
+  if (req.user.role === 'superadmin' && permissions && typeof permissions === 'object') {
     const clean = arr => Array.isArray(arr)
       ? [...new Set(arr.map(v => String(v).trim()).filter(Boolean))]
       : [];
@@ -249,6 +251,7 @@ router.post('/users', protect, adminOnly, async (req, res) => {
       zones:    clean(permissions.zones),
       salesmen: clean(permissions.salesmen),
       features: clean(permissions.features),  // ← same story for feature toggles
+      pages:    clean(permissions.pages),     // left-nav page access
     };
   }
   const user = await User.create(doc);

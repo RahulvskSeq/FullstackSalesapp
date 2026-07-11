@@ -1,14 +1,14 @@
 // import React, { useState, useMemo } from 'react';
 // import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
 // import { Users, Target, Award, Activity, TrendingUp, Clock, Bell, AlertTriangle, Search, MapPin, Star, ArrowUpRight, ArrowDownRight, X, GripVertical, Hash } from 'lucide-react';
-// import { MO as MO_CONST, CURRENT_MONTH_IDX } from '../constants';
+// import { MO as MO_CONST, CURRENT_MONTH_IDX, DEALER_TYPES } from '../constants';
 // import { pct, spct, pclr, trendPct, forecast } from '../utils';
 // import { useMonth } from '../context';
 // import { StatusBadge, Avatar, MiniBars, StatCard, MultiSelect } from './UI';
 // import MapView from './MapView';
 // import CategoryDrillChart from './CategoryDrillChart';
 
-// const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate})=>{
+// const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdateDealer})=>{
 //   const {selectedMonthIdx, MO:ctxMO}=useMonth();
 //   const MO = ctxMO || MO_CONST;
 //   const selMoLabel=MO[selectedMonthIdx].slice(0,3);
@@ -591,7 +591,7 @@
 //                   <table>
 //                     <thead>
 //                       <tr>
-//                         <th>#</th><th>Dealer Name</th><th>Salesman</th><th>Zone</th><th>City</th><th>State</th><th>Cat</th><th>Cat Type</th><th>Status</th>
+//                         <th>#</th><th>Dealer Name</th><th>Salesman</th><th>Zone</th><th>Dealer Type</th><th>City</th><th>State</th><th>Status</th>
 //                         <th style={{textAlign:'right'}}>Tgt</th><th style={{textAlign:'right'}}>Ach</th><th style={{textAlign:'right'}}>%</th>
 //                         <th style={{textAlign:'right'}}>6m Avg</th><th>Trend</th><th style={{textAlign:'right'}}>Fcst</th>
 //                         {[...MO].map((_,di)=>{const i=MO.length-1-di;return<th key={i} style={{textAlign:'right',background:i===selectedMonthIdx?'rgba(99,102,241,.08)':'var(--bg1)'}}>{MO[i]}</th>;})}
@@ -641,14 +641,14 @@
 // import React, { useState, useMemo } from 'react';
 // import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
 // import { Users, Target, Award, Activity, TrendingUp, Clock, Bell, AlertTriangle, Search, MapPin, Star, ArrowUpRight, ArrowDownRight, X, GripVertical, Hash } from 'lucide-react';
-// import { MO as MO_CONST, CURRENT_MONTH_IDX } from '../constants';
+// import { MO as MO_CONST, CURRENT_MONTH_IDX, DEALER_TYPES } from '../constants';
 // import { pct, spct, pclr, trendPct, forecast } from '../utils';
 // import { useMonth } from '../context';
 // import { StatusBadge, Avatar, MiniBars, StatCard, MultiSelect } from './UI';
 // import MapView from './MapView';
 // import CategoryDrillChart from './CategoryDrillChart';
 
-// const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate})=>{
+// const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdateDealer})=>{
 //   const {selectedMonthIdx, MO:ctxMO}=useMonth();
 //   const MO = ctxMO || MO_CONST;
 //   const selMoLabel=MO[selectedMonthIdx].slice(0,3);
@@ -1231,7 +1231,7 @@
 //                   <table>
 //                     <thead>
 //                       <tr>
-//                         <th>#</th><th>Dealer Name</th><th>Salesman</th><th>Zone</th><th>City</th><th>State</th><th>Cat</th><th>Cat Type</th><th>Status</th>
+//                         <th>#</th><th>Dealer Name</th><th>Salesman</th><th>Zone</th><th>Dealer Type</th><th>City</th><th>State</th><th>Status</th>
 //                         <th style={{textAlign:'right'}}>Tgt</th><th style={{textAlign:'right'}}>Ach</th><th style={{textAlign:'right'}}>%</th>
 //                         <th style={{textAlign:'right'}}>6m Avg</th><th>Trend</th><th style={{textAlign:'right'}}>Fcst</th>
 //                         {[...MO].map((_,di)=>{const i=MO.length-1-di;return<th key={i} style={{textAlign:'right',background:i===selectedMonthIdx?'rgba(99,102,241,.08)':'var(--bg1)'}}>{MO[i]}</th>;})}
@@ -1282,7 +1282,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Users, Target, Award, Activity, TrendingUp, Clock, Bell, AlertTriangle, Search, MapPin, Star, ArrowUpRight, ArrowDownRight, X, GripVertical, Hash } from 'lucide-react';
-import { MO as MO_CONST, CURRENT_MONTH_IDX } from '../constants';
+import { MO as MO_CONST, CURRENT_MONTH_IDX, DEALER_TYPES } from '../constants';
 import { pct, spct, pclr, trendPct, forecast, monthTarget } from '../utils';
 import { useMonth } from '../context';
 import { StatusBadge, Avatar, MiniBars, StatCard, MultiSelect } from './UI';
@@ -1305,7 +1305,11 @@ function _moLabelToYM(lbl) {
   return `${y}-${String(mi+1).padStart(2,'0')}`;
 }
 
-const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate})=>{
+const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdateDealer})=>{
+  const onUpdateDealerType=async(dealerId,newType)=>{
+    onUpdateDealer&&onUpdateDealer(dealerId,{dealerType:newType});
+    try{ await api.updateDealer(dealerId,{dealerType:newType}); }catch(e){ console.warn('[dealerType]',e?.message); }
+  };
   const {selectedMonthIdx, MO:ctxMO}=useMonth();
   const MO = ctxMO || MO_CONST;
   const selMoLabel=MO[selectedMonthIdx].slice(0,3);
@@ -2041,9 +2045,8 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate})=>{
                 <th>Dealer Name</th>
                 <th>Salesman</th>
                 <th>Zone</th>
+                <th>Dealer Type</th>
                 <th>City / State</th>
-                <th>Category</th>
-                <th>Cat Type</th>
                 <th>Status</th>
                 <th style={{textAlign:'right'}}>Tgt</th>
                 <th style={{textAlign:'right'}}>Ach</th>
@@ -2076,9 +2079,14 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate})=>{
                       <td style={{fontWeight:600,color:'var(--t1)',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis'}}>{x.name}</td>
                       <td>{sm?<div style={{display:'flex',alignItems:'center',gap:6}}><Avatar user={sm} size={20}/><span style={{fontSize:12}}>{sm.name}</span></div>:<span style={{color:'var(--t3)'}}>—</span>}</td>
                       <td style={{fontSize:11,color:'var(--t3)'}}>{x.zone||'—'}</td>
+                      <td onClick={e=>e.stopPropagation()}>
+                        <select className="inp" value={x.dealerType||'None'}
+                          onChange={e=>onUpdateDealerType(x.id, e.target.value)}
+                          style={{fontSize:11, padding:'3px 6px', width:'auto', maxWidth:130}}>
+                          {DEALER_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+                        </select>
+                      </td>
                       <td style={{fontSize:11,color:'var(--t2)'}}>{[x.city,x.state].filter(Boolean).join(', ')||'—'}</td>
-                      <td style={{fontSize:11,color:'#818cf8'}}>{x.category||'—'}</td>
-                      <td style={{fontSize:11,color:'var(--t3)'}}>{x.categoryType||'—'}</td>
                       <td><StatusBadge status={x.status}/></td>
                       <td style={{textAlign:'right'}}>{x.target||'—'}</td>
                       <td style={{textAlign:'right',fontWeight:600,color:x.achieved>0?'var(--t1)':'var(--t3)'}}>{x.achieved||'—'}</td>
@@ -2122,7 +2130,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate})=>{
                   <table>
                     <thead>
                       <tr>
-                        <th>#</th><th>Dealer Name</th><th>Salesman</th><th>Zone</th><th>City</th><th>State</th><th>Cat</th><th>Cat Type</th><th>Status</th>
+                        <th>#</th><th>Dealer Name</th><th>Salesman</th><th>Zone</th><th>Dealer Type</th><th>City</th><th>State</th><th>Status</th>
                         <th style={{textAlign:'right'}}>Tgt</th><th style={{textAlign:'right'}}>Ach</th><th style={{textAlign:'right'}}>%</th>
                         <th style={{textAlign:'right'}}>6m Avg</th><th>Trend</th><th style={{textAlign:'right'}}>Fcst</th>
                         {[...MO].map((_,di)=>{const i=MO.length-1-di;return<th key={i} style={{textAlign:'right',background:i===selectedMonthIdx?'rgba(99,102,241,.08)':'var(--bg1)'}}>{MO[i]}</th>;})}
@@ -2138,10 +2146,15 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate})=>{
                             <td style={{fontWeight:600,color:'var(--t1)',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis'}}>{x.name}</td>
                             <td>{sm?<div style={{display:'flex',alignItems:'center',gap:6}}><Avatar user={sm} size={18}/><span style={{fontSize:11}}>{sm.name}</span></div>:<span style={{color:'var(--t3)'}}>—</span>}</td>
                             <td style={{fontSize:11,color:'var(--t3)'}}>{x.zone||'—'}</td>
+                            <td onClick={e=>e.stopPropagation()}>
+                              <select className="inp" value={x.dealerType||'None'}
+                                onChange={e=>onUpdateDealerType(x.id, e.target.value)}
+                                style={{fontSize:11, padding:'3px 6px', width:'auto', maxWidth:130}}>
+                                {DEALER_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+                              </select>
+                            </td>
                             <td style={{fontSize:11}}>{x.city||'—'}</td>
                             <td style={{fontSize:11}}>{x.state||'—'}</td>
-                            <td style={{fontSize:11,color:'#818cf8'}}>{x.category||'—'}</td>
-                            <td style={{fontSize:11,color:'var(--t3)'}}>{x.categoryType||'—'}</td>
                             <td><StatusBadge status={x.status}/></td>
                             <td style={{textAlign:'right'}}>{x.target||'—'}</td>
                             <td style={{textAlign:'right',fontWeight:700,color:popup.color}}>{x.achieved}</td>

@@ -51,6 +51,11 @@ const S = new mongoose.Schema({
     //   'manageCategories' → Admin Panel categories CRUD
     //   'wipeData'      → Wipe all data (superadmin only by default)
     features:  { type:[String], default: [] },
+    // Left-navigation PAGE access. Empty = role defaults (see everything the
+    // role normally sees). When non-empty, the user sees ONLY these pages.
+    // Ids match the sidebar nav ids (overview, dealers, map, outstanding,
+    // visits, leads, tasks, reports, admin, …). Superadmin ignores this.
+    pages:     { type:[String], default: [] },
   },
 }, { timestamps:true });
 export default mongoose.models.User || mongoose.model('User', S);

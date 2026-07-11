@@ -25,6 +25,7 @@ const dealerSchema = new mongoose.Schema({
   state:        { type:String, default:'' },
   zone:         { type:String, default:'' },
   status:       { type:String, default:'ACTIVE' },
+  dealerType:   { type:String, default:'None' },   // Regular/Premium/OEM/Enterprise
   category:     { type:String, default:'' },
   categoryType: { type:String, default:'' },
   target:       { type:Number, default:0 },
@@ -64,6 +65,7 @@ const fmt = (d, MO=[]) => {
   return {
     id:d._id?.toString(), name:d.name, salesman:d.salesman,
     city:d.city||'', state:d.state||'', zone:d.zone||'', status:d.status||'ACTIVE',
+    dealerType:d.dealerType||'None',
     address:d.address||'', pincode:d.pincode||'',
     category:d.category||'', categoryType:d.categoryType||'', target:d.target||0,
     avg6m:d.avg6m||0, creditDays:d.creditDays||0, creditLimit:d.creditLimit||0,
@@ -80,6 +82,52 @@ const fmt = (d, MO=[]) => {
 
 // Staff = admin OR superadmin (both see everything). Salesmen only see their own.
 const isStaff = (req) => req.user?.role === 'admin' || req.user?.role === 'superadmin' || req.user?.role === 'employee';
+
+// ── City / State normalization ────────────────────────────────────────────
+// Trims, collapses whitespace, Title-Cases, and maps common variant/old names
+// to one canonical spelling — so "BANGALORE", "bangalore ", "Bengaluru" all
+// become "Bangalore" and permission/city filters match consistently.
+const titleCase = s => String(s || '').trim().replace(/\s+/g, ' ').toLowerCase()
+  .replace(/\b([a-z])/g, (_, c) => c.toUpperCase());
+const CITY_ALIASES = {
+  'bengaluru':'Bangalore', 'bengalooru':'Bangalore', 'banglore':'Bangalore',
+  'bombay':'Mumbai', 'calcutta':'Kolkata', 'madras':'Chennai',
+  'gurgaon':'Gurugram', 'poona':'Pune', 'baroda':'Vadodara',
+  'trivandrum':'Thiruvananthapuram', 'cochin':'Kochi', 'ernakulam':'Kochi',
+  'mysore':'Mysuru', 'mangalore':'Mangaluru', 'belgaum':'Belagavi', 'belgavi':'Belagavi',
+  'hubli':'Hubballi', 'gulbarga':'Kalaburagi', 'bijapur':'Vijayapura',
+  'pondicherry':'Puducherry', 'benares':'Varanasi', 'allahabad':'Prayagraj',
+};
+const STATE_ALIASES = {
+  'orissa':'Odisha', 'pondicherry':'Puducherry', 'uttaranchal':'Uttarakhand',
+  'ap':'Andhra Pradesh', 'tn':'Tamil Nadu', 'ka':'Karnataka', 'kl':'Kerala',
+  'mh':'Maharashtra', 'tg':'Telangana', 'ts':'Telangana',
+};
+const normGeo = (val, aliases) => {
+  const t = String(val || '').trim().replace(/\s+/g, ' ');
+  if(!t) return '';
+  return aliases[t.toLowerCase()] || titleCase(t);
+};
+export const normCity  = v => normGeo(v, CITY_ALIASES);
+export const normState = v => normGeo(v, STATE_ALIASES);
+
+// POST /api/dealers/normalize-geo — clean up every dealer's city + state to a
+// canonical spelling. Admin/superadmin only. Returns how many changed.
+router.post('/normalize-geo', protect, adminOnly, async (req, res) => {
+  try {
+    const dealers = await Dealer.find({}, 'city state').lean();
+    const ops = [];
+    for(const d of dealers){
+      const nc = normCity(d.city), ns = normState(d.state);
+      if(nc !== (d.city || '') || ns !== (d.state || '')){
+        ops.push({ updateOne:{ filter:{ _id:d._id }, update:{ $set:{ city:nc, state:ns } } } });
+      }
+    }
+    if(ops.length) await Dealer.bulkWrite(ops);
+    console.log(`[NORMALIZE-GEO] scanned=${dealers.length} changed=${ops.length}`);
+    res.json({ ok:true, scanned:dealers.length, changed:ops.length });
+  } catch(e){ console.error('[NORMALIZE-GEO]', e.message); res.status(500).json({ error:e.message }); }
+});
 
 // ── Build the role + permission scoped Mongo filter for dealer reads ──────
 // Logic (priority order):

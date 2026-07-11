@@ -82,6 +82,16 @@ router.post('/attendance', protect, async (req, res) => {
     const { type, photo='', lat=null, lng=null, note='', address='', city='', state='' } = req.body;
     if(!['in','out'].includes(type)) return res.status(400).json({ error:"type must be 'in' or 'out'" });
     if(photo && photo.length > PHOTO_MAX) return res.status(413).json({ error:'Photo too large (compress before upload)' });
+
+    // One check-in + one check-out per user per day.
+    const today = todayStr();
+    const todaysPunches = await Attendance.find({ userId: req.user.id, dateStr: today }, 'type').lean();
+    const hasIn  = todaysPunches.some(p => p.type === 'in');
+    const hasOut = todaysPunches.some(p => p.type === 'out');
+    if(type === 'in'  && hasIn)  return res.status(409).json({ error:'You have already checked in today' });
+    if(type === 'out' && !hasIn) return res.status(409).json({ error:'Check in first' });
+    if(type === 'out' && hasOut) return res.status(409).json({ error:'You have already checked out today' });
+
     const me = await User.findOne({ id: req.user.id }, 'id name').lean();
     const doc = await Attendance.create({
       userId:   req.user.id,

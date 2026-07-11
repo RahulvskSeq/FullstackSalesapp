@@ -431,7 +431,7 @@
 // // // // // // //             <div id="main">
 // // // // // // //               {(syncing&&!bootedFromSheets)?<SkeletonLoader/>:(
 // // // // // // //                 <>
-// // // // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate}/>}
+// // // // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate} onUpdateDealer={updateDealerFields}/>}
 // // // // // // //                   {screen==='dealers'   &&<DealersList dealers={myDealers} currentUser={currentUser} users={users} onEdit={setEditingId} onDelete={deleteDealer} onAdd={()=>setShowAdd(true)} selected={selected} setSelected={setSelected} onBulkAction={setBulkAction} notes={myNotes} pendingFilters={pendingFilters} clearPending={()=>setPendingFilters(null)} onUpdateDealer={updateDealerFields}/>}
 // // // // // // //                   {screen==='monthly'   &&<MonthlyTrend dealers={myDealers} currentUser={currentUser} users={users} onOpenDealer={setEditingId}/>}
 // // // // // // //                   {screen==='compare'   &&<Compare dealers={myDealers} onOpenDealer={setEditingId}/>}
@@ -904,7 +904,7 @@
 // // // // // // //             <div id="main">
 // // // // // // //               {(syncing&&!bootedFromSheets)?<SkeletonLoader/>:(
 // // // // // // //                 <>
-// // // // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate}/>}
+// // // // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate} onUpdateDealer={updateDealerFields}/>}
 // // // // // // //                   {screen==='dealers'   &&<DealersList dealers={myDealers} currentUser={currentUser} users={users} onEdit={setEditingId} onDelete={deleteDealer} onAdd={()=>setShowAdd(true)} selected={selected} setSelected={setSelected} onBulkAction={setBulkAction} notes={myNotes} pendingFilters={pendingFilters} clearPending={()=>setPendingFilters(null)} onUpdateDealer={updateDealerFields}/>}
 // // // // // // //                   {screen==='monthly'   &&<MonthlyTrend dealers={myDealers} currentUser={currentUser} users={users} onOpenDealer={setEditingId}/>}
 // // // // // // //                   {screen==='compare'   &&<Compare dealers={myDealers} onOpenDealer={setEditingId}/>}
@@ -1378,7 +1378,7 @@
 // // // // // // //             <div id="main">
 // // // // // // //               {(syncing&&!bootedFromSheets)?<SkeletonLoader/>:(
 // // // // // // //                 <>
-// // // // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate}/>}
+// // // // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate} onUpdateDealer={updateDealerFields}/>}
 // // // // // // //                   {screen==='dealers'   &&<DealersList dealers={myDealers} currentUser={currentUser} users={users} onEdit={setEditingId} onDelete={deleteDealer} onAdd={()=>setShowAdd(true)} selected={selected} setSelected={setSelected} onBulkAction={setBulkAction} notes={myNotes} pendingFilters={pendingFilters} clearPending={()=>setPendingFilters(null)} onUpdateDealer={updateDealerFields}/>}
 // // // // // // //                   {screen==='monthly'   &&<MonthlyTrend dealers={myDealers} currentUser={currentUser} users={users} onOpenDealer={setEditingId}/>}
 // // // // // // //                   {screen==='compare'   &&<Compare dealers={myDealers} onOpenDealer={setEditingId}/>}
@@ -1894,7 +1894,7 @@
 // // // // // // //             <div id="main">
 // // // // // // //               {(syncing&&!bootedFromSheets)?<SkeletonLoader/>:(
 // // // // // // //                 <>
-// // // // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate}/>}
+// // // // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate} onUpdateDealer={updateDealerFields}/>}
 // // // // // // //                   {screen==='dealers'   &&<DealersList dealers={myDealers} currentUser={currentUser} users={users} onEdit={setEditingId} onDelete={deleteDealer} onAdd={()=>setShowAdd(true)} selected={selected} setSelected={setSelected} onBulkAction={setBulkAction} notes={myNotes} pendingFilters={pendingFilters} clearPending={()=>setPendingFilters(null)} onUpdateDealer={updateDealerFields}/>}
 // // // // // // //                   {screen==='monthly'   &&<MonthlyTrend dealers={myDealers} currentUser={currentUser} users={users} onOpenDealer={setEditingId}/>}
 // // // // // // //                   {screen==='compare'   &&<Compare dealers={myDealers} onOpenDealer={setEditingId}/>}
@@ -2449,7 +2449,7 @@
 // // // // // // //             <div id="main">
 // // // // // // //               {(syncing&&!bootedFromSheets)?<SkeletonLoader/>:(
 // // // // // // //                 <>
-// // // // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate}/>}
+// // // // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate} onUpdateDealer={updateDealerFields}/>}
 // // // // // // //                   {screen==='dealers'   &&<DealersList dealers={myDealers} currentUser={currentUser} users={users} onEdit={setEditingId} onDelete={deleteDealer} onAdd={()=>setShowAdd(true)} selected={selected} setSelected={setSelected} onBulkAction={setBulkAction} notes={myNotes} pendingFilters={pendingFilters} clearPending={()=>setPendingFilters(null)} onUpdateDealer={updateDealerFields}/>}
 // // // // // // //                   {screen==='monthly'   &&<MonthlyTrend dealers={myDealers} currentUser={currentUser} users={users} onOpenDealer={setEditingId}/>}
 // // // // // // //                   {screen==='compare'   &&<Compare dealers={myDealers} onOpenDealer={setEditingId}/>}
@@ -3004,7 +3004,7 @@
 // // // // // // //             <div id="main">
 // // // // // // //               {(syncing&&!bootedFromSheets)?<SkeletonLoader/>:(
 // // // // // // //                 <>
-// // // // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate}/>}
+// // // // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate} onUpdateDealer={updateDealerFields}/>}
 // // // // // // //                   {screen==='dealers'   &&<DealersList dealers={myDealers} currentUser={currentUser} users={users} onEdit={setEditingId} onDelete={deleteDealer} onAdd={()=>setShowAdd(true)} selected={selected} setSelected={setSelected} onBulkAction={setBulkAction} notes={myNotes} pendingFilters={pendingFilters} clearPending={()=>setPendingFilters(null)} onUpdateDealer={updateDealerFields}/>}
 // // // // // // //                   {screen==='monthly'   &&<MonthlyTrend dealers={myDealers} currentUser={currentUser} users={users} onOpenDealer={setEditingId}/>}
 // // // // // // //                   {screen==='compare'   &&<Compare dealers={myDealers} onOpenDealer={setEditingId}/>}
@@ -3597,7 +3597,7 @@
 // // // // // // //             <div id="main">
 // // // // // // //               {(syncing&&!bootedFromSheets)?<SkeletonLoader/>:(
 // // // // // // //                 <>
-// // // // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate}/>}
+// // // // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate} onUpdateDealer={updateDealerFields}/>}
 // // // // // // //                   {screen==='dealers'   &&<DealersList dealers={myDealers} currentUser={currentUser} users={users} onEdit={setEditingId} onDelete={deleteDealer} onAdd={()=>setShowAdd(true)} selected={selected} setSelected={setSelected} onBulkAction={setBulkAction} notes={myNotes} pendingFilters={pendingFilters} clearPending={()=>setPendingFilters(null)} onUpdateDealer={updateDealerFields}/>}
 // // // // // // //                   {screen==='monthly'   &&<MonthlyTrend dealers={myDealers} currentUser={currentUser} users={users} onOpenDealer={setEditingId}/>}
 // // // // // // //                   {screen==='compare'   &&<Compare dealers={myDealers} onOpenDealer={setEditingId}/>}
@@ -4190,7 +4190,7 @@
 // // // // // // //             <div id="main">
 // // // // // // //               {(syncing&&!bootedFromSheets)?<SkeletonLoader/>:(
 // // // // // // //                 <>
-// // // // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate}/>}
+// // // // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate} onUpdateDealer={updateDealerFields}/>}
 // // // // // // //                   {screen==='dealers'   &&<DealersList dealers={myDealers} currentUser={currentUser} users={users} onEdit={setEditingId} onDelete={deleteDealer} onAdd={()=>setShowAdd(true)} selected={selected} setSelected={setSelected} onBulkAction={setBulkAction} notes={myNotes} pendingFilters={pendingFilters} clearPending={()=>setPendingFilters(null)} onUpdateDealer={updateDealerFields}/>}
 // // // // // // //                   {screen==='monthly'   &&<MonthlyTrend dealers={myDealers} currentUser={currentUser} users={users} onOpenDealer={setEditingId}/>}
 // // // // // // //                   {screen==='compare'   &&<Compare dealers={myDealers} onOpenDealer={setEditingId}/>}
@@ -4848,7 +4848,7 @@
 // // // // // //             <div id="main">
 // // // // // //               {true&&(
 // // // // // //                 <>
-// // // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate}/>}
+// // // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate} onUpdateDealer={updateDealerFields}/>}
 // // // // // //                   {screen==='dealers'   &&<DealersList dealers={myDealers} currentUser={currentUser} users={users} onEdit={setEditingId} onDelete={deleteDealer} onAdd={()=>setShowAdd(true)} selected={selected} setSelected={setSelected} onBulkAction={setBulkAction} notes={myNotes} pendingFilters={pendingFilters} clearPending={()=>setPendingFilters(null)} onUpdateDealer={updateDealerFields}/>}
 // // // // // //                   {screen==='monthly'   &&<MonthlyTrend dealers={myDealers} currentUser={currentUser} users={users} onOpenDealer={setEditingId}/>}
 // // // // // //                   {screen==='compare'   &&<Compare dealers={myDealers} onOpenDealer={setEditingId}/>}
@@ -5495,7 +5495,7 @@
 // // // // //             <div id="main">
 // // // // //               {true&&(
 // // // // //                 <>
-// // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate}/>}
+// // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate} onUpdateDealer={updateDealerFields}/>}
 // // // // //                   {screen==='dealers'   &&<DealersList dealers={myDealers} currentUser={currentUser} users={users} onEdit={setEditingId} onDelete={deleteDealer} onAdd={()=>setShowAdd(true)} selected={selected} setSelected={setSelected} onBulkAction={setBulkAction} notes={myNotes} pendingFilters={pendingFilters} clearPending={()=>setPendingFilters(null)} onUpdateDealer={updateDealerFields}/>}
 // // // // //                   {screen==='monthly'   &&<MonthlyTrend dealers={myDealers} currentUser={currentUser} users={users} onOpenDealer={setEditingId}/>}
 // // // // //                   {screen==='compare'   &&<Compare dealers={myDealers} onOpenDealer={setEditingId}/>}
@@ -6111,7 +6111,7 @@
 // // // //             <div id="main">
 // // // //               {true&&(
 // // // //                 <>
-// // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate}/>}
+// // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate} onUpdateDealer={updateDealerFields}/>}
 // // // //                   {screen==='dealers'   &&<DealersList dealers={myDealers} currentUser={currentUser} users={users} onEdit={setEditingId} onDelete={deleteDealer} onAdd={()=>setShowAdd(true)} selected={selected} setSelected={setSelected} onBulkAction={setBulkAction} notes={myNotes} pendingFilters={pendingFilters} clearPending={()=>setPendingFilters(null)} onUpdateDealer={updateDealerFields}/>}
 // // // //                   {screen==='monthly'   &&<MonthlyTrend dealers={myDealers} currentUser={currentUser} users={users} onOpenDealer={setEditingId}/>}
 // // // //                   {screen==='compare'   &&<Compare dealers={myDealers} onOpenDealer={setEditingId}/>}
@@ -6727,7 +6727,7 @@
 // // //             <div id="main">
 // // //               {true&&(
 // // //                 <>
-// // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate}/>}
+// // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate} onUpdateDealer={updateDealerFields}/>}
 // // //                   {screen==='dealers'   &&<DealersList dealers={myDealers} currentUser={currentUser} users={users} onEdit={setEditingId} onDelete={deleteDealer} onAdd={()=>setShowAdd(true)} selected={selected} setSelected={setSelected} onBulkAction={setBulkAction} notes={myNotes} pendingFilters={pendingFilters} clearPending={()=>setPendingFilters(null)} onUpdateDealer={updateDealerFields}/>}
 // // //                   {screen==='monthly'   &&<MonthlyTrend dealers={myDealers} currentUser={currentUser} users={users} onOpenDealer={setEditingId}/>}
 // // //                   {screen==='compare'   &&<Compare dealers={myDealers} onOpenDealer={setEditingId}/>}
@@ -7348,7 +7348,7 @@
 // //             <div id="main">
 // //               {(syncing && dealers.length===0)?<SkeletonLoader screen={screen}/>:(
 // //                 <>
-// //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate}/>}
+// //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate} onUpdateDealer={updateDealerFields}/>}
 // //                   {screen==='dealers'   &&<DealersList dealers={myDealers} currentUser={currentUser} users={users} onEdit={setEditingId} onDelete={deleteDealer} onAdd={()=>setShowAdd(true)} selected={selected} setSelected={setSelected} onBulkAction={setBulkAction} notes={myNotes} pendingFilters={pendingFilters} clearPending={()=>setPendingFilters(null)} onUpdateDealer={updateDealerFields}/>}
 // //                   {screen==='monthly'   &&<MonthlyTrend dealers={myDealers} currentUser={currentUser} users={users} onOpenDealer={setEditingId}/>}
 // //                   {screen==='compare'   &&<Compare dealers={myDealers} onOpenDealer={setEditingId}/>}
@@ -7979,7 +7979,7 @@
 //             <div id="main">
 //               {(syncing && dealers.length===0)?<SkeletonLoader screen={screen}/>:(
 //                 <>
-//                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate}/>}
+//                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate} onUpdateDealer={updateDealerFields}/>}
 //                   {screen==='dealers'   &&<DealersList dealers={myDealers} currentUser={currentUser} users={users} onEdit={setEditingId} onDelete={deleteDealer} onAdd={()=>setShowAdd(true)} selected={selected} setSelected={setSelected} onBulkAction={setBulkAction} notes={myNotes} pendingFilters={pendingFilters} clearPending={()=>setPendingFilters(null)} onUpdateDealer={updateDealerFields}/>}
 //                   {screen==='monthly'   &&<MonthlyTrend dealers={myDealers} currentUser={currentUser} users={users} onOpenDealer={setEditingId}/>}
 //                   {screen==='compare'   &&<Compare dealers={myDealers} onOpenDealer={setEditingId}/>}
@@ -8438,7 +8438,7 @@
 // // // // // //             <div id="main">
 // // // // // //               {(syncing&&!bootedFromSheets)?<SkeletonLoader/>:(
 // // // // // //                 <>
-// // // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate}/>}
+// // // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate} onUpdateDealer={updateDealerFields}/>}
 // // // // // //                   {screen==='dealers'   &&<DealersList dealers={myDealers} currentUser={currentUser} users={users} onEdit={setEditingId} onDelete={deleteDealer} onAdd={()=>setShowAdd(true)} selected={selected} setSelected={setSelected} onBulkAction={setBulkAction} notes={myNotes} pendingFilters={pendingFilters} clearPending={()=>setPendingFilters(null)} onUpdateDealer={updateDealerFields}/>}
 // // // // // //                   {screen==='monthly'   &&<MonthlyTrend dealers={myDealers} currentUser={currentUser} users={users} onOpenDealer={setEditingId}/>}
 // // // // // //                   {screen==='compare'   &&<Compare dealers={myDealers} onOpenDealer={setEditingId}/>}
@@ -8911,7 +8911,7 @@
 // // // // // //             <div id="main">
 // // // // // //               {(syncing&&!bootedFromSheets)?<SkeletonLoader/>:(
 // // // // // //                 <>
-// // // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate}/>}
+// // // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate} onUpdateDealer={updateDealerFields}/>}
 // // // // // //                   {screen==='dealers'   &&<DealersList dealers={myDealers} currentUser={currentUser} users={users} onEdit={setEditingId} onDelete={deleteDealer} onAdd={()=>setShowAdd(true)} selected={selected} setSelected={setSelected} onBulkAction={setBulkAction} notes={myNotes} pendingFilters={pendingFilters} clearPending={()=>setPendingFilters(null)} onUpdateDealer={updateDealerFields}/>}
 // // // // // //                   {screen==='monthly'   &&<MonthlyTrend dealers={myDealers} currentUser={currentUser} users={users} onOpenDealer={setEditingId}/>}
 // // // // // //                   {screen==='compare'   &&<Compare dealers={myDealers} onOpenDealer={setEditingId}/>}
@@ -9385,7 +9385,7 @@
 // // // // // //             <div id="main">
 // // // // // //               {(syncing&&!bootedFromSheets)?<SkeletonLoader/>:(
 // // // // // //                 <>
-// // // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate}/>}
+// // // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate} onUpdateDealer={updateDealerFields}/>}
 // // // // // //                   {screen==='dealers'   &&<DealersList dealers={myDealers} currentUser={currentUser} users={users} onEdit={setEditingId} onDelete={deleteDealer} onAdd={()=>setShowAdd(true)} selected={selected} setSelected={setSelected} onBulkAction={setBulkAction} notes={myNotes} pendingFilters={pendingFilters} clearPending={()=>setPendingFilters(null)} onUpdateDealer={updateDealerFields}/>}
 // // // // // //                   {screen==='monthly'   &&<MonthlyTrend dealers={myDealers} currentUser={currentUser} users={users} onOpenDealer={setEditingId}/>}
 // // // // // //                   {screen==='compare'   &&<Compare dealers={myDealers} onOpenDealer={setEditingId}/>}
@@ -9901,7 +9901,7 @@
 // // // // // //             <div id="main">
 // // // // // //               {(syncing&&!bootedFromSheets)?<SkeletonLoader/>:(
 // // // // // //                 <>
-// // // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate}/>}
+// // // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate} onUpdateDealer={updateDealerFields}/>}
 // // // // // //                   {screen==='dealers'   &&<DealersList dealers={myDealers} currentUser={currentUser} users={users} onEdit={setEditingId} onDelete={deleteDealer} onAdd={()=>setShowAdd(true)} selected={selected} setSelected={setSelected} onBulkAction={setBulkAction} notes={myNotes} pendingFilters={pendingFilters} clearPending={()=>setPendingFilters(null)} onUpdateDealer={updateDealerFields}/>}
 // // // // // //                   {screen==='monthly'   &&<MonthlyTrend dealers={myDealers} currentUser={currentUser} users={users} onOpenDealer={setEditingId}/>}
 // // // // // //                   {screen==='compare'   &&<Compare dealers={myDealers} onOpenDealer={setEditingId}/>}
@@ -10456,7 +10456,7 @@
 // // // // // //             <div id="main">
 // // // // // //               {(syncing&&!bootedFromSheets)?<SkeletonLoader/>:(
 // // // // // //                 <>
-// // // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate}/>}
+// // // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate} onUpdateDealer={updateDealerFields}/>}
 // // // // // //                   {screen==='dealers'   &&<DealersList dealers={myDealers} currentUser={currentUser} users={users} onEdit={setEditingId} onDelete={deleteDealer} onAdd={()=>setShowAdd(true)} selected={selected} setSelected={setSelected} onBulkAction={setBulkAction} notes={myNotes} pendingFilters={pendingFilters} clearPending={()=>setPendingFilters(null)} onUpdateDealer={updateDealerFields}/>}
 // // // // // //                   {screen==='monthly'   &&<MonthlyTrend dealers={myDealers} currentUser={currentUser} users={users} onOpenDealer={setEditingId}/>}
 // // // // // //                   {screen==='compare'   &&<Compare dealers={myDealers} onOpenDealer={setEditingId}/>}
@@ -11011,7 +11011,7 @@
 // // // // // //             <div id="main">
 // // // // // //               {(syncing&&!bootedFromSheets)?<SkeletonLoader/>:(
 // // // // // //                 <>
-// // // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate}/>}
+// // // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate} onUpdateDealer={updateDealerFields}/>}
 // // // // // //                   {screen==='dealers'   &&<DealersList dealers={myDealers} currentUser={currentUser} users={users} onEdit={setEditingId} onDelete={deleteDealer} onAdd={()=>setShowAdd(true)} selected={selected} setSelected={setSelected} onBulkAction={setBulkAction} notes={myNotes} pendingFilters={pendingFilters} clearPending={()=>setPendingFilters(null)} onUpdateDealer={updateDealerFields}/>}
 // // // // // //                   {screen==='monthly'   &&<MonthlyTrend dealers={myDealers} currentUser={currentUser} users={users} onOpenDealer={setEditingId}/>}
 // // // // // //                   {screen==='compare'   &&<Compare dealers={myDealers} onOpenDealer={setEditingId}/>}
@@ -11604,7 +11604,7 @@
 // // // // // //             <div id="main">
 // // // // // //               {(syncing&&!bootedFromSheets)?<SkeletonLoader/>:(
 // // // // // //                 <>
-// // // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate}/>}
+// // // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate} onUpdateDealer={updateDealerFields}/>}
 // // // // // //                   {screen==='dealers'   &&<DealersList dealers={myDealers} currentUser={currentUser} users={users} onEdit={setEditingId} onDelete={deleteDealer} onAdd={()=>setShowAdd(true)} selected={selected} setSelected={setSelected} onBulkAction={setBulkAction} notes={myNotes} pendingFilters={pendingFilters} clearPending={()=>setPendingFilters(null)} onUpdateDealer={updateDealerFields}/>}
 // // // // // //                   {screen==='monthly'   &&<MonthlyTrend dealers={myDealers} currentUser={currentUser} users={users} onOpenDealer={setEditingId}/>}
 // // // // // //                   {screen==='compare'   &&<Compare dealers={myDealers} onOpenDealer={setEditingId}/>}
@@ -12197,7 +12197,7 @@
 // // // // // //             <div id="main">
 // // // // // //               {(syncing&&!bootedFromSheets)?<SkeletonLoader/>:(
 // // // // // //                 <>
-// // // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate}/>}
+// // // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate} onUpdateDealer={updateDealerFields}/>}
 // // // // // //                   {screen==='dealers'   &&<DealersList dealers={myDealers} currentUser={currentUser} users={users} onEdit={setEditingId} onDelete={deleteDealer} onAdd={()=>setShowAdd(true)} selected={selected} setSelected={setSelected} onBulkAction={setBulkAction} notes={myNotes} pendingFilters={pendingFilters} clearPending={()=>setPendingFilters(null)} onUpdateDealer={updateDealerFields}/>}
 // // // // // //                   {screen==='monthly'   &&<MonthlyTrend dealers={myDealers} currentUser={currentUser} users={users} onOpenDealer={setEditingId}/>}
 // // // // // //                   {screen==='compare'   &&<Compare dealers={myDealers} onOpenDealer={setEditingId}/>}
@@ -12855,7 +12855,7 @@
 // // // // //             <div id="main">
 // // // // //               {true&&(
 // // // // //                 <>
-// // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate}/>}
+// // // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate} onUpdateDealer={updateDealerFields}/>}
 // // // // //                   {screen==='dealers'   &&<DealersList dealers={myDealers} currentUser={currentUser} users={users} onEdit={setEditingId} onDelete={deleteDealer} onAdd={()=>setShowAdd(true)} selected={selected} setSelected={setSelected} onBulkAction={setBulkAction} notes={myNotes} pendingFilters={pendingFilters} clearPending={()=>setPendingFilters(null)} onUpdateDealer={updateDealerFields}/>}
 // // // // //                   {screen==='monthly'   &&<MonthlyTrend dealers={myDealers} currentUser={currentUser} users={users} onOpenDealer={setEditingId}/>}
 // // // // //                   {screen==='compare'   &&<Compare dealers={myDealers} onOpenDealer={setEditingId}/>}
@@ -13502,7 +13502,7 @@
 // // // //             <div id="main">
 // // // //               {true&&(
 // // // //                 <>
-// // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate}/>}
+// // // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate} onUpdateDealer={updateDealerFields}/>}
 // // // //                   {screen==='dealers'   &&<DealersList dealers={myDealers} currentUser={currentUser} users={users} onEdit={setEditingId} onDelete={deleteDealer} onAdd={()=>setShowAdd(true)} selected={selected} setSelected={setSelected} onBulkAction={setBulkAction} notes={myNotes} pendingFilters={pendingFilters} clearPending={()=>setPendingFilters(null)} onUpdateDealer={updateDealerFields}/>}
 // // // //                   {screen==='monthly'   &&<MonthlyTrend dealers={myDealers} currentUser={currentUser} users={users} onOpenDealer={setEditingId}/>}
 // // // //                   {screen==='compare'   &&<Compare dealers={myDealers} onOpenDealer={setEditingId}/>}
@@ -14118,7 +14118,7 @@
 // // //             <div id="main">
 // // //               {true&&(
 // // //                 <>
-// // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate}/>}
+// // //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate} onUpdateDealer={updateDealerFields}/>}
 // // //                   {screen==='dealers'   &&<DealersList dealers={myDealers} currentUser={currentUser} users={users} onEdit={setEditingId} onDelete={deleteDealer} onAdd={()=>setShowAdd(true)} selected={selected} setSelected={setSelected} onBulkAction={setBulkAction} notes={myNotes} pendingFilters={pendingFilters} clearPending={()=>setPendingFilters(null)} onUpdateDealer={updateDealerFields}/>}
 // // //                   {screen==='monthly'   &&<MonthlyTrend dealers={myDealers} currentUser={currentUser} users={users} onOpenDealer={setEditingId}/>}
 // // //                   {screen==='compare'   &&<Compare dealers={myDealers} onOpenDealer={setEditingId}/>}
@@ -14734,7 +14734,7 @@
 // //             <div id="main">
 // //               {true&&(
 // //                 <>
-// //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate}/>}
+// //                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate} onUpdateDealer={updateDealerFields}/>}
 // //                   {screen==='dealers'   &&<DealersList dealers={myDealers} currentUser={currentUser} users={users} onEdit={setEditingId} onDelete={deleteDealer} onAdd={()=>setShowAdd(true)} selected={selected} setSelected={setSelected} onBulkAction={setBulkAction} notes={myNotes} pendingFilters={pendingFilters} clearPending={()=>setPendingFilters(null)} onUpdateDealer={updateDealerFields}/>}
 // //                   {screen==='monthly'   &&<MonthlyTrend dealers={myDealers} currentUser={currentUser} users={users} onOpenDealer={setEditingId}/>}
 // //                   {screen==='compare'   &&<Compare dealers={myDealers} onOpenDealer={setEditingId}/>}
@@ -15355,7 +15355,7 @@
 //             <div id="main">
 //               {(!dbLoaded || (dealers.length===0 && syncing))?<SkeletonLoader screen={screen}/>:(
 //                 <>
-//                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate}/>}
+//                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate} onUpdateDealer={updateDealerFields}/>}
 //                   {screen==='dealers'   &&<DealersList dealers={myDealers} currentUser={currentUser} users={users} onEdit={setEditingId} onDelete={deleteDealer} onAdd={()=>setShowAdd(true)} selected={selected} setSelected={setSelected} onBulkAction={setBulkAction} notes={myNotes} pendingFilters={pendingFilters} clearPending={()=>setPendingFilters(null)} onUpdateDealer={updateDealerFields}/>}
 //                   {screen==='monthly'   &&<MonthlyTrend dealers={myDealers} currentUser={currentUser} users={users} onOpenDealer={setEditingId}/>}
 //                   {screen==='compare'   &&<Compare dealers={myDealers} onOpenDealer={setEditingId}/>}
@@ -15671,6 +15671,17 @@ export default function App(){
     // push current screen to history
     pushScreen(screen);
   },[screen]);
+
+  // Page-access guard: if the user has an explicit page allowlist and the
+  // current screen isn't in it, redirect to their first allowed page. Keeps a
+  // restricted user out of a page even via a saved URL / hash.
+  useEffect(()=>{
+    const perms = currentUser?.permissions?.pages;
+    if(currentUser && currentUser.role !== 'superadmin' && Array.isArray(perms) && perms.length > 0 && !perms.includes(screen)){
+      setScreen(perms[0]);
+      try { window.history.replaceState({screen:perms[0]}, '', '#/'+perms[0]); } catch {}
+    }
+  },[screen, currentUser]);
 
   const handleLogout = useCallback(() => {
     saveToken(null); setUseDB(false);
@@ -16184,7 +16195,21 @@ export default function App(){
     return userFeatures.has(key);
   };
 
-  const navItems=[
+  // Per-user PAGE access allowlist (set by superadmin in User Management).
+  // When present, it OVERRIDES the role/feature/staff defaults and the user
+  // sees exactly those pages.
+  const pagePerms = Array.isArray(currentUser?.permissions?.pages) ? currentUser.permissions.pages : [];
+  const hasPagePerms = !isSuperAdmin && pagePerms.length > 0;
+  const pageVisible = (item) => {
+    if (isSuperAdmin) return true;
+    if (hasPagePerms) return pagePerms.includes(item.id);   // explicit grant wins
+    // Default gates when no explicit page allowlist:
+    if (item.superAdmin) return false;
+    if (item.staff && !isStaff) return false;
+    return hasFeature(item.feature);
+  };
+
+  const navItemsRaw=[
     {id:'overview',label:'Overview',icon:LayoutDashboard},
     {id:'dealers',label:'All Dealers',icon:Users},
     {id:'monthly',label:'Monthly Trend',icon:TrendingUp},
@@ -16205,13 +16230,12 @@ export default function App(){
     ]},
     {id:'leaves',  label:'Leaves',  icon:Plane},
     {id:'tickets', label:'Support', icon:LifeBuoy},
-    ...(isStaff?[{id:'reports', label:'Reports', icon:FileSpreadsheet}]:[]),
-    ...(isStaff?[{id:'admin',label:'Admin Panel',icon:Settings,feature:'manageCategories'}]:[]),
-  ]
-    // Superadmin-only items: hidden unless current user is superadmin.
-    .filter(item => !item.superAdmin || isSuperAdmin)
-    // Feature-gated items: hidden when the user doesn't have the feature.
-    .filter(item => hasFeature(item.feature));
+    {id:'reports', label:'Reports', icon:FileSpreadsheet, staff:true},
+    {id:'admin',   label:'Admin Panel', icon:Settings, feature:'manageCategories', staff:true},
+  ];
+  const navItems = navItemsRaw
+    .map(item => item.group ? { ...item, children:(item.children||[]).filter(pageVisible) } : item)
+    .filter(item => item.group ? item.children.length > 0 : pageVisible(item));
 
   return(
     <MonthContext.Provider value={{selectedMonthIdx,setSelectedMonthIdx,MO:activeMO,currentMonthIdx:activeMonthIdx,currentMonthLabel:activeMonthLabel}}>
@@ -16669,7 +16693,7 @@ export default function App(){
             <div id="main">
               {(!dbLoaded || (dealers.length===0 && syncing))?<SkeletonLoader screen={screen}/>:(
                 <>
-                  {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate}/>}
+                  {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate} onUpdateDealer={updateDealerFields}/>}
                   {screen==='dealers'   &&<DealersList dealers={myDealers} currentUser={currentUser} users={users} onEdit={setEditingId} onDelete={deleteDealer} onAdd={()=>setShowAdd(true)} selected={selected} setSelected={setSelected} onBulkAction={setBulkAction} notes={myNotes} pendingFilters={pendingFilters} clearPending={()=>setPendingFilters(null)} onUpdateDealer={updateDealerFields}/>}
                   {screen==='monthly'   &&<MonthlyTrend dealers={myDealers} currentUser={currentUser} users={users} onOpenDealer={setEditingId}/>}
                   {screen==='compare'   &&<Compare dealers={myDealers} onOpenDealer={setEditingId}/>}

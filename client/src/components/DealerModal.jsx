@@ -965,7 +965,7 @@
 // // // // import React, { useState } from 'react';
 // // // // import { ComposedChart, Bar, Line, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 // // // // import { X, Trash2, Save, Bell, CheckSquare, Square, MapPin, Camera, Share2 } from 'lucide-react';
-// // // // import { MO as MO_CONST, CURRENT_MONTH_IDX, CURRENT_MONTH_SHORT } from '../constants';
+// // // // import { MO as MO_CONST, CURRENT_MONTH_IDX, CURRENT_MONTH_SHORT, DEALER_TYPES } from '../constants';
 // // // // import { pct, spct, pclr, fcash, num, uid, isoNow, trendPct, forecast } from '../utils';
 // // // // import { useMonth } from '../context';
 // // // // import { StatusBadge, Avatar, KPI } from './UI';
@@ -1653,7 +1653,7 @@
 // // // // import React, { useState } from 'react';
 // // // // import { ComposedChart, Bar, Line, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 // // // // import { X, Trash2, Save, Bell, CheckSquare, Square, MapPin, Camera, Share2 } from 'lucide-react';
-// // // // import { MO as MO_CONST, CURRENT_MONTH_IDX, CURRENT_MONTH_SHORT } from '../constants';
+// // // // import { MO as MO_CONST, CURRENT_MONTH_IDX, CURRENT_MONTH_SHORT, DEALER_TYPES } from '../constants';
 // // // // import { pct, spct, pclr, fcash, num, uid, isoNow, trendPct, forecast } from '../utils';
 // // // // import { useMonth } from '../context';
 // // // // import { StatusBadge, Avatar, KPI } from './UI';
@@ -2346,7 +2346,7 @@
 // // // // import React, { useState } from 'react';
 // // // // import { ComposedChart, Bar, Line, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 // // // // import { X, Trash2, Save, Bell, CheckSquare, Square, MapPin, Camera, Share2, Plus, Check, Calendar } from 'lucide-react';
-// // // // import { MO as MO_CONST, CURRENT_MONTH_IDX, CURRENT_MONTH_SHORT } from '../constants';
+// // // // import { MO as MO_CONST, CURRENT_MONTH_IDX, CURRENT_MONTH_SHORT, DEALER_TYPES } from '../constants';
 // // // // import { pct, spct, pclr, fcash, num, uid, isoNow, trendPct, forecast } from '../utils';
 // // // // import { useMonth } from '../context';
 // // // // import { StatusBadge, Avatar, KPI } from './UI';
@@ -3154,7 +3154,7 @@
 // // // import React, { useState } from 'react';
 // // // import { ComposedChart, Bar, Line, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 // // // import { X, Trash2, Save, Bell, CheckSquare, Square, MapPin, Camera, Share2, Plus, Check, Calendar } from 'lucide-react';
-// // // import { MO as MO_CONST, CURRENT_MONTH_IDX, CURRENT_MONTH_SHORT } from '../constants';
+// // // import { MO as MO_CONST, CURRENT_MONTH_IDX, CURRENT_MONTH_SHORT, DEALER_TYPES } from '../constants';
 // // // import { pct, spct, pclr, fcash, num, uid, isoNow, trendPct, forecast } from '../utils';
 // // // import { api } from '../api';
 // // // import { useMonth } from '../context';
@@ -3980,7 +3980,7 @@
 // // import React, { useState } from 'react';
 // // import { ComposedChart, Bar, Line, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 // // import { X, Trash2, Save, Bell, CheckSquare, Square, MapPin, Camera, Share2, Plus, Check, Calendar } from 'lucide-react';
-// // import { MO as MO_CONST, CURRENT_MONTH_IDX, CURRENT_MONTH_SHORT } from '../constants';
+// // import { MO as MO_CONST, CURRENT_MONTH_IDX, CURRENT_MONTH_SHORT, DEALER_TYPES } from '../constants';
 // // import { pct, spct, pclr, fcash, num, uid, isoNow, trendPct, forecast } from '../utils';
 // // import { api } from '../api';
 // // import { useMonth } from '../context';
@@ -5506,7 +5506,7 @@
 // // // import React, { useState } from 'react';
 // // // import { ComposedChart, Bar, Line, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 // // // import { X, Trash2, Save, Bell, CheckSquare, Square, MapPin, Camera, Share2 } from 'lucide-react';
-// // // import { MO as MO_CONST, CURRENT_MONTH_IDX, CURRENT_MONTH_SHORT } from '../constants';
+// // // import { MO as MO_CONST, CURRENT_MONTH_IDX, CURRENT_MONTH_SHORT, DEALER_TYPES } from '../constants';
 // // // import { pct, spct, pclr, fcash, num, uid, isoNow, trendPct, forecast } from '../utils';
 // // // import { useMonth } from '../context';
 // // // import { StatusBadge, Avatar, KPI } from './UI';
@@ -6200,7 +6200,7 @@
 // // // import React, { useState } from 'react';
 // // // import { ComposedChart, Bar, Line, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 // // // import { X, Trash2, Save, Bell, CheckSquare, Square, MapPin, Camera, Share2 } from 'lucide-react';
-// // // import { MO as MO_CONST, CURRENT_MONTH_IDX, CURRENT_MONTH_SHORT } from '../constants';
+// // // import { MO as MO_CONST, CURRENT_MONTH_IDX, CURRENT_MONTH_SHORT, DEALER_TYPES } from '../constants';
 // // // import { pct, spct, pclr, fcash, num, uid, isoNow, trendPct, forecast } from '../utils';
 // // // import { useMonth } from '../context';
 // // // import { StatusBadge, Avatar, KPI } from './UI';
@@ -6899,7 +6899,7 @@
 // // // import React, { useState } from 'react';
 // // // import { ComposedChart, Bar, Line, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 // // // import { X, Trash2, Save, Bell, CheckSquare, Square, MapPin, Camera, Share2, Plus, Check, Calendar } from 'lucide-react';
-// // // import { MO as MO_CONST, CURRENT_MONTH_IDX, CURRENT_MONTH_SHORT } from '../constants';
+// // // import { MO as MO_CONST, CURRENT_MONTH_IDX, CURRENT_MONTH_SHORT, DEALER_TYPES } from '../constants';
 // // // import { pct, spct, pclr, fcash, num, uid, isoNow, trendPct, forecast } from '../utils';
 // // // import { useMonth } from '../context';
 // // // import { StatusBadge, Avatar, KPI } from './UI';
@@ -7713,7 +7713,7 @@
 // // import React, { useState } from 'react';
 // // import { ComposedChart, Bar, Line, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 // // import { X, Trash2, Save, Bell, CheckSquare, Square, MapPin, Camera, Share2, Plus, Check, Calendar } from 'lucide-react';
-// // import { MO as MO_CONST, CURRENT_MONTH_IDX, CURRENT_MONTH_SHORT } from '../constants';
+// // import { MO as MO_CONST, CURRENT_MONTH_IDX, CURRENT_MONTH_SHORT, DEALER_TYPES } from '../constants';
 // // import { pct, spct, pclr, fcash, num, uid, isoNow, trendPct, forecast } from '../utils';
 // // import { api } from '../api';
 // import SamplesTab from './SamplesTab';
@@ -8546,7 +8546,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { ComposedChart, Bar, Line, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { X, Trash2, Save, Bell, CheckSquare, Square, MapPin, Camera, Share2, Plus, Check, Calendar } from 'lucide-react';
-import { MO as MO_CONST, CURRENT_MONTH_IDX, CURRENT_MONTH_SHORT } from '../constants';
+import { MO as MO_CONST, CURRENT_MONTH_IDX, CURRENT_MONTH_SHORT, DEALER_TYPES } from '../constants';
 import { pct, spct, pclr, fcash, num, uid, isoNow, trendPct, forecast, monthTarget } from '../utils';
 import { api } from '../api';
 import SamplesTab from './SamplesTab';
@@ -8697,6 +8697,7 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
   const pendingFollowups = dealerFollowups.filter(f=>f.status==='pending');
   const [edit,setEdit]=useState({
     name:dealer.name,zone:dealer.zone,status:dealer.status,salesman:dealer.salesman,
+    dealerType:dealer.dealerType||'None',
     target:dealer.target,achieved:dealer.months[CURRENT_MONTH_IDX]||0,
     creditDays:dealer.creditDays,creditLimit:dealer.creditLimit,
     city:dealer.city||'',state:dealer.state||'',
@@ -8861,6 +8862,7 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
       newMonths[CURRENT_MONTH_IDX]=num(edit.achieved);
       const updated={...dealer,
         name:edit.name.trim(),zone:edit.zone,status:edit.status,salesman:edit.salesman,
+        dealerType:edit.dealerType,
         target:num(edit.target),achieved:num(edit.achieved),
         creditDays:num(edit.creditDays),creditLimit:num(edit.creditLimit),
         city:edit.city.trim(),state:edit.state.trim(),
@@ -8873,6 +8875,7 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
         try{
           await api.updateDealer(dealer.id,{
             name:updated.name,zone:updated.zone,status:updated.status,salesman:updated.salesman,
+            dealerType:updated.dealerType,
             target:updated.target,creditDays:updated.creditDays,creditLimit:updated.creditLimit,
             city:updated.city,state:updated.state,category:updated.category,categoryType:updated.categoryType,
           });
@@ -9110,6 +9113,11 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
               <select className="sel inp" value={edit.zone} onChange={e=>setEdit({...edit,zone:e.target.value})}>
                 <option value="">None</option>
                 {['ZONE 1','ZONE 2','ZONE 3'].map(z=><option key={z}>{z}</option>)}
+              </select>
+            </div>
+            <div className="field"><label>Dealer Type</label>
+              <select className="sel inp" value={edit.dealerType} onChange={e=>setEdit({...edit,dealerType:e.target.value})}>
+                {DEALER_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
               </select>
             </div>
             <div className="field"><label>Status</label>

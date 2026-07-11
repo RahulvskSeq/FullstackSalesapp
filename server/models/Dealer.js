@@ -66,6 +66,9 @@ const dealerSchema = new mongoose.Schema({
   state:        { type:String, default:'' },
   zone:         { type:String, default:'' },
   status:       { type:String, default:'ACTIVE' },
+  // Commercial classification, editable by the salesperson.
+  // One of: 'None' | 'Regular Dealer' | 'Premium Dealer' | 'OEM/SEMI OEM' | 'ENTERPRISE'
+  dealerType:   { type:String, default:'None' },
   // Full postal address + PIN, used by the Map View / DealerModal for a
   // more precise deep-drill and by external navigation apps.
   address:      { type:String, default:'' },

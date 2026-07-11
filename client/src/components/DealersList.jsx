@@ -1155,8 +1155,9 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Search, Plus, Download, Trash2, X, CheckSquare, Square, ArrowUpRight, ArrowDownRight, MessageSquare, Columns, List, GripVertical } from 'lucide-react';
-import { MO as MO_CONST, CURRENT_MONTH_IDX } from '../constants';
+import { MO as MO_CONST, CURRENT_MONTH_IDX, DEALER_TYPES } from '../constants';
 import { pct, spct, pclr, fcash, num, trendPct, monthTarget } from '../utils';
+import { api } from '../api';
 import { useMonth } from '../context';
 import { StatusBadge, Avatar, MiniBars, MultiSelect } from './UI';
 
@@ -1389,6 +1390,12 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
   const onUpdateStatus=(dealerId,newStatus)=>{
     onUpdateDealer&&onUpdateDealer(dealerId,{status:newStatus});
   };
+  // Change a dealer's commercial type inline — persist to the server too.
+  const onUpdateDealerType=async(dealerId,newType)=>{
+    onUpdateDealer&&onUpdateDealer(dealerId,{dealerType:newType});
+    try{ await api.updateDealer(dealerId,{dealerType:newType}); }
+    catch(e){ console.warn('[dealerType update]', e?.message); }
+  };
 
   const exportCsv=()=>{
     const h=['Dealer','Salesman','Zone','City','State','Pincode','Address','Category','Cat Type','Status','Target','Achieved','Ach%',...MO,'Cr Days','Cr Limit'];
@@ -1480,9 +1487,9 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
                   {sh('name','Dealer Name')}
                   {isAdmin&&<th>Salesman</th>}
                   {sh('zone','Zone')}
+                  <th style={{minWidth:130}}>Dealer Type</th>
                   {sh('city','City')}{sh('state','State')}
                   {sh('pincode','PIN')}<th style={{minWidth:180}}>Address</th>
-                  {sh('category','Category')}{sh('categoryType','Cat Type')}
                   {sh('status','Status')}
                   {sh('target','Tgt')}{sh('achieved','Ach')}<th>%</th><th>Trend</th>
                   {sh('avg6m','6m Avg')}
@@ -1500,12 +1507,17 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
                       <td style={{fontWeight:600,color:'var(--t1)',maxWidth:190,overflow:'hidden',textOverflow:'ellipsis'}}>{x.name}</td>
                       {isAdmin&&<td><div style={{display:'flex',alignItems:'center',gap:6}}><Avatar user={users[x.salesman]} size={20}/><span style={{fontSize:12}}>{users[x.salesman]?.name||x.salesman}</span></div></td>}
                       <td style={{fontSize:11,color:'var(--t3)'}}>{x.zone||'—'}</td>
+                      <td onClick={e=>e.stopPropagation()}>
+                        <select className="inp" value={x.dealerType||'None'}
+                          onChange={e=>onUpdateDealerType(x.id, e.target.value)}
+                          style={{fontSize:11, padding:'3px 6px', width:'auto', maxWidth:130}}>
+                          {DEALER_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+                        </select>
+                      </td>
                       <td style={{fontSize:11,color:'var(--t2)'}}>{x.city||'—'}</td>
                       <td style={{fontSize:11,color:'var(--t2)'}}>{x.state||'—'}</td>
                       <td style={{fontSize:11,color:'var(--t2)',fontFamily:'"JetBrains Mono", monospace'}}>{x.pincode||'—'}</td>
                       <td title={x.address||''} style={{fontSize:11,color:'var(--t3)',maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{x.address||'—'}</td>
-                      <td style={{fontSize:11,color:'#818cf8'}}>{x.category||'—'}</td>
-                      <td style={{fontSize:11,color:'var(--t3)'}}>{x.categoryType||'—'}</td>
                       <td><StatusBadge status={x.status}/></td>
                       <td style={{textAlign:'right'}}>{x.target||'—'}</td>
                       <td style={{textAlign:'right',fontWeight:600,color:x.achieved>0?'var(--t1)':'var(--t3)'}}>{x.achieved||'—'}</td>

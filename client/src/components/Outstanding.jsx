@@ -6264,6 +6264,21 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
     setUploading(false);
   };
 
+  // Delete an entire month's outstanding column across ALL dealers.
+  const deleteMonthColumn = async (month) => {
+    const ok = await confirmDialog({
+      title: 'Delete month "' + month + '"?',
+      message: 'This removes the ' + month + ' outstanding column from ALL dealers. This cannot be undone.',
+      confirmText: 'Delete ' + month, danger: true,
+    });
+    if(!ok) return;
+    try {
+      const r = await api.deleteOutstandingMonth(month);
+      notify.success('Deleted ' + month + ' from ' + (r?.modified || 0) + ' dealer records');
+      await loadFromDB();
+    } catch(e){ notify.error(e.message || 'Delete failed'); }
+  };
+
   // Filter outstanding to only show salesman's dealers when not admin
   const myDealerNames = useMemo(()=>{
     if(isAdmin) return null; // null = show all
@@ -6578,7 +6593,19 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
             <table>
               <thead><tr>
                 <th>#</th><th>Dealer</th>
-                {allMonthCols.map(m=><th key={m} style={{textAlign:'right'}}>{m}</th>)}
+                {allMonthCols.map(m=>(
+                  <th key={m} style={{textAlign:'right'}}>
+                    <span style={{display:'inline-flex', alignItems:'center', gap:4, justifyContent:'flex-end'}}>
+                      {m}
+                      {isAdmin && (
+                        <button onClick={()=>deleteMonthColumn(m)} title={'Delete '+m+' column'}
+                          style={{background:'none', border:'none', color:'#f87171', cursor:'pointer', padding:0, display:'inline-flex'}}>
+                          <Trash2 size={11}/>
+                        </button>
+                      )}
+                    </span>
+                  </th>
+                ))}
                 <th style={{textAlign:'center'}}>Follow-up</th>
               </tr></thead>
               <tbody>

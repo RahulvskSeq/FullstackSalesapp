@@ -34,3 +34,31 @@ export const MO = ['Jul-25','Aug-25','Sep-25','Oct-25','Nov-25','Dec-25','Jan-26
 export const CURRENT_MONTH_IDX   = 10;
 export const CURRENT_MONTH_LABEL = 'May 2026';
 export const CURRENT_MONTH_SHORT = 'May';
+
+// Dealer commercial classification (editable by salesperson).
+export const DEALER_TYPES = ['None', 'Regular Dealer', 'Premium Dealer', 'OEM/SEMI OEM', 'ENTERPRISE'];
+
+// ── Left-navigation pages a superadmin can grant per user ─────────────────
+// Ids MUST match the sidebar nav ids in App.jsx. When a user's
+// permissions.pages is non-empty, they see ONLY these pages.
+export const NAV_PAGES = [
+  { id:'overview',    label:'Overview' },
+  { id:'dealers',     label:'All Dealers' },
+  { id:'monthly',     label:'Monthly Trend' },
+  { id:'compare',     label:'Compare' },
+  { id:'map',         label:'Map View' },
+  { id:'outstanding', label:'Outstanding' },
+  { id:'salesCat',    label:'Sales by Category' },
+  { id:'upload',      label:'Upload Data' },
+  { id:'entry',       label:'Monthly Entry' },
+  { id:'months',      label:'Manage Months' },
+  { id:'followups',   label:'Follow-ups' },
+  { id:'attendance',  label:'Attendance' },
+  { id:'visits',      label:'Visits (CRM)' },
+  { id:'leads',       label:'Leads (CRM)' },
+  { id:'tasks',       label:'Tasks (CRM)' },
+  { id:'leaves',      label:'Leaves' },
+  { id:'tickets',     label:'Support' },
+  { id:'reports',     label:'Reports' },
+  { id:'admin',       label:'Admin Panel' },
+];

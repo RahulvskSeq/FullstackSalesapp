@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, UserPlus, LogIn, KeyRound, Link as LinkIcon, Trash2, Shield, ShieldCheck, Power, PowerOff, MapPin } from 'lucide-react';
 import { Avatar } from './UI';
 import { api } from '../api';
+import { NAV_PAGES } from '../constants';
 import { notify, confirmDialog } from './Toast';
 
 // Note: `setUsers` updates the client-side users map; `onLoginAs(token, user, impersonatedBy?)`
@@ -116,6 +117,7 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
   const [permsStates,    setPermsStates]    = useState(new Set());
   const [permsCities,    setPermsCities]    = useState(new Set());
   const [permsFeatures,  setPermsFeatures]  = useState(new Set());
+  const [permsPages,     setPermsPages]     = useState(new Set());   // left-nav page access
   const [permsSaving,    setPermsSaving]    = useState(false);
   // Bulk-upload of city/state permissions via Excel/CSV. State tracks the
   // in-flight status so we can show a spinner + toast when the server replies.
@@ -155,6 +157,7 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
     setPermsStates(toCanon(cur.states, allStates));
     setPermsCities(toCanon(cur.cities, allCities));
     setPermsFeatures(new Set(Array.isArray(cur.features) ? cur.features : []));
+    setPermsPages(new Set(Array.isArray(cur.pages) ? cur.pages : []));
     setPermsForUid(uid);
   };
   const savePermissions = async () => {
@@ -167,6 +170,7 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
         zones:    [],
         salesmen: [],
         features: [...permsFeatures],
+        pages:    [...permsPages],
       };
       await api.updateUser(permsForUid, { permissions: next });
       setAllUsers({ ...allUsers, [permsForUid]: { ...allUsers[permsForUid], permissions: next } });
@@ -517,7 +521,8 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
                         <Shield size={11}/>
                       </button>
                     )}
-                    {(u.role === 'admin' || u.role === 'salesman' || u.role === 'employee') && (
+                    {/* Only SUPERADMIN can view/grant data permissions */}
+                    {isSuperAdmin && (u.role === 'admin' || u.role === 'salesman' || u.role === 'employee') && (
                       <>
                         <button className="btn" style={{fontSize:11, padding:'4px 8px'}} onClick={()=>openPermissions(u.id)}
                           title="Data permissions & sections this user can use">
@@ -904,6 +909,43 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
               </>
             )}
 
+            {/* ── Left-navigation PAGE access ─────────────────────── */}
+            <div style={{fontSize:11, color:'var(--t3)', textTransform:'uppercase', letterSpacing:'.08em', marginBottom:8, marginTop:4, display:'flex', alignItems:'center', gap:8}}>
+              Pages / components this user can see
+              <span style={{textTransform:'none', letterSpacing:0, color:'var(--t3)', fontWeight:400}}>
+                — {permsPages.size ? permsPages.size + ' selected' : 'none selected = role default'}
+              </span>
+            </div>
+            <div style={{display:'flex', gap:6, marginBottom:8}}>
+              <button className="btn" style={{fontSize:11, padding:'3px 10px'}}
+                onClick={()=>setPermsPages(new Set(NAV_PAGES.map(p=>p.id)))}>Select all</button>
+              <button className="btn" style={{fontSize:11, padding:'3px 10px'}}
+                onClick={()=>setPermsPages(new Set())}>None (role default)</button>
+            </div>
+            <div style={{
+              display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(150px, 1fr))', gap:6,
+              padding:10, background:'var(--bg2)', borderRadius:6, marginBottom:14, maxHeight:220, overflowY:'auto',
+            }}>
+              {NAV_PAGES.map(pg => {
+                const on = permsPages.has(pg.id);
+                return (
+                  <label key={pg.id} style={{
+                    fontSize:12, display:'flex', alignItems:'center', gap:8, cursor:'pointer',
+                    padding:'6px 8px', borderRadius:5,
+                    background: on ? 'rgba(99,102,241,0.10)' : 'transparent',
+                    border:'1px solid ' + (on ? 'rgba(99,102,241,0.40)' : 'var(--b2)'),
+                  }}>
+                    <input type="checkbox" checked={on} onChange={()=>{
+                      const next = new Set(permsPages);
+                      on ? next.delete(pg.id) : next.add(pg.id);
+                      setPermsPages(next);
+                    }}/>
+                    <span style={{color: on ? '#a5b4fc' : 'var(--t2)', fontWeight:600}}>{pg.label}</span>
+                  </label>
+                );
+              })}
+            </div>
+
             {/* ── App-section feature toggles ─────────────────────── */}
             <div style={{fontSize:11, color:'var(--t3)', textTransform:'uppercase', letterSpacing:'.08em', marginBottom:8, marginTop:4}}>
               App sections — grant access
@@ -939,7 +981,7 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
             </div>
 
             <div style={{display:'flex', gap:8, justifyContent:'flex-end'}}>
-              <button className="btn" onClick={() => { setPermsStates(new Set()); setPermsCities(new Set()); setPermsFeatures(new Set()); }}>Clear all</button>
+              <button className="btn" onClick={() => { setPermsStates(new Set()); setPermsCities(new Set()); setPermsFeatures(new Set()); setPermsPages(new Set()); }}>Clear all</button>
               <button className="btn" onClick={() => setPermsForUid(null)}>Cancel</button>
               <button className="btnp" onClick={savePermissions} disabled={permsSaving}>
                 {permsSaving ? 'Saving…' : 'Save permissions'}

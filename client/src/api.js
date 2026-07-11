@@ -1684,6 +1684,7 @@ export const api = {
   getDealers:   (MO=[]) => fetch(`${BASE}/dealers?mo=${MO.join(',')}`,{headers:authHeaders()}).then(handle),
   createDealer: (d)     => fetch(`${BASE}/dealers`,{method:'POST',headers:authHeaders(),body:JSON.stringify(d)}).then(handle),
   updateDealer: (id,d)  => fetch(`${BASE}/dealers/${id}`,{method:'PUT',headers:authHeaders(),body:JSON.stringify(d)}).then(handle),
+  normalizeGeo: ()      => fetch(`${BASE}/dealers/normalize-geo`,{method:'POST',headers:authHeaders()}).then(handle),
   deleteDealer: (id)    => fetch(`${BASE}/dealers/${id}`,{method:'DELETE',headers:authHeaders()}).then(handle),
   syncToDB:     (dealers,MO) => fetch(`${BASE}/dealers/sync-db`,{method:'POST',headers:authHeaders(),body:JSON.stringify({dealers,MO})}).then(handle),
 
@@ -1712,6 +1713,8 @@ export const api = {
   },
   updateOutstanding: (name,month,amount) =>
     fetch(`${BASE}/outstanding/${encodeURIComponent(name)}`,{method:'PUT',headers:authHeaders(),body:JSON.stringify({month,amount})}).then(handle),
+  deleteOutstandingMonth: (month) =>
+    fetch(`${BASE}/outstanding/month/${encodeURIComponent(month)}`,{method:'DELETE',headers:authHeaders()}).then(handle),
 
   // Outstanding Followups
   getFollowups:    ()      => fetch(`${BASE}/followups`,{headers:authHeaders()}).then(handle),
@@ -2135,6 +2138,7 @@ export const dbDealerToApp = (d, MO=[]) => {
     state:         d.state||'',
     zone:          d.zone||'',
     status:        d.status||'ACTIVE',
+    dealerType:    d.dealerType||'None',
     address:       d.address||'',
     pincode:       d.pincode||'',
     category:      d.category||'',

@@ -1223,6 +1223,29 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
               }}>
               Merge name-variant dupes
             </button>
+            <button
+              onClick={async ()=>{
+                const ok = await confirmDialog({
+                  title:'Normalize city & state?',
+                  message:'Standardizes the spelling & casing of city and state on ALL dealers — e.g. "BANGALORE", "bengaluru ", "Banglore" all become "Bangalore". Safe and recommended so filters/permissions match.',
+                  confirmText:'Normalize', danger:false,
+                });
+                if(!ok) return;
+                try {
+                  const r = await api.normalizeGeo();
+                  notify.success('Normalized city/state on ' + (r?.changed||0) + ' of ' + (r?.scanned||0) + ' dealers. Reload to see.');
+                  if(onSaved) onSaved();
+                } catch(e){ notify.error(e.message || 'Normalize failed'); }
+              }}
+              title="Standardize city & state spelling/casing across all dealers"
+              style={{
+                display:'flex', alignItems:'center', gap:6,
+                color:'#93c5fd', background:'rgba(99,102,241,0.10)',
+                border:'1px solid rgba(99,102,241,0.45)',
+                padding:'8px 12px', borderRadius:6, fontSize:11, fontWeight:700, cursor:'pointer',
+              }}>
+              Normalize City / State
+            </button>
             <button onClick={handleCatDeleteMonth} disabled={catBusy}
               title={`Wipe ${month}: category sales + per-dealer target/achieved/status + duplicate dealers (so you can re-upload cleanly)`}
               style={{

@@ -152,7 +152,7 @@ import mongoose from 'mongoose';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import authRoutes        from './routes/auth.js';
-import dealerRoutes      from './routes/dealers.js';
+import dealerRoutes, { normCity, normState } from './routes/dealers.js';
 import noteRoutes        from './routes/notes.js';
 import outstandingRoutes from './routes/outstanding.js';
 import settingsRoutes    from './routes/settings.js';
@@ -289,6 +289,21 @@ const runMigrations = async () => {
     if(monthFixed > 0){
       console.log('[MIGRATION] dealer monthlyData status: ' + monthFixed + ' dealers cleaned');
     }
+
+    // Normalize every dealer's city + state to a canonical spelling/casing so
+    // filters & permissions match. Idempotent — only writes rows that change.
+    try {
+      const geoDealers = await Dealer.find({}, 'city state').lean();
+      const ops = [];
+      for(const d of geoDealers){
+        const nc = normCity(d.city), ns = normState(d.state);
+        if(nc !== (d.city || '') || ns !== (d.state || '')){
+          ops.push({ updateOne:{ filter:{ _id:d._id }, update:{ $set:{ city:nc, state:ns } } } });
+        }
+      }
+      if(ops.length){ await Dealer.bulkWrite(ops); }
+      console.log('[MIGRATION] normalize city/state: ' + ops.length + ' of ' + geoDealers.length + ' dealers updated');
+    } catch(e){ console.warn('[MIGRATION] normalize city/state failed:', e.message); }
   } catch(e){
     console.warn('[MIGRATION] runMigrations failed:', e.message);
   }

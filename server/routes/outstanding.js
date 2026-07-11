@@ -143,6 +143,18 @@ router.put('/:name', protect, adminOnly, async (req,res) => {
   }catch(e){res.status(500).json({error:e.message});}
 });
 
+// DELETE /api/outstanding/month/:month — remove an entire month column from
+// every dealer's outstanding record (e.g. delete "Apr-26"). Admin/superadmin.
+router.delete('/month/:month', protect, adminOnly, async (req,res) => {
+  try {
+    const month = decodeURIComponent(req.params.month);
+    if(!month) return res.status(400).json({error:'month required'});
+    const r = await Outstanding.updateMany({}, { $unset: { [`monthlyOutstanding.${month}`]: '' } });
+    console.log(`[OUTSTANDING] deleted month ${month} from ${r.modifiedCount} records`);
+    res.json({ ok:true, month, modified: r.modifiedCount || 0 });
+  } catch(e){ console.error('[OUTSTANDING delete-month]', e.message); res.status(500).json({error:e.message}); }
+});
+
 router.delete('/:id', protect, adminOnly, async (req,res) => {
   await Outstanding.findByIdAndDelete(req.params.id);
   res.json({ok:true});
