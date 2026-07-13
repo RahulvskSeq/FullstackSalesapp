@@ -121,6 +121,53 @@ router.get('/attendance', protect, async (req, res) => {
   } catch(e){ console.error('[CRM/attendance GET]', e.message); res.status(500).json({ error:e.message }); }
 });
 
+// ── GET /api/crm/attendance/feed — EXTERNAL read-only attendance API ────────
+// Authenticated by an API KEY (not a login token), so you can fetch attendance
+// from an external dashboard/integration. Set ATTENDANCE_API_KEY in the
+// server .env, then pass it as header `x-api-key` OR query `?key=`.
+// Filters: ?userId=  ?from=YYYY-MM-DD  ?to=YYYY-MM-DD  ?limit=  ?photo=1
+router.get('/attendance/feed', async (req, res) => {
+  try {
+    const expected = process.env.ATTENDANCE_API_KEY;
+    if(!expected) return res.status(503).json({ error:'Attendance API not configured — set ATTENDANCE_API_KEY in server .env' });
+    const key = req.headers['x-api-key'] || req.query.key;
+    if(!key || key !== expected) return res.status(401).json({ error:'Invalid or missing API key' });
+
+    const q = {};
+    if(req.query.userId) q.userId = req.query.userId;
+    if(req.query.from || req.query.to){
+      q.dateStr = {};
+      if(req.query.from) q.dateStr.$gte = String(req.query.from);
+      if(req.query.to)   q.dateStr.$lte = String(req.query.to);
+    }
+    const limit = Math.min(Number(req.query.limit) || 1000, 5000);
+    const includePhoto = req.query.photo === '1' || req.query.photo === 'true';
+    // Photos are large base64 blobs — excluded by default; add ?photo=1 to include.
+    const items = await Attendance.find(q, includePhoto ? '' : '-photo')
+      .sort({ createdAt:-1 }).limit(limit).lean();
+
+    res.json({
+      ok: true,
+      count: items.length,
+      attendance: items.map(a => ({
+        id:       a._id,
+        userId:   a.userId,
+        userName: a.userName || '',
+        type:     a.type,            // 'in' | 'out'
+        date:     a.dateStr || '',   // YYYY-MM-DD
+        time:     a.createdAt,       // ISO timestamp
+        address:  a.address || '',
+        city:     a.city || '',
+        state:    a.state || '',
+        lat:      a.lat ?? null,
+        lng:      a.lng ?? null,
+        note:     a.note || '',
+        ...(includePhoto ? { photo: a.photo || '' } : {}),
+      })),
+    });
+  } catch(e){ console.error('[CRM/attendance feed]', e.message); res.status(500).json({ error:e.message }); }
+});
+
 // ───────────────────────────────── Visits ─────────────────────────────────
 
 // POST /api/crm/visits — CHECK IN to a party. Creates an in-progress visit.
