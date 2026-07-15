@@ -216,17 +216,17 @@ const T = {
   cyan:  '#0ea5e9',
 };
 
-// Green choropleth scale tuned for dark background
-const GREEN_SCALE = ['#0e2a18','#1b5e20','#2e7d32','#43a047','#66bb6a','#a5d6a7'];
-
+// Diverging RED → GREEN heatmap (BI style): low/zero sales = red/salmon,
+// high sales = green, with a neutral light band in the middle.
+const GREEN_SCALE = ['#e79a9a','#ecb3ad','#e7d7bf','#dbe8cf','#bcdcb0','#95cc8c','#6fbf6f'];
 const colorForRatio = ratio => {
-  if(!ratio || ratio <= 0) return '#1a1d36';
-  if(ratio > 0.83) return GREEN_SCALE[5];
-  if(ratio > 0.66) return GREEN_SCALE[4];
-  if(ratio > 0.50) return GREEN_SCALE[3];
-  if(ratio > 0.33) return GREEN_SCALE[2];
-  if(ratio > 0.16) return GREEN_SCALE[1];
-  return GREEN_SCALE[0];
+  if(!ratio || ratio <= 0) return '#e79a9a';   // no sales → red / salmon
+  if(ratio <= 0.15) return '#ecb3ad';          // very low → light red
+  if(ratio <= 0.35) return '#e7d7bf';          // low-mid → neutral
+  if(ratio <= 0.55) return '#dbe8cf';          // mid → very light green
+  if(ratio <= 0.70) return '#bcdcb0';          // good → light green
+  if(ratio <= 0.85) return '#95cc8c';          // high → green
+  return '#6fbf6f';                            // top → strong green
 };
 
 const fmtIN = n => {
@@ -272,7 +272,7 @@ const MAP_CSS = `
     font-weight: 700;
     text-align: center;
     line-height: 1.2;
-    text-shadow: 0 0 4px rgba(0,0,0,1), 0 0 8px rgba(0,0,0,0.9);
+    text-shadow: none;
     white-space: nowrap;
   }
   .stp-state-label-inner .lbl-val {
@@ -297,7 +297,7 @@ const MAP_CSS = `
     display: block; margin-top: 1px;
   }
   /* Light basemap: dark, clearly-readable labels on white */
-  .stp-mapview.lightmap .stp-state-label-inner { color:#0f172a; text-shadow:0 0 3px #fff,0 0 6px #fff,0 0 9px #fff; }
+  .stp-mapview.lightmap .stp-state-label-inner { color:#0f172a; text-shadow:none; font-weight:800; }
   .stp-mapview.lightmap .stp-state-label-inner .lbl-val { color:#15803d; }
   .stp-mapview.lightmap .stp-city-label-inner { background:#ffffff; color:#0f172a; border-color:#15803d; box-shadow:0 2px 8px rgba(0,0,0,.18); }
   .stp-mapview.lightmap .stp-city-label-inner .lbl-val { color:#15803d; }
@@ -381,6 +381,11 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
   const districtGeoRef= useRef(null);   // cached all-India district GeoJSON
   const districtLyrRef= useRef(null);   // current districts polygon layer
   const districtLblRef= useRef([]);     // current district name labels
+  const subGeoRef     = useRef(null);   // cached all-India sub-district (taluka) GeoJSON
+  const subLyrRef     = useRef(null);   // current sub-district polygon layer
+  const subLblRef     = useRef([]);     // current sub-district name labels
+  const restoredRef   = useRef(false);  // did we restore drill state from the URL yet?
+  const pendingDrillRef = useRef(null); // { dt, ar } to open after geojson loads
   const maskLyrRef    = useRef(null);   // mask polygon that hides everything outside selected state
   const focusLyrRef   = useRef(null);   // mask that isolates a clicked city/district ("open" view)
   const baseTileRef   = useRef(null);   // base dark tiles ref (so we can hide them when drilled)
@@ -420,6 +425,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
   const [lightMap, setLightMap] = useState(true);           // light ("clear") basemap is the default
   const [summaryView, setSummaryView] = useState(null);     // 'customers'|'sales'|'salesmen'|'zones'|null
   const [districtsReady, setDistrictsReady] = useState(false);
+  const [subReady, setSubReady] = useState(false);   // sub-district (taluka) geojson loaded?
   const [hoverDistrict, setHoverDistrict]   = useState(null);
   const [leafletReady, setLeafletReady] = useState(false);
   const [geoReady, setGeoReady]         = useState(false);
@@ -744,19 +750,25 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
   // Swaps the CartoDB tile set so districts + green fills stand out on a
   // clean white background (like a BI dashboard), without re-creating the map.
   useEffect(() => {
-    if(!leafletReady) return;
+    if(!leafletReady || !mapObjRef.current) return;
+    const map = mapObjRef.current;
     try {
       if(baseTileRef.current){
-        baseTileRef.current.setUrl(lightMap
-          ? 'https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png'
-          : 'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png');
+        if(lightMap){
+          // BI-dashboard look: REMOVE the street tiles entirely so it's just
+          // the region polygons + green fills on a clean flat background.
+          if(map.hasLayer(baseTileRef.current)) map.removeLayer(baseTileRef.current);
+        } else {
+          baseTileRef.current.setUrl('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png');
+          if(!map.hasLayer(baseTileRef.current)) baseTileRef.current.addTo(map);
+        }
       }
       if(placeLayerRef.current){
         placeLayerRef.current.setUrl(lightMap
           ? 'https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png'
           : 'https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png');
       }
-      if(mapRef.current) mapRef.current.style.background = lightMap ? '#d9ddd9' : T.bg0;
+      if(mapRef.current) mapRef.current.style.background = lightMap ? '#eef2f0' : T.bg0;
     } catch {}
   }, [lightMap, leafletReady]);
 
@@ -808,11 +820,13 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
           return { color:'transparent', weight:0, fillOpacity:0, opacity:0 };
         }
         return {
-          color: isSel ? T.acc : T.bd2,
-          weight: isSel ? 2.5 : 0.8,
+          // BI style → thin black borders between states, thick black on the
+          // selected one.
+          color: isSel ? '#111827' : (lightMap ? '#333333' : T.bd2),
+          weight: isSel ? 3 : (lightMap ? 0.9 : 0.8),
           // selected state: light fill so the districts show through clearly
           fillColor: isSel ? colorForRatio(ratio || 0.4) : colorForRatio(ratio),
-          fillOpacity: isSel ? 0.35 : 0.82,
+          fillOpacity: isSel ? 0.35 : (lightMap ? 0.92 : 0.82),
           opacity: 1,
         };
       },
@@ -891,7 +905,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
         } catch {}
       });
     }
-  }, [leafletReady, geoReady, stateData, viewMode, maxStateVal, selected, showLabels, showCount, showNames, drillLevel, selectedMonthIdx, focusArea]);
+  }, [leafletReady, geoReady, stateData, viewMode, maxStateVal, selected, showLabels, showCount, showNames, drillLevel, selectedMonthIdx, focusArea, lightMap]);
 
   // ── Render CITY markers when drilled in ──────────────────────────────────
   useEffect(() => {
@@ -1216,6 +1230,100 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
     const p = feature?.properties || {};
     return normalizeState(p.ST_NM || p.st_nm || p.NAME_1 || p.statename || p.state || p.STATE);
   };
+  // Build a district focusArea (holes + bounds) from a GeoJSON feature — used
+  // by both the click handler and URL-restore.
+  const buildDistrictFocus = (feature, name) => {
+    const geom = feature?.geometry, holes = [];
+    if(geom?.type === 'Polygon')           geom.coordinates.forEach((r,i)=>{ if(i===0) holes.push(r); });
+    else if(geom?.type === 'MultiPolygon') geom.coordinates.forEach(p=>holes.push(p[0]));
+    if(!holes.length) return null;
+    let minLat=90, maxLat=-90, minLng=180, maxLng=-180;
+    holes.forEach(r => r.forEach(([lng,lat]) => {
+      if(lat<minLat) minLat=lat; if(lat>maxLat) maxLat=lat;
+      if(lng<minLng) minLng=lng; if(lng>maxLng) maxLng=lng;
+    }));
+    return { type:'district', name, holes, boundsArr:[[minLat,minLng],[maxLat,maxLng]] };
+  };
+
+  // ── Reflect the drill state into the URL (so a link opens that view) ──────
+  useEffect(() => {
+    if(!restoredRef.current) return;   // don't overwrite the URL before we restore
+    const params = new URLSearchParams();
+    if(selected) params.set('st', selected);
+    if(focusArea?.type === 'district') params.set('dt', focusArea.name);
+    if(selectedCity) params.set('ar', selectedCity);
+    const qs = params.toString();
+    const base = (window.location.hash.split('?')[0]) || '#/map';
+    const newHash = base + (qs ? '?' + qs : '');
+    if(window.location.hash !== newHash){
+      try { window.history.replaceState(null, '', newHash); } catch {}
+    }
+  }, [selected, focusArea, selectedCity]);
+
+  // ── Restore drill state FROM the URL on load ─────────────────────────────
+  useEffect(() => {
+    if(restoredRef.current || !geoReady) return;
+    restoredRef.current = true;
+    const qi = window.location.hash.indexOf('?');
+    if(qi < 0) return;
+    const p = new URLSearchParams(window.location.hash.slice(qi + 1));
+    const st = p.get('st');
+    if(st){
+      setSelected(st);
+      pendingDrillRef.current = { dt: p.get('dt'), ar: p.get('ar') };
+    }
+  }, [geoReady]);
+
+  // After the district geojson loads, open the pending district + area.
+  useEffect(() => {
+    const pend = pendingDrillRef.current;
+    if(!pend || !selected) return;
+    if(pend.dt){
+      if(!districtsReady || !districtGeoRef.current) return;
+      const feat = districtGeoRef.current.features.find(f =>
+        (getDistrictName(f) || '').toLowerCase().trim() === pend.dt.toLowerCase().trim() &&
+        (getDistrictStateName(f) || '').toLowerCase() === selected.toLowerCase());
+      if(feat){
+        const fa = buildDistrictFocus(feat, getDistrictName(feat));
+        if(fa){ setFocusArea(fa); if(pend.ar) setSelectedCity(pend.ar); }
+      }
+      pendingDrillRef.current = null;
+    } else if(pend.ar){
+      setSelectedCity(pend.ar);
+      pendingDrillRef.current = null;
+    }
+  }, [districtsReady, selected]);
+
+  // Sub-district (taluka) property resolvers.
+  const getSubName = feature => {
+    const p = feature?.properties || {};
+    return p.SUB_DIST || p.subdistrict || p.SUBDISTRICT || p.sdtname || p.TEHSIL || p.tehsil ||
+           p.taluk || p.TALUK || p.NAME_3 || p.name || '';
+  };
+  const getSubParentDistrict = feature => {
+    const p = feature?.properties || {};
+    return p.DISTRICT || p.district || p.dtname || p.NAME_2 || p.District || '';
+  };
+
+  // ── Lazy-load India SUB-DISTRICT (taluka) GeoJSON — only when a district is
+  //    opened. If no source has it, we silently keep the pincode markers. ──────
+  useEffect(() => {
+    if(focusArea?.type !== 'district' || subGeoRef.current) return;
+    const SOURCES = [
+      'https://raw.githubusercontent.com/datta07/INDIAN-SHAPEFILES/master/INDIA/INDIAN_SUB_DISTRICTS.geojson',
+    ];
+    (async () => {
+      for(const url of SOURCES){
+        try {
+          const res = await fetch(url);
+          if(!res.ok) continue;
+          const data = await res.json();
+          if(data?.features?.length){ subGeoRef.current = data; setSubReady(true); return; }
+        } catch {}
+      }
+      console.warn('[MAP] sub-district (taluka) GeoJSON unavailable — showing pincode markers instead');
+    })();
+  }, [focusArea]);
 
   // ── Aggregate dealers per district (by matching dealer.city to district) ──
   const districtData = useMemo(() => {
@@ -1290,12 +1398,14 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
         const d     = districtData[dname];
         const ratio = d && maxDistrictVal ? d.total / maxDistrictVal : 0;
         return {
-          color: T.acc,
-          weight: 1,
-          dashArray: '3,3',
-          fillColor: d && d.total > 0 ? colorForRatio(0.3 + ratio * 0.7) : 'transparent',
-          fillOpacity: d && d.total > 0 ? 0.55 : 0,
-          opacity: 0.8,
+          // BI style: solid thin black borders + red↔green diverging fill
+          // (low/zero = red, high = green) so every district reads as a heat cell.
+          color: '#333333',
+          weight: 0.9,
+          dashArray: '',
+          fillColor: colorForRatio(d && d.total > 0 ? ratio : 0),
+          fillOpacity: 0.9,
+          opacity: 1,
         };
       },
       onEachFeature: (feature, layer) => {
@@ -1352,8 +1462,8 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
           className:'stp-state-label', interactive:false, opacity:1,
         })
         .setContent(
-          '<div class="stp-state-label-inner" style="font-size:8px;opacity:.9">' + dname +
-          (d && d.total > 0 ? '<span class="lbl-val" style="font-size:8px">' + fmtIN(d.total) + '</span>' : '') +
+          '<div class="stp-state-label-inner" style="font-size:10px">' + dname +
+          (d && d.total > 0 ? '<span class="lbl-val" style="font-size:9px">' + fmtIN(d.total) + '</span>' : '') +
           '</div>'
         )
         .setLatLng(center);
@@ -1362,6 +1472,85 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
       } catch {}
     });
   }, [leafletReady, drillLevel, selected, showDistricts, districtsReady, districtData, maxDistrictVal, focusArea]);
+
+  // ── Render SUB-DISTRICT (taluka) AREAS when a district is opened ──────────
+  // Shows each taluka's border + name, heat-colored by the sales of dealers
+  // whose city matches that taluka. Falls back silently if data isn't loaded.
+  useEffect(() => {
+    if(!leafletReady || !mapObjRef.current) return;
+    const L = window.L, map = mapObjRef.current;
+    if(subLyrRef.current){ try { subLyrRef.current.remove(); } catch {} subLyrRef.current = null; }
+    subLblRef.current.forEach(l => { try { l.remove(); } catch {} });
+    subLblRef.current = [];
+
+    if(focusArea?.type !== 'district' || !subReady || !subGeoRef.current) return;
+
+    const distLower = focusArea.name.toLowerCase().trim();
+    let feats = subGeoRef.current.features.filter(f =>
+      (getSubParentDistrict(f) || '').toLowerCase().trim() === distLower);
+    // Fallback: if district names don't line up between the two datasets,
+    // keep sub-districts whose centre falls inside the opened district bounds.
+    if(!feats.length && focusArea.boundsArr){
+      const [[s,w],[n,e]] = focusArea.boundsArr;
+      feats = subGeoRef.current.features.filter(f => {
+        try { const c = L.geoJSON(f).getBounds().getCenter();
+          return c.lat>=s && c.lat<=n && c.lng>=w && c.lng<=e; } catch { return false; }
+      });
+    }
+    if(!feats.length) return;
+
+    // Sales per taluka — match dealer.city to the taluka name.
+    const dealersInDist = districtData[distLower]?.dealers || [];
+    const salesBySub = {};
+    dealersInDist.forEach(d => {
+      const c = (d.city || '').trim().toLowerCase();
+      if(!c) return;
+      salesBySub[c] = (salesBySub[c] || 0) + Number(d.months?.[selectedMonthIdx] || 0);
+    });
+    const maxSub = Math.max(1, ...Object.values(salesBySub));
+
+    const layer = L.geoJSON({ type:'FeatureCollection', features:feats }, {
+      pane: 'districtPane',
+      style: f => {
+        const sales = salesBySub[(getSubName(f) || '').toLowerCase()] || 0;
+        return { color:'#333333', weight:0.7, fillColor: colorForRatio(sales > 0 ? sales/maxSub : 0), fillOpacity:0.85, opacity:1 };
+      },
+      onEachFeature: (f, lyr) => {
+        const sn = getSubName(f) || '—';
+        const sales = salesBySub[(sn || '').toLowerCase()] || 0;
+        lyr.bindTooltip(
+          '<div style="font-family:Inter,system-ui;background:#fff;color:#0f172a;border-radius:8px;padding:8px 11px;min-width:130px">' +
+          '<div style="font-weight:800;margin-bottom:3px">' + sn + '</div>' +
+          '<div style="font-size:11px;color:#475569">Sales : <b style="color:#15803d">' + fmtIN(sales) + '</b></div>' +
+          '<div style="font-size:9px;color:#94a3b8;margin-top:4px">Click to open this area →</div></div>',
+          { sticky:true, opacity:1, className:'stp-tooltip', direction:'top' }
+        );
+        lyr.on({
+          mouseover: ev => { ev.target.setStyle({ weight:2, color:'#111827' }); try{ ev.target.bringToFront(); }catch{} },
+          mouseout:  ev => { if(subLyrRef.current) subLyrRef.current.resetStyle(ev.target); },
+          // Open (drill into) the clicked area — surfaces its dealers/pincodes
+          // and zooms to it.
+          click: ev => {
+            setSelectedCity(sn);
+            try { map.fitBounds(ev.target.getBounds(), { padding:[30,30], maxZoom:12 }); } catch {}
+          },
+        });
+      },
+    }).addTo(map);
+    subLyrRef.current = layer;
+
+    feats.forEach(f => {
+      try {
+        const sn = getSubName(f); if(!sn) return;
+        const center = L.geoJSON(f).getBounds().getCenter();
+        const lbl = L.tooltip({ permanent:true, direction:'center', className:'stp-state-label', interactive:false, opacity:1 })
+          .setContent('<div class="stp-state-label-inner" style="font-size:8px">' + sn + '</div>')
+          .setLatLng(center);
+        lbl.addTo(map);
+        subLblRef.current.push(lbl);
+      } catch {}
+    });
+  }, [leafletReady, focusArea, subReady, districtData, selectedMonthIdx]);
 
   const districtList = useMemo(
     () => Object.values(districtData).sort((a,b) => b.total - a.total),
@@ -1380,6 +1569,18 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
       }
     } catch {}
   };
+
+  // Step up ONE drill level: taluka/city → district → state → India.
+  const goBackOneStep = () => {
+    if(selectedCity){
+      setSelectedCity(null);
+      if(focusArea?.type === 'city') setFocusArea(null);
+      return;
+    }
+    if(focusArea){ setFocusArea(null); return; }   // district → state
+    if(selected){ backToIndia(); return; }          // state → India
+  };
+  const canGoBack = !!(selected || focusArea || selectedCity);
 
   const selectedCityObj = selectedCity ? cityData.find(c => c.name.toLowerCase() === selectedCity.toLowerCase()) : null;
   // The opened district's aggregated data ({ name, dealers, total, target }).
@@ -1406,26 +1607,48 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
     <div className={"fade stp-mapview" + (lightMap ? " lightmap" : "")} style={{padding:0, color:T.t1}}>
       {/* ── Breadcrumb ──────────────────────────────────────────────────── */}
       <div style={{display:'flex', alignItems:'center', gap:6, marginBottom:10, flexWrap:'wrap'}}>
+        {canGoBack && (
+          <button onClick={goBackOneStep} title="Go back one step"
+            style={{display:'inline-flex', alignItems:'center', gap:4, fontSize:12, fontWeight:700,
+              background:'var(--bg2)', color:T.t1, border:'1px solid var(--bd2)',
+              borderRadius:8, padding:'4px 10px', cursor:'pointer', marginRight:4}}>
+            <ArrowLeft size={13}/> Back
+          </button>
+        )}
         <Globe size={14} color={T.acc}/>
-        <span style={{color:T.acc, fontSize:13, fontWeight:700, cursor:'pointer'}} onClick={backToIndia}>World</span>
-        <ChevronRight size={13} color={T.t3}/>
         <span style={{color: selected ? T.acc : T.t1, fontSize:13, fontWeight:700, cursor:'pointer'}} onClick={backToIndia}>India</span>
         {selected && (
           <>
             <ChevronRight size={13} color={T.t3}/>
-            <span style={{color: (selectedCity||focusArea) ? T.acc : T.t1, fontSize:13, fontWeight:800, cursor:'pointer'}} onClick={() => { setSelectedCity(null); setFocusArea(null); }}>{selected}</span>
-          </>
-        )}
-        {selectedCity && (
-          <>
-            <ChevronRight size={13} color={T.t3}/>
-            <span style={{color:T.t1, fontSize:13, fontWeight:800}}>{selectedCity}</span>
+            {/* State — click to go back to the state view */}
+            <span style={{color: (selectedCity||focusArea) ? T.acc : T.t1, fontSize:13, fontWeight:800, cursor:'pointer'}}
+              onClick={() => { setSelectedCity(null); setFocusArea(null); }}>{selected}</span>
           </>
         )}
         {focusArea?.type === 'district' && (
           <>
             <ChevronRight size={13} color={T.t3}/>
-            <span style={{color:T.t1, fontSize:13, fontWeight:800}}>{focusArea.name} <span style={{fontWeight:500, color:T.t3}}>District</span></span>
+            {/* District — click to (re)open the district view: clear the area
+                AND zoom the map back to the district. */}
+            <span style={{color: selectedCity ? T.acc : T.t1, fontSize:13, fontWeight:800, cursor:'pointer'}}
+              onClick={() => {
+                setSelectedCity(null);
+                try {
+                  const map = mapObjRef.current, L = window.L;
+                  if(map && L && focusArea?.boundsArr){
+                    const b = L.latLngBounds(focusArea.boundsArr);
+                    map.setMaxBounds(b.pad(0.15));
+                    map.fitBounds(b, { padding:[20,20], maxZoom:10 });
+                  }
+                } catch {}
+              }}>{focusArea.name} <span style={{fontWeight:500, color:T.t3}}>District</span></span>
+          </>
+        )}
+        {selectedCity && (
+          <>
+            <ChevronRight size={13} color={T.t3}/>
+            {/* Area / taluka — the current level */}
+            <span style={{color:T.t1, fontSize:13, fontWeight:800}}>{selectedCity}</span>
           </>
         )}
         {selected && (
@@ -1778,7 +2001,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
           )}
           {drillLevel === 'state' && cityData.length > 0 && unmappedCities.length > 0 && (
             <div style={{
-              position:'absolute', top:14, left:14, zIndex:1000,
+              position:'absolute', top:14, right:14, zIndex:1000,
               background:'#3a2a05', border:'1px solid #92400e',
               borderRadius:7, padding:'6px 10px', fontSize:11, color:'#fbbf24',
               maxWidth:260,

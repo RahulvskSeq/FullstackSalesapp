@@ -130,6 +130,29 @@ export default function Reports({ dealers, users, currentUser, monthConfig, outs
     exportCSV('Outstanding_' + new Date().toISOString().slice(0,10) + '.csv', headers, rows);
   };
 
+  // ── User Master — export the full user list + their access settings ──────
+  const downloadUserMaster = () => {
+    const headers = ['User ID','Name','Role','Active','Approver',
+      'Perm States','Perm Cities','Perm Zones','Perm Salesmen','Pages','Features','Sheet URL'];
+    const list = Object.values(users || {})
+      .sort((a,b)=>{ const o={superadmin:0,admin:1,employee:2,salesman:3}; return (o[a.role]??4)-(o[b.role]??4) || (a.name||'').localeCompare(b.name||''); });
+    const rows = list.map(u => {
+      const p = u.permissions || {};
+      return [
+        u.id, u.name, u.role, u.active===false ? 'No' : 'Yes',
+        u.approver ? (users[u.approver]?.name || u.approver) : '',
+        (p.states||[]).join('; '),
+        (p.cities||[]).join('; '),
+        (p.zones||[]).join('; '),
+        (p.salesmen||[]).map(s=>users[s]?.name||s).join('; '),
+        (p.pages||[]).join('; '),
+        (p.features||[]).join('; '),
+        u.url || '',
+      ];
+    });
+    exportCSV('UserMaster_' + new Date().toISOString().slice(0,10) + '.csv', headers, rows);
+  };
+
   // ── Live CRM reports (fetch from API at click time, no caching needed) ─
   const downloadAttendance = async () => {
     try {
@@ -302,6 +325,13 @@ export default function Reports({ dealers, users, currentUser, monthConfig, outs
         sub={(outstandingData?.length || 0) + ' parties · all months stored'}
         icon={AlertTriangle} color="#f87171"
         onClick={downloadOutstanding}/>
+
+      {/* ── User master ──────────────────────────────────────────────── */}
+      <div style={{fontSize:11, color:'var(--t3)', textTransform:'uppercase', letterSpacing:'.12em', marginTop:4}}>Administration</div>
+      <ReportCard title="User Master"
+        sub={(Object.keys(users || {}).length) + ' users · roles, access permissions & pages'}
+        icon={Users} color="#a5b4fc"
+        onClick={downloadUserMaster}/>
 
       {/* ── Category → Dealer drill-down ─────────────────────────────── */}
       <div style={{fontSize:11, color:'var(--t3)', textTransform:'uppercase', letterSpacing:'.12em', marginTop:4}}>Category Drill-Down</div>

@@ -5658,15 +5658,19 @@ const daysUntil= d => Math.ceil((new Date(d) - new Date().setHours(0,0,0,0)) / 8
 // comment box so the salesman can type anything that doesn't fit a preset.
 const FOLLOWUP_REASONS = [
   'Payment Collected',
-  'Follow-up Required / Funds Not Available',
-  'Invoice / Material Dispute',
-  'Credit Note Issue',
-  'Dealer is not Genuine',
-  'Dealer Not Available',
+  'Funds not Available - Continue Follow Up Required',
+  'Invoice/Material Dispute - Credit Note to be Issued',
   'Postponed the Payment Date',
-  'Ledger Statement',
+  'Ledger/Reconciliation Issue',
   'Others',
 ];
+// Reasons that REQUIRE a remark to be written (the rest don't).
+const REASONS_NEED_REMARKS = new Set([
+  'Funds not Available - Continue Follow Up Required',
+  'Invoice/Material Dispute - Credit Note to be Issued',
+  'Ledger/Reconciliation Issue',
+  'Others',
+]);
 
 function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMonth, prefillAmount }) {
   const [date,    setDate]    = useState(todayStr());
@@ -5722,8 +5726,8 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
     // "Others" is chosen. (no-pickup still gets through with no reason.)
     if (type === 'followup') {
       if (!reason) { setErr('Pick a reason'); return; }
-      if (reason === 'Others' && !(comment || '').trim()) {
-        setErr('Add a note for the "Others" reason'); return;
+      if (REASONS_NEED_REMARKS.has(reason) && !(comment || '').trim()) {
+        setErr('Remarks are required for this reason'); return;
       }
       // Enforce the 7-day cap server-side too
       if (date > maxFollowupDate) {
@@ -5744,7 +5748,7 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
       if (type === 'no-pickup') {
         saved = '📵 Did not pick call' + (note ? ` — ${note}` : '');
       } else if (reason === 'Others') {
-        saved = note;                              // "Others" is just the note text
+        saved = note || reason;                    // "Others" is just the note text
       } else if (reason) {
         saved = note ? `${reason} — ${note}` : reason;
       } else {
@@ -6010,14 +6014,14 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
             </select>
           </div>
 
-          {/* Free-text note — shown ONLY when reason is "Others" */}
-          {reason === 'Others' && (
+          {/* Remarks — shown (and required) for reasons that need an update */}
+          {REASONS_NEED_REMARKS.has(reason) && (
             <div style={{marginBottom:8}}>
               <label style={{fontSize:10,color:'var(--t3)',display:'block',marginBottom:4,textTransform:'uppercase'}}>
-                Note <span style={{color:'#f87171'}}>*</span>
+                Remarks <span style={{color:'#f87171'}}>*</span>
               </label>
               <VoiceTextarea value={comment} onChange={setComment}
-                placeholder="Describe the reason… (tap 🎤 to speak)"
+                placeholder="Update the remarks… (tap 🎤 to speak)"
                 rows={2}/>
             </div>
           )}
