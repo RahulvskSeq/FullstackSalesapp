@@ -1279,7 +1279,7 @@
 
 
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Users, Target, Award, Activity, TrendingUp, Clock, Bell, AlertTriangle, Search, MapPin, Star, ArrowUpRight, ArrowDownRight, X, GripVertical, Hash } from 'lucide-react';
 import { MO as MO_CONST, CURRENT_MONTH_IDX, DEALER_TYPES } from '../constants';
@@ -1366,14 +1366,42 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
     [allCatTotals, catExcluded],
   );
 
+  // ── Month-range selector ──────────────────────────────────────────────
+  // By default the Overview follows the single globally-selected month. The
+  // user can instead pick a FROM→TO month range; when the range spans more
+  // than one month, every KPI / table sums achieved & target across the range.
+  const [rangeStart, setRangeStart] = useState(selectedMonthIdx);
+  const [rangeEnd,   setRangeEnd]   = useState(selectedMonthIdx);
+  // Keep the range pinned to the global month until the user changes it.
+  const rangeTouchedRef = useRef(false);
+  useEffect(() => {
+    if (!rangeTouchedRef.current) { setRangeStart(selectedMonthIdx); setRangeEnd(selectedMonthIdx); }
+  }, [selectedMonthIdx]);
+  // Clamp indices if the available months (MO) change.
+  const clampIdx = (i) => Math.max(0, Math.min(MO.length - 1, i));
+  const rLo = clampIdx(Math.min(rangeStart, rangeEnd));
+  const rHi = clampIdx(Math.max(rangeStart, rangeEnd));
+  const rangeIdxs = useMemo(() => {
+    const arr = []; for (let i = rLo; i <= rHi; i++) arr.push(i); return arr;
+  }, [rLo, rHi]);
+  const rangeActive = rangeIdxs.length > 1;
+  // Human labels for the active period (single month or "Jul–Sep '25→'26").
+  const periodLabel = rangeActive
+    ? `${MO[rLo].slice(0,3)}–${MO[rHi]}`
+    : selMoLabel;
+  const periodFull = rangeActive
+    ? `${MO[rLo]} → ${MO[rHi]}`
+    : selMoFull;
+
   // `dealers` is already category-filtered by the App-level useFilteredDealers
   // hook — it substituted dealer.months[currentMonthIdx] with the filtered
   // achieved before this component ever saw it. So just read it straight.
+  // When a range is active, sum achieved & target across every month in it.
   const dealersForMonth=useMemo(()=>dealers.map(d=>({
     ...d,
-    achieved: d.months[selectedMonthIdx] || 0,
-    target:   monthTarget(d, selectedMonthIdx),
-  })),[dealers,selectedMonthIdx]);
+    achieved: rangeIdxs.reduce((s,i)=>s+(d.months[i]||0),0),
+    target:   rangeIdxs.reduce((s,i)=>s+monthTarget(d,i),0),
+  })),[dealers,rangeIdxs]);
 
   const myD=dealersForMonth;
   const [overviewSearch,setOverviewSearch]=useState('');
@@ -1529,7 +1557,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
   const priorityAccount=myD.filter(x=>x.achieved>=100&&x.achieved<=250);
   const risingStar=myD.filter(x=>x.achieved>=50&&x.achieved<100);
   const hasGeoFilter=geoFilter.city||geoFilter.state;
-  const viewingLabel=selectedMonthIdx===CURRENT_MONTH_IDX?`${selMoFull} (Current)`:selMoFull;
+  const viewingLabel=rangeActive?`${periodFull} (Range)`:(selectedMonthIdx===CURRENT_MONTH_IDX?`${selMoFull} (Current)`:selMoFull);
 
   // ── Last-updated stamp ─────────────────────────────────────────────────
   // Ping the server every 60s for the DB's most-recent dealer write time.
@@ -1620,6 +1648,37 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
           )}
         </div>
 
+        {/* ── Month-range selector — pick a period to aggregate ─────── */}
+        <div style={{display:'flex',flexDirection:'column',gap:4}}>
+          <div style={{fontSize:10,color:'var(--t3)',fontWeight:700,textTransform:'uppercase',letterSpacing:'0.1em'}}>Period</div>
+          <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+            <select
+              value={rangeStart}
+              onChange={e=>{ rangeTouchedRef.current=true; setRangeStart(+e.target.value); }}
+              title="From month"
+              style={{background:'var(--bg1)',color:'var(--t1)',border:'1px solid '+(rangeActive?'var(--acc)':'var(--b2)'),borderRadius:8,padding:'6px 10px',fontSize:12,fontWeight:600,cursor:'pointer'}}>
+              {MO.map((m,i)=><option key={m} value={i}>{m}</option>)}
+            </select>
+            <span style={{color:'var(--t3)',fontSize:13,fontWeight:700}}>→</span>
+            <select
+              value={rangeEnd}
+              onChange={e=>{ rangeTouchedRef.current=true; setRangeEnd(+e.target.value); }}
+              title="To month"
+              style={{background:'var(--bg1)',color:'var(--t1)',border:'1px solid '+(rangeActive?'var(--acc)':'var(--b2)'),borderRadius:8,padding:'6px 10px',fontSize:12,fontWeight:600,cursor:'pointer'}}>
+              {MO.map((m,i)=><option key={m} value={i}>{m}</option>)}
+            </select>
+            {rangeActive && (
+              <button type="button"
+                onClick={()=>{ rangeTouchedRef.current=false; setRangeStart(selectedMonthIdx); setRangeEnd(selectedMonthIdx); }}
+                title="Reset to the current single month"
+                style={{background:'transparent',color:'var(--acc)',border:'1px solid var(--acc)',borderRadius:8,padding:'6px 10px',fontSize:11,fontWeight:700,cursor:'pointer'}}>
+                Reset
+              </button>
+            )}
+          </div>
+          {rangeActive && <div style={{fontSize:10.5,color:'var(--acc)',fontWeight:600}}>Showing {rangeIdxs.length} months summed</div>}
+        </div>
+
         {/* ── Include / exclude category filter — top-right ─────────── */}
         {allCatTotals.length > 0 && (
           <CategoryFilter
@@ -1650,13 +1709,13 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
 
       <div className="stat-grid">
         <StatCard label="Total Dealers" value={myD.length} sub={`${active} active · ${inactive} inactive · ${dead} dead`} icon={Users}/>
-        <StatCard label={`${selMoLabel} Target`} value={tt} sub="total units" icon={Target}/>
+        <StatCard label={`${periodLabel} Target`} value={tt} sub={rangeActive?`${rangeIdxs.length} months · total units`:"total units"} icon={Target}/>
         <StatCard
-          label={`${selMoLabel} Achieved${catExcluded.size>0 ? ' (excl.)' : ''}`}
+          label={`${periodLabel} Achieved${catExcluded.size>0 ? ' (excl.)' : ''}`}
           value={taAdj}
           sub={catExcluded.size>0
             ? `excludes ${[...catExcluded].join(', ')} (−${Number(filteredDelta).toLocaleString('en-IN')})`
-            : `${selMoFull} total`}
+            : `${periodFull} total`}
           valueColor="#34d399" icon={Award}/>
         <StatCard
           label={`Achievement${catExcluded.size>0 ? ' (excl.)' : ''}`}
@@ -1706,7 +1765,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
                       </div>
                     </div>
                     <div style={{textAlign:'right',fontSize:11}}>
-                      <div style={{color:'var(--t3)'}}>{selMoLabel}</div>
+                      <div style={{color:'var(--t3)'}}>{periodLabel}</div>
                       <div style={{fontWeight:700,color:pclr(p)}}>{d.achieved}/{d.target} · {spct(d.target,d.achieved)}</div>
                     </div>
                   </div>
@@ -1721,7 +1780,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
       <div className="card" style={{marginBottom:12}}>
         <div style={{fontSize:13,fontWeight:600,color:'var(--t2)',marginBottom:12,display:'flex',alignItems:'center',gap:6}}>
           <Award size={14} color="#fbbf24"/> Performance Tiers
-          <span style={{fontSize:11,color:'var(--t3)',fontWeight:400,marginLeft:4}}>({selMoLabel} units · click to view)</span>
+          <span style={{fontSize:11,color:'var(--t3)',fontWeight:400,marginLeft:4}}>({periodLabel} units · click to view)</span>
         </div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:10}}>
           {[
@@ -1916,7 +1975,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
 
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))',gap:14,marginBottom:14}}>
         <div className="card">
-          <div style={{fontSize:13,fontWeight:600,color:'var(--t2)',marginBottom:14}}>🏆 Top 5 — {selMoLabel}</div>
+          <div style={{fontSize:13,fontWeight:600,color:'var(--t2)',marginBottom:14}}>🏆 Top 5 — {periodLabel}</div>
           {top5.length>0?top5.map((x,i)=>{
             const p=pct(x.target,x.achieved);
             return(
@@ -2107,7 +2166,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
         const popup=tierPopup||insightPopup;
         const closePopup=()=>{setTierPopup(null);setInsightPopup(null);setPopupSearch('');};
         const filteredList=popupSearch.trim()?popup.list.filter(d=>d.name.toLowerCase().includes(popupSearch.toLowerCase())):popup.list;
-        const pListForMonth=filteredList.map(d=>({...d,achieved:d.months[selectedMonthIdx]||0,target:monthTarget(d, selectedMonthIdx)}));
+        const pListForMonth=filteredList.map(d=>({...d,achieved:rangeIdxs.reduce((s,i)=>s+(d.months[i]||0),0),target:rangeIdxs.reduce((s,i)=>s+monthTarget(d,i),0)}));
         return(
           <div className="overlay" onClick={e=>e.target===e.currentTarget&&closePopup()}>
             <div className="modal" style={{maxWidth:1100,padding:0}}>

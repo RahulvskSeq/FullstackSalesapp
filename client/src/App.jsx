@@ -15380,8 +15380,8 @@
 //   );
 // }
 
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { LayoutDashboard, Users, TrendingUp, Settings, LogOut, Bell, GitCompare, Menu, RefreshCw, Map, AlertTriangle, Upload, Edit3, Calendar, LogIn, ChevronDown, ShieldCheck, Shield, Palette, Check, Briefcase, Camera, ClipboardList, UserCheck, Plane, FileSpreadsheet, LifeBuoy, CheckSquare, BarChart3 } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
+import { LayoutDashboard, Users, TrendingUp, Settings, LogOut, Bell, GitCompare, Menu, RefreshCw, Map, AlertTriangle, Upload, Edit3, Calendar, LogIn, ChevronDown, ShieldCheck, Shield, Palette, Check, Briefcase, Camera, ClipboardList, UserCheck, Plane, FileSpreadsheet, LifeBuoy, CheckSquare, BarChart3, Table } from 'lucide-react';
 import { DEFAULT_USERS, MO as MO_DEFAULT, CURRENT_MONTH_IDX as CURRENT_MONTH_IDX_DEFAULT, CURRENT_MONTH_LABEL as CURRENT_MONTH_LABEL_DEFAULT, CURRENT_MONTH_SHORT as CURRENT_MONTH_SHORT_DEFAULT } from './constants';
 import { pct, spct, pclr, uid, isoNow, storage, parseCSV, fetchCSV, parseOutstandingCSV } from './utils';
 import { api, dbDealerToApp, dbOutstandingToApp, saveToken, getToken } from './api';
@@ -15392,6 +15392,9 @@ import NotificationCenter, { notify, confirmDialog } from './components/Toast';
 import { THEMES, applyTheme, loadSavedTheme, saveTheme } from './themes';
 import CRM, { AttendancePage, VisitsPage, LeadsPage, LeavesPage } from './components/CRM';
 import Reports             from './components/Reports';
+// Sheets is lazy-loaded — it pulls in the heavy Univer spreadsheet engine, so
+// we keep it out of the initial bundle and only fetch it when Sheets is opened.
+const Sheets = lazy(() => import('./components/Sheets'));
 import TasksPage           from './components/TasksPage';
 import TicketsPage         from './components/TicketsPage';
 import LoginPage         from './components/LoginPage';
@@ -16231,6 +16234,7 @@ export default function App(){
     {id:'leaves',  label:'Leaves',  icon:Plane},
     {id:'tickets', label:'Support', icon:LifeBuoy},
     {id:'reports', label:'Reports', icon:FileSpreadsheet, staff:true},
+    {id:'sheets',  label:'Sheets', icon:Table},
     {id:'admin',   label:'Admin Panel', icon:Settings, feature:'manageCategories', staff:true},
   ];
   const navItems = navItemsRaw
@@ -16711,6 +16715,7 @@ export default function App(){
                   {screen==='leads'      && <LeadsPage      users={users} currentUser={currentUser}/>}
                   {screen==='leaves'     && <LeavesPage     users={users} currentUser={currentUser}/>}
                   {screen==='reports' && isStaff && <Reports dealers={dealers} users={users} currentUser={currentUser} monthConfig={monthConfig} outstandingData={outstandingData}/>}
+                  {screen==='sheets' && <Suspense fallback={<div style={{padding:40,textAlign:'center',color:'var(--t3)'}}>Loading spreadsheet…</div>}><Sheets currentUser={currentUser} users={users}/></Suspense>}
                   {screen==='tasks'   && <TasksPage   users={users} currentUser={currentUser}/>}
                   {screen==='tickets' && <TicketsPage users={users} currentUser={currentUser}/>}
                   {screen==='admin'&&isStaff&&<AdminPanel dealers={dealers} users={users} setUsers={setUsers} setShowUM={setShowUM} onSync={syncSheets} syncing={syncing} lastSync={lastSync} syncErrs={syncErrs} onNavigate={navigate} onOpenDealer={setEditingId} monthConfig={monthConfig} saveMonthConfig={saveMonthConfig} currentUser={currentUser} onLoginAs={(token, user, impersonatedBy)=>{

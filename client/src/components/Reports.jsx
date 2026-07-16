@@ -117,17 +117,74 @@ export default function Reports({ dealers, users, currentUser, monthConfig, outs
     exportCSV('SalesmanSummary_' + rangeLabel.replace(/\s+/g,'_') + '.csv', headers, rows);
   };
 
-  const downloadOutstanding = () => {
-    const headers = ['Dealer','Salesman','Total Outstanding','Latest Month','Latest Amount'];
+  // Detailed Outstanding export — every party's monthly outstanding PLUS one
+  // row per follow-up remark/entry with all its details (reason, remark,
+  // amount, tagged months, status, collected amount/date, who logged it &
+  // when). Parties with no remarks still get one row so nothing is dropped.
+  const downloadOutstanding = async () => {
+    // Pull all follow-up entries (remarks) the user is allowed to see.
+    let followups = [];
+    try { followups = await api.getFollowups(); }
+    catch (e) { notify.info('Could not load remarks (' + e.message + ') — exporting amounts only'); }
+
+    // Group remarks by normalized dealer name, oldest → newest.
+    const norm = (s) => String(s || '').trim().toLowerCase();
+    const byDealer = {};
+    (followups || []).forEach(f => { (byDealer[norm(f.dealerName)] = byDealer[norm(f.dealerName)] || []).push(f); });
+    Object.values(byDealer).forEach(arr =>
+      arr.sort((a, b) => String(a.followupDate || a.createdAt || '').localeCompare(String(b.followupDate || b.createdAt || ''))));
+
+    // Map dealer name → salesman display name (records don't carry it).
+    const dealerSm = {};
+    (dealers || []).forEach(dl => { dealerSm[norm(dl.name)] = dl.salesman; });
+    const nameOf = (id) => (id && users?.[id]?.name) || id || '';
+    const smOf   = (d)  => nameOf(dealerSm[norm(d.name)]);
+    const fmtDT  = (v)  => v ? new Date(v).toLocaleString('en-IN', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '';
+
     const monthCols = Object.keys(outstandingData?.[0]?.monthlyOutstanding || {});
+    const headers = ['Dealer', 'Salesman', 'Latest Outstanding', 'Latest Month'];
     monthCols.forEach(m => headers.push(m + ' Outstanding'));
-    const rows = (outstandingData || []).map(d => {
-      const sm = d.matchedSalesman?.name || '';
-      const row = [d.name, sm, d.latestOutstanding || 0, d.latestMonth || '', d.latestOutstanding || 0];
-      monthCols.forEach(m => row.push(d.monthlyOutstanding?.[m] || 0));
-      return row;
+    headers.push('Entry Date', 'Entry Amount', 'Reason', 'Remark / Comment', 'Applies To Month(s)',
+      'Status', 'Type', 'Collected Amount', 'Collected On', 'Payment Proof', 'Logged By', 'Logged On');
+
+    const BLANK_ENTRY = ['', '', '', '', '', '', '', '', '', '', '', ''];
+    const entryCells = (f) => ([
+      f.followupDate || (f.createdAt || '').slice(0, 10),
+      f.amount || 0,
+      f.reason || '',
+      f.comment || '',
+      Array.isArray(f.months) ? f.months.join(' | ') : '',
+      f.status || '',
+      f.type || 'followup',
+      f.collectedAmount || 0,
+      fmtDT(f.collectedAt),
+      f.paymentProof ? 'Yes' : 'No',
+      nameOf(f.createdBy),
+      fmtDT(f.createdAt),
+    ]);
+
+    const rows = [];
+    const seen = new Set();
+    (outstandingData || []).forEach(d => {
+      const latestMonth = monthCols.length ? monthCols[monthCols.length - 1] : '';
+      const base = [d.name, smOf(d), d.latestOutstanding || 0, latestMonth];
+      monthCols.forEach(m => base.push(d.monthlyOutstanding?.[m] || 0));
+      const entries = byDealer[norm(d.name)] || [];
+      seen.add(norm(d.name));
+      if (entries.length === 0) rows.push([...base, ...BLANK_ENTRY]);
+      else entries.forEach(f => rows.push([...base, ...entryCells(f)]));
     });
-    exportCSV('Outstanding_' + new Date().toISOString().slice(0,10) + '.csv', headers, rows);
+
+    // Remarks for parties not present in the outstanding snapshot — keep them
+    // so no remark is ever lost.
+    Object.keys(byDealer).forEach(key => {
+      if (seen.has(key)) return;
+      const base = [byDealer[key][0].dealerName, nameOf(byDealer[key][0].salesman) || byDealer[key][0].salesman || '', '', ''];
+      monthCols.forEach(() => base.push(''));
+      byDealer[key].forEach(f => rows.push([...base, ...entryCells(f)]));
+    });
+
+    exportCSV('Outstanding_Detailed_' + new Date().toISOString().slice(0, 10) + '.csv', headers, rows);
   };
 
   // ── User Master — export the full user list + their access settings ──────
@@ -321,8 +378,8 @@ export default function Reports({ dealers, users, currentUser, monthConfig, outs
         sub={'Per-salesman totals for each month in ' + rangeLabel}
         icon={Users} color="#34d399"
         onClick={downloadSalesmanSummary}/>
-      <ReportCard title="Outstanding (Current Snapshot)"
-        sub={(outstandingData?.length || 0) + ' parties · all months stored'}
+      <ReportCard title="Outstanding (Detailed + Remarks)"
+        sub={(outstandingData?.length || 0) + ' parties · all months + every follow-up remark & entry with full details'}
         icon={AlertTriangle} color="#f87171"
         onClick={downloadOutstanding}/>
 

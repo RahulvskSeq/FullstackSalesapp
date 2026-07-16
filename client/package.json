@@ -17,6 +17,7 @@
     "@capacitor/filesystem": "^6.0.4",
     "@capacitor/geolocation": "^6.1.1",
     "@capacitor/share": "^6.0.4",
+    "@univerjs/presets": "^0.25.1",
     "lucide-react": "^0.383.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

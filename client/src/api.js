@@ -2090,6 +2090,13 @@ export const api = {
   salesTargetsList:  (month)    => fetch(`${BASE}/sales/targets?month=${encodeURIComponent(month)}`,{headers:authHeaders()}).then(handle),
   salesTargetSet:    (body)     => fetch(`${BASE}/sales/targets`,{method:'POST',headers:authHeaders(),body:JSON.stringify(body)}).then(handle),
   salesTargetsBulk:  (items)    => fetch(`${BASE}/sales/targets/bulk`,{method:'POST',headers:authHeaders(),body:JSON.stringify({items})}).then(handle),
+
+  // ── Online spreadsheets (Sheets section) ─────────────────────────────
+  sheetsList:   ()            => fetch(`${BASE}/sheets`,{headers:authHeaders()}).then(handle),
+  sheetGet:     (id)          => fetch(`${BASE}/sheets/${id}`,{headers:authHeaders()}).then(handle),
+  sheetCreate:  (body)        => fetch(`${BASE}/sheets`,{method:'POST',headers:authHeaders(),body:JSON.stringify(body||{})}).then(handle),
+  sheetSave:    (id,body)     => fetch(`${BASE}/sheets/${id}`,{method:'PUT',headers:authHeaders(),body:JSON.stringify(body||{})}).then(handle),
+  sheetDelete:  (id)          => fetch(`${BASE}/sheets/${id}`,{method:'DELETE',headers:authHeaders()}).then(handle),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { X, ChevronRight, ChevronDown, Globe, Layers, Hash, Type, TrendingUp, Award, ArrowLeft, MapPin, Sun } from 'lucide-react';
-import { MO } from '../constants';
+import { MO, DEALER_TYPES } from '../constants';
 import { pct, spct, pclr, monthTarget } from '../utils';
 import { useMonth } from '../context';
 
@@ -430,22 +430,40 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
   const [leafletReady, setLeafletReady] = useState(false);
   const [geoReady, setGeoReady]         = useState(false);
   const [hub, setHub] = useState('');   // '' = all hubs; otherwise a HUBS key
+  const [dealerTypeFilter, setDealerTypeFilter] = useState(''); // '' = all dealer types
+  const [categoryFilter, setCategoryFilter]     = useState(''); // '' = all categories (legacy field)
   // Searchable city picker in the toolbar (shown when a state is selected).
   const cityPickRef = useRef(null);
   const [cityPickOpen, setCityPickOpen] = useState(false);
   const [citySearch, setCitySearch] = useState('');
 
-  // Hub filter: scope every dealer used by the map to the hub's states.
-  // Because we shadow the `dealers` prop, ALL downstream aggregation
-  // (stateData, cityData, summary, lists, markers) is filtered automatically.
-  const dealers = useMemo(() => {
-    if(!hub) return allDealers;
-    const states = hubStateSet(hub);
-    return allDealers.filter(d => states.has((normalizeState(d.state) || '').toLowerCase()));
-  }, [allDealers, hub]);
+  // Distinct legacy "category" values present in the data (for the category dropdown).
+  const categoryOptions = useMemo(() => {
+    const s = new Set();
+    (allDealers || []).forEach(d => { const c = (d.category || '').trim(); if(c) s.add(c); });
+    return Array.from(s).sort((a,b) => a.localeCompare(b));
+  }, [allDealers]);
 
-  // Reset the drill-down whenever the hub changes.
-  useEffect(() => { setSelected(null); setSelectedCity(null); setFocusArea(null); }, [hub]);
+  // Hub + Dealer-Type + Category filter: scope every dealer used by the map.
+  // Because we shadow the `dealers` prop, ALL downstream aggregation
+  // (stateData, cityData, summary, lists, markers, heat) is filtered automatically.
+  const dealers = useMemo(() => {
+    let list = allDealers;
+    if(hub){
+      const states = hubStateSet(hub);
+      list = list.filter(d => states.has((normalizeState(d.state) || '').toLowerCase()));
+    }
+    if(dealerTypeFilter){
+      list = list.filter(d => (d.dealerType || 'None') === dealerTypeFilter);
+    }
+    if(categoryFilter){
+      list = list.filter(d => (d.category || '').trim() === categoryFilter);
+    }
+    return list;
+  }, [allDealers, hub, dealerTypeFilter, categoryFilter]);
+
+  // Reset the drill-down whenever any top-level filter changes.
+  useEffect(() => { setSelected(null); setSelectedCity(null); setFocusArea(null); }, [hub, dealerTypeFilter, categoryFilter]);
   // Close the city picker on outside click; clear its search when it closes.
   useEffect(() => {
     const onDoc = (e) => { if(cityPickRef.current && !cityPickRef.current.contains(e.target)) setCityPickOpen(false); };
@@ -1817,6 +1835,37 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
           <ToolBtn active={lightMap} icon={Sun} label="Light" onClick={() => setLightMap(s => !s)}/>
 
           <div style={{flex:1}}/>
+
+          {/* ── Category filters (top-right): Dealer Type + legacy Category ── */}
+          {/* Dealer Type filter — scopes map/summary/lists/heat to one dealer type */}
+          <select
+            value={dealerTypeFilter}
+            onChange={e => setDealerTypeFilter(e.target.value)}
+            title="Filter by dealer type"
+            style={{
+              background: dealerTypeFilter ? T.acc : T.bg1, color: dealerTypeFilter ? '#fff' : T.t1,
+              border:'1px solid '+(dealerTypeFilter ? T.acc : T.bd2),
+              borderRadius:8, padding:'6px 10px', fontSize:12, fontWeight:700, cursor:'pointer',
+            }}>
+            <option value="">🏷️ All Dealer Types</option>
+            {DEALER_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+
+          {/* Category filter — legacy category field (shown only if data has categories) */}
+          {categoryOptions.length > 0 && (
+            <select
+              value={categoryFilter}
+              onChange={e => setCategoryFilter(e.target.value)}
+              title="Filter by category"
+              style={{
+                background: categoryFilter ? T.acc : T.bg1, color: categoryFilter ? '#fff' : T.t1,
+                border:'1px solid '+(categoryFilter ? T.acc : T.bd2),
+                borderRadius:8, padding:'6px 10px', fontSize:12, fontWeight:700, cursor:'pointer',
+              }}>
+              <option value="">📂 All Categories</option>
+              {categoryOptions.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          )}
 
           {drillLevel === 'state' ? (
             <span style={{fontSize:11, color:T.acc, fontWeight:600, display:'flex', alignItems:'center', gap:4}}>
