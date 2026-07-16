@@ -6483,28 +6483,38 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
             </button>
           )}
           <button onClick={() => {
-            // Build sample CSV in the exact format the upload route expects:
-            //   first column = "Dealer Name", remaining columns = months
-            //   from the current MO list (each column gets a sample amount).
+            // Export ALL current parties + their outstanding amounts in the exact
+            // format the upload route expects (first column = "Dealer Name", the
+            // rest = month columns). This is a round-trip file: download → edit the
+            // amounts → re-upload. Blank cells stay blank so a re-upload leaves
+            // those months unchanged (upload treats blank as "no change").
             const months = (allMonthCols && allMonthCols.length > 0)
               ? allMonthCols
               : ['Jul-25','Aug-25','Sep-25','Oct-25','Nov-25','Dec-25','Jan-26','Feb-26','Mar-26','Apr-26','May-26'];
             const headers = ['Dealer Name', ...months];
-            const sampleRows = [
-              ['AADINATH PLYWOOD AND HARDWARE', ...months.map((_,i) => [36000, 100625, 169650, 200000, 185000, 170000, 155000, 140000, 120000, 100000, 80000][i] || 50000)],
-              ['BHATTAD PLYWOODS',              ...months.map((_,i) => [25000,  60000,  90000, 110000, 100000,  95000,  80000,  70000,  60000,  50000, 30000][i] || 40000)],
+            const dataRows = [...filteredOutstanding]
+              .sort((a,b) => String(a.name||'').localeCompare(String(b.name||'')))
+              .map(d => [d.name, ...months.map(m => {
+                const v = d.monthlyOutstanding?.[m];
+                return (v === undefined || v === null || v === '') ? '' : v;
+              })]);
+            // First-time / empty state → hand out a small format template instead.
+            const rows = dataRows.length > 0 ? dataRows : [
+              ['AADINATH PLYWOOD AND HARDWARE', ...months.map(() => 0)],
               ['YOUR DEALER NAME HERE',         ...months.map(() => 0)],
             ];
             const escape = v => '"' + String(v ?? '').replace(/"/g,'""') + '"';
-            const csv = [headers, ...sampleRows].map(r => r.map(escape).join(',')).join('\n');
+            const csv = [headers, ...rows].map(r => r.map(escape).join(',')).join('\n');
             const a = document.createElement('a');
             a.href = 'data:text/csv;charset=utf-8,﻿' + encodeURIComponent(csv);
-            a.download = 'Outstanding_Template.csv';
+            a.download = dataRows.length > 0
+              ? 'Outstanding_' + new Date().toISOString().slice(0,10) + '.csv'
+              : 'Outstanding_Template.csv';
             a.click();
           }}
             className="btn"
             style={{display:'flex',alignItems:'center',gap:6,color:'#a5b4fc',border:'1px solid rgba(99,102,241,0.4)'}}>
-            <Download size={13}/> Download Sample
+            <Download size={13}/> Download (Edit &amp; Re-upload)
           </button>
         </>}
         <button onClick={()=>{loadFromDB();loadFollowups();}} disabled={loading} className="btn" style={{display:'flex',alignItems:'center',gap:6}}>
