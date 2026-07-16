@@ -1188,25 +1188,10 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
       marker.addTo(map);
       pincodeLyrRef.current.push(marker);
 
-      // Permanent floating label — area name (highlighted amber where sales
-      // exist) + PIN + sales value. Users see the area name immediately
-      // without needing to hover.
-      const areaLabel = g.area
-        ? '<span class="lbl-area" style="color:' + (hasSales ? '#fbbf24' : '#a5b4fc') + ';font-weight:700">' + g.area + '</span> · '
-        : '';
-      const label = L.tooltip({
-        permanent: true, direction: 'top', offset: [0, -radius - 2],
-        className: 'stp-city-label', interactive: false, opacity: 1,
-      })
-        .setContent(
-          '<div class="stp-city-label-inner">' +
-            areaLabel + g.pin +
-            (hasSales ? '<span class="lbl-val" style="color:#fbbf24">' + fmtIN(g.total) + '</span>' : '') +
-          '</div>'
-        )
-        .setLatLng([lat, lng]);
-      label.addTo(map);
-      pincodeLblRef.current.push(label);
+      // NOTE: the permanent floating "area · PIN · sales" labels were removed —
+      // at the pincode drill level they overlapped heavily and cluttered the
+      // map. The dot marker still conveys where sales are (amber) and hovering
+      // it shows the full area name, PIN, sales, dealer count & % of target.
     }
     // NOTE: districtData is intentionally NOT in the deps — it's declared
     // later in the component, so listing it here would hit a temporal-dead-zone
