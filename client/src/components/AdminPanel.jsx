@@ -341,51 +341,17 @@ const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,sync
   // Same logic Overview uses: pull dealer × category breakdown from /api/sales,
   // subtract excluded categories' qty from each dealer's current-month achieved,
   // then drive all KPIs / compare chart / per-salesman cards from that.
-  const g_cat = useGlobalCategoryFilter();
-  const [dealerCatMap, setDealerCatMap] = useState(new Map());
-  useEffect(() => {
-    const lbl = MO[selectedMonthIdx];
-    if (!lbl) { setDealerCatMap(new Map()); return; }
-    const months = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
-    const m = /^([A-Za-z]{3,})-(\d{2,4})$/.exec(String(lbl).trim());
-    if (!m) { setDealerCatMap(new Map()); return; }
-    const mi = months.indexOf(m[1].slice(0,3).toLowerCase());
-    if (mi < 0) { setDealerCatMap(new Map()); return; }
-    let y = +m[2]; if (y < 100) y += 2000;
-    const ym = `${y}-${String(mi+1).padStart(2,'0')}`;
-    let cancelled = false;
-    api.salesByDealer({ month: ym })
-      .then(r => {
-        if (cancelled) return;
-        const map = new Map();
-        for (const row of (r.rows || [])) {
-          const perCat = {};
-          for (const [cat, subMap] of Object.entries(row.byCategory || {})) {
-            perCat[cat] = Object.values(subMap).reduce((s,v) => s + (v||0), 0);
-          }
-          map.set(String(row.dealer || '').toLowerCase().trim(), perCat);
-        }
-        setDealerCatMap(map);
-      })
-      .catch(() => { if (!cancelled) setDealerCatMap(new Map()); });
-    return () => { cancelled = true; };
-  }, [MO, selectedMonthIdx, g_cat.excluded.size]);
-
-  // Smart per-month target — see utils.monthTarget. Uses month-specific target
-  // if uploaded, falls back to global only for months that actually have sales.
-  const dealersForMonth=useMemo(()=>dealers.map(d=>{
-    const baseAch = d.months[selectedMonthIdx]||0;
-    let adjAch = baseAch;
-    if (g_cat.excluded.size > 0) {
-      const perCat = dealerCatMap.get(String(d.name||'').toLowerCase().trim());
-      if (perCat) {
-        let excl = 0;
-        for (const c of g_cat.excluded) excl += (perCat[c] || 0);
-        adjAch = Math.max(0, baseAch - excl);
-      }
-    }
-    return { ...d, achieved: adjAch, target: monthTarget(d, selectedMonthIdx) };
-  }),[dealers, selectedMonthIdx, g_cat.excluded, dealerCatMap]);
+  // The `dealers` we receive are ALREADY category-filtered across every month
+  // (App applies the global category filter via useAllMonthsCategoryFilteredDealers),
+  // so we just read the (already-adjusted) months here. This keeps the KPIs, the
+  // compare chart AND each salesman's monthly history all consistent with the
+  // selected categories.
+  // Smart per-month target — see utils.monthTarget.
+  const dealersForMonth=useMemo(()=>dealers.map(d=>({
+    ...d,
+    achieved: d.months[selectedMonthIdx]||0,
+    target: monthTarget(d, selectedMonthIdx),
+  })),[dealers, selectedMonthIdx]);
 
   const tt=dealersForMonth.reduce((s,x)=>s+x.target,0),ta=dealersForMonth.reduce((s,x)=>s+x.achieved,0);
   const active=dealersForMonth.filter(x=>['ACTIVE','ACHIVERS','KEY ACCOUNT'].includes((x.status||'').toUpperCase())).length;

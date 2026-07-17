@@ -1,5 +1,5 @@
 {
-  "appId": "com.sequencesurface.salestracker",
+  "appId": "sequence.salestracker.in",
   "appName": "Sales Tracker Pro",
   "webDir": "dist",
   "server": {

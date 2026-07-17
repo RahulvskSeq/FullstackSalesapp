@@ -825,6 +825,30 @@ router.get('/by-dealer', protect, async (req, res) => {
   res.json({ rows: Object.values(out).sort((a,b) => b.total - a.total), grandTotal });
 });
 
+// GET /api/sales/by-dealer-months?exclude=cat1,cat2
+// → { byDealerMonth: { "<dealer lower>": { "YYYY-MM": excludedQty } } }
+// For every dealer & month, the total qty belonging to the EXCLUDED categories.
+// The client subtracts this from that month's achieved so the global category
+// filter applies across the WHOLE timeline (Monthly Trend, Admin Panel history),
+// not just the current month. Returns {} when nothing is excluded.
+router.get('/by-dealer-months', protect, async (req, res) => {
+  const exclude = String(req.query.exclude || '').split(',').map(s => s.trim()).filter(Boolean);
+  if (!exclude.length) return res.json({ byDealerMonth: {} });
+  const filter = await monthFilter(req);   // permission scope only (no ?month passed)
+  filter.category = { $in: exclude };
+  const rows = await Sale.aggregate([
+    { $match: filter },
+    { $group: { _id: { dealer: '$dealerName', month: '$month' }, qty: { $sum: '$qty' } } },
+  ]);
+  const out = {};
+  for (const r of rows) {
+    const d = String(r._id.dealer || '').toLowerCase().trim();
+    if (!d) continue;
+    (out[d] = out[d] || {})[r._id.month] = r.qty;
+  }
+  res.json({ byDealerMonth: out });
+});
+
 // GET /api/sales/by-salesman  →  [{ salesman, byCategory:{cat:{sub:qty}}, total }]
 router.get('/by-salesman', protect, async (req, res) => {
   const filter = await monthFilter(req);

@@ -1398,10 +1398,32 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
   };
 
   const exportCsv=()=>{
-    const h=['Dealer','Salesman','Zone','City','State','Pincode','Address','Category','Cat Type','Status','Target','Achieved','Ach%',...MO,'Cr Days','Cr Limit'];
-    const rows=filtered.map(x=>[x.name,users[x.salesman]?.name||x.salesman,x.zone,x.city||'',x.state||'',x.pincode||'',x.address||'',x.category||'',x.categoryType||'',x.status,x.target,x.achieved,spct(x.target,x.achieved),...x.months,x.creditDays,x.creditLimit]);
+    // Export EVERY column shown in the All Dealers table (plus the raw values
+    // behind the derived ones), so the download matches what's on screen.
+    const h=['Dealer Name','Salesman','Zone','Dealer Type','City','State','PIN','Address',
+      'Status','Target','Achieved','Ach %','Trend %','6M Avg',
+      ...MO,'Cr Days','Cr Limit'];
+    const rows=filtered.map(x=>[
+      x.name,
+      users[x.salesman]?.name||x.salesman||'',
+      x.zone||'',
+      x.dealerType||'None',
+      x.city||'',
+      x.state||'',
+      x.pincode||'',
+      x.address||'',
+      x.status||'',
+      x.target||0,
+      x.achieved||0,
+      spct(x.target,x.achieved),
+      trendPct(x.months)+'%',
+      x.avg6m||0,
+      ...x.months,
+      x.creditDays||0,
+      x.creditLimit||0,
+    ]);
     const csv=[h,...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
-    const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download='dealers_'+Date.now()+'.csv';a.click();
+    const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,﻿'+encodeURIComponent(csv);a.download='dealers_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
   };
 
   const sh=(col,lbl)=>(

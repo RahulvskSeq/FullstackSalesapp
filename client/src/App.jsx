@@ -15417,6 +15417,7 @@ import ApiUrlSettings   from './components/ApiUrlSettings';
 import SalesUpload      from './components/SalesUpload';
 import SalesByCategory  from './components/SalesByCategory';
 import { useFilteredDealers } from './hooks/useFilteredDealers';
+import { useAllMonthsCategoryFilteredDealers } from './hooks/useAllMonthsCategoryFilter';
 
 // ── Cookie helpers ────────────────────────────────────────
 const COOKIE_KEY = 'stp_session';
@@ -15839,6 +15840,18 @@ export default function App(){
     const myIds=new Set(myDealers.map(d=>d.id));
     return notes.filter(n=>myIds.has(n.dealerId));
   },[notes,myDealers,currentUser,isStaff]);
+
+  // Category-filtered across ALL months (for Monthly Trend + Admin Panel, which
+  // show the full timeline). Pass-through when no category is excluded.
+  const dealersCatAllMonths = useAllMonthsCategoryFilteredDealers(dealers, activeMO);
+  const myDealersCatAllMonths = useMemo(()=>{
+    if(!currentUser)return[];
+    if(isStaff) return dealersCatAllMonths;
+    const perm = currentUser.permissions || {};
+    const hasScope = ['states','cities','zones','salesmen'].some(k => Array.isArray(perm[k]) && perm[k].length > 0);
+    if(hasScope) return dealersCatAllMonths;
+    return dealersCatAllMonths.filter(d=>d.salesman===currentUser.id);
+  },[dealersCatAllMonths,currentUser,isStaff]);
 
   const syncSheets=useCallback(async()=>{
     setSyncing(true); const errs=[],live=[];
@@ -16699,7 +16712,7 @@ export default function App(){
                 <>
                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate} onUpdateDealer={updateDealerFields}/>}
                   {screen==='dealers'   &&<DealersList dealers={myDealers} currentUser={currentUser} users={users} onEdit={setEditingId} onDelete={deleteDealer} onAdd={()=>setShowAdd(true)} selected={selected} setSelected={setSelected} onBulkAction={setBulkAction} notes={myNotes} pendingFilters={pendingFilters} clearPending={()=>setPendingFilters(null)} onUpdateDealer={updateDealerFields}/>}
-                  {screen==='monthly'   &&<MonthlyTrend dealers={myDealers} currentUser={currentUser} users={users} onOpenDealer={setEditingId}/>}
+                  {screen==='monthly'   &&<MonthlyTrend dealers={myDealersCatAllMonths} currentUser={currentUser} users={users} onOpenDealer={setEditingId}/>}
                   {screen==='compare'   &&<Compare dealers={myDealers} onOpenDealer={setEditingId}/>}
                   {screen==='map'       &&<IndiaMap dealers={myDealers} users={users} onOpenDealer={setEditingId}/>}
                   {screen==='outstanding'&&<Outstanding dealers={myDealers} users={users} onOpenDealer={setEditingId} currentUser={currentUser} outstandingData={outstandingData} setOutstandingData={setOutstandingData}/>}
@@ -16718,7 +16731,7 @@ export default function App(){
                   {screen==='sheets' && <Suspense fallback={<div style={{padding:40,textAlign:'center',color:'var(--t3)'}}>Loading spreadsheet…</div>}><Sheets currentUser={currentUser} users={users}/></Suspense>}
                   {screen==='tasks'   && <TasksPage   users={users} currentUser={currentUser}/>}
                   {screen==='tickets' && <TicketsPage users={users} currentUser={currentUser}/>}
-                  {screen==='admin'&&isStaff&&<AdminPanel dealers={dealers} users={users} setUsers={setUsers} setShowUM={setShowUM} onSync={syncSheets} syncing={syncing} lastSync={lastSync} syncErrs={syncErrs} onNavigate={navigate} onOpenDealer={setEditingId} monthConfig={monthConfig} saveMonthConfig={saveMonthConfig} currentUser={currentUser} onLoginAs={(token, user, impersonatedBy)=>{
+                  {screen==='admin'&&isStaff&&<AdminPanel dealers={dealersCatAllMonths} users={users} setUsers={setUsers} setShowUM={setShowUM} onSync={syncSheets} syncing={syncing} lastSync={lastSync} syncErrs={syncErrs} onNavigate={navigate} onOpenDealer={setEditingId} monthConfig={monthConfig} saveMonthConfig={saveMonthConfig} currentUser={currentUser} onLoginAs={(token, user, impersonatedBy)=>{
                     saveToken(token);
                     localStorage.setItem('stp_jwt', token);
                     if(impersonatedBy){

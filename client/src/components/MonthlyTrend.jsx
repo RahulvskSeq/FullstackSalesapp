@@ -1,10 +1,54 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { BarChart, Bar, LineChart, Line, AreaChart, Area, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { MO as MO_CONST, CURRENT_MONTH_IDX } from '../constants';
 import { pct, spct, pclr, trendPct } from '../utils';
 import { useMonth } from '../context';
 import { Avatar, MiniBars, KPI } from './UI';
 import CategoryDrillChart from './CategoryDrillChart';
+import CategoryFilter from './CategoryFilter';
+import { useGlobalCategoryFilter } from '../hooks/useGlobalCategoryFilter';
+import { api } from '../api';
+
+// Category include/exclude control — wired to the SAME global filter used by
+// Overview, Admin Panel, Map View & Sales by Category. Toggling here re-scopes
+// the whole trend (every month) to the selected categories.
+function TrendCategoryFilter({ selectedMonthIdx, MO }) {
+  const g = useGlobalCategoryFilter();
+  const [totals, setTotals] = useState([]);
+  const moLabel = MO && MO[selectedMonthIdx];
+  useEffect(() => {
+    if (!moLabel) { setTotals([]); return; }
+    const months = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+    const m = /^([A-Za-z]{3,})-(\d{2,4})$/.exec(String(moLabel).trim());
+    if (!m) { setTotals([]); return; }
+    const mi = months.indexOf(m[1].slice(0,3).toLowerCase());
+    if (mi < 0) { setTotals([]); return; }
+    let y = +m[2]; if (y < 100) y += 2000;
+    const ym = `${y}-${String(mi+1).padStart(2,'0')}`;
+    let cancelled = false;
+    api.salesByCategory({ month: ym })
+      .then(r => {
+        if (cancelled) return;
+        const map = new Map();
+        for (const row of (r.rows || [])) map.set(row.category, (map.get(row.category)||0) + (row.qty||0));
+        setTotals([...map.entries()].map(([category, total]) => ({ category, total })).sort((a,b) => b.total - a.total));
+      })
+      .catch(() => { if (!cancelled) setTotals([]); });
+    return () => { cancelled = true; };
+  }, [moLabel]);
+  if (totals.length === 0) return null;
+  return (
+    <CategoryFilter
+      categories={totals}
+      excluded={g.excluded}
+      onToggle={g.toggle}
+      onClear={g.clear}
+      onSelectOnly={(cat) => g.set(new Set(totals.map(t=>t.category).filter(c=>c!==cat)))}
+      label="Categories"
+      compact
+    />
+  );
+}
 
 const MonthlyTrend=({dealers,currentUser,users,onOpenDealer})=>{
   const {selectedMonthIdx, MO:ctxMO}=useMonth();
@@ -29,6 +73,7 @@ const MonthlyTrend=({dealers,currentUser,users,onOpenDealer})=>{
           <div style={{fontSize:22,fontWeight:700}}>Monthly Trend Analysis</div>
         </div>
         <div className="spacer"/>
+        <TrendCategoryFilter selectedMonthIdx={selectedMonthIdx} MO={MO}/>
         {isAdmin&&(
           <div className="row" style={{flexWrap:'wrap',gap:6}}>
             <button className={`btn ${filter==='all'?'btnp':''}`} onClick={()=>setFilter('all')}>All</button>
