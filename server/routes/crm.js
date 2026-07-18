@@ -69,6 +69,18 @@ async function permittedDealerNames(req) {
   }
 }
 
+// True when the user has explicit region/scope permissions (state / city /
+// zone / salesman) — i.e. a "regional manager" who oversees more than just
+// their own dealers. A plain salesman has none of these.
+async function userHasScope(req) {
+  if (req.user?.role === 'superadmin') return true;
+  try {
+    const u = await User.findOne({ id: req.user.id }, 'permissions').lean();
+    const p = u?.permissions || {};
+    return ['states','cities','zones','salesmen'].some(k => Array.isArray(p[k]) && p[k].length > 0);
+  } catch { return false; }
+}
+
 // Quick safety: reject base64 payloads above ~5MB to keep DB happy.
 // Caller should compress on the client before sending.
 const PHOTO_MAX = 5 * 1024 * 1024;
@@ -337,24 +349,30 @@ router.post('/visits/:id/force-close', protect, superAdminOnly, async (req, res)
 router.get('/visits', protect, async (req, res) => {
   try {
     const q = {};
-    // Permission-first: if the user has state/city/salesman perms, constrain
-    // to the dealer names they're permitted to see. Falls back to role
-    // default (own dealers for salesman, all for admin).
+    // Visibility rules:
+    //   • admin / superadmin / employee (names === null) → all visits, and may
+    //     filter to a specific user via ?userId.
+    //   • regional manager (salesman WITH state/city/zone/salesman perms) →
+    //     their own visits + visits to dealers in their permitted region.
+    //   • plain salesman (no scope perms) → ONLY their own visits. They never
+    //     see another salesman's visit, even to a shared dealer, and cannot
+    //     view someone else's visits by passing ?userId.
     const names = await permittedDealerNames(req);
-    if (req.query.userId) {
-      // Staff filtering to a specific user's visits.
-      q.userId = req.query.userId;
-    } else if (names !== null) {
-      // Scoped user (salesman / regional manager): ALWAYS include their OWN
-      // visits — this covers NEW-dealer visits whose dealerName isn't in the
-      // roster yet (otherwise the salesman couldn't see their active visit or
-      // check out). Plus any dealers their permissions allow.
-      q.$or = [
-        { userId: req.user.id },
-        { dealerName: names.length ? { $in: names } : { $in: ['__no_match__'] } },
-      ];
+    if (names === null) {
+      if (req.query.userId) q.userId = req.query.userId;   // full-access user
+    } else {
+      const scoped = await userHasScope(req);
+      if (scoped) {
+        if (req.query.userId) q.userId = req.query.userId;
+        else q.$or = [
+          { userId: req.user.id },
+          { dealerName: names.length ? { $in: names } : { $in: ['__no_match__'] } },
+        ];
+      } else {
+        // Plain salesman — own visits only; ignore any ?userId.
+        q.userId = req.user.id;
+      }
     }
-    // else names === null and no userId filter → admin/superadmin sees all.
     if(req.query.dealerName){
       q.dealerName = new RegExp('^' + String(req.query.dealerName).replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + '$','i');
     }
