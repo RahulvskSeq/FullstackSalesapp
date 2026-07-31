@@ -381,7 +381,10 @@ router.get('/visits', protect, async (req, res) => {
       if(req.query.from) q.dateStr.$gte = req.query.from;
       if(req.query.to)   q.dateStr.$lte = req.query.to;
     }
-    const items = await Visit.find(q).sort({ createdAt:-1 }).limit(500).lean();
+    // allowDiskUse is a safety net: the $or branch (own visits + region
+    // dealers) can make the planner union two indexes and sort afterwards,
+    // which the createdAt index can't serve. Spilling to disk beats a 500.
+    const items = await Visit.find(q).sort({ createdAt:-1 }).limit(500).allowDiskUse(true).lean();
     res.json(items);
   } catch(e){ console.error('[CRM/visits GET]', e.message); res.status(500).json({ error:e.message }); }
 });

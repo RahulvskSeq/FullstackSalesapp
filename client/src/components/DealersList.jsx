@@ -1160,6 +1160,7 @@ import { pct, spct, pclr, fcash, num, trendPct, monthTarget } from '../utils';
 import { api } from '../api';
 import { useMonth } from '../context';
 import { StatusBadge, Avatar, MiniBars, MultiSelect } from './UI';
+import { notify } from './Toast';
 
 // ── Drag-and-drop Kanban board ────────────────────────────
 const STATUS_COLORS = {
@@ -1317,9 +1318,14 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
   const MO = ctxMO || MO_CONST;
   const selMoLabel=MO[selectedMonthIdx].slice(0,3);
   const isAdmin=currentUser.role==='admin'||currentUser.role==='superadmin';
+  // Only a superadmin may type straight into the month columns.
+  const isSuperAdmin=currentUser.role==='superadmin';
   const [viewMode,setViewMode]=useState('table'); // 'table' | 'kanban'
   const [filters,setFilters]=useState({q:'',zone:[],status:[],sm:[],credit:'',minPct:'',maxPct:'',city:[],state:[],category:[],categoryType:[]});
   const [sort,setSort]=useState({col:'name',dir:1});
+  const [editCell,setEditCell]=useState(null);   // { id, i } — month cell being typed into
+  const [editVal,setEditVal]  =useState('');
+  const [savingCell,setSavingCell]=useState(null); // `${id}:${i}` while the PUT is in flight
 
   useEffect(()=>{
     if(pendingFilters){
@@ -1395,6 +1401,49 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
     onUpdateDealer&&onUpdateDealer(dealerId,{dealerType:newType});
     try{ await api.updateDealer(dealerId,{dealerType:newType}); }
     catch(e){ console.warn('[dealerType update]', e?.message); }
+  };
+
+  // ── Superadmin: inline edit of any month's achieved value ─────────────
+  // Writes monthlyData.<MO label>.achieved only, so the month's stored
+  // target / status / zone are left untouched by the server's $set.
+  const beginEditMonth=(x,i)=>{
+    if(!isSuperAdmin)return;
+    setEditCell({id:x.id,i});
+    setEditVal(String(x.months?.[i]||0));
+  };
+  const cancelEditMonth=()=>{ setEditCell(null); setEditVal(''); };
+  const commitEditMonth=async(x,i)=>{
+    const label=MO[i];
+    const prev=x.months?.[i]||0;
+    const val=num(editVal);
+    cancelEditMonth();
+    if(!label||val===prev)return;
+
+    const nextMonths=[...(x.months||[])];
+    while(nextMonths.length<MO.length)nextMonths.push(0);
+    nextMonths[i]=val;
+    const patch={
+      months:nextMonths,
+      monthlyData:{...(x.monthlyData||{}),[label]:{...(x.monthlyData?.[label]||{}),achieved:val}},
+    };
+    if(i===selectedMonthIdx)patch.achieved=val;
+    onUpdateDealer&&onUpdateDealer(x.id,patch);   // optimistic
+
+    setSavingCell(`${x.id}:${i}`);
+    try{
+      await api.updateDealer(x.id,{[`monthlyData.${label}`]:{achieved:val}});
+    }catch(e){
+      // Roll the optimistic change back so the grid never lies about the DB.
+      const revert=[...nextMonths]; revert[i]=prev;
+      onUpdateDealer&&onUpdateDealer(x.id,{
+        months:revert,
+        monthlyData:x.monthlyData||{},
+        ...(i===selectedMonthIdx?{achieved:prev}:{}),
+      });
+      notify.error(`Couldn't save ${x.name} · ${label}: ${e.message}`);
+    }finally{
+      setSavingCell(null);
+    }
   };
 
   const exportCsv=()=>{
@@ -1501,6 +1550,11 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
       {/* Table view */}
       {viewMode==='table'&&(
         <div className="card" style={{padding:0,overflow:'hidden'}}>
+          {isSuperAdmin&&(
+            <div style={{fontSize:11,color:'var(--t3)',padding:'8px 12px',borderBottom:'1px solid var(--b1)'}}>
+              Superadmin · click any month cell to edit its value — Enter saves, Esc cancels.
+            </div>
+          )}
           <div className="scroll" style={{maxHeight:'60vh',overflowY:'auto'}}>
             <table>
               <thead>
@@ -1546,7 +1600,36 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
                       <td style={{textAlign:'right',fontWeight:700,color:pclr(p)}}>{spct(x.target,x.achieved)}</td>
                       <td><span style={{fontSize:11,color:tp>0?'#34d399':tp<0?'#f87171':'var(--t3)',display:'flex',alignItems:'center',gap:2}}>{tp>0?<ArrowUpRight size={11}/>:tp<0?<ArrowDownRight size={11}/>:'—'}{tp?Math.abs(tp)+'%':''}</span></td>
                       <td style={{textAlign:'right',color:'var(--t3)'}}>{x.avg6m||'—'}</td>
-                      {[...x.months].map((_,di)=>{const i=x.months.length-1-di;const v=x.months[i];return(<td key={i} style={{textAlign:'right',fontSize:12,color:i===selectedMonthIdx?'var(--acc)':v>0?'var(--t2)':'var(--t3)',fontWeight:i===selectedMonthIdx?700:400,background:i===selectedMonthIdx?'rgba(99,102,241,.05)':'transparent'}}>{v||'—'}</td>);})}
+                      {[...x.months].map((_,di)=>{
+                        const i=x.months.length-1-di;
+                        const v=x.months[i];
+                        const isEditing=isSuperAdmin&&editCell?.id===x.id&&editCell?.i===i;
+                        const isSaving=savingCell===`${x.id}:${i}`;
+                        return(
+                          <td key={i}
+                            onClick={isSuperAdmin?(e=>{e.stopPropagation();if(!isEditing)beginEditMonth(x,i);}):undefined}
+                            title={isSuperAdmin?`Click to edit ${MO[i]} · ${x.name}`:undefined}
+                            style={{textAlign:'right',fontSize:12,
+                              color:i===selectedMonthIdx?'var(--acc)':v>0?'var(--t2)':'var(--t3)',
+                              fontWeight:i===selectedMonthIdx?700:400,
+                              cursor:isSuperAdmin?'cell':undefined,
+                              opacity:isSaving?0.45:1,
+                              background:i===selectedMonthIdx?'rgba(99,102,241,.05)':'transparent'}}>
+                            {isEditing?(
+                              <input autoFocus type="number" className="inp"
+                                value={editVal}
+                                onClick={e=>e.stopPropagation()}
+                                onChange={e=>setEditVal(e.target.value)}
+                                onBlur={()=>commitEditMonth(x,i)}
+                                onKeyDown={e=>{
+                                  if(e.key==='Enter'){e.preventDefault();commitEditMonth(x,i);}
+                                  else if(e.key==='Escape'){e.preventDefault();cancelEditMonth();}
+                                }}
+                                style={{width:66,fontSize:12,padding:'2px 5px',textAlign:'right'}}/>
+                            ):(v||'—')}
+                          </td>
+                        );
+                      })}
                       <td style={{textAlign:'right',color:'var(--t3)'}}>{x.creditDays?x.creditDays+'d':'—'}</td>
                       <td style={{textAlign:'right',color:'var(--t3)'}}>{fcash(x.creditLimit)}</td>
                       <td onClick={e=>e.stopPropagation()}>{nc>0?<span style={{display:'inline-flex',alignItems:'center',gap:3,fontSize:11,color:oc>0?'#fbbf24':'var(--t2)'}}><MessageSquare size={11}/> {nc}{oc>0&&<span style={{color:'#f87171',fontWeight:700}}>!</span>}</span>:<span style={{color:'var(--t3)'}}>—</span>}</td>

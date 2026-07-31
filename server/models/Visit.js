@@ -62,5 +62,12 @@ S.index({ userId:1, dateStr:1 });
 S.index({ userId:1, status:1 });
 S.index({ dealerName:1 });
 S.index({ dealerId:1 });
+// GET /crm/visits sorts by createdAt desc. Without these the sort runs in
+// memory over the whole collection — and because each visit embeds base64
+// check-in/check-out photos, that blows Mongo's 32MB sort limit outright.
+// An index lets the server walk documents already in order instead.
+S.index({ createdAt:-1 });
+S.index({ userId:1, createdAt:-1 });
+S.index({ dealerName:1, createdAt:-1 });
 
 export default mongoose.models.Visit || mongoose.model('Visit', S);
