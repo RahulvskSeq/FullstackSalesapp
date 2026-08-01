@@ -69,5 +69,7 @@ S.index({ dealerId:1 });
 S.index({ createdAt:-1 });
 S.index({ userId:1, createdAt:-1 });
 S.index({ dealerName:1, createdAt:-1 });
+// Date-range filter on the Visits history screen (?from=&to= → dateStr).
+S.index({ dateStr:1, createdAt:-1 });
 
 export default mongoose.models.Visit || mongoose.model('Visit', S);

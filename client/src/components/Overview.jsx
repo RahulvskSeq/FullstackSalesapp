@@ -1609,12 +1609,24 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
     });
   }, [lastUpdatedAt]);
 
-  // `ta` is already filtered (myD.achieved was pre-adjusted per-dealer).
-  // Use it directly — earlier the code subtracted `excludedQty` again here,
-  // which double-counted. Keep aliases so the KPI JSX below doesn't need
-  // changes.
-  const taAdj = ta;
-  const apAdj = ap;
+  // ── Achieved KPI ──────────────────────────────────────────────────────
+  // With a category filter ON, the KPI is by definition a category number, so
+  // read it from the SAME source and arithmetic the Category-wise Sales panel
+  // uses (allCatTotals minus the excluded set). Deriving it instead from
+  // "dealer achieved − excluded qty" put the two out of step: dealers whose
+  // Sale rows don't join on name get nothing subtracted, and the per-dealer
+  // subtraction clamps at zero — both leak into the total and only ever
+  // inflate it. Same source ⇒ identical number, by construction.
+  const includedCatQty = useMemo(
+    () => allCatTotals.filter(t => !catExcluded.has(t.category)).reduce((s,t) => s + t.total, 0),
+    [allCatTotals, catExcluded],
+  );
+  // Only when there IS category data for a single selected month. A month
+  // whose category-wise sheet was never uploaded has no Sale rows, and
+  // falling back to dealer-level achieved beats showing zero.
+  const catSourced = catExcluded.size > 0 && !rangeActive && allCatTotals.length > 0;
+  const taAdj = catSourced ? includedCatQty : ta;
+  const apAdj = catSourced ? pct(tt, taAdj) : ap;
 
   return(
     <div className="fade">
@@ -1714,7 +1726,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
           label={`${periodLabel} Achieved${catExcluded.size>0 ? ' (excl.)' : ''}`}
           value={taAdj}
           sub={catExcluded.size>0
-            ? `excludes ${[...catExcluded].join(', ')} (−${Number(filteredDelta).toLocaleString('en-IN')})`
+            ? `excludes ${[...catExcluded].join(', ')} (−${Number(catSourced ? excludedQty : filteredDelta).toLocaleString('en-IN')})`
             : `${periodFull} total`}
           valueColor="#34d399" icon={Award}/>
         <StatCard

@@ -277,6 +277,27 @@ export default function Styles({theme}){
     /* ── Forms ── */
     .inp{background:var(--bg2);border:1px solid var(--b2);border-radius:7px;padding:8px 12px;color:var(--t1);width:100%}
     .inp:focus{border-color:var(--acc);box-shadow:0 0 0 3px var(--accL)}
+    /* The browser's native date/time picker glyph is drawn near-black, which
+       disappears against the dark surfaces. Invert it to white — dark theme
+       only, so the light theme keeps the readable dark glyph. */
+    :root input[type="date"]::-webkit-calendar-picker-indicator,
+    :root input[type="time"]::-webkit-calendar-picker-indicator,
+    :root input[type="month"]::-webkit-calendar-picker-indicator,
+    :root input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+    [data-theme="dark"] input[type="date"]::-webkit-calendar-picker-indicator,
+    [data-theme="dark"] input[type="time"]::-webkit-calendar-picker-indicator,
+    [data-theme="dark"] input[type="month"]::-webkit-calendar-picker-indicator,
+    [data-theme="dark"] input[type="datetime-local"]::-webkit-calendar-picker-indicator{
+      filter:invert(1);opacity:.8;cursor:pointer
+    }
+    :root input[type="date"]::-webkit-calendar-picker-indicator:hover,
+    [data-theme="dark"] input[type="date"]::-webkit-calendar-picker-indicator:hover{opacity:1}
+    [data-theme="light"] input[type="date"]::-webkit-calendar-picker-indicator,
+    [data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator,
+    [data-theme="light"] input[type="month"]::-webkit-calendar-picker-indicator,
+    [data-theme="light"] input[type="datetime-local"]::-webkit-calendar-picker-indicator{
+      filter:none;opacity:.7
+    }
     .sel{background:var(--bg2);border:1px solid var(--b2);border-radius:7px;padding:7px 10px;color:var(--t1);cursor:pointer}
     .sel:focus{border-color:var(--acc)}
 

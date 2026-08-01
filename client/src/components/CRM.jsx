@@ -689,6 +689,11 @@ export function VisitsPage({ dealers, users, currentUser }){
   const [partySearch, setPartySearch] = useState(''); // text typed inside the dropdown to filter options
   const [partyOpen,  setPartyOpen]  = useState(false); // party-name dropdown open?
   const partyBoxRef  = useRef(null);
+  // Date-range filter (YYYY-MM-DD, inclusive). Empty = no bound on that side.
+  // Applied server-side against Visit.dateStr, so it narrows the payload
+  // rather than just hiding rows the browser already downloaded.
+  const [fromDate, setFromDate] = useState('');
+  const [toDate,   setToDate]   = useState('');
   const [visitLimit, setVisitLimit] = useState(5);    // how many recent visits to show (5/10/20/All)
   const [zoom, setZoom] = useState('');
   // Tick once per minute so the active-visit clock updates
@@ -708,12 +713,29 @@ export function VisitsPage({ dealers, users, currentUser }){
     setLoading(true);
     try {
       const q = isStaff && filterUser ? { userId: filterUser } : {};
+      if(fromDate) q.from = fromDate;
+      if(toDate)   q.to   = toDate;
       const data = await api.visitsList(q);
       setItems(data || []);
     } catch(e){ notify.error('Load visits: ' + e.message); }
     setLoading(false);
   };
-  useEffect(()=>{ load(); }, [filterUser]);
+  useEffect(()=>{ load(); }, [filterUser, fromDate, toDate]);
+
+  // Date-range presets. Dates are built from the browser's LOCAL calendar so
+  // they line up with Visit.dateStr, which is stamped in local time too.
+  const shiftDays = (n) => {
+    const d = new Date(); d.setDate(d.getDate() + n);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  };
+  const datePresets = [
+    { label:'Today',      from:shiftDays(0),   to:shiftDays(0) },
+    { label:'Last 7d',    from:shiftDays(-6),  to:shiftDays(0) },
+    { label:'Last 30d',   from:shiftDays(-29), to:shiftDays(0) },
+    { label:'This month', from:shiftDays(0).slice(0,8)+'01', to:shiftDays(0) },
+  ];
+  const dateFilterOn = !!(fromDate || toDate);
+  const clearDates   = () => { setFromDate(''); setToDate(''); };
 
   // Salesman's own dealer roster — only these names appear in the search.
   const myDealerOptions = useMemo(()=>(dealers||[]).map(d=>d.name).filter(Boolean).slice(0, 1500), [dealers]);
@@ -1188,11 +1210,42 @@ export function VisitsPage({ dealers, users, currentUser }){
 
       {/* History */}
       <div className="card">
-        <div className="row" style={{marginBottom:10}}>
+        <div className="row" style={{marginBottom:10, flexWrap:'wrap', gap:8}}>
           <div style={{fontSize:13, fontWeight:700, display:'flex', alignItems:'center', gap:6}}>
             <Calendar size={13}/> Visit history {items.length ? `(${items.length})` : ''}
           </div>
           <div className="spacer"/>
+          {/* ── Date range ─────────────────────────────────────────────── */}
+          <div style={{display:'flex', alignItems:'center', gap:4, flexWrap:'wrap'}}>
+            {datePresets.map(p => {
+              const on = fromDate === p.from && toDate === p.to;
+              return (
+                <button key={p.label} type="button"
+                  onClick={()=>{ if(on){ clearDates(); } else { setFromDate(p.from); setToDate(p.to); } }}
+                  className="btn"
+                  style={{padding:'4px 9px', fontSize:11,
+                    color: on ? 'var(--acc)' : 'var(--t3)',
+                    borderColor: on ? 'var(--acc)' : undefined,
+                    background: on ? 'var(--accL)' : undefined}}>
+                  {p.label}
+                </button>
+              );
+            })}
+            <input type="date" className="inp" value={fromDate} max={toDate || undefined}
+              onChange={e=>setFromDate(e.target.value)} title="Visits from this date"
+              style={{padding:'4px 8px', fontSize:11, width:'auto'}}/>
+            <span style={{fontSize:11, color:'var(--t3)'}}>→</span>
+            <input type="date" className="inp" value={toDate} min={fromDate || undefined}
+              onChange={e=>setToDate(e.target.value)} title="Visits up to this date"
+              style={{padding:'4px 8px', fontSize:11, width:'auto'}}/>
+            {dateFilterOn && (
+              <button type="button" onClick={clearDates} className="btn"
+                title="Clear date filter"
+                style={{padding:'4px 8px', fontSize:11, color:'var(--red)', display:'inline-flex', alignItems:'center', gap:3}}>
+                <X size={11}/> Dates
+              </button>
+            )}
+          </div>
           {/* Party dropdown: "Select a name" trigger → search + bold-match list */}
           {(() => {
             const allParties = [...new Set(items.map(v => v.dealerName).filter(Boolean))].sort();
@@ -1377,7 +1430,11 @@ export function VisitsPage({ dealers, users, currentUser }){
             const url  = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `Visits_${todayStr()}.csv`;
+            // Name the file after the active range so successive exports of
+            // different periods don't collide in the downloads folder.
+            a.download = dateFilterOn
+              ? `Visits_${fromDate || 'start'}_to_${toDate || todayStr()}.csv`
+              : `Visits_${todayStr()}.csv`;
             document.body.appendChild(a); a.click(); a.remove();
             setTimeout(() => URL.revokeObjectURL(url), 1000);
           }} className="btn" title="Export grouped Visit Report as Excel"
@@ -1393,7 +1450,16 @@ export function VisitsPage({ dealers, users, currentUser }){
           const matched = q ? items.filter(v => (v.dealerName||'').toLowerCase().includes(q)) : items;
           const shown = matched.slice(0, visitLimit);
           return loading ? <div style={{padding:14, color:'var(--t3)'}}>Loading…</div> : items.length === 0 ? (
-          <div style={{padding:14, color:'var(--t3)', textAlign:'center'}}>No visits yet.</div>
+          <div style={{padding:14, color:'var(--t3)', textAlign:'center'}}>
+            {dateFilterOn
+              ? <>No visits between {fromDate || 'the beginning'} and {toDate || 'today'}.{' '}
+                  <button type="button" onClick={clearDates}
+                    style={{background:'none', border:'none', color:'var(--acc)', cursor:'pointer', padding:0, fontSize:'inherit'}}>
+                    Clear date filter
+                  </button>
+                </>
+              : 'No visits yet.'}
+          </div>
         ) : matched.length === 0 ? (
           <div style={{padding:14, color:'var(--t3)', textAlign:'center'}}>No visits for “{partyQuery}”.</div>
         ) : (
@@ -1401,6 +1467,16 @@ export function VisitsPage({ dealers, users, currentUser }){
             {shown.map(v => {
               const ciPhoto = v.checkInPhoto  || v.photo || '';
               const coPhoto = v.checkOutPhoto || '';
+              // Visit date. Prefer dateStr (stamped in local time at check-in)
+              // so the card agrees with the date filter; fall back to the
+              // check-in timestamp for any record saved before that field.
+              const visitDate = v.dateStr
+                ? fmtDate(v.dateStr + 'T00:00:00')
+                : (v.checkInTime ? fmtDate(v.checkInTime) : '—');
+              // Overnight visits check out on a later calendar day — call that
+              // out rather than showing a time that looks earlier than check-in.
+              const outOtherDay = !!(v.checkOutTime && v.checkInTime &&
+                new Date(v.checkOutTime).toDateString() !== new Date(v.checkInTime).toDateString());
               const dur     = v.status === 'completed' ? (v.durationMinutes || 0) : liveDuration(v.checkInTime);
               const inAddr  = v.checkInAddress  || v.address || '';
               const outAddr = v.checkOutAddress || '';
@@ -1435,11 +1511,16 @@ export function VisitsPage({ dealers, users, currentUser }){
                     </span>
                   </div>
 
-                  {/* Times row */}
-                  <div style={{display:'flex', gap:18, fontSize:11, color:'var(--t3)', flexWrap:'wrap'}}>
+                  {/* Date + times row */}
+                  <div style={{display:'flex', gap:18, fontSize:11, color:'var(--t3)', flexWrap:'wrap', alignItems:'center'}}>
+                    <span style={{display:'inline-flex', alignItems:'center', gap:4, color:'var(--t2)', fontWeight:600}}>
+                      <Calendar size={11}/> {visitDate}
+                    </span>
                     <span>📥 In: <b style={{color:'#34d399'}}>{fmtClock(v.checkInTime)}</b></span>
                     {v.checkOutTime
-                      ? <span>📤 Out: <b style={{color:'#fbbf24'}}>{fmtClock(v.checkOutTime)}</b></span>
+                      ? <span>📤 Out: <b style={{color:'#fbbf24'}}>{fmtClock(v.checkOutTime)}</b>
+                          {outOtherDay && <span style={{color:'var(--t3)'}}> ({fmtDate(v.checkOutTime)})</span>}
+                        </span>
                       : <span style={{color:'#fbbf24'}}>Awaiting check-out</span>}
                   </div>
 
