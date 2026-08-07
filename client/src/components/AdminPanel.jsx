@@ -355,7 +355,12 @@ const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,sync
 
   const tt=dealersForMonth.reduce((s,x)=>s+x.target,0),ta=dealersForMonth.reduce((s,x)=>s+x.achieved,0);
   const active=dealersForMonth.filter(x=>['ACTIVE','ACHIVERS','KEY ACCOUNT'].includes((x.status||'').toUpperCase())).length;
-  const compareData=sms.map(s=>{const sd=dealersForMonth.filter(d=>d.salesman===s.id);return{name:s.name,Target:sd.reduce((a,x)=>a+x.target,0),Achieved:sd.reduce((a,x)=>a+x.achieved,0),smId:s.id,color:s.color};});
+  // Month-aware attribution: month i of a dealer belongs to whoever owned the
+  // dealer THAT month (stamped on reassignment), not the current owner. A
+  // salesman who received a dealer mid-year gets credit only from the handover
+  // month; the predecessor keeps the earlier months on their own card.
+  const ownerOf=(d,i)=>d.monthSalesman?.[i]||d.salesman;
+  const compareData=sms.map(s=>{const sd=dealersForMonth.filter(d=>ownerOf(d,selectedMonthIdx)===s.id);return{name:s.name,Target:sd.reduce((a,x)=>a+x.target,0),Achieved:sd.reduce((a,x)=>a+x.achieved,0),smId:s.id,color:s.color};});
 
   return(
     <div className="fade">
@@ -484,16 +489,17 @@ const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,sync
           </div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:14,marginBottom:16}}>
             {sms.map(s=>{
-              const sd=dealersForMonth.filter(d=>d.salesman===s.id);
+              const sd=dealersForMonth.filter(d=>ownerOf(d,selectedMonthIdx)===s.id);
+              const ownedNow=dealersForMonth.filter(d=>d.salesman===s.id).length;
               const st=sd.reduce((a,x)=>a+x.target,0),sa=sd.reduce((a,x)=>a+x.achieved,0),sp=pct(st,sa);
-              // Sparkline: raw monthly sums for every month EXCEPT the
-              // current one, which uses the filtered achieved so the bar
-              // height matches the KPI card above it.
+              // Sparkline: each month sums the dealers this salesman owned
+              // THAT month (per-month attribution). The selected month uses
+              // the filtered achieved so the bar matches the KPI card.
               const mT=MO.map((_,i)=>{
                 if (i === selectedMonthIdx) {
                   return sd.reduce((a,x)=>a+x.achieved,0);
                 }
-                return dealers.filter(d=>d.salesman===s.id).reduce((a,d)=>a+(d.months[i]||0),0);
+                return dealers.reduce((a,d)=>ownerOf(d,i)===s.id?a+(d.months[i]||0):a,0);
               });
               return(
                 <div key={s.id} className="card" style={{borderColor:s.color+'44',cursor:'pointer',transition:'transform .15s'}}
@@ -502,7 +508,7 @@ const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,sync
                   onMouseLeave={e=>e.currentTarget.style.transform='translateY(0)'}>
                   <div className="row" style={{marginBottom:12}}>
                     <Avatar user={s} size={34}/>
-                    <div><div style={{fontSize:15,fontWeight:700}}>{s.name}</div><div style={{fontSize:11,color:'var(--t3)'}}>{sd.length} dealers</div></div>
+                    <div><div style={{fontSize:15,fontWeight:700}}>{s.name}</div><div style={{fontSize:11,color:'var(--t3)'}}>{ownedNow} dealers</div></div>
                     <div className="spacer"/>
                     <div style={{fontSize:22,fontWeight:700,color:pclr(sp)}}>{spct(st,sa)}</div>
                   </div>
@@ -534,9 +540,9 @@ const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,sync
               </thead>
               <tbody>
                 {sms.map(s=>{
-                  const sd=dealersForMonth.filter(d=>d.salesman===s.id);
+                  const sd=dealersForMonth.filter(d=>ownerOf(d,selectedMonthIdx)===s.id);
                   const st=sd.reduce((a,x)=>a+x.target,0),sa=sd.reduce((a,x)=>a+x.achieved,0);
-                  const mT=MO.map((_,i)=>dealers.filter(d=>d.salesman===s.id).reduce((a,d)=>a+(d.months[i]||0),0));
+                  const mT=MO.map((_,i)=>dealers.reduce((a,d)=>ownerOf(d,i)===s.id?a+(d.months[i]||0):a,0));
                   return(
                     <tr key={s.id} onClick={()=>onNavigate('dealers',{sm:s.id})} style={{cursor:'pointer'}}>
                       <td><div style={{display:'flex',alignItems:'center',gap:8}}><Avatar user={s} size={22}/><span style={{fontWeight:600}}>{s.name}</span></div></td>
