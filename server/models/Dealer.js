@@ -56,6 +56,10 @@ const monthEntrySchema = new mongoose.Schema({
   state:       { type:String, default:'' },
   creditDays:  { type:Number, default:0 },
   creditLimit: { type:Number, default:0 },
+  // Who owned this dealer for THIS month. Stamped with the OLD salesman when
+  // the dealer is reassigned, so history stays attributed to whoever actually
+  // made those sales. Empty = fall back to dealer.salesman (current owner).
+  salesman:    { type:String, default:'' },
 }, { _id:false });
 
 const dealerSchema = new mongoose.Schema({

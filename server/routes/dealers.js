@@ -16,6 +16,9 @@ const monthEntrySchema = new mongoose.Schema({
   categoryType:{ type:String, default:'' },
   city:        { type:String, default:'' },
   state:       { type:String, default:'' },
+  // Per-month owner — stamped with the OLD salesman on reassignment so each
+  // month's sales stay attributed to whoever made them. Empty = dealer.salesman.
+  salesman:    { type:String, default:'' },
 }, { _id:false });
 
 const dealerSchema = new mongoose.Schema({
@@ -52,14 +55,26 @@ const mapToObj = (m) => {
   return typeof m==='object'?{...m}:{};
 };
 
+// "Jul-26" → "2026-07" (comparable with Sale.month). '' when unparseable.
+const moLabelToYM = (lbl) => {
+  const m = /^([A-Za-z]{3,})-(\d{2,4})$/.exec(String(lbl||'').trim());
+  if(!m) return '';
+  const mi = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
+    .indexOf(m[1].slice(0,3).toLowerCase());
+  if(mi < 0) return '';
+  let y = +m[2]; if(y < 100) y += 2000;
+  return `${y}-${String(mi+1).padStart(2,'0')}`;
+};
+
 const fmt = (d, MO=[]) => {
   const md = mapToObj(d.monthlyData);
   const months = MO.map(m=>Number(md[m]?.achieved)||0);
-  const monthTargets={}, monthStatus={}, monthZone={};
+  const monthTargets={}, monthStatus={}, monthZone={}, monthSalesman={};
   MO.forEach((m,i)=>{
     if(md[m]?.target>0)   monthTargets[i]=Number(md[m].target);
     if(md[m]?.status)     monthStatus[i]=md[m].status;
     if(md[m]?.zone)       monthZone[i]=md[m].zone;
+    if(md[m]?.salesman)   monthSalesman[i]=md[m].salesman;
   });
   const monthsWithData=MO.map((m,i)=>(md[m]?.achieved>0||md[m]?.target>0)?i:-1).filter(i=>i>=0);
   return {
@@ -69,7 +84,7 @@ const fmt = (d, MO=[]) => {
     address:d.address||'', pincode:d.pincode||'',
     category:d.category||'', categoryType:d.categoryType||'', target:d.target||0,
     avg6m:d.avg6m||0, creditDays:d.creditDays||0, creditLimit:d.creditLimit||0,
-    months, monthTargets, monthStatus, monthZone,
+    months, monthTargets, monthStatus, monthZone, monthSalesman,
     monthsWithData, monthlyData:md,
     achieved:[...months].reverse().find(v=>v>0)||0,
     categoryBreakdown:{}, source:d.source||'db',
@@ -401,13 +416,27 @@ router.post('/upload', protect, upload.single('file'), async (req,res) => {
         } else {
           // No dealer with (name, rowSm). If a same-named dealer exists under a
           // DIFFERENT salesman, the admin changed the Salesman column to
-          // REASSIGN it — move it (keeping its history) instead of duplicating.
+          // REASSIGN it. The handover is effective from the UPLOADED month:
+          // earlier months keep their old-salesman attribution (per-month
+          // stamp + untouched Sale rows); this month onward belongs to the
+          // new salesman.
           const sameName = await Dealer.find({ name: rx }).limit(2);
           if (isStaff(req) && sameName.length === 1) {
             const d0 = sameName[0];
             const oldSm = d0.salesman;           // remember for moving related records
+            const cutYM = moLabelToYM(month);
             d0.salesman = rowSm;                 // reassign the dealer
             if(!d0.monthlyData) d0.monthlyData = new Map();
+            // Stamp pre-handover months that hold data with the old salesman.
+            if(cutYM){
+              d0.monthlyData.forEach((e, label) => {
+                const ym = moLabelToYM(label);
+                if(!ym || ym >= cutYM) return;
+                if(!e || (!(e.achieved > 0) && !(e.target > 0))) return;
+                if(e.salesman) return;           // earlier handover — keep it
+                e.salesman = oldSm;
+              });
+            }
             d0.monthlyData.set(month, monthData);
             d0.markModified('monthlyData');
             if(monthData.city)  d0.city  = monthData.city;
@@ -415,11 +444,13 @@ router.post('/upload', protect, upload.single('file'), async (req,res) => {
             if(monthData.zone)  d0.zone  = monthData.zone;
             d0.source = 'upload';
             await d0.save();
-            // Also move this dealer's SALES and OUTSTANDING FOLLOW-UPS to the
-            // new salesman so their whole footprint follows the reassignment.
+            // Move Sale rows from the handover month onward; earlier rows stay
+            // credited to the old salesman. Open follow-ups move with the dealer.
             try {
               const Sale = mongoose.models.Sale || (await import('../models/Sale.js')).default;
-              await Sale.updateMany({ dealerName: rx, salesman: oldSm }, { $set:{ salesman: rowSm } });
+              await Sale.updateMany(
+                { dealerName: rx, salesman: oldSm, ...(cutYM ? { month: { $gte: cutYM } } : {}) },
+                { $set:{ salesman: rowSm } });
             } catch(e){ console.warn('[UPLOAD reassign] sales move failed:', e.message); }
             try {
               const F = (await import('../models/Outstandingfollowup.js')).default;
@@ -1198,6 +1229,18 @@ router.put('/:id', protect, async (req,res) => {
     const setObj={};
     for(const [k,v] of Object.entries(req.body)){
       if(k.startsWith('monthlyData.')&&v&&typeof v==='object'){Object.entries(v).forEach(([f,fv])=>{setObj[`${k}.${f}`]=fv;});}else{setObj[k]=v;}
+    }
+    // Salesman handover: months that already hold data were earned by the OLD
+    // salesman — stamp them so their attribution survives the change. Only
+    // unstamped months are touched, so earlier handovers are preserved.
+    if(setObj.salesman && setObj.salesman !== ex.salesman){
+      const md = ex.monthlyData || new Map();
+      const entries = typeof md.forEach === 'function' ? md : new Map(Object.entries(md));
+      entries.forEach((e, label) => {
+        if(!e || (!(e.achieved > 0) && !(e.target > 0))) return;
+        if(e.salesman) return;
+        setObj[`monthlyData.${label}.salesman`] = ex.salesman;
+      });
     }
     const d=await Dealer.findByIdAndUpdate(req.params.id,{$set:setObj},{new:true,runValidators:false}).lean();
     res.json(fmt(d,[]));

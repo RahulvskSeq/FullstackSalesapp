@@ -98,33 +98,57 @@ export default function Sheets({ currentUser, users = {} }) {
   };
 
   // ── Create the Univer instance ONCE ───────────────────────────────────
+  // Creation is deferred one animation frame. React StrictMode (dev) mounts,
+  // disposes and remounts every component: creating Univer synchronously in
+  // the effect means engine #1 is created and torn down in the same tick as
+  // engine #2 is created — Univer doesn't survive that and leaves a dead
+  // white canvas. With the rAF deferral, the first (throwaway) mount cancels
+  // its frame before it fires, so exactly ONE engine is ever attached.
   useEffect(() => {
-    if (!containerRef.current) return;
+    let disposed = false;
+    let univerInstance = null;
     let disposable = null;
-    try { containerRef.current.innerHTML = ''; } catch {}
-    const { univer, univerAPI } = createUniver({
-      locale: LocaleType.EN_US,
-      locales: { [LocaleType.EN_US]: merge({}, sheetsCoreEnUS) },
-      presets: [ UniverSheetsCorePreset({ container: containerRef.current }) ],
+    const raf = requestAnimationFrame(() => {
+      if (disposed || !containerRef.current) return;
+      try { containerRef.current.innerHTML = ''; } catch {}
+      let created;
+      try {
+        created = createUniver({
+          locale: LocaleType.EN_US,
+          locales: { [LocaleType.EN_US]: merge({}, sheetsCoreEnUS) },
+          presets: [ UniverSheetsCorePreset({ container: containerRef.current }) ],
+        });
+      } catch (e) {
+        // Surface an init failure instead of a silent white rectangle.
+        setErr('Spreadsheet engine failed to start: ' + (e?.message || e));
+        return;
+      }
+      const { univer, univerAPI } = created;
+      univerInstance = univer;
+      univerRef.current = { univer, univerAPI };
+
+      // Autosave: fire on document MUTATIONS only (value/format/structure
+      // edits), not on selection/navigation operations. Debounced.
+      try {
+        disposable = univerAPI.addEvent(univerAPI.Event.CommandExecuted, (event) => {
+          if (suppressRef.current) return;
+          if (event && event.type === 2 /* CommandType.MUTATION */) scheduleSave();
+        });
+      } catch {}
+
+      setUniverReady(true);
     });
-    univerRef.current = { univer, univerAPI };
 
-    // Autosave: fire on document MUTATIONS only (value/format/structure edits),
-    // not on selection/navigation operations. Debounced.
-    try {
-      disposable = univerAPI.addEvent(univerAPI.Event.CommandExecuted, (event) => {
-        if (suppressRef.current) return;
-        if (event && event.type === 2 /* CommandType.MUTATION */) scheduleSave();
-      });
-    } catch {}
-
-    setUniverReady(true);
     return () => {
+      disposed = true;
+      cancelAnimationFrame(raf);
       if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
       try { disposable && disposable.dispose && disposable.dispose(); } catch {}
-      try { univer.dispose(); } catch {}
+      try { univerInstance && univerInstance.dispose(); } catch {}
+      try { if (containerRef.current) containerRef.current.innerHTML = ''; } catch {}
       univerRef.current = null;
       unitIdRef.current = null;
+      setUniverReady(false);
     };
     /* eslint-disable-next-line */
   }, []);
@@ -150,12 +174,28 @@ export default function Sheets({ currentUser, users = {} }) {
       .then(doc => {
         if (cancelled) return;
         const snap = doc.worksheets;
+        // Formula cells: drop the cached display value so the engine
+        // recomputes them from the formula on open. Workbooks created after
+        // engine init get no initial calculation pass, so a cached value —
+        // including a stale error like #NAME? saved by an older session —
+        // would otherwise be shown forever.
+        if (isUniverSnapshot(snap)) {
+          for (const sh of Object.values(snap.sheets || {})) {
+            for (const row of Object.values(sh?.cellData || {})) {
+              for (const cell of Object.values(row || {})) {
+                if (cell && cell.f !== undefined) { delete cell.v; delete cell.t; delete cell.p; }
+              }
+            }
+          }
+        }
         // createWorkbook can throw on a malformed snapshot — if it does, DON'T
         // silently blank it (that would let autosave wipe stored data). Mark the
         // load as failed so autosave stays disabled for this sheet.
         try {
           const wb = univerAPI.createWorkbook(isUniverSnapshot(snap) ? snap : {});
           unitIdRef.current = wb.getId();
+          // Kick the calculation engine for this late-created workbook.
+          try { univerAPI.getFormula?.()?.executeCalculation?.(); } catch {}
         } catch (e) {
           loadFailedRef.current = true;
           setErr('This sheet could not be opened (its data may be from an older format). It has not been changed.');

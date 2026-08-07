@@ -1159,6 +1159,7 @@ import { MO as MO_CONST, CURRENT_MONTH_IDX, DEALER_TYPES } from '../constants';
 import { pct, spct, pclr, fcash, num, trendPct, monthTarget } from '../utils';
 import { api } from '../api';
 import { useMonth } from '../context';
+import { useGlobalCategoryFilter } from '../hooks/useGlobalCategoryFilter';
 import { StatusBadge, Avatar, MiniBars, MultiSelect } from './UI';
 import { notify } from './Toast';
 
@@ -1318,8 +1319,13 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
   const MO = ctxMO || MO_CONST;
   const selMoLabel=MO[selectedMonthIdx].slice(0,3);
   const isAdmin=currentUser.role==='admin'||currentUser.role==='superadmin';
-  // Only a superadmin may type straight into the month columns.
-  const isSuperAdmin=currentUser.role==='superadmin';
+  // Only a superadmin may type straight into the month columns — and only
+  // with NO category filter active. Under a filter the cells show just the
+  // selected categories' qty; saving that would overwrite the dealer's true
+  // month total with a subset and silently destroy the rest.
+  const { excluded: catFilter } = useGlobalCategoryFilter();
+  const catFilterOn  = !!(catFilter && catFilter.size > 0);
+  const isSuperAdmin = currentUser.role==='superadmin' && !catFilterOn;
   const [viewMode,setViewMode]=useState('table'); // 'table' | 'kanban'
   const [filters,setFilters]=useState({q:'',zone:[],status:[],sm:[],credit:'',minPct:'',maxPct:'',city:[],state:[],category:[],categoryType:[]});
   const [sort,setSort]=useState({col:'name',dir:1});
@@ -1353,6 +1359,10 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
       zone:         d.monthZone?.[selectedMonthIdx]    || d.zone         || '',
       category:     d.monthCat?.[selectedMonthIdx]     || d.category     || '',
       categoryType: d.monthCatType?.[selectedMonthIdx] || d.categoryType || '',
+      // Whoever owned the dealer THAT month (stamped on reassignment) — so
+      // an old month still shows and filters by the salesman who made those
+      // sales, not the current owner.
+      salesman:     d.monthSalesman?.[selectedMonthIdx] || d.salesman,
     }));
   },[dealers,selectedMonthIdx]);
 
@@ -1553,6 +1563,12 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
           {isSuperAdmin&&(
             <div style={{fontSize:11,color:'var(--t3)',padding:'8px 12px',borderBottom:'1px solid var(--b1)'}}>
               Superadmin · click any month cell to edit its value — Enter saves, Esc cancels.
+            </div>
+          )}
+          {currentUser.role==='superadmin'&&catFilterOn&&(
+            <div style={{fontSize:11,color:'#fbbf24',padding:'8px 12px',borderBottom:'1px solid var(--b1)'}}>
+              Month cells are read-only while a category filter is active — the figures shown are
+              only the selected categories. Clear the Categories filter to edit month totals.
             </div>
           )}
           <div className="scroll" style={{maxHeight:'60vh',overflowY:'auto'}}>

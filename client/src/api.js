@@ -1679,7 +1679,9 @@ export const api = {
   }).then(handle),
 
   updateUser:  (id,d)  => fetch(`${BASE}/auth/users/${id}`,{method:'PUT',headers:authHeaders(),body:JSON.stringify(d)}).then(handle),
-  reassignSalesman: (fromId, toId) => fetch(`${BASE}/auth/users/${encodeURIComponent(fromId)}/reassign`,{method:'POST',headers:authHeaders(),body:JSON.stringify({toId})}).then(handle),
+  // fromMonth (MO label, e.g. "Jul-26") makes the handover month-aware:
+  // sales before it stay attributed to the old salesman. Omit for a full move.
+  reassignSalesman: (fromId, toId, fromMonth) => fetch(`${BASE}/auth/users/${encodeURIComponent(fromId)}/reassign`,{method:'POST',headers:authHeaders(),body:JSON.stringify({toId, ...(fromMonth?{fromMonth}:{})})}).then(handle),
 
   getDealers:   (MO=[]) => fetch(`${BASE}/dealers?mo=${MO.join(',')}`,{headers:authHeaders()}).then(handle),
   createDealer: (d)     => fetch(`${BASE}/dealers`,{method:'POST',headers:authHeaders(),body:JSON.stringify(d)}).then(handle),
@@ -2120,6 +2122,7 @@ export const dbDealerToApp = (d, MO=[]) => {
   const monthCatType= {};
   const monthCity   = {};
   const monthState  = {};
+  const monthSalesman = {};   // per-month owner (stamped on reassignment)
 
   MO.forEach((m,i) => {
     const e = md[m];
@@ -2131,6 +2134,7 @@ export const dbDealerToApp = (d, MO=[]) => {
     if(e.categoryType)     monthCatType[i] = e.categoryType;
     if(e.city)             monthCity[i]    = e.city;
     if(e.state)            monthState[i]   = e.state;
+    if(e.salesman)         monthSalesman[i]= e.salesman;
   });
 
   // monthsWithData = set of MO indices that have been uploaded
@@ -2165,6 +2169,7 @@ export const dbDealerToApp = (d, MO=[]) => {
     monthCatType,
     monthCity,
     monthState,
+    monthSalesman,
     monthsWithData,
     monthlyData:   md,
     updatedAt:     d.updatedAt || d.updated_at || null,   // last-edit timestamp

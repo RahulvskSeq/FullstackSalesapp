@@ -8553,6 +8553,7 @@ import SamplesTab from './SamplesTab';
 import CategorySalesPanel from './CategorySalesPanel';
 import CategoryFilter from './CategoryFilter';
 import { useMonth } from '../context';
+import { useGlobalCategoryFilter } from '../hooks/useGlobalCategoryFilter';
 import { StatusBadge, Avatar, KPI } from './UI';
 import { downloadDealerCard, shareDealerCard } from './dealerCard';
 import { notify, confirmDialog } from './Toast';
@@ -8698,7 +8699,10 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
   const [edit,setEdit]=useState({
     name:dealer.name,zone:dealer.zone,status:dealer.status,salesman:dealer.salesman,
     dealerType:dealer.dealerType||'None',
-    target:dealer.target,achieved:dealer.months[CURRENT_MONTH_IDX]||0,
+    // Month-scoped: the Edit tab edits the month being VIEWED (topbar month),
+    // not the hardcoded "current" month from constants.
+    target:dealer.monthTargets?.[selectedMonthIdx]||0,
+    achieved:dealer.months[selectedMonthIdx]||0,
     creditDays:dealer.creditDays,creditLimit:dealer.creditLimit,
     city:dealer.city||'',state:dealer.state||'',
     category:dealer.category||'',categoryType:dealer.categoryType||'',
@@ -8737,6 +8741,24 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
     }
     return [...set].sort();
   }, [dealerCatHistory]);
+
+  // Seed the in-modal picker from the HOME (global) category selection, once,
+  // when the dealer's history arrives. From there the picker is local state:
+  // adding/removing categories changes only this popup, and the state dies
+  // with the popup — the home filter is never written to. Reopening reseeds
+  // from home again.
+  const { excluded: globalExcluded } = useGlobalCategoryFilter();
+  const seededRef = React.useRef(false);
+  useEffect(() => {
+    if (seededRef.current || !dealerCatHistory) return;
+    seededRef.current = true;
+    if (!globalExcluded || globalExcluded.size === 0) return;   // home = All → picker stays All
+    const included = dealerCats.filter(c => !globalExcluded.has(c));
+    if (included.length === dealerCats.length) return;          // nothing excluded for this dealer
+    // Dealer sells none of the home-selected categories → match no category,
+    // so category-era months show 0 (empty set would mean "All" here).
+    setDCatSel(new Set(included.length ? included : ['__none__']));
+  }, [dealerCatHistory, dealerCats, globalExcluded]);
 
   const dealerSubs = useMemo(() => {
     if (!dealerCatHistory) return [];
@@ -8784,24 +8806,33 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
   const dFilterActive = dCatSel.size > 0 || dSubSel.size > 0;
 
   // Build a months[] array that respects the in-modal filter when active.
-  // IMPORTANT: only the currently-SELECTED month is filtered. Past months
-  // keep their raw historical values so the user can still see the dealer's
-  // overall trend even when slicing the current month to "only LAMINATE".
-  // (Past months often have no category breakdown saved yet, so filtering
-  // them would zero out the entire history — confusing.)
+  // Same rule as the app-wide category filter: every month that HAS a
+  // category breakdown for this dealer shows the filtered qty; months from
+  // before category tracking (no Sale rows) keep their raw historical value —
+  // they can't be split by category, so zeroing them would erase real history.
   const monthsForView = useMemo(() => {
     if (!dFilterActive) return dealer.months;
     return MO.map((lbl, i) => {
-      if (i !== selectedMonthIdx) {
-        return Number(dealer.months?.[i]) || 0;     // historical bar — untouched
-      }
       const ym = _ymOf(lbl);
-      if (!ym) return Number(dealer.months?.[i]) || 0;
-      return filteredByYM.has(ym) ? (filteredByYM.get(ym) || 0) : 0;
+      if (!ym || !filteredByYM.has(ym)) {
+        return Number(dealer.months?.[i]) || 0;     // pre-category month — untouched
+      }
+      return filteredByYM.get(ym) || 0;
     });
-  }, [dFilterActive, dealer.months, MO, filteredByYM, selectedMonthIdx]);
+  }, [dFilterActive, dealer.months, MO, filteredByYM]);
 
   const viewAchieved = monthsForView[selectedMonthIdx]||0;
+  // 6-month average over the SAME series the chart draws, so the KPI agrees
+  // with the bars. Mean of the up-to-6 months ending at the selected month.
+  const viewAvg6 = useMemo(() => {
+    if (!dFilterActive) return dealer.avg6m || 0;
+    const hi = Math.min(selectedMonthIdx, monthsForView.length - 1);
+    if (hi < 0) return 0;
+    const lo = Math.max(0, hi - 5);
+    let s = 0;
+    for (let i = lo; i <= hi; i++) s += Number(monthsForView[i]) || 0;
+    return Math.round(s / (hi - lo + 1));
+  }, [dFilterActive, dealer.avg6m, monthsForView, selectedMonthIdx]);
   // Smart per-month target — see utils.monthTarget. Each month gets its own
   // target if uploaded; otherwise we fall back to the dealer's global target
   // ONLY for months that have actual sales (so historical Sheets data is OK).
@@ -8858,16 +8889,21 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
     if(!edit.name.trim()){setSaveErr('Name required');return;}
     setSaving(true);setSaveErr('');
     try{
+      const moLabel=MO[selectedMonthIdx];
       const newMonths=[...dealer.months];
-      newMonths[CURRENT_MONTH_IDX]=num(edit.achieved);
+      newMonths[selectedMonthIdx]=num(edit.achieved);
+      const newMonthTargets={...(dealer.monthTargets||{}),[selectedMonthIdx]:num(edit.target)};
       const updated={...dealer,
         name:edit.name.trim(),zone:edit.zone,status:edit.status,salesman:edit.salesman,
         dealerType:edit.dealerType,
-        target:num(edit.target),achieved:num(edit.achieved),
+        achieved:num(edit.achieved),
         creditDays:num(edit.creditDays),creditLimit:num(edit.creditLimit),
         city:edit.city.trim(),state:edit.state.trim(),
         category:edit.category.trim(),categoryType:edit.categoryType.trim(),
         months:newMonths,
+        monthTargets:newMonthTargets,
+        monthlyData:{...(dealer.monthlyData||{}),
+          [moLabel]:{...(dealer.monthlyData?.[moLabel]||{}),achieved:num(edit.achieved),target:num(edit.target)}},
       };
       // Save to DB if available
       const token=localStorage.getItem('stp_jwt');
@@ -8876,13 +8912,18 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
           await api.updateDealer(dealer.id,{
             name:updated.name,zone:updated.zone,status:updated.status,salesman:updated.salesman,
             dealerType:updated.dealerType,
-            target:updated.target,creditDays:updated.creditDays,creditLimit:updated.creditLimit,
+            creditDays:updated.creditDays,creditLimit:updated.creditLimit,
             city:updated.city,state:updated.state,category:updated.category,categoryType:updated.categoryType,
+            // Target + Achieved land on the VIEWED month only — same
+            // monthlyData mechanism Monthly Entry uses. The server $sets the
+            // two sub-fields, so the month's status/zone are preserved, and
+            // other months are never touched.
+            [`monthlyData.${moLabel}`]:{achieved:num(edit.achieved),target:num(edit.target)},
           });
         }catch(e){console.warn('DB update failed:',e.message);}
       }
       onSave(updated);
-      onLog('edit',`Updated: ${updated.name}`);
+      onLog('edit',`Updated: ${updated.name} (${moLabel})`);
       onClose();
     }catch(e){setSaveErr(e.message);}
     setSaving(false);
@@ -8946,14 +8987,14 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
               <KPI label={`${selMoLabel} Target`} value={viewTarget||'—'}/>
               <KPI label={`${selMoLabel} Achieved`} value={viewAchieved} color="#34d399"/>
               <KPI label="Achievement" value={p!==null?spct(viewTarget,viewAchieved):'N/T'} color={pclr(p)}/>
-              <KPI label="6-mo Avg" value={dealer.avg6m||'—'}/>
+              <KPI label="6-mo Avg" value={viewAvg6||'—'}/>
               <KPI label="Forecast" value={fc} color="var(--acc)" sub="next month"/>
               <KPI label="Trend" value={(tp>0?'+':'')+tp+'%'} color={tp>0?'#34d399':tp<0?'#f87171':'var(--t3)'} sub="3m vs 3m"/>
               <KPI label="Credit Days" value={dealer.creditDays?dealer.creditDays+'d':'—'}/>
               <KPI label="Credit Limit" value={fcash(dealer.creditLimit)}/>
-              <KPI label="11-mo Total" value={dealer.months.reduce((a,b)=>a+b,0)}/>
-              <KPI label="11-mo High" value={Math.max(...dealer.months)}/>
-              <KPI label="Active Months" value={dealer.months.filter(v=>v>0).length+'/11'}/>
+              <KPI label="11-mo Total" value={monthsForView.reduce((a,b)=>a+b,0)}/>
+              <KPI label="11-mo High" value={Math.max(...monthsForView)}/>
+              <KPI label="Active Months" value={monthsForView.filter(v=>v>0).length+'/11'}/>
               {/* {dealer.category&&<KPI label="Category" value={dealer.category} color="#818cf8"/>}
               {dealer.categoryType&&<KPI label="Cat Type" value={dealer.categoryType} color="#818cf8"/>} */}
               {dealer.city&&<KPI label="City" value={dealer.city}/>}
@@ -9060,15 +9101,15 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
                   </tr>
                 </thead>
                 <tbody>
-                  {[...dealer.months].map((_,di)=>{
-                    const i=dealer.months.length-1-di;
-                    const v=dealer.months[i];
+                  {[...monthsForView].map((_,di)=>{
+                    const i=monthsForView.length-1-di;
+                    const v=monthsForView[i];
                     const mt=monthTarget(dealer, i);
-                    const prev=i>0?dealer.months[i-1]:null;
+                    const prev=i>0?monthsForView[i-1]:null;
                     const diff=prev!=null?v-prev:null;
                     const diffP=prev&&prev>0?Math.round((diff/prev)*100):null;
                     const vsPct=mt?Math.round((v/mt)*100):null;
-                    const maxV=Math.max(...dealer.months,1);
+                    const maxV=Math.max(...monthsForView,1);
                     return(
                       <tr key={i} style={{background:i===selectedMonthIdx?'rgba(251,191,36,0.05)':'transparent'}}>
                         <td style={{fontWeight:i===selectedMonthIdx?700:400,color:i===selectedMonthIdx?'#fbbf24':i===CURRENT_MONTH_IDX?'var(--acc)':'var(--t2)'}}>
@@ -9096,7 +9137,7 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
                 <tfoot>
                   <tr>
                     <td style={{color:'var(--t1)',fontWeight:700}}>TOTAL</td>
-                    <td style={{textAlign:'right',fontWeight:700,color:'#34d399'}}>{dealer.months.reduce((a,b)=>a+b,0)}</td>
+                    <td style={{textAlign:'right',fontWeight:700,color:'#34d399'}}>{monthsForView.reduce((a,b)=>a+b,0)}</td>
                     <td style={{textAlign:'right',color:'var(--t3)'}}>—</td>
                     <td colSpan="4"/>
                   </tr>
@@ -9136,8 +9177,8 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
                 </select>
               </div>
             )}
-            <div className="field"><label>{CURRENT_MONTH_SHORT} Target</label><input type="number" className="inp" value={edit.target} onChange={e=>setEdit({...edit,target:e.target.value})}/></div>
-            <div className="field"><label>{CURRENT_MONTH_SHORT} Achieved</label><input type="number" className="inp" value={edit.achieved} onChange={e=>setEdit({...edit,achieved:e.target.value})}/></div>
+            <div className="field"><label>{MO[selectedMonthIdx]} Target</label><input type="number" className="inp" value={edit.target} onChange={e=>setEdit({...edit,target:e.target.value})}/></div>
+            <div className="field"><label>{MO[selectedMonthIdx]} Achieved</label><input type="number" className="inp" value={edit.achieved} onChange={e=>setEdit({...edit,achieved:e.target.value})}/></div>
             <div className="field"><label>Credit Days</label><input type="number" className="inp" value={edit.creditDays} onChange={e=>setEdit({...edit,creditDays:e.target.value})}/></div>
             <div className="field"><label>Credit Limit ₹</label><input type="number" className="inp" value={edit.creditLimit} onChange={e=>setEdit({...edit,creditLimit:e.target.value})}/></div>
             <div className="field full row" style={{gap:8}}>

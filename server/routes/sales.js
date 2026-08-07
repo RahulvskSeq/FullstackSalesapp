@@ -826,27 +826,66 @@ router.get('/by-dealer', protect, async (req, res) => {
 });
 
 // GET /api/sales/by-dealer-months?exclude=cat1,cat2
-// → { byDealerMonth: { "<dealer lower>": { "YYYY-MM": excludedQty } } }
-// For every dealer & month, the total qty belonging to the EXCLUDED categories.
-// The client subtracts this from that month's achieved so the global category
-// filter applies across the WHOLE timeline (Monthly Trend, Admin Panel history),
-// not just the current month. Returns {} when nothing is excluded.
+// → {
+//     byDealerMonth:        { "<dealer lower>": { "YYYY-MM": excludedQty } },
+//     includedByDealerMonth:{ "<dealer lower>": { "YYYY-MM": includedQty } },
+//     monthsWithCategoryData: ["2026-06", "2026-07", ...],
+//   }
+//
+// The client needs all three to apply the category filter across the whole
+// timeline:
+//   • includedByDealerMonth is the authoritative per-dealer figure for any
+//     month that HAS category data — using it directly (rather than
+//     subtracting the excluded qty from the dealer's stored achieved) is what
+//     makes every roll-up agree exactly with the Category-wise Sales panel.
+//   • monthsWithCategoryData marks which months can be broken down at all.
+//     Months from before the category feature went live have no Sale rows and
+//     must be left at their stored achieved — they can't be split by category,
+//     so they must not be zeroed.
+//   • byDealerMonth (excluded qty) is retained for existing callers.
 router.get('/by-dealer-months', protect, async (req, res) => {
-  const exclude = String(req.query.exclude || '').split(',').map(s => s.trim()).filter(Boolean);
-  if (!exclude.length) return res.json({ byDealerMonth: {} });
-  const filter = await monthFilter(req);   // permission scope only (no ?month passed)
-  filter.category = { $in: exclude };
-  const rows = await Sale.aggregate([
-    { $match: filter },
-    { $group: { _id: { dealer: '$dealerName', month: '$month' }, qty: { $sum: '$qty' } } },
-  ]);
-  const out = {};
-  for (const r of rows) {
-    const d = String(r._id.dealer || '').toLowerCase().trim();
-    if (!d) continue;
-    (out[d] = out[d] || {})[r._id.month] = r.qty;
+  try {
+    const exclude = String(req.query.exclude || '').split(',').map(s => s.trim()).filter(Boolean);
+    const filter = await monthFilter(req);   // permission scope only (no ?month passed)
+    const rows = await Sale.aggregate([
+      { $match: filter },
+      { $group: {
+          _id: { dealer: '$dealerName', month: '$month', category: '$category' },
+          qty: { $sum: '$qty' },
+      }},
+    ]);
+    const excSet   = new Set(exclude);
+    const excluded = {};
+    const included = {};
+    // Month → total included qty across EVERY dealer in the Sale data, not
+    // just the ones that match a Dealer record. Roll-ups use this so a headline
+    // total equals the Category-wise Sales panel exactly: rows whose
+    // dealerName matches no dealer would otherwise be silently dropped.
+    const includedTotalByMonth = {};
+    const monthsWithCategoryData = new Set();
+    for (const r of rows) {
+      const d = String(r._id.dealer || '').toLowerCase().trim();
+      if (!d) continue;
+      const m = r._id.month;
+      if (!m) continue;
+      monthsWithCategoryData.add(m);
+      const qty = r.qty || 0;
+      const isExcluded = excSet.has(r._id.category);
+      const bucket = isExcluded ? excluded : included;
+      (bucket[d] = bucket[d] || {});
+      bucket[d][m] = (bucket[d][m] || 0) + qty;
+      if (!isExcluded) includedTotalByMonth[m] = (includedTotalByMonth[m] || 0) + qty;
+    }
+    res.json({
+      byDealerMonth: excluded,
+      includedByDealerMonth: included,
+      includedTotalByMonth,
+      monthsWithCategoryData: [...monthsWithCategoryData].sort(),
+    });
+  } catch(e) {
+    console.error('[SALES/by-dealer-months]', e.message);
+    res.status(500).json({ error: e.message });
   }
-  res.json({ byDealerMonth: out });
 });
 
 // GET /api/sales/by-salesman  →  [{ salesman, byCategory:{cat:{sub:qty}}, total }]

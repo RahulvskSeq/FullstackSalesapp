@@ -1393,15 +1393,20 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
     ? `${MO[rLo]} → ${MO[rHi]}`
     : selMoFull;
 
-  // `dealers` is already category-filtered by the App-level useFilteredDealers
-  // hook — it substituted dealer.months[currentMonthIdx] with the filtered
-  // achieved before this component ever saw it. So just read it straight.
+  // `dealers` is already category-filtered by the App-level
+  // useAllMonthsCategoryFilteredDealers hook — every month in d.months holds
+  // the included-category qty (pre-category months pass through untouched).
+  // So just read it straight.
   // When a range is active, sum achieved & target across every month in it.
   const dealersForMonth=useMemo(()=>dealers.map(d=>({
     ...d,
     achieved: rangeIdxs.reduce((s,i)=>s+(d.months[i]||0),0),
     target:   rangeIdxs.reduce((s,i)=>s+monthTarget(d,i),0),
-  })),[dealers,rangeIdxs]);
+    // Single-month view: attribute the dealer to whoever owned it that month
+    // (stamped on reassignment). Ranges keep the current owner — a range can
+    // span a handover, where no single name is correct.
+    salesman: (!rangeActive && d.monthSalesman?.[rangeIdxs[0]]) || d.salesman,
+  })),[dealers,rangeIdxs,rangeActive]);
 
   const myD=dealersForMonth;
   const [overviewSearch,setOverviewSearch]=useState('');

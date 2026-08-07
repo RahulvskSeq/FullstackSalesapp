@@ -848,9 +848,12 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
   const moIdx = MO.indexOf(month);
   const salesmen = Object.values(users).filter(u => u.role === 'salesman');
 
-  // Replace / reassign the currently-selected salesman — move ALL their
-  // dealers & records to another salesman (e.g. when someone resigns). After
-  // this the target salesman sees all the data.
+  // Replace / reassign the currently-selected salesman. The handover is
+  // effective from the month selected above: sales BEFORE that month remain
+  // attributed to the old salesman (their name stays on those months in
+  // history and per-salesman reports); the dealers, sales from the selected
+  // month onward, and open work (follow-ups, tasks, leads) move to the new
+  // salesman. Visits & attendance history stay with the old user.
   const replaceSalesman = async () => {
     if(!isAdmin || salesman === 'all') return;
     const from = salesman;
@@ -859,25 +862,36 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
       .filter(u => u.id !== from && u.active !== false)
       .map(u => u.id + ' — ' + u.name).join('\n');
     const raw = window.prompt(
-      'Replace "' + fromName + '" — move ALL their dealers & records to which user?\n' +
+      'Replace "' + fromName + '" — hand their dealers to which user?\n' +
       'Type the target user id:\n\n' + list
     );
     if(raw === null) return;
     const toId = String(raw).trim();
     if(!toId || !users[toId]){ notify.error('No user with id "' + toId + '"'); return; }
     if(toId === from){ notify.error('Pick a different user'); return; }
+    const toName = users[toId]?.name || toId;
     const ok = await confirmDialog({
-      title: 'Replace salesman?',
-      message: 'Move all dealers, sales, follow-ups, visits, attendance, tasks & leads from "' +
-        fromName + '" → "' + (users[toId]?.name || toId) + '"? This cannot be auto-undone.',
-      confirmText: 'Replace', danger: true,
+      title: `Replace salesman from ${month}?`,
+      message: [
+        `Hand over "${fromName}" → "${toName}", effective ${month}:`,
+        '',
+        `• Dealers move to ${toName}`,
+        `• Sales from ${month} onward count for ${toName}`,
+        `• Sales BEFORE ${month} stay credited to ${fromName}`,
+        `• Open follow-ups, tasks & leads move to ${toName}`,
+        `• ${fromName}'s visits & attendance history is kept as-is`,
+        '',
+        'This cannot be auto-undone.',
+      ].join('\n'),
+      confirmText: `Replace from ${month}`, danger: true,
     });
     if(!ok) return;
     try {
-      const r = await api.reassignSalesman(from, toId);
+      const r = await api.reassignSalesman(from, toId, month);
       const m = r?.moved || {};
-      notify.success('Moved ' + (m.dealers||0) + ' dealers (+' + (m.sales||0) + ' sales, ' +
-        (m.followups||0) + ' follow-ups, ' + (m.visits||0) + ' visits) to ' + (users[toId]?.name || toId));
+      notify.success('Moved ' + (m.dealers||0) + ' dealers to ' + toName +
+        ' from ' + month + ' (' + (m.sales||0) + ' sale rows moved, ' +
+        (m.monthsStamped||0) + ' past months kept credited to ' + fromName + ')');
       setSalesman(toId);          // switch the view to the new salesman
       if(onSaved) onSaved();      // reload dealers so the change is visible
     } catch(e){ notify.error(e.message || 'Replace failed'); }
@@ -1117,7 +1131,7 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
               </div>
               {salesman !== 'all' && (
                 <button type="button" onClick={replaceSalesman}
-                  title="Replace this salesman — move all their dealers & records to another user"
+                  title="Hand this salesman's dealers to another user, effective from the month selected above — earlier months' sales stay credited to them"
                   style={{marginTop:6, display:'inline-flex', alignItems:'center', gap:5, fontSize:11, fontWeight:700,
                     color:'#fbbf24', background:'rgba(251,191,36,0.10)', border:'1px solid rgba(251,191,36,0.35)',
                     borderRadius:7, padding:'6px 10px', cursor:'pointer'}}>

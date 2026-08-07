@@ -15416,8 +15416,7 @@ import ManageMonths     from './components/ManageMonths';
 import ApiUrlSettings   from './components/ApiUrlSettings';
 import SalesUpload      from './components/SalesUpload';
 import SalesByCategory  from './components/SalesByCategory';
-import { useFilteredDealers } from './hooks/useFilteredDealers';
-import { useAllMonthsCategoryFilteredDealers } from './hooks/useAllMonthsCategoryFilter';
+import { useAllMonthsCategoryFilteredDealers, moToYM } from './hooks/useAllMonthsCategoryFilter';
 
 // ── Cookie helpers ────────────────────────────────────────
 const COOKIE_KEY = 'stp_session';
@@ -15818,7 +15817,12 @@ export default function App(){
   // so the whole app — All Dealers, Monthly Trend, Compare, MapView, Reports,
   // Overview, AdminPanel, etc. — automatically reflects what's selected in the
   // shared "Categories" dropdown.
-  const dealersGloballyFiltered = useFilteredDealers(dealers, selectedMonthIdx, activeMO?.[selectedMonthIdx]);
+  // Applied across EVERY month, not just the selected one, so a chosen category
+  // is reflected in every month column, the 6-month average, and every roll-up.
+  // Months from before category tracking began have no Sale rows and pass
+  // through at their stored value.
+  const { dealers: dealersGloballyFiltered, includedTotalByMonth: catTotalByMonth }
+    = useAllMonthsCategoryFilteredDealers(dealers, activeMO, selectedMonthIdx);
 
   const myDealers=useMemo(()=>{
     if(!currentUser)return[];
@@ -15841,17 +15845,10 @@ export default function App(){
     return notes.filter(n=>myIds.has(n.dealerId));
   },[notes,myDealers,currentUser,isStaff]);
 
-  // Category-filtered across ALL months (for Monthly Trend + Admin Panel, which
-  // show the full timeline). Pass-through when no category is excluded.
-  const dealersCatAllMonths = useAllMonthsCategoryFilteredDealers(dealers, activeMO);
-  const myDealersCatAllMonths = useMemo(()=>{
-    if(!currentUser)return[];
-    if(isStaff) return dealersCatAllMonths;
-    const perm = currentUser.permissions || {};
-    const hasScope = ['states','cities','zones','salesmen'].some(k => Array.isArray(perm[k]) && perm[k].length > 0);
-    if(hasScope) return dealersCatAllMonths;
-    return dealersCatAllMonths.filter(d=>d.salesman===currentUser.id);
-  },[dealersCatAllMonths,currentUser,isStaff]);
+  // Monthly Trend + Admin Panel used to take a separately-filtered array. The
+  // main one now covers every month, so they share it — one fetch, one source
+  // of truth, and no chance of the two drifting apart.
+  const myDealersCatAllMonths = myDealers;
 
   const syncSheets=useCallback(async()=>{
     setSyncing(true); const errs=[],live=[];
@@ -16117,8 +16114,9 @@ export default function App(){
   // explicit intent and won't surprise them on refresh.
 
   const saveDealer = async (d) => {
+    // DB save handled inside DealerModal (field-level; never sends months).
+    // The modal edits the RAW dealer object, so a plain replace is safe.
     setDealers(ds=>ds.map(x=>x.id===d.id?d:x));
-    // DB save handled inside DealerModal
   };
   const updateDealerFields = (id,patch)=>setDealers(ds=>ds.map(x=>x.id===id?{...x,...patch}:x));
   const deleteDealer = async (id) => {
@@ -16169,10 +16167,33 @@ export default function App(){
     }
   };
 
-  const applyBulk=action=>{
-    if(action.type==='delete'){setDealers(ds=>ds.filter(d=>!selected.includes(d.id)));setNotes(ns=>ns.filter(n=>!selected.includes(n.dealerId)));addLog('bulk',`Deleted ${selected.length}`);}
-    else if(action.type==='status'){setDealers(ds=>ds.map(d=>selected.includes(d.id)?{...d,status:action.value}:d));addLog('bulk',`Status → ${action.value} for ${selected.length}`);}
-    else if(action.type==='salesman'){setDealers(ds=>ds.map(d=>selected.includes(d.id)?{...d,salesman:action.value}:d));addLog('bulk',`Reassigned ${selected.length}`);}
+  // Bulk actions persist to the DB per dealer (these used to be local-state
+  // only, so they silently reverted on reload). Salesman changes go through
+  // PUT /dealers/:id, where the server stamps each already-filled month with
+  // the OLD salesman — so past months stay credited to whoever earned them,
+  // and only new months count for the new salesman.
+  const applyBulk=async action=>{
+    const ids=[...selected];
+    const isLocal=id=>!id||String(id).startsWith('local_');
+    if(action.type==='delete'){
+      setDealers(ds=>ds.filter(d=>!ids.includes(d.id)));
+      setNotes(ns=>ns.filter(n=>!ids.includes(n.dealerId)));
+      addLog('bulk',`Deleted ${ids.length}`);
+      const rs=await Promise.allSettled(ids.filter(id=>!isLocal(id)).map(id=>api.deleteDealer(id)));
+      const fails=rs.filter(r=>r.status==='rejected').length;
+      if(fails)notify.error(`${fails} of ${ids.length} deletes failed on the server — reload to see the true state.`);
+    }
+    else if(action.type==='status'||action.type==='salesman'){
+      const field=action.type;
+      setDealers(ds=>ds.map(d=>ids.includes(d.id)?{...d,[field]:action.value}:d));
+      addLog('bulk',`${field==='status'?'Status':'Salesman'} → ${action.value} for ${ids.length}`);
+      const rs=await Promise.allSettled(ids.filter(id=>!isLocal(id)).map(id=>api.updateDealer(id,{[field]:action.value})));
+      const fails=rs.filter(r=>r.status==='rejected').length;
+      if(fails)notify.error(`${fails} of ${ids.length} updates failed on the server — reload to see the true state.`);
+      // Salesman handover stamps per-month attribution server-side — refresh
+      // so the local data carries the stamps too.
+      else if(field==='salesman')loadFromDB();
+    }
     setSelected([]);setBulkAction(null);
   };
 
@@ -16181,10 +16202,21 @@ export default function App(){
   const ttSnap=myDealers
     .filter(x=>x.monthsWithData?.has(selectedMonthIdx)||!x.monthsWithData||x.monthsWithData.size===0)
     .reduce((s,x)=>s+((x.monthTargets?.[selectedMonthIdx] ?? x.monthTargets?.[String(selectedMonthIdx)])||0),0);
-  const taSnap=myDealers
-    .reduce((s,x)=>s+(x.months?.[selectedMonthIdx]||0),0);
+  // With a category filter on, read the month's total straight from the Sale
+  // data rather than summing the dealer rows. Sale rows whose dealerName
+  // matches no dealer record land on no row, so the per-dealer sum comes up
+  // short; this figure is exactly what the Category-wise Sales panel shows.
+  const _snapYM = moToYM(activeMO?.[selectedMonthIdx]);
+  const _catSnap = (catTotalByMonth && _snapYM) ? catTotalByMonth[_snapYM] : undefined;
+  const taSnap = _catSnap != null
+    ? _catSnap
+    : myDealers.reduce((s,x)=>s+(x.months?.[selectedMonthIdx]||0),0);
   const sbP=pct(ttSnap,taSnap);
   const overdueCount=myNotes.filter(n=>n.type==='followup'&&!n.completed&&n.dueDate&&new Date(n.dueDate)<new Date()).length;
+  // Dealer popup gets the RAW dealer. Its own "Show data for" picker opens
+  // pre-seeded from the global category selection (see DealerModal), filters
+  // everything inside the popup from the dealer's own Sale history, and dies
+  // with the popup — so in-popup changes never leak back to the home filter.
   const editing=editingId?dealers.find(x=>x.id===editingId):null;
 
   if(!currentUser){
@@ -16731,7 +16763,7 @@ export default function App(){
                   {screen==='sheets' && <Suspense fallback={<div style={{padding:40,textAlign:'center',color:'var(--t3)'}}>Loading spreadsheet…</div>}><Sheets currentUser={currentUser} users={users}/></Suspense>}
                   {screen==='tasks'   && <TasksPage   users={users} currentUser={currentUser}/>}
                   {screen==='tickets' && <TicketsPage users={users} currentUser={currentUser}/>}
-                  {screen==='admin'&&isStaff&&<AdminPanel dealers={dealersCatAllMonths} users={users} setUsers={setUsers} setShowUM={setShowUM} onSync={syncSheets} syncing={syncing} lastSync={lastSync} syncErrs={syncErrs} onNavigate={navigate} onOpenDealer={setEditingId} monthConfig={monthConfig} saveMonthConfig={saveMonthConfig} currentUser={currentUser} onLoginAs={(token, user, impersonatedBy)=>{
+                  {screen==='admin'&&isStaff&&<AdminPanel dealers={dealersGloballyFiltered} users={users} setUsers={setUsers} setShowUM={setShowUM} onSync={syncSheets} syncing={syncing} lastSync={lastSync} syncErrs={syncErrs} onNavigate={navigate} onOpenDealer={setEditingId} monthConfig={monthConfig} saveMonthConfig={saveMonthConfig} currentUser={currentUser} onLoginAs={(token, user, impersonatedBy)=>{
                     saveToken(token);
                     localStorage.setItem('stp_jwt', token);
                     if(impersonatedBy){

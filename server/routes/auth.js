@@ -262,18 +262,61 @@ router.post('/users', protect, adminOnly, async (req, res) => {
 // Move a salesman's dealers AND all their related records to another user —
 // e.g. when a salesman resigns. Reassigns: dealers, sales, outstanding
 // follow-ups, visits, attendance, tasks and leads. Admin/superadmin only.
+// Body: { toId, fromMonth? } — fromMonth is an MO label like "Jul-26".
+// WITH fromMonth: the handover is effective THAT month. Sales history before
+// it stays attributed to the old salesman (per-month `salesman` stamp on the
+// dealer + untouched Sale rows); the dealer, its Sale rows from that month
+// onward, and open work (follow-ups, tasks, leads) move to the new salesman.
+// Personal history (visits, attendance) stays with the old user.
+// WITHOUT fromMonth: legacy full move (resignation), everything transfers.
 router.post('/users/:id/reassign', protect, adminOnly, async (req, res) => {
   try {
     const fromId = req.params.id;
     const toId = String(req.body?.toId || '').trim();
+    const fromMonth = String(req.body?.fromMonth || '').trim();   // MO label
     if(!toId) return res.status(400).json({ error:'toId (target salesman) required' });
     if(toId === fromId) return res.status(400).json({ error:'Source and target are the same user' });
     const to = await User.findOne({ id: toId }, 'id name').lean();
     if(!to) return res.status(404).json({ error:'Target user not found' });
     const toName = to.name || toId;
 
+    // "Jul-26" → "2026-07" for comparing against Sale.month / MO labels.
+    const toYM = (lbl) => {
+      const m = /^([A-Za-z]{3,})-(\d{2,4})$/.exec(String(lbl||'').trim());
+      if(!m) return '';
+      const mi = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
+        .indexOf(m[1].slice(0,3).toLowerCase());
+      if(mi < 0) return '';
+      let y = +m[2]; if(y < 100) y += 2000;
+      return `${y}-${String(mi+1).padStart(2,'0')}`;
+    };
+    const cutYM = toYM(fromMonth);
+    if(fromMonth && !cutYM) return res.status(400).json({ error:`Could not parse fromMonth "${fromMonth}"` });
+
     const moved = {};
     const Dealer = (await import('../models/Dealer.js')).default;
+
+    if(cutYM){
+      // Stamp each pre-cutoff month that has data with the OLD salesman so
+      // that month's numbers remain attributed to them after the handover.
+      const dealers = await Dealer.find({ salesman: fromId });
+      moved.monthsStamped = 0;
+      for(const d of dealers){
+        const md = d.monthlyData || new Map();
+        const entries = typeof md.forEach === 'function' ? md : new Map(Object.entries(md));
+        let touched = false;
+        entries.forEach((e, label) => {
+          const ym = toYM(label);
+          if(!ym || ym >= cutYM) return;                        // cutoff month onward → new owner
+          if(!e || (!(e.achieved > 0) && !(e.target > 0))) return;  // no data — nothing to attribute
+          if(e.salesman) return;                                // already attributed (earlier handover)
+          e.salesman = fromId;
+          touched = true;
+          moved.monthsStamped++;
+        });
+        if(touched){ d.markModified('monthlyData'); await d.save(); }
+      }
+    }
     moved.dealers = (await Dealer.updateMany({ salesman: fromId }, { $set:{ salesman: toId } })).modifiedCount || 0;
 
     // Best-effort for the rest — a missing collection shouldn't abort the move.
@@ -281,15 +324,22 @@ router.post('/users/:id/reassign', protect, adminOnly, async (req, res) => {
       try { const M = (await import(path)).default; moved[key] = (await M.updateMany(filter, { $set:set })).modifiedCount || 0; }
       catch(e){ console.warn('[REASSIGN] ' + key + ' skipped:', e.message); moved[key] = 0; }
     };
-    await tryMove('sales',      '../models/Sale.js',                { salesman: fromId }, { salesman: toId });
+    // Sale rows: with a cutoff, only rows from that month onward change hands.
+    await tryMove('sales', '../models/Sale.js',
+      cutYM ? { salesman: fromId, month: { $gte: cutYM } } : { salesman: fromId },
+      { salesman: toId });
     await tryMove('followups',  '../models/Outstandingfollowup.js', { salesman: fromId }, { salesman: toId });
-    await tryMove('visits',     '../models/Visit.js',               { userId: fromId },   { userId: toId, userName: toName });
-    await tryMove('attendance', '../models/Attendance.js',          { userId: fromId },   { userId: toId, userName: toName });
-    await tryMove('tasks',      '../models/Task.js',                { assignedTo: fromId },{ assignedTo: toId });
-    await tryMove('leads',      '../models/Lead.js',                { assignedTo: fromId },{ assignedTo: toId });
+    if(!cutYM){
+      // Full resignation move only — with a dated handover, the old user keeps
+      // their own visit/attendance history.
+      await tryMove('visits',     '../models/Visit.js',      { userId: fromId }, { userId: toId, userName: toName });
+      await tryMove('attendance', '../models/Attendance.js', { userId: fromId }, { userId: toId, userName: toName });
+    }
+    await tryMove('tasks', '../models/Task.js', { assignedTo: fromId },{ assignedTo: toId });
+    await tryMove('leads', '../models/Lead.js', { assignedTo: fromId },{ assignedTo: toId });
 
-    console.log('[REASSIGN] ' + fromId + ' → ' + toId, moved);
-    res.json({ ok:true, from:fromId, to:toId, toName, moved });
+    console.log('[REASSIGN] ' + fromId + ' → ' + toId + (cutYM ? ' from ' + fromMonth : ' (full)'), moved);
+    res.json({ ok:true, from:fromId, to:toId, toName, fromMonth: fromMonth || null, moved });
   } catch(e){ console.error('[REASSIGN]', e.message); res.status(500).json({ error:e.message }); }
 });
 
