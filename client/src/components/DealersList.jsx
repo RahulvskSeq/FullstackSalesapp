@@ -1363,6 +1363,7 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
       // an old month still shows and filters by the salesman who made those
       // sales, not the current owner.
       salesman:     d.monthSalesman?.[selectedMonthIdx] || d.salesman,
+      ownerNow:     d.salesman,   // current owner, kept for per-month cell attribution
     }));
   },[dealers,selectedMonthIdx]);
 
@@ -1618,12 +1619,18 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
                       <td style={{textAlign:'right',color:'var(--t3)'}}>{x.avg6m||'—'}</td>
                       {[...x.months].map((_,di)=>{
                         const i=x.months.length-1-di;
-                        const v=x.months[i];
-                        const isEditing=isSuperAdmin&&editCell?.id===x.id&&editCell?.i===i;
+                        // With a salesman filter on, a month belongs in this row
+                        // only if the FILTERED salesman owned the dealer that
+                        // month — a handed-over dealer's earlier months were the
+                        // previous owner's sales, so they show as blank here.
+                        const cellOwner=x.monthSalesman?.[i]||x.ownerNow;
+                        const foreign=isAdmin&&filters.sm.length>0&&!filters.sm.includes(cellOwner);
+                        const v=foreign?0:x.months[i];
+                        const isEditing=!foreign&&isSuperAdmin&&editCell?.id===x.id&&editCell?.i===i;
                         const isSaving=savingCell===`${x.id}:${i}`;
                         return(
                           <td key={i}
-                            onClick={isSuperAdmin?(e=>{e.stopPropagation();if(!isEditing)beginEditMonth(x,i);}):undefined}
+                            onClick={(isSuperAdmin&&!foreign)?(e=>{e.stopPropagation();if(!isEditing)beginEditMonth(x,i);}):undefined}
                             title={isSuperAdmin?`Click to edit ${MO[i]} · ${x.name}`:undefined}
                             style={{textAlign:'right',fontSize:12,
                               color:i===selectedMonthIdx?'var(--acc)':v>0?'var(--t2)':'var(--t3)',
@@ -1679,7 +1686,17 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
                   <td style={{textAlign:'right',color:'#34d399'}}>{ta}</td>
                   <td style={{textAlign:'right',color:pclr(pct(tt,ta))}}>{spct(tt,ta)}</td>
                   <td colSpan="2"/>
-                  {[...MO].map((_,di)=>{const i=MO.length-1-di;const s=filtered.reduce((a,x)=>a+(x.months[i]||0),0);return<td key={i} style={{textAlign:'right',color:i===selectedMonthIdx?'var(--acc)':'var(--t1)',background:i===selectedMonthIdx?'rgba(99,102,241,.05)':'transparent'}}>{s||''}</td>;})}
+                  {[...MO].map((_,di)=>{
+                    const i=MO.length-1-di;
+                    // Footer mirrors the cells: months owned by a different
+                    // salesman are excluded when a salesman filter is active.
+                    const s=filtered.reduce((a,x)=>{
+                      const cellOwner=x.monthSalesman?.[i]||x.ownerNow;
+                      if(isAdmin&&filters.sm.length>0&&!filters.sm.includes(cellOwner))return a;
+                      return a+(x.months[i]||0);
+                    },0);
+                    return<td key={i} style={{textAlign:'right',color:i===selectedMonthIdx?'var(--acc)':'var(--t1)',background:i===selectedMonthIdx?'rgba(99,102,241,.05)':'transparent'}}>{s||''}</td>;
+                  })}
                   <td colSpan="4"/>
                 </tr>
               </tfoot>

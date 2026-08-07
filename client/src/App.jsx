@@ -15835,8 +15835,26 @@ export default function App(){
     const hasScope = ['states','cities','zones','salesmen']
       .some(k => Array.isArray(perm[k]) && perm[k].length > 0);
     if(hasScope) return dealersGloballyFiltered;
-    return dealersGloballyFiltered.filter(d=>d.salesman===currentUser.id);
-  },[dealersGloballyFiltered,currentUser,isStaff]);
+    // Plain salesman: only their own dealers — and within a dealer received
+    // via handover, months stamped to the PREVIOUS salesman are blanked out.
+    // The new owner starts counting from the handover month; the predecessor's
+    // numbers are not theirs to show.
+    const uid=currentUser.id;
+    return dealersGloballyFiltered.filter(d=>d.salesman===uid).map(d=>{
+      const ms=d.monthSalesman||{};
+      const foreign=Object.keys(ms).filter(i=>ms[i]&&ms[i]!==uid);
+      if(!foreign.length) return d;
+      const months=(d.months||[]).map((v,i)=>ms[i]&&ms[i]!==uid?0:v);
+      const monthTargets={...(d.monthTargets||{})};
+      foreign.forEach(i=>{ delete monthTargets[i]; });
+      // 6-month average over what's actually theirs, not the predecessor's numbers.
+      const hi=Math.min(selectedMonthIdx,months.length-1);
+      const lo=Math.max(0,hi-5);
+      let s=0; for(let i=lo;i<=hi;i++)s+=Number(months[i])||0;
+      const avg6m=hi>=lo?Math.round(s/(hi-lo+1)):0;
+      return {...d, months, monthTargets, avg6m};
+    });
+  },[dealersGloballyFiltered,currentUser,isStaff,selectedMonthIdx]);
 
   const myNotes=useMemo(()=>{
     if(!currentUser)return[];
