@@ -5683,6 +5683,16 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
   const [err,     setErr]     = useState('');
   // Zoom modal for clicking on a payment-proof image in the history.
   const [zoomImg, setZoomImg] = useState('');
+  // Weekly upload trail (every Saturday's uploaded value per month) — audit
+  // context for the negotiation. Best-effort: absent history just hides it.
+  const [uploadTrail, setUploadTrail] = useState(null);
+  useEffect(()=>{
+    let dead=false;
+    api.outstandingDealerHistory(dealer.name)
+      .then(r=>{ if(!dead) setUploadTrail(Array.isArray(r)?r:[]); })
+      .catch(()=>{ if(!dead) setUploadTrail([]); });
+    return ()=>{ dead=true; };
+  },[dealer.name]);
 
   // ── Collections (partial payments logged against this dealer) ───────────
   // Each collection is stored as a follow-up record with type:'collection'
@@ -6042,6 +6052,34 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
           </div>
         </div>
 
+        {/* Weekly upload trail — what each Saturday's outstanding file said
+            for this dealer, month by month. Audit view; read-only. */}
+        {uploadTrail&&uploadTrail.length>0&&(
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:12,fontWeight:600,color:'var(--t2)',marginBottom:8}}>
+              Weekly upload trail
+            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:6,maxHeight:150,overflowY:'auto',
+              background:'var(--bg2)',border:'1px solid var(--b1)',borderRadius:8,padding:'8px 10px'}}>
+              {Object.entries(uploadTrail.reduce((g,r)=>{ (g[r.month]=g[r.month]||[]).push(r); return g; },{}))
+                .map(([m,rows])=>(
+                <div key={m} style={{display:'flex',gap:8,alignItems:'baseline',flexWrap:'wrap'}}>
+                  <span style={{fontSize:11,fontWeight:700,color:'var(--acc)',minWidth:52}}>{m}</span>
+                  <span style={{fontSize:11,color:'var(--t2)'}}>
+                    {rows.map((r,i)=>(
+                      <span key={i}>
+                        {i>0&&<span style={{color:'var(--t3)'}}> ← </span>}
+                        <b style={{color:i===0?'var(--t1)':'var(--t3)'}}>{fmt(r.amount).replace('—','₹0')}</b>
+                        <span style={{color:'var(--t3)'}}> ({new Date(r.createdAt).toLocaleDateString('en-IN',{day:'2-digit',month:'short'})})</span>
+                      </span>
+                    ))}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* History */}
         <div>
           <div style={{fontSize:12,fontWeight:600,color:'var(--t2)',marginBottom:10}}>
@@ -6204,6 +6242,114 @@ function ExpandedRow({ d, dealers, onOpenDealer, setActiveDealer, allMonthCols, 
   );
 }
 
+// ── Salesman Performance (collections dashboard) ─────────────────────────────
+// Enterprise-style receivables view per salesman: book size, previous vs
+// current outstanding, movement, collections + efficiency, and today's
+// workload. Data from GET /outstanding/report/salesman.
+function SalesmanPerformancePanel({ users }) {
+  const [rep, setRep] = useState(null);
+  const [err, setErr] = useState('');
+  useEffect(()=>{ (async()=>{
+    try{ setRep(await api.outstandingSalesmanReport()); }
+    catch(e){ setErr(e.message||'Report failed'); }
+  })(); },[]);
+
+  if(err)  return <div style={{padding:20,color:'#f87171'}}>{err}</div>;
+  if(!rep) return <div style={{padding:20,color:'var(--t3)'}}>Loading report…</div>;
+
+  const rows=[...(rep.rows||[])].sort((a,b)=>b.current-a.current);
+  const T=rows.reduce((t,r)=>({
+    dealers:t.dealers+r.dealers, current:t.current+r.current, previous:t.previous+r.previous,
+    collection:t.collection+r.collection, today:t.today+r.followupsToday, overdue:t.overdue+r.overdue, promises:t.promises+r.promises,
+  }),{dealers:0,current:0,previous:0,collection:0,today:0,overdue:0,promises:0});
+  const totalDiff=T.current-T.previous;
+
+  const Delta=({cur,prev})=>{
+    const d=cur-prev;
+    if(!prev&&!cur) return <span style={{color:'var(--t3)'}}>—</span>;
+    const pctTxt=prev>0?` (${(d/prev*100).toFixed(1)}%)`:'';
+    return <span style={{color:d<0?'#34d399':d>0?'#f87171':'var(--t3)',fontWeight:700}}>
+      {d===0?'=':(d<0?'▼ ':'▲ +')+fmt(Math.abs(d)).replace('—','0')}{pctTxt}
+    </span>;
+  };
+
+  return(
+    <div className="fade">
+      {/* KPI strip */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:10,marginBottom:14}}>
+        {[
+          {l:`Current O/S${rep.currentMonth?` · ${rep.currentMonth}`:''}`, v:fmt(T.current), c:'#f87171'},
+          {l:`Previous O/S${rep.previousMonth?` · ${rep.previousMonth}`:''}`, v:fmt(T.previous), c:'var(--t2)'},
+          {l:'Net movement', v:(totalDiff>0?'+':'')+ (totalDiff===0?'0':fmt(Math.abs(totalDiff)).replace('—','0')), c:totalDiff<0?'#34d399':totalDiff>0?'#f87171':'var(--t3)'},
+          {l:'Collections logged', v:fmt(T.collection), c:'#34d399'},
+          {l:'Follow-ups today', v:T.today, c:'var(--acc)'},
+          {l:'Overdue follow-ups', v:T.overdue, c:T.overdue>0?'#fbbf24':'var(--t3)'},
+        ].map(k=>(
+          <div key={k.l} className="card" style={{padding:'12px 14px',marginBottom:0}}>
+            <div style={{fontSize:10,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'.08em',marginBottom:4}}>{k.l}</div>
+            <div style={{fontSize:19,fontWeight:800,color:k.c}}>{k.v}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="card" style={{padding:0,overflow:'hidden'}}>
+        <div className="scroll" style={{maxHeight:'55vh',overflowY:'auto'}}>
+          <table>
+            <thead><tr>
+              <th>Salesman</th>
+              <th style={{textAlign:'right'}}>Dealers</th>
+              <th style={{textAlign:'right'}}>Previous O/S</th>
+              <th style={{textAlign:'right'}}>Current O/S</th>
+              <th style={{textAlign:'right'}}>Movement</th>
+              <th style={{textAlign:'right'}}>Collections</th>
+              <th style={{textAlign:'right'}} title="Collections ÷ previous outstanding">Recovery %</th>
+              <th style={{textAlign:'right'}}>Today</th>
+              <th style={{textAlign:'right'}}>Overdue</th>
+              <th style={{textAlign:'right'}}>Promises</th>
+            </tr></thead>
+            <tbody>
+              {rows.map(r=>{
+                const u=users[r.salesman];
+                const eff=r.previous>0?(r.collection/r.previous*100):null;
+                return(
+                  <tr key={r.salesman}>
+                    <td><div style={{display:'flex',alignItems:'center',gap:8}}>
+                      {u&&<span style={{width:22,height:22,borderRadius:'50%',background:u.color||'var(--acc)',color:'#fff',fontSize:9,fontWeight:700,display:'inline-flex',alignItems:'center',justifyContent:'center'}}>{u.ini||u.name?.slice(0,2).toUpperCase()}</span>}
+                      <span style={{fontWeight:600}}>{u?.name||r.salesman}</span>
+                    </div></td>
+                    <td style={{textAlign:'right'}}>{r.dealers}</td>
+                    <td style={{textAlign:'right',color:'var(--t3)'}}>{fmt(r.previous)}</td>
+                    <td style={{textAlign:'right',fontWeight:700}}>{fmt(r.current)}</td>
+                    <td style={{textAlign:'right'}}><Delta cur={r.current} prev={r.previous}/></td>
+                    <td style={{textAlign:'right',color:'#34d399',fontWeight:600}}>{fmt(r.collection)}</td>
+                    <td style={{textAlign:'right',color:eff===null?'var(--t3)':eff>=20?'#34d399':eff>=8?'#fbbf24':'#f87171',fontWeight:700}}>{eff===null?'—':eff.toFixed(1)+'%'}</td>
+                    <td style={{textAlign:'right',color:r.followupsToday>0?'var(--acc)':'var(--t3)'}}>{r.followupsToday||'—'}</td>
+                    <td style={{textAlign:'right',color:r.overdue>0?'#fbbf24':'var(--t3)',fontWeight:r.overdue>0?700:400}}>{r.overdue||'—'}</td>
+                    <td style={{textAlign:'right',color:'var(--t3)'}}>{r.promises||'—'}</td>
+                  </tr>
+                );
+              })}
+              {rows.length===0&&<tr><td colSpan={10} style={{textAlign:'center',padding:26,color:'var(--t3)'}}>No outstanding data mapped to salesmen yet</td></tr>}
+            </tbody>
+            <tfoot><tr>
+              <td style={{fontWeight:700}}>TOTAL</td>
+              <td style={{textAlign:'right',fontWeight:700}}>{T.dealers}</td>
+              <td style={{textAlign:'right',fontWeight:700}}>{fmt(T.previous)}</td>
+              <td style={{textAlign:'right',fontWeight:700}}>{fmt(T.current)}</td>
+              <td style={{textAlign:'right'}}><Delta cur={T.current} prev={T.previous}/></td>
+              <td style={{textAlign:'right',fontWeight:700,color:'#34d399'}}>{fmt(T.collection)}</td>
+              <td style={{textAlign:'right',fontWeight:700}}>{T.previous>0?(T.collection/T.previous*100).toFixed(1)+'%':'—'}</td>
+              <td style={{textAlign:'right',fontWeight:700}}>{T.today}</td>
+              <td style={{textAlign:'right',fontWeight:700,color:T.overdue>0?'#fbbf24':'inherit'}}>{T.overdue}</td>
+              <td style={{textAlign:'right',fontWeight:700}}>{T.promises}</td>
+            </tr></tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Outstanding Component ────────────────────────────────────────────────
 export default function Outstanding({ dealers, users, onOpenDealer, currentUser, outstandingData=[], setOutstandingData }) {
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
@@ -6221,6 +6367,15 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
   // the month label + amount so the FollowupModal can pre-fill them.
   const [popupContext, setPopupContext] = useState(null); // { month, amount } | null
   const fileRef = useRef();
+  // ── Saturday-upload flow state ──
+  // previewData = server's dry-run result + the pending File; nothing is
+  // written until the admin confirms from the preview modal.
+  const [previewData, setPreviewData] = useState(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [batches,     setBatches]     = useState(null);   // null = not loaded
+  const [batchDetail, setBatchDetail] = useState(null);
+  const [showAllMonths, setShowAllMonths] = useState(false);
 
   useEffect(()=>{ loadFromDB(); loadFollowups(); },[]);
 
@@ -6255,17 +6410,39 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
     setLoading(false);
   };
 
+  // Phase 1: dry-run on the server — parse, match against the Dealer master,
+  // compute previous-vs-new per month. Shows the preview modal; nothing is
+  // saved until Confirm.
   const handleUpload = async (file) => {
     if(!file) return;
     setUploading(true); setUploadMsg(''); setError('');
     try {
       const token = localStorage.getItem('stp_jwt');
       if(!token) throw new Error('Not logged in to server');
-      const res = await api.uploadOutstanding(file);
-      setUploadMsg(`✓ ${res.added||0} added, ${res.updated||0} updated`);
-      await loadFromDB();
+      const res = await api.previewOutstanding(file);
+      setPreviewData({ ...res, file, fileName: file.name });
     } catch(e){ setError('Upload failed: '+e.message); }
     setUploading(false);
+  };
+
+  // Phase 2: commit. Creates the upload batch + weekly history server-side.
+  const confirmUpload = async () => {
+    if(!previewData?.file) return;
+    setConfirmBusy(true); setError('');
+    try {
+      const res = await api.uploadOutstanding(previewData.file);
+      setUploadMsg(`✓ ${previewData.fileName}: ${res.matched} matched (${res.updated||0} updated, ${res.created||0} new)` +
+        (res.unmappedCount ? ` · ${res.unmappedCount} UNMAPPED — open Upload History to map them` : ''));
+      setPreviewData(null);
+      await loadFromDB();
+    } catch(e){ setError('Upload failed: '+e.message); }
+    setConfirmBusy(false);
+  };
+
+  const openHistory = async () => {
+    setShowHistory(true); setBatchDetail(null);
+    try { setBatches(await api.outstandingBatches()); }
+    catch(e){ setError(e.message); setBatches([]); }
   };
 
   // Delete an entire month's outstanding column across ALL dealers.
@@ -6294,11 +6471,19 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
     return outstandingData.filter(o=>myDealerNames.has(o.name?.toLowerCase().trim()));
   },[outstandingData, myDealerNames]);
 
-  const allMonthCols = useMemo(()=>{
+  // Every month present in the data, oldest → newest. The table then shows
+  // the LATEST THREE by default (spec: the three columns are derived from the
+  // data, never hard-coded) with a toggle to reveal the full history.
+  const allMonthColsFull = useMemo(()=>{
     const cols=new Set();
     filteredOutstanding.forEach(d=>d.monthCols?.forEach(m=>cols.add(m)));
-    return [...cols];
+    const M3=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+    const key=(l)=>{ const m=/^([A-Za-z]{3})-(\d{2})$/.exec(String(l).trim()); if(!m) return 99999; const mi=M3.indexOf(m[1].toLowerCase()); return (2000+ +m[2])*12+(mi<0?0:mi); };
+    return [...cols].sort((a,b)=>key(a)-key(b));
   },[filteredOutstanding]);
+  const allMonthCols = useMemo(
+    ()=> showAllMonths ? allMonthColsFull : allMonthColsFull.slice(-3),
+    [allMonthColsFull, showAllMonths]);
 
   const dealerSmMap = useMemo(()=>{
     const map={};
@@ -6348,6 +6533,10 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
 
       for(const f of dFu){
         if(!f.followupDate) continue;
+        // Only PENDING follow-ups drive row priority. Completed ones are
+        // history — an old done follow-up must not float a dealer to the top
+        // with a stale past date.
+        if(f.status && f.status !== 'pending') continue;
         // followupDate is 'YYYY-MM-DD'
         const fDateMs = new Date(f.followupDate + 'T00:00:00').getTime();
         if(isNaN(fDateMs)) continue;
@@ -6444,11 +6633,19 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
 
       {/* Action bar */}
       <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',marginBottom:14}}>
+        {allMonthColsFull.length>3&&(
+          <button onClick={()=>setShowAllMonths(v=>!v)} className="btn" style={{fontSize:12}}>
+            {showAllMonths?'Latest 3 months':`All months (${allMonthColsFull.length})`}
+          </button>
+        )}
         {isAdmin&&<>
           <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}}
             onChange={e=>{if(e.target.files[0])handleUpload(e.target.files[0]);e.target.value='';}}/>
           <button onClick={()=>fileRef.current?.click()} disabled={uploading} className="btnp" style={{display:'flex',alignItems:'center',gap:6}}>
-            <Upload size={13}/>{uploading?'Uploading...':'Upload Outstanding'}
+            <Upload size={13}/>{uploading?'Reading file...':'Upload Outstanding'}
+          </button>
+          <button onClick={openHistory} className="btn" style={{display:'flex',alignItems:'center',gap:6,fontSize:12}}>
+            <Calendar size={13}/> Upload History
           </button>
           {/* Wipe all follow-up history — SUPERADMIN ONLY (destructive). */}
           {currentUser?.role === 'superadmin' && (
@@ -6582,6 +6779,7 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
             {id:'cleared',    label:`Cleared (${countCleared})`},
             {id:'followups',  label:`Follow-ups (${pendingFu.length})`,badge:overdueFu.length},
             {id:'all',        label:`All (${filteredOutstanding.length})`},
+            ...(isAdmin?[{id:'performance',label:'📊 Salesman Performance'}]:[]),
           ].map(t=>(
             <button key={t.id} className={`tab ${tab===t.id?'active':''}`} onClick={()=>setTab(t.id)} style={{position:'relative'}}>
               {t.label}
@@ -6590,6 +6788,9 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
           ))}
         </div>
 
+        {tab==='performance'&&isAdmin?(
+          <SalesmanPerformancePanel users={users}/>
+        ):(<>
         <div className="row" style={{marginBottom:12,flexWrap:'wrap',gap:8}}>
           <div style={{position:'relative'}}>
             <Search size={13} style={{position:'absolute',left:9,top:'50%',transform:'translateY(-50%)',color:'var(--t3)'}}/>
@@ -6603,6 +6804,25 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
         </div>
 
         <div className="card" style={{padding:0,overflow:'hidden'}}>
+          {/* Priority legend — the colored stripe on each row explains the
+              sort order at a glance. Counts update with the active filters. */}
+          <div style={{display:'flex',gap:14,alignItems:'center',flexWrap:'wrap',padding:'9px 14px',borderBottom:'1px solid var(--b1)',fontSize:11}}>
+            <span style={{color:'var(--t3)',fontWeight:700,textTransform:'uppercase',letterSpacing:'.07em',fontSize:10}}>Priority</span>
+            {[
+              {b:0,c:'#fbbf24',l:'Due today'},
+              {b:1,c:'#f87171',l:'Overdue'},
+              {b:2,c:'#34d399',l:'Upcoming'},
+              {b:3,c:'#55546a',l:'No follow-up'},
+            ].map(x=>{
+              const n=filtered.filter(r=>r._bucket===x.b).length;
+              return(
+                <span key={x.b} style={{display:'inline-flex',alignItems:'center',gap:5,color:n>0?'var(--t2)':'var(--t3)'}}>
+                  <span style={{width:8,height:8,borderRadius:2,background:x.c,opacity:n>0?1:.35}}/>
+                  {x.l} <b style={{color:n>0?'var(--t1)':'var(--t3)'}}>{n}</b>
+                </span>
+              );
+            })}
+          </div>
           <div style={{overflowX:'auto',maxHeight:'60vh',overflowY:'auto'}}>
             <table>
               <thead><tr>
@@ -6627,12 +6847,21 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
                   const isOpen  = expanded[d.id];
                   const cleared = d.latestOutstanding===0;
                   const dFu     = d.dealerFollowups.filter(f=>f.status==='pending');
-                  const nextFu  = [...dFu].sort((a,b)=>new Date(a.followupDate)-new Date(b.followupDate))[0];
+                  // "Next follow-up" = the soonest UPCOMING pending date
+                  // (today/future). Only when nothing upcoming exists fall
+                  // back to the most RECENT overdue one — never the oldest,
+                  // so stale past dates don't take over the column.
+                  const _t=new Date(); const _today=`${_t.getFullYear()}-${String(_t.getMonth()+1).padStart(2,'0')}-${String(_t.getDate()).padStart(2,'0')}`;
+                  const _upcoming=dFu.filter(f=>f.followupDate>=_today).sort((a,b)=>new Date(a.followupDate)-new Date(b.followupDate));
+                  const _past    =dFu.filter(f=>f.followupDate< _today).sort((a,b)=>new Date(b.followupDate)-new Date(a.followupDate));
+                  const nextFu  = _upcoming[0] || _past[0];
                   const fuDays  = nextFu ? daysUntil(nextFu.followupDate) : null;
                   const fuOver  = fuDays!==null && fuDays<0;
                   const noPickups = d.dealerFollowups.filter(f=>f.type==='no-pickup'||f.comment?.startsWith('📵'));
                   const latestNP = noPickups[noPickups.length-1];
 
+                  // Priority stripe color — mirrors the legend above the table.
+                  const stripe=['#fbbf24','#f87171','#34d399','transparent'][d._bucket]||'transparent';
                   return(
                     <React.Fragment key={d.id}>
                       <tr
@@ -6644,7 +6873,7 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
                         // amount cells).
                         className="os-row"
                       >
-                        <td style={{color:'var(--t3)',fontSize:11}}>{i+1}</td>
+                        <td style={{color:'var(--t3)',fontSize:11,borderLeft:`3px solid ${stripe}`}}>{i+1}</td>
                         <td style={{maxWidth:220}}>
                           {/* Dealer name — click to open the dealer modal.
                               Stop propagation so the row's accordion toggle
@@ -6869,6 +7098,7 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
             </table>
           </div>
         </div>
+        </>)}
       </>)}
 
       {activeDealer&&(
@@ -6881,6 +7111,182 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
           onClose={()=>{ setActiveDealer(null); setPopupContext(null); }}
           onSaved={loadFollowups}
         />
+      )}
+
+      {/* ── Upload preview (dry-run) — confirm before anything is written ── */}
+      {previewData&&(
+        <div className="overlay" onClick={e=>e.target===e.currentTarget&&!confirmBusy&&setPreviewData(null)}>
+          <div className="modal" style={{maxWidth:720,maxHeight:'85vh',overflowY:'auto'}}>
+            <div style={{fontSize:16,fontWeight:700,marginBottom:4}}>Confirm upload — {previewData.fileName}</div>
+            <div style={{fontSize:12,color:'var(--t3)',marginBottom:12}}>
+              Months in file: <b style={{color:'var(--t1)'}}>{(previewData.months||[]).join(', ')||'—'}</b> · Nothing is saved until you confirm.
+            </div>
+            <div style={{display:'flex',gap:14,flexWrap:'wrap',marginBottom:12,fontSize:13}}>
+              <span>Rows: <b>{previewData.totalRecords}</b></span>
+              <span style={{color:'#34d399'}}>Matched: <b>{previewData.matched}</b></span>
+              <span style={{color:previewData.unmappedCount>0?'#fbbf24':'var(--t3)'}}>Unmapped: <b>{previewData.unmappedCount}</b></span>
+              <span>Changed values: <b>{previewData.changedRows}</b></span>
+            </div>
+            {/* Per-month previous vs new totals */}
+            <table style={{marginBottom:12}}>
+              <thead><tr><th>Month</th><th style={{textAlign:'right'}}>Previous total</th><th style={{textAlign:'right'}}>New total</th><th style={{textAlign:'right'}}>Change</th></tr></thead>
+              <tbody>
+                {(previewData.months||[]).map(m=>{
+                  const pm=previewData.perMonth?.[m]||{prevTotal:0,newTotal:0};
+                  const diff=pm.newTotal-pm.prevTotal;
+                  return(<tr key={m}>
+                    <td style={{fontWeight:600}}>{m}</td>
+                    <td style={{textAlign:'right'}}>{fmt(pm.prevTotal)}</td>
+                    <td style={{textAlign:'right',fontWeight:700}}>{fmt(pm.newTotal)}</td>
+                    <td style={{textAlign:'right',fontWeight:700,color:diff<0?'#34d399':diff>0?'#f87171':'var(--t3)'}}>
+                      {diff===0?'= no change':(diff>0?'↑ +':'↓ ')+fmt(Math.abs(diff))}
+                      {pm.prevTotal>0&&diff!==0&&<span style={{fontWeight:400,color:'var(--t3)',marginLeft:4}}>({(diff/pm.prevTotal*100).toFixed(1)}%)</span>}
+                    </td>
+                  </tr>);
+                })}
+              </tbody>
+            </table>
+            {previewData.unmappedCount>0&&(
+              <div style={{background:'rgba(251,191,36,0.08)',border:'1px solid rgba(251,191,36,0.3)',borderRadius:8,padding:'10px 12px',marginBottom:12}}>
+                <div style={{fontSize:12,fontWeight:700,color:'#fbbf24',marginBottom:6}}>
+                  ⚠ {previewData.unmappedCount} part{previewData.unmappedCount===1?'y':'ies'} not found in the Dealer master — these will be SKIPPED (never guessed). You can map them from Upload History after confirming.
+                </div>
+                <div style={{fontSize:12,color:'var(--t2)',maxHeight:90,overflowY:'auto'}}>{(previewData.unmapped||[]).join(' · ')}</div>
+              </div>
+            )}
+            {(previewData.topChanges||[]).length>0&&(
+              <>
+                <div style={{fontSize:12,fontWeight:700,color:'var(--t2)',marginBottom:6}}>Biggest changes</div>
+                <div style={{maxHeight:220,overflowY:'auto',marginBottom:12}}>
+                  <table>
+                    <thead><tr><th>Dealer</th><th>Month</th><th style={{textAlign:'right'}}>Previous</th><th style={{textAlign:'right'}}>New</th><th style={{textAlign:'right'}}>Change</th></tr></thead>
+                    <tbody>
+                      {previewData.topChanges.slice(0,20).map((c,i)=>(
+                        <tr key={i}>
+                          <td style={{maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.dealer}</td>
+                          <td>{c.month}</td>
+                          <td style={{textAlign:'right',color:'var(--t3)'}}>{c.prev===null?'new':fmt(c.prev)}</td>
+                          <td style={{textAlign:'right',fontWeight:600}}>{fmt(c.next)}</td>
+                          <td style={{textAlign:'right',fontWeight:700,color:c.diff<0?'#34d399':'#f87171'}}>{(c.diff>0?'+':'')+fmt(c.diff)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+            <div className="row" style={{gap:8}}>
+              <button onClick={confirmUpload} disabled={confirmBusy} className="btnp">
+                {confirmBusy?'Saving…':`Confirm import (${previewData.matched} dealers)`}
+              </button>
+              <button onClick={()=>setPreviewData(null)} disabled={confirmBusy} className="btn">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Upload history: every Saturday batch, details, mapping, revert ── */}
+      {showHistory&&(
+        <div className="overlay" onClick={e=>e.target===e.currentTarget&&setShowHistory(false)}>
+          <div className="modal" style={{maxWidth:760,maxHeight:'85vh',overflowY:'auto'}}>
+            <div className="row" style={{marginBottom:12}}>
+              <div style={{fontSize:16,fontWeight:700}}>Upload History</div>
+              <div className="spacer"/>
+              <button onClick={()=>setShowHistory(false)} className="btn" style={{padding:'4px 8px'}}><X size={13}/></button>
+            </div>
+            {batches===null?(
+              <div style={{color:'var(--t3)',padding:20}}>Loading…</div>
+            ):batches.length===0?(
+              <div style={{color:'var(--t3)',padding:20,textAlign:'center'}}>No uploads recorded yet. History starts with the next upload.</div>
+            ):(
+              <table style={{marginBottom:14}}>
+                <thead><tr><th>Date</th><th>File</th><th>Months</th><th style={{textAlign:'right'}}>Total</th><th style={{textAlign:'right'}}>Matched</th><th style={{textAlign:'right'}}>Unmapped</th><th>Status</th></tr></thead>
+                <tbody>
+                  {batches.map(b=>(
+                    <tr key={b._id} onClick={async()=>{ try{ setBatchDetail(await api.outstandingBatch(b._id)); }catch(e){ setError(e.message); } }}
+                      style={{cursor:'pointer',opacity:b.status==='REVERTED'?0.55:1}}>
+                      <td style={{whiteSpace:'nowrap'}}>{new Date(b.createdAt).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'numeric',minute:'2-digit'})}</td>
+                      <td style={{maxWidth:170,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{b.fileName||'—'}</td>
+                      <td style={{fontSize:11,color:'var(--t3)'}}>{(b.months||[]).join(', ')}</td>
+                      <td style={{textAlign:'right',fontWeight:600}}>{fmt(b.totalAmount||0)}</td>
+                      <td style={{textAlign:'right',color:'#34d399'}}>{b.matchedRecords}</td>
+                      <td style={{textAlign:'right',color:b.unmappedRecords>0?'#fbbf24':'var(--t3)'}}>{b.unmappedRecords}</td>
+                      <td>{b.status==='REVERTED'
+                        ?<span style={{fontSize:10,fontWeight:700,color:'#f87171'}}>REVERTED</span>
+                        :<span style={{fontSize:10,fontWeight:700,color:'#34d399'}}>ACTIVE</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            {batchDetail&&(
+              <div style={{borderTop:'1px solid var(--b1)',paddingTop:12}}>
+                <div className="row" style={{marginBottom:8,flexWrap:'wrap',gap:8}}>
+                  <div>
+                    <div style={{fontWeight:700}}>{batchDetail.fileName||'Upload'} · {new Date(batchDetail.createdAt).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'})}</div>
+                    <div style={{fontSize:12,color:'var(--t3)'}}>
+                      By {batchDetail.uploadedByName||batchDetail.uploadedBy} · {batchDetail.totalRecords} rows · {batchDetail.matchedRecords} matched · {batchDetail.unmappedRecords} unmapped
+                      {batchDetail.status==='REVERTED'&&<span style={{color:'#f87171',fontWeight:700}}> · REVERTED by {batchDetail.revertedBy} ({batchDetail.revertReason||'no reason given'})</span>}
+                    </div>
+                  </div>
+                  <div className="spacer"/>
+                  {batchDetail.status==='ACTIVE'&&currentUser?.role==='superadmin'&&(
+                    <button onClick={async()=>{
+                      const reason=window.prompt('Revert this upload and restore the previous values?\nReason (for the audit trail):');
+                      if(reason===null)return;
+                      try{
+                        const r=await api.revertOutstandingBatch(batchDetail._id,reason);
+                        setUploadMsg(`✓ Reverted — ${r.restored} values restored`);
+                        setBatchDetail(null); await openHistory(); await loadFromDB();
+                      }catch(e){ setError('Revert failed: '+e.message); }
+                    }} className="btnd" style={{fontSize:12}}>Revert this upload</button>
+                  )}
+                </div>
+                {(batchDetail.unmapped||[]).length>0&&(
+                  <div style={{background:'rgba(251,191,36,0.08)',border:'1px solid rgba(251,191,36,0.3)',borderRadius:8,padding:'10px 12px',marginBottom:10}}>
+                    <div style={{fontSize:12,fontWeight:700,color:'#fbbf24',marginBottom:8}}>Unmapped parties — pick the matching dealer to apply their amounts</div>
+                    {batchDetail.unmapped.map(u=>(
+                      <div key={u.party} style={{display:'flex',gap:8,alignItems:'center',marginBottom:6,flexWrap:'wrap'}}>
+                        <div style={{fontSize:12,fontWeight:600,minWidth:160}}>{u.party}</div>
+                        <div style={{fontSize:11,color:'var(--t3)'}}>{Object.entries(u.amounts||{}).map(([m,a])=>`${m}: ${fmt(a)}`).join(' · ')}</div>
+                        <select className="inp" defaultValue="" id={`map_${u.party}`} style={{width:220,fontSize:12,padding:'4px 8px'}}>
+                          <option value="">Map to dealer…</option>
+                          {dealers.map(d=><option key={d.id} value={d.name}>{d.name}</option>)}
+                        </select>
+                        <button className="btn" style={{fontSize:11}} onClick={async()=>{
+                          const sel=document.getElementById(`map_${u.party}`);
+                          if(!sel?.value){ notify.error('Pick a dealer first'); return; }
+                          try{
+                            await api.resolveUnmappedParty(batchDetail._id,u.party,sel.value);
+                            notify.success(`${u.party} → ${sel.value}`);
+                            setBatchDetail(await api.outstandingBatch(batchDetail._id));
+                            await loadFromDB();
+                          }catch(e){ notify.error(e.message); }
+                        }}>Apply</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div style={{maxHeight:240,overflowY:'auto'}}>
+                  <table>
+                    <thead><tr><th>Dealer</th><th>Month</th><th style={{textAlign:'right'}}>Previous</th><th style={{textAlign:'right'}}>Uploaded</th></tr></thead>
+                    <tbody>
+                      {(batchDetail.rows||[]).slice(0,400).map((r,i)=>(
+                        <tr key={i}>
+                          <td style={{maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.dealerName}</td>
+                          <td>{r.month}</td>
+                          <td style={{textAlign:'right',color:'var(--t3)'}}>{r.prevAmount===null||r.prevAmount===undefined?'new':fmt(r.prevAmount)}</td>
+                          <td style={{textAlign:'right',fontWeight:600}}>{fmt(r.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

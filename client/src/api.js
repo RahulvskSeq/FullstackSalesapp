@@ -1709,10 +1709,23 @@ export const api = {
   deleteNote: (id)    => fetch(`${BASE}/notes/${id}`,{method:'DELETE',headers:authHeaders()}).then(handle),
 
   getOutstanding:    ()     => fetch(`${BASE}/outstanding`,{headers:authHeaders()}).then(handle),
+  // Two-phase Saturday upload. Preview parses + matches against the Dealer
+  // master and returns previous-vs-new totals WITHOUT writing anything;
+  // the plain upload commits and creates a batch + weekly history.
+  previewOutstanding: (file) => {
+    const fd = new FormData(); fd.append('file',file);
+    return fetch(`${BASE}/outstanding/upload?preview=1`,{method:'POST',headers:{Authorization:`Bearer ${getToken()}`},body:fd}).then(handle);
+  },
   uploadOutstanding: (file) => {
     const fd = new FormData(); fd.append('file',file);
     return fetch(`${BASE}/outstanding/upload`,{method:'POST',headers:{Authorization:`Bearer ${getToken()}`},body:fd}).then(handle);
   },
+  outstandingBatches:      ()          => fetch(`${BASE}/outstanding/batches`,{headers:authHeaders()}).then(handle),
+  outstandingBatch:        (id)        => fetch(`${BASE}/outstanding/batches/${id}`,{headers:authHeaders()}).then(handle),
+  revertOutstandingBatch:  (id,reason) => fetch(`${BASE}/outstanding/revert/${id}`,{method:'POST',headers:authHeaders(),body:JSON.stringify({reason})}).then(handle),
+  resolveUnmappedParty:    (batchId,party,dealerName) => fetch(`${BASE}/outstanding/unmapped/resolve`,{method:'POST',headers:authHeaders(),body:JSON.stringify({batchId,party,dealerName})}).then(handle),
+  outstandingDealerHistory:(name)      => fetch(`${BASE}/outstanding/history/${encodeURIComponent(name)}`,{headers:authHeaders()}).then(handle),
+  outstandingSalesmanReport:()         => fetch(`${BASE}/outstanding/report/salesman`,{headers:authHeaders()}).then(handle),
   updateOutstanding: (name,month,amount) =>
     fetch(`${BASE}/outstanding/${encodeURIComponent(name)}`,{method:'PUT',headers:authHeaders(),body:JSON.stringify({month,amount})}).then(handle),
   deleteOutstandingMonth: (month) =>
