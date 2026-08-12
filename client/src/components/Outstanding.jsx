@@ -5672,7 +5672,7 @@ const REASONS_NEED_REMARKS = new Set([
   'Others',
 ]);
 
-function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMonth, prefillAmount }) {
+function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMonth, prefillAmount, canCredit=false }) {
   const [date,    setDate]    = useState(todayStr());
   const [reason,  setReason]  = useState('');     // preset reason from dropdown
   const [comment, setComment] = useState('');     // free-text note (only when reason === 'Others' or as add-on)
@@ -5719,7 +5719,14 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
   const collectedTotal = collections.reduce((s,f)=>s+(Number(f.amount)||0),0);
   const remaining = baseAmount - collectedTotal;
   // History list excludes collections — they get their own section above.
-  const followupHistory = mine.filter(f => f.type !== 'collection');
+  // History defaults to THIS MONTH so the popup stays readable as records
+  // pile up; older entries are one click away and never deleted.
+  const [showOldHistory, setShowOldHistory] = useState(false);
+  const allHistory = mine.filter(f => f.type !== 'collection');
+  const _monthKey = (f) => String(f.createdAt || f.followupDate || '').slice(0,7);   // 'YYYY-MM'
+  const _thisMonth = todayStr().slice(0,7);
+  const olderCount = allHistory.filter(f => _monthKey(f) && _monthKey(f) < _thisMonth).length;
+  const followupHistory = showOldHistory ? allHistory : allHistory.filter(f => !_monthKey(f) || _monthKey(f) >= _thisMonth);
 
   // Follow-up date cap — max 7 days from today. The native date picker
   // enforces this via its `max` attribute, but we re-check at save time
@@ -5945,21 +5952,26 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
               <label style={{fontSize:10,color:'var(--t3)',display:'block',marginBottom:4,textTransform:'uppercase'}}>Expected Payment ₹</label>
               <input type="number" className="inp" value={amount} onChange={e=>setAmount(e.target.value)} placeholder="0" style={{width:'100%'}}/>
             </div>
-            <button
-              type="button"
-              onClick={()=>{ setShowCollect(s=>!s); setCollectErr(''); }}
-              title="Add collection (amount received) — updates Remaining at top"
-              className="btn"
-              style={{display:'flex',alignItems:'center',justifyContent:'center',height:40,padding:'0 14px',
-                color: showCollect ? '#fff' : 'var(--acc)',
-                background: showCollect ? 'var(--acc)' : 'transparent',
-                border:'1px solid var(--acc)',fontSize:18,fontWeight:700,lineHeight:1}}>
-              {showCollect ? '×' : '+'}
-            </button>
+            {/* Recording money received is an ACCOUNTS action — hidden from
+                salesmen, who record the promise (date + comment + expected
+                amount) only. The server enforces this too. */}
+            {canCredit && (
+              <button
+                type="button"
+                onClick={()=>{ setShowCollect(s=>!s); setCollectErr(''); }}
+                title="Add collection (amount received) — updates Remaining at top"
+                className="btn"
+                style={{display:'flex',alignItems:'center',justifyContent:'center',height:40,padding:'0 14px',
+                  color: showCollect ? '#fff' : 'var(--acc)',
+                  background: showCollect ? 'var(--acc)' : 'transparent',
+                  border:'1px solid var(--acc)',fontSize:18,fontWeight:700,lineHeight:1}}>
+                {showCollect ? '×' : '+'}
+              </button>
+            )}
           </div>
 
           {/* Collection entry — toggled by the ＋ next to Expected Payment. */}
-          {showCollect && (
+          {canCredit && showCollect && (
             <div style={{background:'var(--bg)',borderRadius:8,padding:10,marginBottom:10,border:'1px solid var(--acc)'}}>
               <div style={{fontSize:11,fontWeight:600,color:'var(--acc)',marginBottom:8}}>💰 Amount to be collected</div>
               <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'flex-end'}}>
@@ -6082,11 +6094,22 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
 
         {/* History */}
         <div>
-          <div style={{fontSize:12,fontWeight:600,color:'var(--t2)',marginBottom:10}}>
-            History ({followupHistory.length})
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10,flexWrap:'wrap'}}>
+            <div style={{fontSize:12,fontWeight:600,color:'var(--t2)'}}>
+              History ({followupHistory.length}){!showOldHistory&&olderCount>0&&<span style={{fontWeight:400,color:'var(--t3)'}}> · this month</span>}
+            </div>
+            <div style={{flex:1}}/>
+            {olderCount>0&&(
+              <button type="button" onClick={()=>setShowOldHistory(v=>!v)} className="btn"
+                style={{fontSize:10,padding:'3px 9px'}}>
+                {showOldHistory?'Show this month only':`Show older (${olderCount})`}
+              </button>
+            )}
           </div>
           {followupHistory.length===0&&(
-            <div style={{textAlign:'center',padding:20,color:'var(--t3)',fontSize:12}}>No follow-ups yet</div>
+            <div style={{textAlign:'center',padding:20,color:'var(--t3)',fontSize:12}}>
+              {olderCount>0?<>Nothing this month. <button type="button" onClick={()=>setShowOldHistory(true)} style={{background:'none',border:'none',color:'var(--acc)',cursor:'pointer',padding:0,fontSize:12}}>Show {olderCount} older</button></>:'No follow-ups yet'}
+            </div>
           )}
           {followupHistory.map(f=>{
             const days   = daysUntil(f.followupDate);
@@ -6242,6 +6265,213 @@ function ExpandedRow({ d, dealers, onOpenDealer, setActiveDealer, allMonthCols, 
   );
 }
 
+// ── Commitments (promised-but-not-paid) ──────────────────────────────────────
+// Every promise a dealer made that hasn't been fully honoured. BROKEN = the
+// promised date has passed with money still missing; OPEN = still within the
+// promised date. Money is credited here by admin/accounts only — a salesman
+// sees the same list read-only so they know exactly who to chase.
+// Settling a commitment (fully paid, manually or via a Saturday sheet drop)
+// removes it from this tab automatically.
+function CommitmentsPanel({ users, canCredit, onOpenDealer, dealers, refreshKey, onChanged, followups=[] }) {
+  const [rows, setRows]   = useState(null);
+  const [err,  setErr]    = useState('');
+  const [view, setView]   = useState('BROKEN');       // BROKEN | OPEN | ALL
+  const [busyId, setBusyId] = useState(null);
+  // Same accordion behaviour as the main table: one dealer open at a time.
+  const [openRow, setOpenRow] = useState(null);
+  const fuOf = (name) => followups
+    .filter(f => (f.dealerName||'').toLowerCase().trim() === (name||'').toLowerCase().trim() && f.type !== 'collection')
+    .sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
+
+  const load = async () => {
+    try { setRows(await api.getCommitments()); setErr(''); }
+    catch(e){ setErr(e.message||'Failed to load'); setRows([]); }
+  };
+  useEffect(()=>{ load(); /* eslint-disable-next-line */ },[refreshKey]);
+
+  const today = todayStr();
+  const daysLate = (d) => Math.round((new Date(today+'T00:00:00') - new Date(d+'T00:00:00'))/86400000);
+
+  const shown = useMemo(()=>{
+    const list = (rows||[]).filter(r=>view==='ALL'?true:r.state===view);
+    return list.sort((a,b)=>
+      a.state===b.state
+        ? (a.state==='BROKEN' ? String(a.followupDate).localeCompare(String(b.followupDate))   // longest broken first
+                              : String(a.followupDate).localeCompare(String(b.followupDate)))  // soonest due first
+        : (a.state==='BROKEN'?-1:1));
+  },[rows,view]);
+
+  const broken = (rows||[]).filter(r=>r.state==='BROKEN');
+  const open   = (rows||[]).filter(r=>r.state==='OPEN');
+  const sum    = (l,k)=>l.reduce((s,r)=>s+(Number(r[k])||0),0);
+
+  const credit = async (r) => {
+    const raw = window.prompt(
+      `Record payment received from ${r.dealerName}\n\n` +
+      `Promised: ${fmt(r.amount)}   Already received: ${fmt(r.received)}   Shortfall: ${fmt(r.shortfall)}\n\n` +
+      `Amount received now:`, String(r.shortfall||''));
+    if(raw===null) return;
+    const amt = Math.round(Number(String(raw).replace(/[^\d.-]/g,''))||0);
+    if(amt<=0){ notify.error('Enter an amount greater than 0'); return; }
+    setBusyId(r._id);
+    try {
+      await api.creditFollowup(r._id, { amount: amt, note:'Entered by accounts' });
+      notify.success(amt >= r.shortfall
+        ? `${r.dealerName} settled — removed from Commitments`
+        : `${fmt(amt)} recorded · ${fmt(r.shortfall-amt)} still pending`);
+      await load(); onChanged && onChanged();
+    } catch(e){ notify.error(e.message||'Could not record'); }
+    setBusyId(null);
+  };
+
+  if(err)   return <div style={{padding:20,color:'#f87171'}}>{err}</div>;
+  if(!rows) return <div style={{padding:20,color:'var(--t3)'}}>Loading commitments…</div>;
+
+  return(
+    <div className="fade">
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:10,marginBottom:12}}>
+        {[
+          {l:'Broken promises', v:broken.length, c:'#f87171'},
+          {l:'Amount not received', v:fmt(sum(broken,'shortfall')), c:'#f87171'},
+          {l:'Open promises', v:open.length, c:'#34d399'},
+          {l:'Expected (open)', v:fmt(sum(open,'shortfall')), c:'#34d399'},
+        ].map(k=>(
+          <div key={k.l} className="card" style={{padding:'12px 14px',marginBottom:0}}>
+            <div style={{fontSize:10,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'.08em',marginBottom:4}}>{k.l}</div>
+            <div style={{fontSize:19,fontWeight:800,color:k.c}}>{k.v}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{display:'flex',gap:6,marginBottom:10,alignItems:'center',flexWrap:'wrap'}}>
+        {[['BROKEN',`Not received (${broken.length})`],['OPEN',`Awaiting due date (${open.length})`],['ALL',`All (${rows.length})`]].map(([v,l])=>(
+          <button key={v} onClick={()=>setView(v)} className="btn"
+            style={{fontSize:11,fontWeight:700,
+              color:view===v?'#fff':'var(--t2)',
+              background:view===v?(v==='BROKEN'?'#f87171':v==='OPEN'?'#34d399':'var(--acc)'):'var(--bg2)',
+              borderColor:view===v?'transparent':'var(--b2)'}}>{l}</button>
+        ))}
+        <div style={{flex:1}}/>
+        {!canCredit&&<span style={{fontSize:11,color:'var(--t3)'}}>Only admin / accounts can record payments</span>}
+      </div>
+
+      <div className="card" style={{padding:0,overflow:'hidden'}}>
+        <div className="scroll" style={{maxHeight:'55vh',overflowY:'auto'}}>
+          <table>
+            <thead><tr>
+              <th>Dealer</th><th>Salesman</th>
+              <th style={{textAlign:'right'}}>Promised</th>
+              <th>Promised by</th>
+              <th style={{textAlign:'right'}}>Received</th>
+              <th style={{textAlign:'right'}}>Shortfall</th>
+              <th>Last comment</th>
+              {canCredit&&<th style={{textAlign:'center'}}>Action</th>}
+            </tr></thead>
+            <tbody>
+              {shown.map(r=>{
+                const late = r.state==='BROKEN' ? daysLate(r.followupDate) : 0;
+                const u = users[r.salesman];
+                const partial = r.received>0;
+                const dFu = fuOf(r.dealerName);
+                const isOpen = openRow===r._id;
+                return(
+                  <React.Fragment key={r._id}>
+                  <tr style={{background:r.state==='BROKEN'?'rgba(248,113,113,0.05)':'transparent'}}>
+                    <td style={{maxWidth:220}}>
+                      <div onClick={()=>{ const dl=dealers.find(x=>x.name.toUpperCase().trim()===r.dealerName.toUpperCase().trim()); if(dl)onOpenDealer(dl.id); }}
+                        title="Open dealer details"
+                        style={{fontWeight:600,color:'var(--t1)',cursor:'pointer',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                        {r.dealerName}
+                      </div>
+                      <div style={{display:'flex',alignItems:'center',gap:6,marginTop:3,flexWrap:'wrap'}}>
+                        {partial&&<span style={{fontSize:9,background:'rgba(251,191,36,0.15)',color:'#fbbf24',padding:'1px 5px',borderRadius:3}}>PART PAID</span>}
+                        {/* Expand caret — same control as the main table, so
+                            every comment for this dealer is one click away. */}
+                        {dFu.length>0&&(
+                          <button onClick={(e)=>{ e.stopPropagation(); setOpenRow(isOpen?null:r._id); }}
+                            title={isOpen?'Hide comments':`Show all ${dFu.length} comments`}
+                            style={{background:isOpen?'rgba(99,102,241,0.12)':'transparent',
+                              border:'1px solid var(--b2)',borderRadius:5,cursor:'pointer',
+                              color:isOpen?'var(--acc)':'var(--t3)',display:'inline-flex',alignItems:'center',gap:2,
+                              padding:'2px 5px',fontSize:9,fontWeight:600}}>
+                            {isOpen?<ChevronDown size={11}/>:<ChevronRight size={11}/>}{dFu.length}
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                    <td style={{fontSize:11,color:'var(--t2)'}}>
+                      {u
+                        ? <span style={{display:'inline-flex',alignItems:'center',gap:4,color:u.color,fontWeight:600}}>
+                            <Avatar user={u} size={14}/>{u.name}
+                          </span>
+                        : (r.salesman||'—')}
+                    </td>
+                    <td style={{textAlign:'right',fontWeight:700}}>{fmt(r.amount)}</td>
+                    <td style={{whiteSpace:'nowrap'}}>
+                      <div style={{fontSize:11}}>{r.followupDate}</div>
+                      {r.state==='BROKEN'
+                        ? <div style={{fontSize:10,color:'#f87171',fontWeight:700}}>{late} day{late===1?'':'s'} late</div>
+                        : <div style={{fontSize:10,color:'#34d399'}}>due in {-daysLate(r.followupDate)}d</div>}
+                    </td>
+                    <td style={{textAlign:'right',color:r.received>0?'#34d399':'var(--t3)'}}>{r.received>0?fmt(r.received):'—'}</td>
+                    <td style={{textAlign:'right',fontWeight:700,color:'#f87171'}}>{fmt(r.shortfall)}</td>
+                    <td style={{maxWidth:240,fontSize:11,color:'var(--t2)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}
+                      title={r.comment||''}>{r.comment||'—'}</td>
+                    {canCredit&&(
+                      <td style={{textAlign:'center'}}>
+                        <button className="btn" disabled={busyId===r._id} onClick={()=>credit(r)}
+                          style={{fontSize:11,fontWeight:700,color:'#34d399',borderColor:'rgba(52,211,153,0.4)'}}>
+                          {busyId===r._id?'…':'Record payment'}
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                  {isOpen&&(
+                    <tr>
+                      <td colSpan={canCredit?8:7} style={{background:'var(--bg2)',padding:'10px 14px'}}>
+                        <div style={{fontSize:10,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'.08em',marginBottom:8}}>
+                          All comments &amp; follow-ups ({dFu.length})
+                        </div>
+                        <div style={{display:'flex',flexDirection:'column',gap:7,maxHeight:200,overflowY:'auto'}}>
+                          {dFu.map(f=>(
+                            <div key={f._id} style={{display:'flex',gap:8,alignItems:'flex-start'}}>
+                              <Calendar size={11} color={f.status==='done'?'#34d399':'var(--acc)'} style={{marginTop:2,flexShrink:0}}/>
+                              <div style={{minWidth:0}}>
+                                <div style={{fontSize:11.5,color:'var(--t1)',fontWeight:600}}>{f.comment||f.reason||'—'}</div>
+                                <div style={{fontSize:10,color:'var(--t3)'}}>
+                                  {f.followupDate}
+                                  {Array.isArray(f.months)&&f.months.length>0&&<> · [{f.months.join(', ')}]</>}
+                                  {f.amount>0&&<> · expected {fmt(f.amount)}</>}
+                                  {f.salesman&&<> · {users[f.salesman]?.name||f.salesman}</>}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
+                );
+              })}
+              {shown.length===0&&(
+                <tr><td colSpan={canCredit?8:7} style={{textAlign:'center',padding:30,color:'var(--t3)'}}>
+                  {view==='BROKEN'?'🎉 No broken promises — every committed payment has arrived.':'No commitments here.'}
+                </td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div style={{fontSize:11,color:'var(--t3)',marginTop:8,lineHeight:1.6}}>
+        A promise appears here the moment a salesman sets a follow-up with an expected amount. It leaves automatically when the full
+        amount is received — either entered here by accounts, or detected from a Saturday upload where the dealer's balance dropped.
+        A partial payment keeps the remaining shortfall visible.
+      </div>
+    </div>
+  );
+}
+
 // ── Salesman Performance (collections dashboard) ─────────────────────────────
 // Enterprise-style receivables view per salesman: book size, previous vs
 // current outstanding, movement, collections + efficiency, and today's
@@ -6353,6 +6583,13 @@ function SalesmanPerformancePanel({ users }) {
 // ── Main Outstanding Component ────────────────────────────────────────────────
 export default function Outstanding({ dealers, users, onOpenDealer, currentUser, outstandingData=[], setOutstandingData }) {
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
+  // Only admin / superadmin / accounts(employee) may record money received.
+  // Salesmen set the promise (date + comment + expected amount) and chase it.
+  const canCredit = isAdmin || currentUser?.role === 'employee';
+  const [brokenCount,   setBrokenCount]   = useState(0);
+  const [commitRefresh, setCommitRefresh] = useState(0);
+  // Sub-view inside the Follow-up tab: today | upcoming | past | all
+  const [fuView, setFuView] = useState('today');
   const [loading,      setLoading]    = useState(false); // don't show loading if data passed from parent
   const [uploading,    setUploading]  = useState(false);
   const [error,        setError]      = useState('');
@@ -6377,13 +6614,22 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
   const [batchDetail, setBatchDetail] = useState(null);
   const [showAllMonths, setShowAllMonths] = useState(false);
 
-  useEffect(()=>{ loadFromDB(); loadFollowups(); },[]);
+  useEffect(()=>{ loadFromDB(); loadFollowups(); loadCommitmentCount(); },[]);
 
   const loadFollowups = async () => {
     try {
       const data = await api.getFollowups();
       setFollowups(data||[]);
     } catch(e){ console.warn('Followups load failed:',e.message); }
+  };
+
+  // Badge count for the Commitments tab = promises whose date has passed with
+  // money still missing. Cheap enough to refresh whenever data changes.
+  const loadCommitmentCount = async () => {
+    try {
+      const rows = await api.getCommitments('BROKEN');
+      setBrokenCount(Array.isArray(rows) ? rows.length : 0);
+    } catch { /* tab still works; badge just stays at 0 */ }
   };
 
   const loadFromDB = async () => {
@@ -6432,9 +6678,13 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
     try {
       const res = await api.uploadOutstanding(previewData.file);
       setUploadMsg(`✓ ${previewData.fileName}: ${res.matched} matched (${res.updated||0} updated, ${res.created||0} new)` +
+        (res.autoCreditedAmount ? ` · ${fmt(res.autoCreditedAmount)} auto-credited from balance drops, ${res.commitmentsSettled||0} promise(s) settled` : '') +
         (res.unmappedCount ? ` · ${res.unmappedCount} UNMAPPED — open Upload History to map them` : ''));
       setPreviewData(null);
       await loadFromDB();
+      await loadFollowups();
+      await loadCommitmentCount();
+      setCommitRefresh(k=>k+1);
     } catch(e){ setError('Upload failed: '+e.message); }
     setConfirmBusy(false);
   };
@@ -6500,7 +6750,9 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
     return map;
   },[followups]);
 
-  const filtered = useMemo(()=>{
+  // Every dealer enriched with its follow-up bucket. Kept separate from the
+  // tab filtering below so the tab counts and the visible rows always agree.
+  const enriched = useMemo(()=>{
     // Today as a YYYY-MM-DD string in local time, e.g. "2026-06-01"
     const todayStrLocal = (() => {
       const t = new Date();
@@ -6508,7 +6760,7 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
     })();
     const todayMs = new Date(todayStrLocal + 'T00:00:00').getTime();
 
-    let d=filteredOutstanding.map(x=>{
+    return filteredOutstanding.map(x=>{
       const nameKey = x.name.toLowerCase().trim();
       // Try exact match first, then partial match for name variations
       const dFu = followupMap[nameKey] ||
@@ -6567,34 +6819,40 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
         _sortKey: sortKey,
       };
     });
-    if(tab==='outstanding') d=d.filter(x=>x.latestOutstanding>0);
+  },[filteredOutstanding,dealerSmMap,followupMap]);
+
+  const filtered = useMemo(()=>{
+    // Each tab is a distinct pile of work — a dealer is in exactly one:
+    //   outstanding → owes money and has NO follow-up scheduled yet (unworked)
+    //   followup    → a date has been set: Today / Upcoming / Past due
+    //   cleared     → nothing owed
+    // Broken money-promises get their own Commitments tab.
+    let d = enriched;
+    if(tab==='outstanding') d=d.filter(x=>x.latestOutstanding>0 && x._bucket===3);
     if(tab==='cleared')     d=d.filter(x=>x.latestOutstanding===0);
-    if(tab==='followups')   d=d.filter(x=>x.dealerFollowups.some(f=>f.status==='pending'));
+    if(tab==='followup'){
+      d=d.filter(x=>x._bucket!==3);
+      if(fuView==='today')    d=d.filter(x=>x._bucket===0);
+      if(fuView==='upcoming') d=d.filter(x=>x._bucket===2);
+      if(fuView==='past')     d=d.filter(x=>x._bucket===1);
+    }
     if(search) d=d.filter(x=>x.name.toLowerCase().includes(search.toLowerCase()));
     if(isAdmin&&smFilter.length>0) d=d.filter(x=>x.matchedSalesman&&smFilter.includes(x.matchedSalesman.id));
 
-    d.sort((a, b) => {
-      // First by bucket (0 → top, 3 → bottom)
-      if(a._bucket !== b._bucket) return a._bucket - b._bucket;
-      // Then by sortKey within the same bucket
-      if(a._sortKey !== b._sortKey) return a._sortKey - b._sortKey;
-      // Last tiebreaker: bigger outstanding first
-      return (b.latestOutstanding || 0) - (a.latestOutstanding || 0);
-    });
+    // Follow-up tab orders by the appointment (soonest first); everywhere
+    // else the biggest balance leads.
+    return [...d].sort((a,b)=>
+      tab==='cleared'  ? String(a.name||'').localeCompare(String(b.name||'')) :
+      tab==='followup' ? (a._bucket-b._bucket)||(a._sortKey-b._sortKey)||((b.latestOutstanding||0)-(a.latestOutstanding||0))
+                       : (b.latestOutstanding||0)-(a.latestOutstanding||0));
+  },[enriched,tab,fuView,search,smFilter,isAdmin]);
 
-    // DEBUG: print the top 8 dealers and their bucket assignments so we can
-    // verify the sort is doing what we expect. Bucket 0=TODAY, 1=overdue,
-    // 2=future, 3=no follow-up. Comment out if too noisy.
-    console.log('[Outstanding sort] today =', todayStrLocal, '— top 8:',
-      d.slice(0, 8).map(x => ({
-        name: x.name,
-        bucket: x._bucket,
-        followups: (x.dealerFollowups || []).map(f => f.followupDate).filter(Boolean),
-      }))
-    );
-
-    return d;
-  },[outstandingData,dealerSmMap,followupMap,tab,search,smFilter,isAdmin]);
+  // Tab counts, straight off the same enriched list.
+  const cUnworked = enriched.filter(x=>x.latestOutstanding>0 && x._bucket===3).length;
+  const cToday    = enriched.filter(x=>x._bucket===0).length;
+  const cUpcoming = enriched.filter(x=>x._bucket===2).length;
+  const cPastDue  = enriched.filter(x=>x._bucket===1).length;
+  const cScheduled= cToday+cUpcoming+cPastDue;
 
   const totalOut       = filtered.reduce((s,d)=>s+d.latestOutstanding,0);
   const countOut       = filteredOutstanding.filter(d=>d.latestOutstanding>0).length;
@@ -6775,11 +7033,11 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
       {filteredOutstanding.length>0&&(<>
         <div className="tabs">
           {[
-            {id:'outstanding',label:`Due (${countOut})`},
+            {id:'outstanding',label:`Outstanding (${cUnworked})`},
+            {id:'followup',   label:`📅 Follow-up (${cScheduled})`,badge:cToday},
+            {id:'commitments',label:`⚠️ Not Received (${brokenCount})`,badge:brokenCount},
             {id:'cleared',    label:`Cleared (${countCleared})`},
-            {id:'followups',  label:`Follow-ups (${pendingFu.length})`,badge:overdueFu.length},
-            {id:'all',        label:`All (${filteredOutstanding.length})`},
-            ...(isAdmin?[{id:'performance',label:'📊 Salesman Performance'}]:[]),
+            ...(isAdmin?[{id:'performance',label:'📊 Performance'}]:[]),
           ].map(t=>(
             <button key={t.id} className={`tab ${tab===t.id?'active':''}`} onClick={()=>setTab(t.id)} style={{position:'relative'}}>
               {t.label}
@@ -6788,7 +7046,11 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
           ))}
         </div>
 
-        {tab==='performance'&&isAdmin?(
+        {tab==='commitments'?(
+          <CommitmentsPanel users={users} canCredit={canCredit} dealers={dealers}
+            onOpenDealer={onOpenDealer} refreshKey={commitRefresh} followups={followups}
+            onChanged={()=>{ loadFollowups(); loadCommitmentCount(); }}/>
+        ):tab==='performance'&&isAdmin?(
           <SalesmanPerformancePanel users={users}/>
         ):(<>
         <div className="row" style={{marginBottom:12,flexWrap:'wrap',gap:8}}>
@@ -6804,24 +7066,36 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
         </div>
 
         <div className="card" style={{padding:0,overflow:'hidden'}}>
-          {/* Priority legend — the colored stripe on each row explains the
-              sort order at a glance. Counts update with the active filters. */}
-          <div style={{display:'flex',gap:14,alignItems:'center',flexWrap:'wrap',padding:'9px 14px',borderBottom:'1px solid var(--b1)',fontSize:11}}>
-            <span style={{color:'var(--t3)',fontWeight:700,textTransform:'uppercase',letterSpacing:'.07em',fontSize:10}}>Priority</span>
-            {[
-              {b:0,c:'#fbbf24',l:'Due today'},
-              {b:1,c:'#f87171',l:'Overdue'},
-              {b:2,c:'#34d399',l:'Upcoming'},
-              {b:3,c:'#55546a',l:'No follow-up'},
-            ].map(x=>{
-              const n=filtered.filter(r=>r._bucket===x.b).length;
-              return(
-                <span key={x.b} style={{display:'inline-flex',alignItems:'center',gap:5,color:n>0?'var(--t2)':'var(--t3)'}}>
-                  <span style={{width:8,height:8,borderRadius:2,background:x.c,opacity:n>0?1:.35}}/>
-                  {x.l} <b style={{color:n>0?'var(--t1)':'var(--t3)'}}>{n}</b>
-                </span>
-              );
-            })}
+          {/* Tab header: what this list is, and (in Follow-up) which slice. */}
+          <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',padding:'9px 14px',borderBottom:'1px solid var(--b1)',fontSize:11,color:'var(--t3)'}}>
+            {tab==='followup'?(
+              <>
+                <span style={{fontWeight:700,textTransform:'uppercase',letterSpacing:'.07em',fontSize:10,color:'var(--t2)'}}>Scheduled</span>
+                {[['today',`Today (${cToday})`,'#fbbf24'],['upcoming',`Upcoming (${cUpcoming})`,'#34d399'],['past',`Past due (${cPastDue})`,'#f87171'],['all',`All (${cScheduled})`,'var(--acc)']].map(([v,l,c])=>(
+                  <button key={v} onClick={()=>setFuView(v)} className="btn"
+                    style={{fontSize:11,fontWeight:700,padding:'3px 10px',
+                      color:fuView===v?'#fff':'var(--t2)',
+                      background:fuView===v?c:'var(--bg2)',
+                      borderColor:fuView===v?'transparent':'var(--b2)'}}>{l}</button>
+                ))}
+              </>
+            ):(
+              <span style={{fontWeight:700,textTransform:'uppercase',letterSpacing:'.07em',fontSize:10,color:'var(--t2)'}}>
+                {tab==='cleared'?'Fully paid':'Owes money · no follow-up scheduled yet · biggest first'}
+              </span>
+            )}
+            <div style={{flex:1}}/>
+            {tab==='outstanding'&&cScheduled>0&&(
+              <button onClick={()=>setTab('followup')} className="btn" style={{fontSize:10,padding:'3px 9px'}}>
+                {cScheduled} already scheduled →
+              </button>
+            )}
+            {tab!=='commitments'&&brokenCount>0&&(
+              <button onClick={()=>setTab('commitments')} className="btn"
+                style={{fontSize:10,padding:'3px 9px',color:'#f87171',borderColor:'rgba(248,113,113,0.4)'}}>
+                {brokenCount} promised but not received →
+              </button>
+            )}
           </div>
           <div style={{overflowX:'auto',maxHeight:'60vh',overflowY:'auto'}}>
             <table>
@@ -7106,10 +7380,11 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
           dealer={activeDealer}
           existingFollowups={followups}
           currentUser={currentUser}
+          canCredit={canCredit}
           prefillMonth={popupContext?.month}
           prefillAmount={popupContext?.amount}
           onClose={()=>{ setActiveDealer(null); setPopupContext(null); }}
-          onSaved={loadFollowups}
+          onSaved={()=>{ loadFollowups(); loadCommitmentCount(); setCommitRefresh(k=>k+1); }}
         />
       )}
 

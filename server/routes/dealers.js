@@ -29,6 +29,9 @@ const dealerSchema = new mongoose.Schema({
   zone:         { type:String, default:'' },
   status:       { type:String, default:'ACTIVE' },
   dealerType:   { type:String, default:'None' },   // Regular/Premium/OEM/Enterprise
+  // Keep in step with models/Dealer.js — this file registers the 'Dealer'
+  // model first, so a field missing here is silently stripped on write.
+  tallyGuid:    { type:String, default:'', index:true },
   category:     { type:String, default:'' },
   categoryType: { type:String, default:'' },
   target:       { type:Number, default:0 },

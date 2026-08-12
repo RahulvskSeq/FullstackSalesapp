@@ -77,6 +77,9 @@ const dealerSchema = new mongoose.Schema({
   // more precise deep-drill and by external navigation apps.
   address:      { type:String, default:'' },
   pincode:      { type:String, default:'' },
+  // Tally ledger GUID, bound on the first successful name match during a
+  // Tally sync. Once set, the link survives a ledger rename in Tally.
+  tallyGuid:    { type:String, default:'', index:true },
   category:     { type:String, default:'' },
   categoryType: { type:String, default:'' },
   target:       { type:Number, default:0 },

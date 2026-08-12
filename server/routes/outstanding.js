@@ -6,6 +6,9 @@ import { protect, adminOnly, superAdminOnly, requireFeature } from '../middlewar
 import OutstandingBatch   from '../models/OutstandingBatch.js';
 import OutstandingHistory from '../models/OutstandingHistory.js';
 import AuditLog           from '../models/AuditLog.js';
+import OutstandingFollowup from '../models/Outstandingfollowup.js';
+import OutstandingBill     from '../models/OutstandingBill.js';
+import { creditDealerCommitments } from '../lib/commitments.js';
 
 const router = express.Router();
 const upload = multer({ storage:multer.memoryStorage(), limits:{ fileSize:10*1024*1024 } });
@@ -234,21 +237,31 @@ router.post('/upload', protect, superAdminOnly, upload.single('file'), async (re
       unmapped,
     });
 
-    const results = { updated:0, created:0, errors:[] };
+    const results = { updated:0, created:0, errors:[], autoCredited:0, autoCreditedAmount:0, commitmentsSettled:0 };
     const historyRows = [];
+    const collections = [];   // { dealer, drop } — balance reductions this sheet reports
     for(const r of matched){
       try{
         const key = normName(r.dealerName);
         const o = outByNorm.get(key);
         const merged = {};
         if(o?.monthlyOutstanding) Object.assign(merged, o.monthlyOutstanding);
+        // A DROP in the dealer's total across the months this file covers
+        // means money came in since the last sheet. That reduction is the
+        // evidence of collection used to settle open commitments below.
+        let prevSum = 0, newSum = 0, comparable = false;
         for(const [m, amt] of Object.entries(r.amounts)){
+          const prev = prevValOf(o, m);
+          if(prev !== null){ prevSum += prev; comparable = true; }
+          newSum += amt;
           historyRows.push({
             batchId: batch._id, dealerName: r.dealerName, month: m,
-            amount: amt, prevAmount: prevValOf(o, m), uploadedBy: req.user.id,
+            amount: amt, prevAmount: prev, uploadedBy: req.user.id,
           });
           merged[m] = amt;
         }
+        if(comparable && prevSum > newSum) collections.push({ dealer:r.dealerName, drop: prevSum - newSum });
+
         if(o){
           await Outstanding.findByIdAndUpdate(o._id, { monthlyOutstanding: merged });
           results.updated++;
@@ -261,6 +274,25 @@ router.post('/upload', protect, superAdminOnly, upload.single('file'), async (re
     }
     if(historyRows.length) await OutstandingHistory.insertMany(historyRows);
 
+    // ── Auto-settle commitments from the sheet ───────────────────────────
+    // Every dealer whose balance fell gets that reduction credited against
+    // their promises, oldest first. A promise fully covered is SETTLED (the
+    // dealer leaves the Commitments tab); a partly covered one keeps its
+    // remaining shortfall and stays there until the rest arrives.
+    for(const c of collections){
+      try{
+        const r = await creditDealerCommitments(OutstandingFollowup, c.dealer, c.drop, {
+          source:'upload', by:req.user.id, batchId:batch._id.toString(),
+          note:`Balance fell ${c.drop} in ${batch.fileName||'weekly upload'}`,
+        });
+        if(r.applied > 0){
+          results.autoCredited++;
+          results.autoCreditedAmount += r.applied;
+          results.commitmentsSettled += r.settled;
+        }
+      }catch(e){ console.warn('[AUTO-CREDIT]', c.dealer, e.message); }
+    }
+
     audit(req, 'outstanding.upload', {
       batchId: batch._id.toString(), fileName: batch.fileName, months,
       totalRecords: rows.length, matched: matched.length, unmapped: unmapped.length, totalAmount,
@@ -270,6 +302,243 @@ router.post('/upload', protect, superAdminOnly, upload.single('file'), async (re
   }catch(e){
     console.error('[OUTSTANDING UPLOAD]', e.message);
     res.status(500).json({error:e.message});
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+// POST /api/outstanding/tally-sync — machine endpoint for the Tally TDL push.
+//
+// Auth is an API key (TALLY_API_KEY in .env), NOT a user session: Tally has no
+// login. The key is scoped to this one route — it cannot read anything.
+//
+// Body is a full SNAPSHOT of pending receivables as at `asOn`. For each party
+// present, the submitted bill set REPLACES what we hold, so re-sending the same
+// batch is a no-op replace rather than an append — retries are safe.
+//
+// Flow: authenticate → validate → resolve party against the Dealer master →
+// roll bills up into month buckets → same-month UPDATE / new-month CREATE →
+// write batch + per-month history → auto-settle commitments from balance drops.
+// It reuses the exact machinery the Excel upload uses, so Upload History,
+// revert and the Commitments tab all work identically for Tally data.
+// ══════════════════════════════════════════════════════════════════════════
+
+// Minimal parser for the flat <TALLYSYNC> shape offered in the spec, so a TDL
+// author who finds JSON awkward can post Tally-style XML instead.
+const parseTallyXml = (xml) => {
+  const pick = (block, tag) => {
+    const m = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, 'i').exec(block);
+    return m ? m[1].trim() : '';
+  };
+  const body = String(xml || '');
+  const bills = [];
+  for(const m of body.matchAll(/<BILL>([\s\S]*?)<\/BILL>/gi)){
+    const b = m[1];
+    bills.push({
+      party:       pick(b,'PARTY'),
+      partyGuid:   pick(b,'PARTYGUID'),
+      partyAlias:  pick(b,'PARTYALIAS'),
+      billNumber:  pick(b,'BILLNUMBER'),
+      billDate:    pick(b,'BILLDATE'),
+      dueDate:     pick(b,'DUEDATE'),
+      pending:     Number(String(pick(b,'PENDING')).replace(/[^\d.-]/g,'')) || 0,
+      voucherType: pick(b,'VOUCHERTYPE'),
+    });
+  }
+  return {
+    company:    pick(body,'COMPANY'),
+    asOn:       pick(body,'ASON'),
+    batchNo:    Number(pick(body,'BATCHNO')) || 1,
+    batchTotal: Number(pick(body,'BATCHTOTAL')) || 1,
+    source:     'tally',
+    bills,
+  };
+};
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+// 'YYYY-MM-DD' → 'Mon-YY' so Tally bills land in the same month columns the
+// Excel upload produces.
+const ymdToLabel = (ymd) => {
+  const m = /^(\d{4})-(\d{2})-\d{2}$/.exec(String(ymd||''));
+  if(!m) return '';
+  return `${MONTHS3[(+m[2])-1]}-${m[1].slice(-2)}`;
+};
+
+router.post('/tally-sync', express.text({ type:['application/xml','text/xml'], limit:'6mb' }), async (req, res) => {
+  const t0 = Date.now();
+  try {
+    const expected = process.env.TALLY_API_KEY;
+    if(!expected) return res.status(503).json({ ok:false, error:'Tally sync not configured — set TALLY_API_KEY in server .env' });
+    const key = req.headers['x-api-key'] || req.query.key;
+    if(!key || String(key) !== String(expected)) return res.status(401).json({ ok:false, error:'Invalid or missing API key' });
+
+    const isXml = /xml/i.test(req.headers['content-type'] || '');
+    const payload = isXml ? parseTallyXml(req.body) : (req.body || {});
+
+    // ── Validate ────────────────────────────────────────────────────────
+    const asOn = String(payload.asOn || '').trim();
+    if(!ISO_DATE.test(asOn)) return res.status(400).json({ ok:false, error:'Invalid date format', detail:`asOn='${payload.asOn}' — expected YYYY-MM-DD` });
+    const bills = Array.isArray(payload.bills) ? payload.bills : null;
+    if(!bills) return res.status(400).json({ ok:false, error:'Invalid payload', detail:'bills[] missing or not an array' });
+    if(bills.length > 2000) return res.status(413).json({ ok:false, error:'Payload too large', detail:`${bills.length} bills — max 2000 per batch` });
+
+    for(let i=0;i<bills.length;i++){
+      const b = bills[i] || {};
+      if(!String(b.party||'').trim())      return res.status(400).json({ ok:false, error:'Invalid payload',     detail:`bills[${i}].party is empty` });
+      if(!ISO_DATE.test(String(b.billDate||''))) return res.status(400).json({ ok:false, error:'Invalid date format', detail:`bills[${i}].billDate='${b.billDate}' — expected YYYY-MM-DD` });
+      if(b.dueDate && !ISO_DATE.test(String(b.dueDate))) return res.status(400).json({ ok:false, error:'Invalid date format', detail:`bills[${i}].dueDate='${b.dueDate}' — expected YYYY-MM-DD` });
+      const p = Number(b.pending);
+      if(!Number.isFinite(p)) return res.status(400).json({ ok:false, error:'Invalid payload', detail:`bills[${i}].pending='${b.pending}' — must be a number` });
+      if(p < 0)               return res.status(400).json({ ok:false, error:'Invalid payload', detail:`bills[${i}].pending is negative — send Dr balances only` });
+    }
+
+    // ── Resolve parties against the Dealer master ───────────────────────
+    const Dealer = mongoose.models.Dealer || (await import('../models/Dealer.js')).default;
+    const allDealers = await Dealer.find({}, 'name salesman tallyGuid').lean();
+    const byGuid = new Map(), byName = new Map();
+    for(const d of allDealers){
+      if(d.tallyGuid) byGuid.set(String(d.tallyGuid), d);
+      const k = normName(d.name);
+      if(k && !byName.has(k)) byName.set(k, d);
+    }
+    const resolve = (b) =>
+      (b.partyGuid && byGuid.get(String(b.partyGuid))) ||
+      byName.get(normName(b.party)) || null;
+
+    // Group bills by resolved dealer; unresolved parties are parked, never guessed.
+    const perDealer = new Map();          // dealerName → { dealer, bills[] }
+    const unmappedMap = new Map();        // party → { party, amounts{} }
+    for(const b of bills){
+      const pending = Math.round(Number(b.pending)||0);
+      if(pending <= 0) continue;                       // settled/zero — skip
+      const label = ymdToLabel(b.billDate);
+      const d = resolve(b);
+      if(!d){
+        const u = unmappedMap.get(b.party) || { party:b.party, amounts:{} };
+        u.amounts[label] = (u.amounts[label]||0) + pending;
+        unmappedMap.set(b.party, u);
+        continue;
+      }
+      // First time we see this dealer's GUID, bind it — from then on the
+      // match survives a ledger rename in Tally.
+      if(b.partyGuid && !d.tallyGuid){
+        d.tallyGuid = String(b.partyGuid);
+        byGuid.set(d.tallyGuid, d);
+        Dealer.updateOne({ _id:d._id }, { $set:{ tallyGuid:d.tallyGuid } })
+          .catch(e=>console.warn('[TALLY guid bind]', d.name, e.message));
+      }
+      const g = perDealer.get(d.name) || { dealer:d, bills:[] };
+      g.bills.push({ ...b, pending, month:label });
+      perDealer.set(d.name, g);
+    }
+    const unmapped = [...unmappedMap.values()];
+    const monthsTouched = [...new Set(bills.map(b=>ymdToLabel(b.billDate)).filter(Boolean))]
+      .sort((a,b)=>monthSortKey(a)-monthSortKey(b));
+    const totalPending = bills.reduce((s,b)=>s+(Math.round(Number(b.pending)||0)),0);
+
+    // ── Batch record (audit anchor, identical shape to the Excel flow) ──
+    const batch = await OutstandingBatch.create({
+      fileName: `Tally · ${payload.company||'company'} · as on ${asOn}` +
+                ((payload.batchTotal||1) > 1 ? ` (batch ${payload.batchNo||1}/${payload.batchTotal})` : ''),
+      months: monthsTouched,
+      uploadedBy: 'tally', uploadedByName: `Tally (${payload.company||'—'})`,
+      totalRecords: bills.length,
+      matchedRecords: bills.length - unmapped.reduce((s,u)=>s+Object.keys(u.amounts).length,0),
+      unmappedRecords: unmapped.length,
+      totalAmount: totalPending,
+      unmapped,
+    });
+
+    // ── Apply per dealer ────────────────────────────────────────────────
+    const existing = await Outstanding.find({}).lean();
+    const outByNorm = new Map(existing.map(o=>[normName(o.dealerName), o]));
+    const historyRows = [], billRows = [], collections = [];
+    let updated = 0, created = 0;
+
+    for(const [dealerName, g] of perDealer){
+      const o = outByNorm.get(normName(dealerName));
+      const merged = {};
+      if(o?.monthlyOutstanding) Object.assign(merged, o.monthlyOutstanding);
+
+      // Month buckets from this snapshot.
+      const buckets = {};
+      for(const b of g.bills){
+        if(!b.month) continue;
+        buckets[b.month] = (buckets[b.month]||0) + b.pending;
+        billRows.push({
+          dealerName, partyName:b.party, partyGuid:b.partyGuid||'',
+          billNumber:b.billNumber||'', billDate:b.billDate, dueDate:b.dueDate||'',
+          month:b.month, pending:b.pending, voucherType:b.voucherType||'',
+          ageDays: Math.max(0, Math.round((new Date(asOn) - new Date(b.billDate))/86400000)),
+          batchId:batch._id, asOn,
+        });
+      }
+
+      // A month this dealer previously had, that the snapshot no longer
+      // reports, is fully settled → zero it (that IS the collection signal).
+      for(const m of Object.keys(merged)){
+        if(monthsTouched.includes(m) && buckets[m] === undefined) buckets[m] = 0;
+      }
+
+      let prevSum = 0, newSum = 0, comparable = false;
+      for(const [m, amt] of Object.entries(buckets)){
+        const prev = Object.prototype.hasOwnProperty.call(merged, m) ? (Number(merged[m])||0) : null;
+        if(prev !== null){ prevSum += prev; comparable = true; }
+        newSum += amt;
+        historyRows.push({ batchId:batch._id, dealerName, month:m, amount:amt, prevAmount:prev, uploadedBy:'tally' });
+        merged[m] = amt;
+      }
+      if(comparable && prevSum > newSum) collections.push({ dealer:dealerName, drop:prevSum-newSum });
+
+      if(o){ await Outstanding.findByIdAndUpdate(o._id, { monthlyOutstanding:merged }); updated++; }
+      else  { await Outstanding.create({ dealerName, monthlyOutstanding:merged });      created++; }
+    }
+
+    if(historyRows.length) await OutstandingHistory.insertMany(historyRows);
+    // Bills are a live mirror: drop this dealer set's previous rows, insert fresh.
+    if(perDealer.size){
+      await OutstandingBill.deleteMany({ dealerName:{ $in:[...perDealer.keys()] } });
+      if(billRows.length) await OutstandingBill.insertMany(billRows);
+    }
+
+    // ── Auto-settle commitments from balance drops ──────────────────────
+    let autoCredited = 0, autoCreditedAmount = 0, commitmentsSettled = 0;
+    for(const c of collections){
+      try{
+        const r = await creditDealerCommitments(OutstandingFollowup, c.dealer, c.drop, {
+          source:'upload', by:'tally', batchId:batch._id.toString(),
+          note:`Tally sync ${asOn}: balance fell ${c.drop}`,
+        });
+        if(r.applied>0){ autoCredited++; autoCreditedAmount+=r.applied; commitmentsSettled+=r.settled; }
+      }catch(e){ console.warn('[TALLY auto-credit]', c.dealer, e.message); }
+    }
+
+    const matchedBills = bills.length - unmapped.reduce((s,u)=>s+Object.keys(u.amounts).length,0);
+    await AuditLog.create({
+      by:'tally', byName:`Tally (${payload.company||'—'})`, action:'outstanding.tally-sync',
+      detail:{ batchId:batch._id.toString(), asOn, received:bills.length, matched:matchedBills,
+               unmapped:unmapped.length, totalPending, dealers:perDealer.size,
+               autoCreditedAmount, commitmentsSettled, ms:Date.now()-t0 },
+    }).catch(()=>{});
+
+    console.log(`[TALLY SYNC] asOn=${asOn} bills=${bills.length} dealers=${perDealer.size} unmapped=${unmapped.length} total=${totalPending} ${Date.now()-t0}ms`);
+    res.json({
+      ok:true,
+      batchId: batch._id.toString(),
+      asOn,
+      received: bills.length,
+      matched: matchedBills,
+      unmapped: unmapped.length,
+      unmappedParties: unmapped.map(u=>u.party).slice(0,50),
+      dealersUpdated: updated,
+      dealersCreated: created,
+      totalPending,
+      autoCreditedAmount,
+      commitmentsSettled,
+      requestId: req.headers['x-request-id'] || null,
+    });
+  } catch(e){
+    console.error('[TALLY SYNC]', e);
+    res.status(500).json({ ok:false, error:'Server error', detail:e.message });
   }
 });
 

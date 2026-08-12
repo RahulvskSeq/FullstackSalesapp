@@ -1733,6 +1733,10 @@ export const api = {
 
   // Outstanding Followups
   getFollowups:    ()      => fetch(`${BASE}/followups`,{headers:authHeaders()}).then(handle),
+  // Unsettled payment commitments (promises). state = 'BROKEN' | 'OPEN'.
+  getCommitments:  (state) => fetch(`${BASE}/followups/commitments${state?`?state=${state}`:''}`,{headers:authHeaders()}).then(handle),
+  // Record money received against a commitment — admin / accounts only.
+  creditFollowup:  (id,body)=> fetch(`${BASE}/followups/${id}/credit`,{method:'POST',headers:authHeaders(),body:JSON.stringify(body)}).then(handle),
   addFollowup:     (d)     => fetch(`${BASE}/followups`,{method:'POST',headers:authHeaders(),body:JSON.stringify(d)}).then(handle),
   updateFollowup:  (id,d)  => fetch(`${BASE}/followups/${id}`,{method:'PUT',headers:authHeaders(),body:JSON.stringify(d)}).then(handle),
   deleteFollowup:  (id)    => fetch(`${BASE}/followups/${id}`,{method:'DELETE',headers:authHeaders()}).then(handle),

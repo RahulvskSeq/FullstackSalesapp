@@ -23,6 +23,35 @@ const followupSchema = new mongoose.Schema({
   // Amount actually collected (when status flips to 'done')
   collectedAmount: { type:Number, default:0 },
   collectedAt:     { type:Date,   default:null },
+
+  // ── Payment commitment tracking ──────────────────────────────────────
+  // A follow-up with `amount > 0` is a COMMITMENT: the dealer promised to
+  // pay that much by `followupDate`. Its life-cycle:
+  //   received  = creditedManual + creditedFromUpload
+  //   OPEN      → promise date not yet passed, received < amount
+  //   BROKEN    → promise date passed,  received < amount  (Commitments tab)
+  //   SETTLED   → received >= amount                       (back to normal)
+  // Only staff (admin / superadmin / accounts) may credit money; salesmen
+  // set the promise (date + comment + amount) but never the receipt.
+  creditedManual:     { type:Number, default:0 },   // entered by admin/accounts
+  creditedFromUpload: { type:Number, default:0 },   // inferred from a Saturday sheet drop
+  settledAt:          { type:Date,   default:null },
+  // Audit of every credit applied to this commitment.
+  credits: {
+    type: [{
+      amount: Number,
+      source: { type:String, enum:['manual','upload'], default:'manual' },
+      by:     String,
+      at:     { type:Date, default:Date.now },
+      note:   String,
+      batchId:String,
+    }],
+    default: [],
+  },
 }, { timestamps:true });
+
+// Open commitments for a dealer, oldest promise first — the order auto-credit
+// from a Saturday upload is applied in.
+followupSchema.index({ dealerName:1, followupDate:1 });
 
 export default mongoose.models.OutstandingFollowup || mongoose.model('OutstandingFollowup', followupSchema);
