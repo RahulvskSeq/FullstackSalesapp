@@ -7,7 +7,7 @@
 // The installed build's number is baked in at build time by the workflow
 // (VITE_APP_VERSION_CODE). Locally it's undefined, so the button reports that
 // rather than pretending to compare.
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Download, RefreshCw, Check } from 'lucide-react';
 import { api } from '../api';
 import { notify } from './Toast';
@@ -25,29 +25,44 @@ export default function UpdateButton({ compact = false }) {
   const [busy, setBusy]     = useState(false);
   const [latest, setLatest] = useState(null);   // newer build, once found
 
-  const check = async () => {
-    setBusy(true);
+  // `silent` runs from the automatic checks: it may reveal the update button
+  // but must never interrupt with a toast, least of all to say nothing is new.
+  const check = useCallback(async (silent = false) => {
+    if (!silent) setBusy(true);
     try {
       const v = await api.appVersion();
       if (!v || v.versionCode == null) {
-        notify.info('No build has been published to the server yet.');
+        if (!silent) notify.info('No build has been published to the server yet.');
         setLatest(null);
       } else if (INSTALLED_CODE == null) {
-        // Dev/browser build — no version was stamped in.
-        setLatest(v);
-        notify.info(`Latest published build is ${v.versionName}. (This copy has no version stamp — it was not built by CI.)`);
+        // Dev/browser build — no version was stamped in, so there is nothing
+        // to compare against. Don't nag about it on the automatic pass.
+        setLatest(silent ? null : v);
+        if (!silent) notify.info(`Latest published build is ${v.versionName}. (This copy has no version stamp — it was not built by CI.)`);
       } else if (v.versionCode > INSTALLED_CODE) {
         setLatest(v);
-        notify.success(`Update available: ${v.versionName}`);
+        if (!silent) notify.success(`Update available: ${v.versionName}`);
       } else {
         setLatest(null);
-        notify.success(`You're on the latest version (${INSTALLED_NAME || INSTALLED_CODE}).`);
+        if (!silent) notify.success(`You're on the latest version (${INSTALLED_NAME || INSTALLED_CODE}).`);
       }
     } catch (e) {
-      notify.error('Update check failed: ' + (e.message || 'network error'));
+      // A failed check is not worth a toast when nobody asked for it.
+      if (!silent) notify.error('Update check failed: ' + (e.message || 'network error'));
     }
-    setBusy(false);
-  };
+    if (!silent) setBusy(false);
+  }, []);
+
+  // Check on launch, and again whenever the app is brought back to the
+  // foreground — Android keeps the webview alive for days, so mount alone
+  // would only ever fire once.
+  useEffect(() => {
+    if (!isNativeApp()) return;
+    check(true);
+    const onShow = () => { if (document.visibilityState === 'visible') check(true); };
+    document.addEventListener('visibilitychange', onShow);
+    return () => document.removeEventListener('visibilitychange', onShow);
+  }, [check]);
 
   const install = () => {
     if (!latest?.downloadUrl) return;

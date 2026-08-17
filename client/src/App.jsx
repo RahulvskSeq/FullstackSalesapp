@@ -16581,21 +16581,27 @@ export default function App(){
               )}
             </div>
 
-            {/* ── Reload from DB button — safe refresh, doesn't touch Sheets ── */}
-            <button onClick={handleReloadDB} disabled={syncing || reloadingDB} className="btn"
-              title="Reload all dealer data from MongoDB. Safe — never touches Google Sheets."
-              style={{fontSize:11,display:'flex',alignItems:'center',gap:4,padding:'6px 8px',flexShrink:0,color:'var(--grn)'}}>
-              <RefreshCw size={13} className={reloadingDB?'spin':''}/>
-              <span className="hide-sm">{reloadingDB ? 'Reloading…' : 'Reload DB'}</span>
-            </button>
+            {/* ── Sync controls — desktop only ──────────────────────────────
+                Hidden in the Android shell: the phone header has no room for
+                them, and they crowded out the update button. Both are admin
+                maintenance actions that belong on a real screen anyway. ── */}
+            {!isNativeApp() && (<>
+              {/* ── Reload from DB button — safe refresh, doesn't touch Sheets ── */}
+              <button onClick={handleReloadDB} disabled={syncing || reloadingDB} className="btn"
+                title="Reload all dealer data from MongoDB. Safe — never touches Google Sheets."
+                style={{fontSize:11,display:'flex',alignItems:'center',gap:4,padding:'6px 8px',flexShrink:0,color:'var(--grn)'}}>
+                <RefreshCw size={13} className={reloadingDB?'spin':''}/>
+                <span className="hide-sm">{reloadingDB ? 'Reloading…' : 'Reload DB'}</span>
+              </button>
 
-            {/* ── Sync from Sheets button — icon only on mobile ── */}
-            <button onClick={syncSheets} disabled={syncing} className="btn"
-              title="Pull latest from Google Sheets. Months not in the sheet are preserved."
-              style={{fontSize:11,display:'flex',alignItems:'center',gap:4,padding:'6px 8px',flexShrink:0}}>
-              <RefreshCw size={13} className={syncing?'spin':''}/>
-              <span className="hide-sm">{syncing?'Syncing':'Sync Sheets'}</span>
-            </button>
+              {/* ── Sync from Sheets button — icon only on mobile ── */}
+              <button onClick={syncSheets} disabled={syncing} className="btn"
+                title="Pull latest from Google Sheets. Months not in the sheet are preserved."
+                style={{fontSize:11,display:'flex',alignItems:'center',gap:4,padding:'6px 8px',flexShrink:0}}>
+                <RefreshCw size={13} className={syncing?'spin':''}/>
+                <span className="hide-sm">{syncing?'Syncing':'Sync Sheets'}</span>
+              </button>
+            </>)}
             {/* APK update check — only meaningful inside the Android shell,
                 where an APK can actually be installed. */}
             {isNativeApp() && <UpdateButton compact/>}
