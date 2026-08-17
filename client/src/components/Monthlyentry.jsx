@@ -1133,7 +1133,7 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
                 <button type="button" onClick={replaceSalesman}
                   title="Hand this salesman's dealers to another user, effective from the month selected above — earlier months' sales stay credited to them"
                   style={{marginTop:6, display:'inline-flex', alignItems:'center', gap:5, fontSize:11, fontWeight:700,
-                    color:'#fbbf24', background:'rgba(251,191,36,0.10)', border:'1px solid rgba(251,191,36,0.35)',
+                    color:'var(--yel)', background:'rgba(251,191,36,0.10)', border:'1px solid rgba(251,191,36,0.35)',
                     borderRadius:7, padding:'6px 10px', cursor:'pointer'}}>
                   ⇄ Replace salesman
                 </button>
@@ -1151,7 +1151,7 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
         </div>
 
         {moIdx < 0 && month && (
-          <div style={{padding:'8px 12px',background:'rgba(251,191,36,0.08)',border:'1px solid rgba(251,191,36,0.2)',borderRadius:8,fontSize:12,color:'#fbbf24',marginBottom:12}}>
+          <div style={{padding:'8px 12px',background:'rgba(251,191,36,0.08)',border:'1px solid rgba(251,191,36,0.2)',borderRadius:8,fontSize:12,color:'var(--yel)',marginBottom:12}}>
             ⚠ "{month}" not in month list. Go to Admin Panel → Month Settings → Add Month first.
           </div>
         )}
@@ -1171,14 +1171,14 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
         {saved && !changedCount && (
           <div style={{display:'flex',alignItems:'center',gap:8,padding:'8px 12px',background:'rgba(52,211,153,0.08)',borderRadius:8,border:'1px solid rgba(52,211,153,0.2)'}}>
             <CheckCircle size={14} color="#34d399"/>
-            <span style={{fontSize:12,color:'#34d399',fontWeight:600}}>Saved to database ✓</span>
+            <span style={{fontSize:12,color:'var(--grn)',fontWeight:600}}>Saved to database ✓</span>
           </div>
         )}
 
         {errors.length > 0 && (
           <div style={{padding:'8px 12px',background:'rgba(248,113,113,0.08)',border:'1px solid rgba(248,113,113,0.2)',borderRadius:8,marginTop:8}}>
-            <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}><AlertCircle size={13} color="#f87171"/><span style={{fontSize:12,fontWeight:600,color:'#f87171'}}>Some errors:</span></div>
-            {errors.map((e,i)=><div key={i} style={{fontSize:11,color:'#f87171'}}>· {e}</div>)}
+            <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}><AlertCircle size={13} color="#f87171"/><span style={{fontSize:12,fontWeight:600,color:'var(--red)'}}>Some errors:</span></div>
+            {errors.map((e,i)=><div key={i} style={{fontSize:11,color:'var(--red)'}}>· {e}</div>)}
           </div>
         )}
       </div>
@@ -1309,7 +1309,7 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
                 {isAdmin&&<th>Salesman</th>}
                 <th>City</th>
                 <th style={{textAlign:'right',color:'var(--acc)',background:'rgba(99,102,241,.06)'}}>Target</th>
-                <th style={{textAlign:'right',color:'#34d399',background:'rgba(52,211,153,.06)'}}>Achieved</th>
+                <th style={{textAlign:'right',color:'var(--grn)',background:'rgba(52,211,153,.06)'}}>Achieved</th>
                 <th style={{textAlign:'right'}}>Ach%</th>
                 <th>Status</th>
               </tr>
@@ -1351,7 +1351,7 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
                         onChange={e=>setVal(dealer.id,'achieved',e.target.value)}
                         style={{width:'100%',minWidth:70,textAlign:'right',background:'transparent',border:'none',
                           borderBottom:`1px solid ${changes[dealer.id]?.achieved!==undefined?'#34d399':'var(--b2)'}`,
-                          color:'#34d399',fontSize:13,fontWeight:700,padding:'2px 0',outline:'none'}}/>
+                          color:'var(--grn)',fontSize:13,fontWeight:700,padding:'2px 0',outline:'none'}}/>
                     </td>
 
                     <td style={{textAlign:'right',fontWeight:700,color:pclr(achPct),fontSize:12,whiteSpace:'nowrap'}}>
@@ -1381,7 +1381,7 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
                   <td style={{textAlign:'right',fontWeight:700,color:'var(--acc)',background:'rgba(99,102,241,.04)'}}>
                     {filtered.reduce((s,d)=>s+num(getVal(d.id,'target')),0).toLocaleString('en-IN')}
                   </td>
-                  <td style={{textAlign:'right',fontWeight:700,color:'#34d399',background:'rgba(52,211,153,.04)'}}>
+                  <td style={{textAlign:'right',fontWeight:700,color:'var(--grn)',background:'rgba(52,211,153,.04)'}}>
                     {filtered.reduce((s,d)=>s+num(getVal(d.id,'achieved')),0).toLocaleString('en-IN')}
                   </td>
                   <td style={{textAlign:'right',fontWeight:700,color:'var(--t2)'}}>

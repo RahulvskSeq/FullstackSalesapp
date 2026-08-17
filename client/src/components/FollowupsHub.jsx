@@ -115,7 +115,7 @@ export default function FollowupsHub({ notes=[], dealers=[], users={}, onUpdateN
               style={{background:'none',border:'none',color:'var(--acc)',cursor:'pointer',padding:0,fontSize:13,fontWeight:600,textAlign:'left'}}>
               {f.dealerName}
             </button>
-            {f.amount>0&&<span style={{fontSize:11,color:'#f87171',fontWeight:600}}>₹{Number(f.amount).toLocaleString('en-IN')}</span>}
+            {f.amount>0&&<span style={{fontSize:11,color:'var(--red)',fontWeight:600}}>₹{Number(f.amount).toLocaleString('en-IN')}</span>}
             <span style={{fontSize:10,padding:'1px 6px',borderRadius:4,
               background:isDone?'rgba(52,211,153,0.12)':overdue?'rgba(248,113,113,0.12)':days===0?'rgba(251,191,36,0.12)':'rgba(99,102,241,0.1)',
               color:isDone?'#34d399':overdue?'#f87171':days===0?'#fbbf24':'var(--acc)',fontWeight:600}}>
@@ -168,7 +168,7 @@ export default function FollowupsHub({ notes=[], dealers=[], users={}, onUpdateN
         <div style={{fontSize:11,color:'var(--acc)',textTransform:'uppercase',letterSpacing:'.15em',marginBottom:4}}>Reminders</div>
         <div style={{display:'flex',alignItems:'center',gap:10}}>
           <div style={{fontSize:22,fontWeight:700}}>Follow-ups</div>
-          {totalPending>0&&<span style={{background:'rgba(248,113,113,0.12)',color:'#f87171',border:'1px solid rgba(248,113,113,0.3)',padding:'2px 10px',borderRadius:6,fontSize:12,fontWeight:600}}>{totalPending} pending</span>}
+          {totalPending>0&&<span style={{background:'rgba(248,113,113,0.12)',color:'var(--red)',border:'1px solid rgba(248,113,113,0.3)',padding:'2px 10px',borderRadius:6,fontSize:12,fontWeight:600}}>{totalPending} pending</span>}
         </div>
         <div style={{fontSize:13,color:'var(--t3)',marginTop:4}}>Outstanding payment follow-ups + dealer notes follow-ups</div>
       </div>

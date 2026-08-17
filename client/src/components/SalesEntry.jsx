@@ -186,7 +186,7 @@ export default function SalesEntry({ dealers, users, onUpdateDealer, onAddDealer
 
             {/* Dealer */}
             <div className="field full">
-              <label>Dealer * {sel&&<span style={{color:'var(--acc)',fontWeight:400}}>— existing</span>}{!sel&&form.customDealer&&<span style={{color:'#34d399',fontWeight:400}}>— new dealer</span>}</label>
+              <label>Dealer * {sel&&<span style={{color:'var(--acc)',fontWeight:400}}>— existing</span>}{!sel&&form.customDealer&&<span style={{color:'var(--grn)',fontWeight:400}}>— new dealer</span>}</label>
               <div style={{position:'relative'}}>
                 <Search size={13} style={{position:'absolute',left:10,top:'50%',transform:'translateY(-50%)',color:'var(--t3)'}}/>
                 <input className="inp" style={{paddingLeft:32}} placeholder="Search existing dealer or type new name..."
@@ -216,7 +216,7 @@ export default function SalesEntry({ dealers, users, onUpdateDealer, onAddDealer
                     </div>
                   ))}
                   {form.customDealer&&!filteredDealers.find(d=>d.name.toLowerCase()===form.customDealer.toLowerCase())&&(
-                    <div style={{padding:'8px 12px',fontSize:12,color:'#34d399',borderTop:'1px solid var(--b1)',display:'flex',alignItems:'center',gap:6}}>
+                    <div style={{padding:'8px 12px',fontSize:12,color:'var(--grn)',borderTop:'1px solid var(--b1)',display:'flex',alignItems:'center',gap:6}}>
                       <Plus size={11}/> Create new: <strong>{form.customDealer}</strong>
                     </div>
                   )}
@@ -244,7 +244,7 @@ export default function SalesEntry({ dealers, users, onUpdateDealer, onAddDealer
               <input className="inp" type="number" min="0" placeholder="0"
                 value={form.qty} onChange={e=>set('qty',e.target.value)}
                 onKeyDown={e=>e.key==='Enter'&&addEntry()}
-                style={{fontSize:18,fontWeight:700,color:'#34d399'}}/>
+                style={{fontSize:18,fontWeight:700,color:'var(--grn)'}}/>
             </div>
 
             {/* Target */}
@@ -294,7 +294,7 @@ export default function SalesEntry({ dealers, users, onUpdateDealer, onAddDealer
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontSize:12,fontWeight:600,color:'var(--t1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
                           {e.dealerName}
-                          {e.isNew&&<span style={{fontSize:9,background:'rgba(52,211,153,0.15)',color:'#34d399',padding:'1px 5px',borderRadius:4,marginLeft:4}}>NEW</span>}
+                          {e.isNew&&<span style={{fontSize:9,background:'rgba(52,211,153,0.15)',color:'var(--grn)',padding:'1px 5px',borderRadius:4,marginLeft:4}}>NEW</span>}
                         </div>
                         <div style={{fontSize:10,color:'var(--t3)',display:'flex',gap:6,flexWrap:'wrap',marginTop:2}}>
                           <span>{e.month}</span>
@@ -312,7 +312,7 @@ export default function SalesEntry({ dealers, users, onUpdateDealer, onAddDealer
 
                 <div style={{padding:'10px',background:'var(--bg2)',borderRadius:8,marginBottom:10,display:'flex',justifyContent:'space-between'}}>
                   <span style={{fontSize:12,color:'var(--t3)'}}>{entries.length} entries · {[...new Set(entries.map(e=>e.dealerName))].length} dealers</span>
-                  <span style={{fontSize:14,fontWeight:700,color:'#34d399'}}>{totalQty} units</span>
+                  <span style={{fontSize:14,fontWeight:700,color:'var(--grn)'}}>{totalQty} units</span>
                 </div>
 
                 <div style={{display:'flex',flexDirection:'column',gap:8}}>
@@ -330,7 +330,7 @@ export default function SalesEntry({ dealers, users, onUpdateDealer, onAddDealer
             )}
 
             {saved&&(
-              <div style={{marginTop:10,padding:'8px 12px',background:'rgba(52,211,153,0.1)',border:'1px solid rgba(52,211,153,0.3)',borderRadius:8,fontSize:12,color:'#34d399',textAlign:'center'}}>
+              <div style={{marginTop:10,padding:'8px 12px',background:'rgba(52,211,153,0.1)',border:'1px solid rgba(52,211,153,0.3)',borderRadius:8,fontSize:12,color:'var(--grn)',textAlign:'center'}}>
                 ✓ Saved successfully!
               </div>
             )}

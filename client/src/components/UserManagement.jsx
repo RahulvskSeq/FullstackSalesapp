@@ -384,10 +384,10 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
   });
 
   const roleBadge = (r) => {
-    if(r === 'superadmin') return { label:'SUPERADMIN', color:'#fbbf24', bg:'rgba(251,191,36,0.12)', icon:ShieldCheck };
+    if(r === 'superadmin') return { label:'SUPERADMIN', color:'var(--yel)', bg:'rgba(251,191,36,0.12)', icon:ShieldCheck };
     if(r === 'admin')      return { label:'ADMIN',      color:'#a5b4fc', bg:'rgba(99,102,241,0.12)', icon:Shield };
     if(r === 'employee')   return { label:'EMPLOYEE',   color:'#22d3ee', bg:'rgba(34,211,238,0.12)', icon:Shield };
-    return                       { label:'SALESMAN',   color:'#86efac', bg:'rgba(34,197,94,0.12)', icon:null };
+    return                       { label:'SALESMAN',   color:'var(--grn)', bg:'rgba(34,197,94,0.12)', icon:null };
   };
 
   // Can the current user manage this row's user?
@@ -461,15 +461,15 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
                     {isSelf && <span style={{fontSize:9, color:'var(--t3)'}}>(you)</span>}
                   </div>
                   <div style={{fontSize:10, color:'var(--t3)', marginTop:2}}>
-                    {u.id} · {u.url ? <span style={{color:'#34d399'}}>Sheet ✓</span> : <span style={{color:'var(--t3)'}}>No sheet</span>}
+                    {u.id} · {u.url ? <span style={{color:'var(--grn)'}}>Sheet ✓</span> : <span style={{color:'var(--t3)'}}>No sheet</span>}
                     {u.role === 'salesman' && (
                       <> · Approver: <span style={{color: u.approver ? '#a5b4fc' : '#fbbf24'}}>
                         {u.approver ? (allUsers[u.approver]?.name || u.approver) : 'any admin'}
                       </span></>
                     )}
                     {Array.isArray(u.permissions?.states) && u.permissions.states.length > 0 && (
-                      <> · <MapPin size={9} style={{display:'inline', verticalAlign:'-1px', color:'#fbbf24'}}/>
-                        <span style={{color:'#fbbf24'}}> {u.permissions.states.join(', ')}</span>
+                      <> · <MapPin size={9} style={{display:'inline', verticalAlign:'-1px', color:'var(--yel)'}}/>
+                        <span style={{color:'var(--yel)'}}> {u.permissions.states.join(', ')}</span>
                       </>
                     )}
                     {Array.isArray(u.permissions?.cities) && u.permissions.cities.length > 0 && (
@@ -492,7 +492,7 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
                   <button onClick={()=>loginAs(u.id)} title={'Log in as ' + u.name}
                     style={{
                       display:'flex', alignItems:'center', gap:4,
-                      background:'rgba(251,191,36,0.12)', color:'#fbbf24',
+                      background:'rgba(251,191,36,0.12)', color:'var(--yel)',
                       border:'1px solid rgba(251,191,36,0.35)',
                       padding:'4px 10px', borderRadius:5, fontSize:11, fontWeight:700, cursor:'pointer',
                     }}>
@@ -505,7 +505,7 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
                       ✎
                     </button>
                     {(u.role === 'salesman' || u.role === 'employee') && (
-                      <button className="btn" style={{fontSize:11, padding:'4px 8px', color:'#fbbf24', border:'1px solid rgba(251,191,36,0.35)'}}
+                      <button className="btn" style={{fontSize:11, padding:'4px 8px', color:'var(--yel)', border:'1px solid rgba(251,191,36,0.35)'}}
                         onClick={()=>reassignSalesman(u.id)} title="Reassign this user's dealers & records to another user (e.g. on resignation)">
                         ⇄ Reassign
                       </button>
@@ -542,7 +542,7 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
                           title="Re-activate user"
                           style={{
                             display:'inline-flex', alignItems:'center', gap:4,
-                            background:'rgba(34,197,94,0.12)', color:'#86efac',
+                            background:'rgba(34,197,94,0.12)', color:'var(--grn)',
                             border:'1px solid rgba(34,197,94,0.35)',
                             padding:'4px 8px', borderRadius:5, fontSize:11, fontWeight:700, cursor:'pointer',
                           }}>
@@ -554,7 +554,7 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
                           title="Deactivate user (soft-disable; data preserved)"
                           style={{
                             display:'inline-flex', alignItems:'center', gap:4,
-                            background:'rgba(251,191,36,0.10)', color:'#fbbf24',
+                            background:'rgba(251,191,36,0.10)', color:'var(--yel)',
                             border:'1px solid rgba(251,191,36,0.35)',
                             padding:'4px 8px', borderRadius:5, fontSize:11, fontWeight:700, cursor:'pointer',
                           }}>
@@ -655,7 +655,7 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
                 </div>
               )}
               {createStates.size > 0 && (
-                <div style={{fontSize:10, color:'#fbbf24', marginTop:6}}>
+                <div style={{fontSize:10, color:'var(--yel)', marginTop:6}}>
                   This user will only see dealers / outstanding / sales for: <b>{[...createStates].join(', ')}</b>
                 </div>
               )}
@@ -818,7 +818,7 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
                         })}
                       </div>
                       {permsStates.size > 0 && (
-                        <div style={{fontSize:10, color:'#86efac', marginBottom:12, marginTop:-8}}>
+                        <div style={{fontSize:10, color:'var(--grn)', marginBottom:12, marginTop:-8}}>
                           ✓ {permsStates.size} state{permsStates.size===1?'':'s'} selected: {[...permsStates].join(', ')}
                         </div>
                       )}

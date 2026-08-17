@@ -169,7 +169,7 @@ const AddDealerModal = ({users, currentUser, onAdd, onClose, MO:propMO}) => {
           </div>
         </div>
 
-        {error&&<div style={{color:'#f87171',fontSize:12,marginTop:8,padding:'6px 10px',background:'rgba(248,113,113,0.08)',borderRadius:6}}>{error}</div>}
+        {error&&<div style={{color:'var(--red)',fontSize:12,marginTop:8,padding:'6px 10px',background:'rgba(248,113,113,0.08)',borderRadius:6}}>{error}</div>}
 
         <div style={{display:'flex',gap:8,marginTop:16}}>
           <button onClick={save} disabled={saving} className="btnp" style={{display:'flex',alignItems:'center',gap:6}}>

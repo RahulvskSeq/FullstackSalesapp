@@ -117,7 +117,7 @@ export default function SampleMasterTab() {
             }}
             disabled={downloadingTpl}
             className="btn"
-            style={{display:'flex',alignItems:'center',gap:6,color:'#fbbf24',border:'1px solid rgba(251,191,36,0.4)',padding:'8px 14px'}}>
+            style={{display:'flex',alignItems:'center',gap:6,color:'var(--yel)',border:'1px solid rgba(251,191,36,0.4)',padding:'8px 14px'}}>
             <Download size={14}/>{downloadingTpl?'Building…':'Download Sample'}
           </button>
           {/* 2) Upload the filled-in file. Server handles both master
@@ -150,7 +150,7 @@ export default function SampleMasterTab() {
           <button
             onClick={deleteAll}
             className="btn"
-            style={{display:'flex',alignItems:'center',gap:6,color:'#f87171',
+            style={{display:'flex',alignItems:'center',gap:6,color:'var(--red)',
               border:'1px solid rgba(248,113,113,0.4)',padding:'8px 14px',
               fontSize:12,marginLeft:'auto'}}>
             <Trash2 size={13}/>Delete All
@@ -225,7 +225,7 @@ export default function SampleMasterTab() {
           <div style={{background:'rgba(52,211,153,0.08)',border:'1px solid rgba(52,211,153,0.2)',
             borderRadius:8,padding:'8px 14px',textAlign:'center'}}>
             <div style={{fontSize:10,color:'var(--t3)',marginBottom:2}}>Total</div>
-            <div style={{fontSize:18,fontWeight:700,color:'#34d399'}}>{samples.length}</div>
+            <div style={{fontSize:18,fontWeight:700,color:'var(--grn)'}}>{samples.length}</div>
             <div style={{fontSize:9,color:'var(--t3)'}}>samples</div>
           </div>
         </div>
@@ -259,7 +259,7 @@ export default function SampleMasterTab() {
                         display:'flex', alignItems:'center', gap:4,
                         background:'rgba(248,113,113,0.10)',
                         border:'1px solid rgba(248,113,113,0.35)',
-                        color:'#f87171', cursor:'pointer',
+                        color:'var(--red)', cursor:'pointer',
                         padding:'4px 10px', borderRadius:6,
                         fontSize:11, fontWeight:600,
                       }}>

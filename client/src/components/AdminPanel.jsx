@@ -380,7 +380,7 @@ const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,sync
                   display:'flex', alignItems:'center', gap:6,
                   background:'rgba(251,191,36,0.10)',
                   border:'1px solid rgba(251,191,36,0.35)',
-                  color:'#fbbf24', fontWeight:700,
+                  color:'var(--yel)', fontWeight:700,
                 }}
                 title="Quick-switch into another account">
                 <LogIn size={13}/> Login as
@@ -434,7 +434,7 @@ const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,sync
                           </div>
                           <div style={{fontSize:10, color:'var(--t3)'}}>{u.id} · <span style={{color:roleColor}}>{u.role}</span></div>
                         </div>
-                        <LogIn size={12} style={{color:'#fbbf24', flexShrink:0}}/>
+                        <LogIn size={12} style={{color:'var(--yel)', flexShrink:0}}/>
                       </div>
                     );
                   })}
@@ -548,7 +548,7 @@ const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,sync
                       <td><div style={{display:'flex',alignItems:'center',gap:8}}><Avatar user={s} size={22}/><span style={{fontWeight:600}}>{s.name}</span></div></td>
                       {[...mT].map((_,di)=>{const i=mT.length-1-di;const v=mT[i];return<td key={i} style={{textAlign:'right',color:i===selectedMonthIdx?'#fbbf24':'var(--t2)',fontWeight:i===selectedMonthIdx?700:400,background:i===selectedMonthIdx?'rgba(251,191,36,.05)':'transparent'}}>{v||'—'}</td>;})}
                       <td style={{textAlign:'right'}}>{st}</td>
-                      <td style={{textAlign:'right',fontWeight:700,color:'#34d399'}}>{sa}</td>
+                      <td style={{textAlign:'right',fontWeight:700,color:'var(--grn)'}}>{sa}</td>
                       <td style={{textAlign:'right',fontWeight:700,color:pclr(pct(st,sa))}}>{spct(st,sa)}</td>
                     </tr>
                   );
@@ -652,7 +652,7 @@ const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,sync
                 }
                 if(toAdd.length&&saveMonthConfig) saveMonthConfig({MO:[...curMO,...toAdd]});
               }}>+ Next 6 Months</button>
-              {newMonthErr&&<span style={{fontSize:11,color:'#f87171'}}>{newMonthErr}</span>}
+              {newMonthErr&&<span style={{fontSize:11,color:'var(--red)'}}>{newMonthErr}</span>}
             </div>
           </div>
 
@@ -720,7 +720,7 @@ const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,sync
                         const curMO=(monthConfig?.MO||MO).filter(x=>x!==m);
                         const newIdx=curIdx>i?curIdx-1:curIdx;
                         if(saveMonthConfig) saveMonthConfig({MO:curMO,currentIdx:Math.min(newIdx,curMO.length-1)});
-                      }} style={{background:'none',border:'none',color:'#f87171',cursor:'pointer',padding:2}}
+                      }} style={{background:'none',border:'none',color:'var(--red)',cursor:'pointer',padding:2}}
                       title={i > (monthConfig?.currentIdx??10) ? 'Delete future month (data + slot)' : 'Hide from selector (keeps data)'}>
                         <Trash2 size={12}/>
                       </button>

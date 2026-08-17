@@ -1662,6 +1662,10 @@ const handle = async (res) => {
 export const api = {
   health: () => fetch(`${BASE}/health`,{ signal:AbortSignal.timeout(3000) }).then(handle).catch(()=>null),
 
+  // In-app update channel. Public endpoint — no auth header, since the
+  // updater may run before/independently of login.
+  appVersion: () => fetch(`${BASE}/app/version`).then(handle),
+
   login:    (id,pass) => fetch(`${BASE}/auth/login`,{method:'POST',headers:authHeaders(),body:JSON.stringify({id,pass})}).then(handle),
   getUsers:    ()      => fetch(`${BASE}/auth/users`,{headers:authHeaders()}).then(handle),
   getUsersAll: ()      => fetch(`${BASE}/auth/users?includeInactive=1`,{headers:authHeaders()}).then(handle),
@@ -1955,6 +1959,12 @@ export const api = {
     const p = new URLSearchParams(q).toString();
     return fetch(`${BASE}/crm/visits${p?'?'+p:''}`,{ headers:authHeaders() }).then(handle);
   },
+  // One visit WITH photos — list screens fetch ?light=1 and call this on click.
+  visitGet: (id) => fetch(`${BASE}/crm/visits/${encodeURIComponent(id)}`,{ headers:authHeaders() }).then(handle),
+  // Thumbnails for one page of a report table → { id: { in, out } }
+  visitPhotos: (ids) => fetch(`${BASE}/crm/visits/photos`,{
+    method:'POST', headers:authHeaders(), body: JSON.stringify({ ids }),
+  }).then(handle),
   visitsCreate: (body) => fetch(`${BASE}/crm/visits`,{
     method:'POST',
     headers:authHeaders(),

@@ -1559,3 +1559,34 @@ export function parseOutstandingCSV(txt, smId) {
   }
   return out.sort((a,b)=>b.latestOutstanding-a.latestOutstanding);
 }
+
+// ── Readable solid chips ────────────────────────────────────────────────
+// Status pills used to be a 10% tint of their own colour with same-colour
+// text. That reads fine on dark surfaces but washes out completely on a
+// light theme. These give a SOLID fill plus a text colour picked for
+// contrast, so a chip stays legible on any theme.
+export const readableOn = (hex) => {
+  const h = String(hex || '').replace('#', '');
+  const v = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+  const r = parseInt(v.slice(0,2),16)/255, g = parseInt(v.slice(2,4),16)/255, b = parseInt(v.slice(4,6),16)/255;
+  if ([r,g,b].some(Number.isNaN)) return '#ffffff';
+  const lin = c => (c <= 0.03928 ? c/12.92 : Math.pow((c+0.055)/1.055, 2.4));
+  const L = 0.2126*lin(r) + 0.7152*lin(g) + 0.0722*lin(b);
+  return L > 0.55 ? '#14203a' : '#ffffff';   // light fill → dark text
+};
+// Solid chip: filled background, auto-contrast text, matching border.
+export const fillChip = (hex) => ({
+  background: hex, color: readableOn(hex), border: '1px solid ' + hex,
+});
+
+// Soft tinted chip/card: a low-alpha wash of the accent colour over whatever
+// surface is behind it, with neutral --t1 text on top. Using ALPHA rather than
+// a baked-in blend means one value works on every theme — dark tint on dark
+// backgrounds, light tint on light ones — and the neutral text stays readable
+// either way. Replaces both the old "10% tint + same-hue text" (invisible on
+// light themes) and the fully-solid fill (too loud, and wrong on dark themes).
+export const softChip = (hex) => ({
+  background: hex + '26',
+  border: '1px solid ' + hex + '66',
+  color: 'var(--t1)',
+});

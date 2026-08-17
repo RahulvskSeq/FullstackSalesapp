@@ -479,9 +479,9 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:10}}>
         <div className="card" style={{padding:14}}>
           <div style={{fontSize:11,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.1em'}}>
-            Grand Total — {month||'—'} {excluded.size>0 && <span style={{color:'#fbbf24'}}>(excl. {excluded.size})</span>}
+            Grand Total — {month||'—'} {excluded.size>0 && <span style={{color:'var(--yel)'}}>(excl. {excluded.size})</span>}
           </div>
-          <div style={{fontSize:26,fontWeight:800,marginTop:4,color:'#34d399'}}>{fmt(filteredGrandTotal)}</div>
+          <div style={{fontSize:26,fontWeight:800,marginTop:4,color:'var(--grn)'}}>{fmt(filteredGrandTotal)}</div>
           <div style={{fontSize:11,color:'var(--t3)',marginTop:2}}>
             {excluded.size > 0
               ? <>total units (excluding <b>{[...excluded].join(', ')}</b>)</>
@@ -533,7 +533,7 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                   <div key={g.category} className="card" style={{padding:14}}>
                     <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
                       <div style={{fontSize:13,fontWeight:700,flex:1}}>{g.category}</div>
-                      <div style={{fontSize:18,fontWeight:800,color:'#34d399'}}>{fmt(g.total)}</div>
+                      <div style={{fontSize:18,fontWeight:800,color:'var(--grn)'}}>{fmt(g.total)}</div>
                     </div>
                     <div style={{height:6,background:'var(--bg1)',borderRadius:3,overflow:'hidden',marginBottom:8}}>
                       <div style={{width:`${pct.toFixed(1)}%`,height:'100%',background:'linear-gradient(90deg,#6366f1,#34d399)'}}/>
@@ -594,7 +594,7 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                       const v = Object.values(r.byCategory?.[c]||{}).reduce((s,v)=>s+v,0);
                       return <td key={c} style={{textAlign:'right',color:v?'var(--t2)':'var(--t3)'}}>{v? fmt(v) : '—'}</td>;
                     })}
-                    <td style={{textAlign:'right',fontWeight:700,color:'#34d399'}}>{fmt(r.total)}</td>
+                    <td style={{textAlign:'right',fontWeight:700,color:'var(--grn)'}}>{fmt(r.total)}</td>
                   </tr>
                   );
                 })}
@@ -610,7 +610,7 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                       const sum = filteredDealerRows.reduce((s,r) => s + Object.values(r.byCategory?.[c]||{}).reduce((a,v)=>a+v,0), 0);
                       return <td key={c} style={{textAlign:'right',fontWeight:700,background:'var(--bg1)'}}>{sum?fmt(sum):'—'}</td>;
                     })}
-                    <td style={{textAlign:'right',fontWeight:800,background:'rgba(52,211,153,.12)',color:'#34d399'}}>
+                    <td style={{textAlign:'right',fontWeight:800,background:'rgba(52,211,153,.12)',color:'var(--grn)'}}>
                       {fmt(filteredDealerRows.reduce((s,r)=>s+r.total,0))}
                     </td>
                   </tr>
@@ -652,7 +652,7 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                       const v = Object.values(r.byCategory?.[c]||{}).reduce((s,v)=>s+v,0);
                       return <td key={c} style={{textAlign:'right',color:v?'var(--t2)':'var(--t3)'}}>{v? fmt(v) : '—'}</td>;
                     })}
-                    <td style={{textAlign:'right',fontWeight:700,color:'#34d399'}}>{fmt(r.total)}</td>
+                    <td style={{textAlign:'right',fontWeight:700,color:'var(--grn)'}}>{fmt(r.total)}</td>
                   </tr>
                 ))}
                 {filteredSalesmanRows.length === 0 && (
@@ -667,7 +667,7 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                       const sum = filteredSalesmanRows.reduce((s,r) => s + Object.values(r.byCategory?.[c]||{}).reduce((a,v)=>a+v,0), 0);
                       return <td key={c} style={{textAlign:'right',fontWeight:700,background:'var(--bg1)'}}>{sum?fmt(sum):'—'}</td>;
                     })}
-                    <td style={{textAlign:'right',fontWeight:800,background:'rgba(52,211,153,.12)',color:'#34d399'}}>
+                    <td style={{textAlign:'right',fontWeight:800,background:'rgba(52,211,153,.12)',color:'var(--grn)'}}>
                       {fmt(filteredSalesmanRows.reduce((s,r)=>s+r.total,0))}
                     </td>
                   </tr>
@@ -705,11 +705,11 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                     {categories.map(c => (
                       <React.Fragment key={'sub-'+c}>
                         <th style={{textAlign:'right', fontSize:9, color:'var(--acc)', borderLeft:'1px solid var(--b1)', minWidth:55}}>Target</th>
-                        <th style={{textAlign:'right', fontSize:9, color:'#34d399', minWidth:55}}>Ach</th>
+                        <th style={{textAlign:'right', fontSize:9, color:'var(--grn)', minWidth:55}}>Ach</th>
                       </React.Fragment>
                     ))}
                     <th style={{textAlign:'right', fontSize:10, color:'var(--acc)', fontWeight:800, borderLeft:'1px solid var(--b1)'}}>Target</th>
-                    <th style={{textAlign:'right', fontSize:10, color:'#34d399', fontWeight:800}}>Ach</th>
+                    <th style={{textAlign:'right', fontSize:10, color:'var(--grn)', fontWeight:800}}>Ach</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -761,7 +761,7 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                           })}
                           {/* Total Target | Total Ach */}
                           <td style={{textAlign:'right', fontWeight:700, color:'var(--acc)', borderLeft:'1px solid var(--b1)', background:'rgba(99,102,241,.04)'}}>{fmtL(r.target)}</td>
-                          <td style={{textAlign:'right', fontWeight:700, color:'#34d399', background:'rgba(52,211,153,.04)'}}>{fmtL(r.totalAch)}</td>
+                          <td style={{textAlign:'right', fontWeight:700, color:'var(--grn)', background:'rgba(52,211,153,.04)'}}>{fmtL(r.totalAch)}</td>
                           <td style={{textAlign:'right', fontWeight:700, color: pctColor(r.achievementPct)}}>
                             {r.achievementPct == null ? '—' : r.achievementPct + '%'}
                           </td>
@@ -787,7 +787,7 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                           );
                         })}
                         <td style={{textAlign:'right', fontWeight:800, color:'var(--acc)', borderLeft:'1px solid var(--b1)', background:'rgba(99,102,241,.06)'}}>{fmtL(subtotal.target)}</td>
-                        <td style={{textAlign:'right', fontWeight:800, color:'#34d399', background:'rgba(52,211,153,.06)'}}>{fmtL(subtotal.totalAch)}</td>
+                        <td style={{textAlign:'right', fontWeight:800, color:'var(--grn)', background:'rgba(52,211,153,.06)'}}>{fmtL(subtotal.totalAch)}</td>
                         <td style={{textAlign:'right', fontWeight:800, color: pctColor(subtotal.achievementPct)}}>
                           {subtotal.achievementPct == null ? '—' : subtotal.achievementPct + '%'}
                         </td>
@@ -816,7 +816,7 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                         );
                       })}
                       <td style={{textAlign:'right', fontWeight:800, color:'var(--acc)', borderLeft:'1px solid var(--b1)', background:'rgba(99,102,241,.12)'}}>{fmtL(mtdGrand.target)}</td>
-                      <td style={{textAlign:'right', fontWeight:800, color:'#34d399', background:'rgba(52,211,153,.12)'}}>{fmtL(mtdGrand.totalAch)}</td>
+                      <td style={{textAlign:'right', fontWeight:800, color:'var(--grn)', background:'rgba(52,211,153,.12)'}}>{fmtL(mtdGrand.totalAch)}</td>
                       <td style={{textAlign:'right', fontWeight:800, color: pctColor(mtdGrand.achievementPct)}}>
                         {mtdGrand.achievementPct == null ? '—' : mtdGrand.achievementPct + '%'}
                       </td>

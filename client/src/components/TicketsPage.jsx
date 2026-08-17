@@ -364,7 +364,7 @@ function TicketDetailModal({ ticket, users, isStaff, onClose, onSaved, onDelete 
               </select>
             )}
             <div style={{flex:1}}/>
-            {isStaff && <button onClick={onDelete} className="btn" style={{color:'#f87171', border:'1px solid #7f1d1d', fontSize:12, display:'inline-flex', alignItems:'center', gap:4}}><Trash2 size={11}/> Delete</button>}
+            {isStaff && <button onClick={onDelete} className="btn" style={{color:'var(--red)', border:'1px solid #7f1d1d', fontSize:12, display:'inline-flex', alignItems:'center', gap:4}}><Trash2 size={11}/> Delete</button>}
             <button onClick={save} disabled={busy} className="btnp" style={{display:'inline-flex', alignItems:'center', gap:6}}>
               <Send size={12}/> {busy ? 'Saving…' : 'Save'}
             </button>

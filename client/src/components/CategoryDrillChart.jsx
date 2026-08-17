@@ -172,7 +172,7 @@ export default function CategoryDrillChart({ dealers, selectedMonthIdx, onNaviga
         <span style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}>
           {grandTotal > 0 && (
             <span style={{fontSize:11,color:'var(--t3)'}}>
-              Grand Total: <b style={{color:'#34d399',fontSize:13}}>{Number(grandTotal).toLocaleString('en-IN')}</b>
+              Grand Total: <b style={{color:'var(--grn)',fontSize:13}}>{Number(grandTotal).toLocaleString('en-IN')}</b>
             </span>
           )}
           {drillCat && <button onClick={goBack} className="btn" style={{fontSize:11,padding:'3px 10px',color:'var(--red)'}}>← Back</button>}

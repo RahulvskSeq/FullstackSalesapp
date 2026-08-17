@@ -253,16 +253,19 @@ export default function Styles({theme}){
     #main{flex:1;overflow-y:auto;overflow-x:hidden;padding:18px;min-width:0}
 
     /* ── Nav ── */
-    .nav-item{padding:9px 14px;font-size:13px;cursor:pointer;color:var(--t3);border-left:2px solid transparent;display:flex;align-items:center;gap:9px;transition:all .15s;user-select:none;white-space:nowrap}
+    .nav-item{padding:11px 14px;font-size:14px;font-weight:600;cursor:pointer;color:var(--t2);border-left:2px solid transparent;display:flex;align-items:center;gap:10px;transition:all .15s;user-select:none;white-space:nowrap;letter-spacing:.01em}
     .nav-item:hover{color:var(--t2);background:rgba(255,255,255,.03)}
-    .nav-item.active{color:var(--acc);border-left-color:var(--acc);background:var(--accL)}
-    .nav-sec{padding:14px 14px 6px;font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.15em}
+    .nav-item.active{color:var(--acc);border-left-color:var(--acc);background:var(--accL);font-weight:700}
+    .nav-sec{padding:15px 14px 6px;font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.14em}
 
-    /* ── Cards ── */
-    .card{background:var(--bg1);border:1px solid var(--b1);border-radius:12px;padding:16px 18px}
+    /* ── Cards ──
+       --shadow / --shadowHover default to the flat dark look. A light palette
+       (see themes.js) sets them to soft elevation shadows instead. */
+    .card{background:var(--bg1);border:1px solid var(--b1);border-radius:12px;padding:16px 18px;box-shadow:var(--shadow,none)}
     .stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
-    .stat-card{background:var(--bg1);border:1px solid var(--b1);border-radius:10px;padding:12px 14px;transition:transform .15s,box-shadow .15s}
-    .stat-card:hover{transform:translateY(-2px);box-shadow:0 4px 16px rgba(0,0,0,.3)}
+    .stat-card{background:var(--bg1);border:1px solid var(--b1);border-radius:10px;padding:12px 14px;transition:transform .15s,box-shadow .15s;box-shadow:var(--shadow,none)}
+    .stat-card:hover{transform:translateY(-2px);box-shadow:var(--shadowHover,0 4px 16px rgba(0,0,0,.3))}
+    .modal{box-shadow:var(--shadowHover,0 20px 60px rgba(0,0,0,.5))}
     .prog-bar{height:3px;background:var(--b1);border-radius:2px;margin-top:8px;overflow:hidden}
     .prog-fill{height:100%;border-radius:2px;transition:width .8s cubic-bezier(.4,0,.2,1)}
 
@@ -277,27 +280,17 @@ export default function Styles({theme}){
     /* ── Forms ── */
     .inp{background:var(--bg2);border:1px solid var(--b2);border-radius:7px;padding:8px 12px;color:var(--t1);width:100%}
     .inp:focus{border-color:var(--acc);box-shadow:0 0 0 3px var(--accL)}
-    /* The browser's native date/time picker glyph is drawn near-black, which
-       disappears against the dark surfaces. Invert it to white — dark theme
-       only, so the light theme keeps the readable dark glyph. */
-    :root input[type="date"]::-webkit-calendar-picker-indicator,
-    :root input[type="time"]::-webkit-calendar-picker-indicator,
-    :root input[type="month"]::-webkit-calendar-picker-indicator,
-    :root input[type="datetime-local"]::-webkit-calendar-picker-indicator,
-    [data-theme="dark"] input[type="date"]::-webkit-calendar-picker-indicator,
-    [data-theme="dark"] input[type="time"]::-webkit-calendar-picker-indicator,
-    [data-theme="dark"] input[type="month"]::-webkit-calendar-picker-indicator,
-    [data-theme="dark"] input[type="datetime-local"]::-webkit-calendar-picker-indicator{
-      filter:invert(1);opacity:.8;cursor:pointer
+    /* The native date/time picker glyph is near-black and vanishes on dark
+       surfaces, so --pickerFilter inverts it by default. Light themes and
+       light palettes set it to none, keeping it readable on white. */
+    input[type="date"]::-webkit-calendar-picker-indicator,
+    input[type="time"]::-webkit-calendar-picker-indicator,
+    input[type="month"]::-webkit-calendar-picker-indicator,
+    input[type="datetime-local"]::-webkit-calendar-picker-indicator{
+      filter:var(--pickerFilter,invert(1));opacity:.8;cursor:pointer
     }
-    :root input[type="date"]::-webkit-calendar-picker-indicator:hover,
-    [data-theme="dark"] input[type="date"]::-webkit-calendar-picker-indicator:hover{opacity:1}
-    [data-theme="light"] input[type="date"]::-webkit-calendar-picker-indicator,
-    [data-theme="light"] input[type="time"]::-webkit-calendar-picker-indicator,
-    [data-theme="light"] input[type="month"]::-webkit-calendar-picker-indicator,
-    [data-theme="light"] input[type="datetime-local"]::-webkit-calendar-picker-indicator{
-      filter:none;opacity:.7
-    }
+    input[type="date"]::-webkit-calendar-picker-indicator:hover{opacity:1}
+    [data-theme="light"]{--pickerFilter:none}
     .sel{background:var(--bg2);border:1px solid var(--b2);border-radius:7px;padding:7px 10px;color:var(--t1);cursor:pointer}
     .sel:focus{border-color:var(--acc)}
 
@@ -331,8 +324,90 @@ export default function Styles({theme}){
     .tab.active{color:var(--acc);border-bottom-color:var(--acc);font-weight:600}
     .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
     .chip{background:var(--bg3);border:1px solid var(--b2);border-radius:4px;padding:2px 7px;font-size:11px;color:var(--t3)}
+    /* Solid filled pill (see utils.fillChip) — the tinted version washed out
+       on light themes. Squared-off radius to match the rest of the UI. */
     .insight-chip{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:14px;font-size:12px;font-weight:500;border:1px solid currentColor;opacity:.9}
     .skel{background:linear-gradient(90deg,var(--bg2) 0%,var(--bg3) 50%,var(--bg2) 100%);background-size:200% 100%;animation:shimmer 1.4s ease-in-out infinite;border-radius:6px;display:block}
+
+    /* ── Material palette shape rules ──────────────────────────────────
+       Colour variables can't express these: the reference look is
+       borderless white cards floating on grey, generous radii, and a solid
+       dark pill for the active nav item. Scoped to the palette so no other
+       theme is affected. */
+    [data-palette="material"] .card,
+    [data-palette="material"] .stat-card,
+    [data-palette="material"] .modal{border:none}
+    [data-palette="material"] .card{border-radius:6px;padding:16px 18px}
+    [data-palette="material"] .stat-card{border-radius:6px}
+    [data-palette="material"] .modal{border-radius:8px}
+    /* Top bar is a solid navy band. Re-declaring the neutral variables inside
+       it flips every child that uses them (labels, buttons, inputs) to light
+       automatically, while explicitly-coloured items (green/amber figures)
+       keep their own colour. */
+    [data-palette="material"] #topbar{
+      background:#2f4162;border-bottom:none;box-shadow:0 2px 10px rgba(20,30,60,.28);
+      --t1:#ffffff; --t2:#d3dcec; --t3:#a2b2cc;
+      --bg1:#3b5079; --bg2:#3b5079; --bg3:#48608f;
+      --b1:#48608f;  --b2:#5a7099;
+      --acc:#ffffff; --accL:rgba(255,255,255,.16);
+    }
+    [data-palette="material"] #topbar .btn{
+      background:rgba(255,255,255,.10);border-color:rgba(255,255,255,.28);color:#e8eefa;box-shadow:none}
+    [data-palette="material"] #topbar .btn:hover:not(:disabled){background:rgba(255,255,255,.20);color:#fff}
+    [data-palette="material"] #sidebar{border-right:none;box-shadow:2px 0 8px rgba(20,30,60,.14)}
+    [data-palette="material"] .nav-item{
+      border-left:none;border-radius:5px;margin:2px 10px;padding:9px 12px;color:var(--t2)}
+    [data-palette="material"] .nav-item:hover{background:var(--bg2);color:var(--t1)}
+    [data-palette="material"] .nav-item.active{
+      background:var(--acc);color:#fff;font-weight:600;box-shadow:0 3px 9px rgba(52,71,103,.40)}
+    [data-palette="material"] th{
+      background:#eaeef4;border-bottom:1px solid #cfd7e2;color:var(--t2);font-size:10.5px}
+    [data-palette="material"] td{border-bottom:1px solid #e3e8ef}
+    [data-palette="material"] tr:hover td{background:#e9edf3}
+    [data-palette="material"] tfoot td{background:#e6eaf1}
+    [data-palette="material"] .inp{
+      background:#fdfdfe;border:1px solid #bcc5d2;border-radius:5px;color:var(--t1)}
+    [data-palette="material"] .inp:focus{border-color:var(--acc);box-shadow:0 0 0 3px var(--accL)}
+    [data-palette="material"] .btn{
+      background:#e6eaf1;border:1px solid #b9c2d0;border-radius:5px;color:var(--t2);font-weight:600;
+      box-shadow:0 1px 3px rgba(20,30,60,.12)}
+    [data-palette="material"] .btn:hover:not(:disabled){background:#d8dee8;color:var(--t1)}
+    [data-palette="material"] .btnp{
+      border-radius:5px;box-shadow:0 3px 9px rgba(52,71,103,.35)}
+    [data-palette="material"] .btnd,
+    [data-palette="material"] .btne{border-radius:5px}
+    [data-palette="material"] .chip{
+      border-radius:5px;background:#dde3ec;border:1px solid #c3ccd9;color:var(--t2);font-weight:500}
+    /* insight chips carry their own solid fill (utils.fillChip) — don't
+       override the background here, only the corner radius. */
+    /* ── Material palette: solid status colours ─────────────────────────
+       Each chip/card publishes its own hue as --c and a contrast-checked
+       text colour as --fg (see utils.readableOn). Dark themes ignore both and
+       keep their original translucent tints; only this palette turns them
+       into solid fills. That is why changing the light theme can no longer
+       affect the dark one. */
+    [data-palette="material"] .insight-chip,
+    [data-palette="material"] .status-badge,
+    [data-palette="material"] .tier-card,
+    [data-palette="material"] .status-card{
+      background:var(--c)!important;border-color:var(--c)!important;color:var(--fg)!important;
+      box-shadow:0 2px 8px rgba(20,30,60,.20)}
+    [data-palette="material"] .insight-chip{opacity:1;font-weight:600}
+    /* children follow the contrast colour rather than the hue */
+    [data-palette="material"] .tier-card div,
+    [data-palette="material"] .tier-card span,
+    [data-palette="material"] .status-card div,
+    [data-palette="material"] .status-card span,
+    [data-palette="material"] .status-badge span{color:var(--fg)!important}
+    /* inner pills / dots / bars sit on top of the fill */
+    [data-palette="material"] .tier-card .tier-pill{
+      background:rgba(255,255,255,.24)!important;border-color:rgba(255,255,255,.42)!important}
+    [data-palette="material"] .status-card .sc-dot,
+    [data-palette="material"] .status-badge .sb-dot{background:var(--fg)!important;opacity:.85}
+    [data-palette="material"] .status-card .sc-bar{background:rgba(255,255,255,.32)!important}
+    [data-palette="material"] .status-card .sc-bar>div{background:var(--fg)!important;opacity:.9}
+    [data-palette="material"] .tabs{border-bottom:1px solid var(--bg3)}
+    [data-palette="material"] .chip{background:var(--bg2);border-color:var(--b2)}
 
     /* ── Topbar responsive helpers ── */
     .hide-sm{display:flex}

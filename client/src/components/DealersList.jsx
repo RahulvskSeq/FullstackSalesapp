@@ -1567,7 +1567,7 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
             </div>
           )}
           {currentUser.role==='superadmin'&&catFilterOn&&(
-            <div style={{fontSize:11,color:'#fbbf24',padding:'8px 12px',borderBottom:'1px solid var(--b1)'}}>
+            <div style={{fontSize:11,color:'var(--yel)',padding:'8px 12px',borderBottom:'1px solid var(--b1)'}}>
               Month cells are read-only while a category filter is active — the figures shown are
               only the selected categories. Clear the Categories filter to edit month totals.
             </div>
@@ -1655,7 +1655,7 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
                       })}
                       <td style={{textAlign:'right',color:'var(--t3)'}}>{x.creditDays?x.creditDays+'d':'—'}</td>
                       <td style={{textAlign:'right',color:'var(--t3)'}}>{fcash(x.creditLimit)}</td>
-                      <td onClick={e=>e.stopPropagation()}>{nc>0?<span style={{display:'inline-flex',alignItems:'center',gap:3,fontSize:11,color:oc>0?'#fbbf24':'var(--t2)'}}><MessageSquare size={11}/> {nc}{oc>0&&<span style={{color:'#f87171',fontWeight:700}}>!</span>}</span>:<span style={{color:'var(--t3)'}}>—</span>}</td>
+                      <td onClick={e=>e.stopPropagation()}>{nc>0?<span style={{display:'inline-flex',alignItems:'center',gap:3,fontSize:11,color:oc>0?'#fbbf24':'var(--t2)'}}><MessageSquare size={11}/> {nc}{oc>0&&<span style={{color:'var(--red)',fontWeight:700}}>!</span>}</span>:<span style={{color:'var(--t3)'}}>—</span>}</td>
                       <td onClick={e=>e.stopPropagation()}>
                         <div style={{display:'flex',gap:5}}>
                           <button className="btne" onClick={e=>{e.stopPropagation();onEdit(x.id);}}>Open</button>
@@ -1683,7 +1683,7 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
                 <tr>
                   <td colSpan={isAdmin?8:7} style={{color:'var(--t1)'}}>TOTAL</td>
                   <td style={{textAlign:'right'}}>{tt}</td>
-                  <td style={{textAlign:'right',color:'#34d399'}}>{ta}</td>
+                  <td style={{textAlign:'right',color:'var(--grn)'}}>{ta}</td>
                   <td style={{textAlign:'right',color:pclr(pct(tt,ta))}}>{spct(tt,ta)}</td>
                   <td colSpan="2"/>
                   {[...MO].map((_,di)=>{

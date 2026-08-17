@@ -570,7 +570,7 @@ export default function ManageMonths({
             <div style={{flex:1, minWidth:200}}>
               <div style={{fontSize:13, fontWeight:700, color:'#fca5a5', marginBottom:3}}>
                 Start Fresh — Wipe all dealer data
-                <span style={{fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:3, background:'rgba(251,191,36,0.15)', color:'#fbbf24', marginLeft:8, letterSpacing:'.06em'}}>SUPERADMIN ONLY</span>
+                <span style={{fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:3, background:'rgba(251,191,36,0.15)', color:'var(--yel)', marginLeft:8, letterSpacing:'.06em'}}>SUPERADMIN ONLY</span>
               </div>
               <div style={{fontSize:11, color:'var(--t3)'}}>
                 Deletes every dealer record from MongoDB. After wiping you'll have a clean DB. You can re-populate it by clicking <b>Sync now</b> (re-loads from Google Sheets) or by uploading Excel files via <b>Monthly Entry</b>. Once data is in DB, refreshes and uploads will work cleanly.
@@ -644,7 +644,7 @@ export default function ManageMonths({
               Data sources
             </div>
             <div style={{fontSize:11, color:'var(--t3)', marginBottom:8}}>
-              <b style={{color:'#86efac'}}>Reload from DB</b> = safe refresh, never touches Sheets.
+              <b style={{color:'var(--grn)'}}>Reload from DB</b> = safe refresh, never touches Sheets.
               <b style={{color:'#a5b4fc'}}> Sync now</b> = pull from Google Sheets (preserves uploaded months).
               {lastSync ? ' · Last sync: ' + lastSync : ''}
             </div>
@@ -680,7 +680,7 @@ export default function ManageMonths({
               title="Back-fill per-month targets from each dealer's baseline target. Run once after a sync if targets look wrong."
               style={{
                 display:'flex', alignItems:'center', justifyContent:'center', gap:6,
-                background:'transparent', color:'#fbbf24',
+                background:'transparent', color:'var(--yel)',
                 border:'1px solid #92400e',
                 padding:'8px 10px', borderRadius:6, fontSize:11, fontWeight:700,
                 cursor: busy ? 'not-allowed' : 'pointer', whiteSpace:'nowrap',
@@ -692,7 +692,7 @@ export default function ManageMonths({
               title="Find dealers stored twice under the same salesman (e.g. from old syncs with name variations) and merge them. Fixes inflated totals."
               style={{
                 display:'flex', alignItems:'center', justifyContent:'center', gap:6,
-                background:'transparent', color:'#f87171',
+                background:'transparent', color:'var(--red)',
                 border:'1px solid #7f1d1d',
                 padding:'8px 10px', borderRadius:6, fontSize:11, fontWeight:700,
                 cursor: busy ? 'not-allowed' : 'pointer', whiteSpace:'nowrap',
@@ -767,7 +767,7 @@ export default function ManageMonths({
                       </td>
                       <td style={{padding:'8px 10px'}}>
                         {st.hasData ? (
-                          <span style={{fontSize:10, color:'#86efac', background:'rgba(34,197,94,0.12)',
+                          <span style={{fontSize:10, color:'var(--grn)', background:'rgba(34,197,94,0.12)',
                             padding:'2px 8px', borderRadius:4, fontWeight:700, border:'1px solid #15803d'}}>
                             HAS DATA
                           </span>
@@ -813,7 +813,7 @@ export default function ManageMonths({
                           <button onClick={() => beginUpload(m)} disabled={busy} title="Upload Excel for this month"
                             style={{
                               display:'flex', alignItems:'center', gap:3,
-                              background:'rgba(34,197,94,0.12)', color:'#86efac',
+                              background:'rgba(34,197,94,0.12)', color:'var(--grn)',
                               border:'1px solid #15803d', borderRadius:5,
                               padding:'4px 8px', fontSize:10, fontWeight:700, cursor:'pointer',
                             }}>
@@ -842,7 +842,7 @@ export default function ManageMonths({
                           <button onClick={() => handleRemoveMonth(m)} disabled={busy} title="Remove this month from the active list (does not delete data)"
                             style={{
                               display:'flex', alignItems:'center', gap:3,
-                              background:'transparent', color:'#f87171',
+                              background:'transparent', color:'var(--red)',
                               border:'1px solid #7f1d1d', borderRadius:5,
                               padding:'4px 7px', fontSize:10, fontWeight:600, cursor:'pointer',
                             }}>
@@ -926,7 +926,7 @@ export default function ManageMonths({
                   <div style={{padding:'10px 14px 14px 50px', background:'var(--bg2)'}}>
                     {/* Source breakdown + Inspector button */}
                     <div style={{display:'flex', gap:14, marginBottom:10, fontSize:11, color:'var(--t3)', flexWrap:'wrap', alignItems:'center'}}>
-                      <span><b style={{color:'#86efac'}}>{sm.sources.sheet}</b> from Sheets</span>
+                      <span><b style={{color:'var(--grn)'}}>{sm.sources.sheet}</b> from Sheets</span>
                       <span>·</span>
                       <span><b style={{color:'#a5b4fc'}}>{sm.sources.upload}</b> from Excel upload</span>
                       {sm.sources.other > 0 && <><span>·</span><span><b style={{color:'var(--t2)'}}>{sm.sources.other}</b> other</span></>}
@@ -1001,7 +1001,7 @@ export default function ManageMonths({
                                   return (
                                     <tr key={t.id} style={{borderTop:'1px solid var(--b1)'}}>
                                       <td style={{padding:'5px 8px', color:'var(--t1)', fontWeight:600, maxWidth:200, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{t.name}</td>
-                                      <td style={{padding:'5px 8px', textAlign:'right', color:'#86efac', fontWeight:700}}>{fmtIN(t.ach)}</td>
+                                      <td style={{padding:'5px 8px', textAlign:'right', color:'var(--grn)', fontWeight:700}}>{fmtIN(t.ach)}</td>
                                       <td style={{padding:'5px 8px', textAlign:'right', color:t.tgt ? '#22d3ee' : 'var(--t3)'}}>{t.tgt ? fmtIN(t.tgt) : '—'}</td>
                                       <td style={{padding:'5px 8px', textAlign:'right', color: p===null ? 'var(--t3)' : p>=100 ? '#86efac' : p>=70 ? '#fbbf24' : '#fca5a5', fontWeight:700}}>{p===null ? '—' : p+'%'}</td>
                                       <td style={{padding:'5px 8px', textAlign:'center'}}>
@@ -1100,7 +1100,7 @@ export default function ManageMonths({
                             ? <span style={{color:'#fca5a5'}}>NONE FOUND — parser couldn't see any labels above the headers</span>
                             : dbg.labelRowCells.map((c, i) => (
                                 <span key={i} style={{display:'inline-block', marginRight:8, padding:'1px 6px', background:'var(--bg1)', borderRadius:3, fontFamily:'monospace'}}>
-                                  <b style={{color:'#fbbf24'}}>{c.colLetter}</b>="{c.value}"
+                                  <b style={{color:'var(--yel)'}}>{c.colLetter}</b>="{c.value}"
                                 </span>
                               ))}
                         </div>
@@ -1124,8 +1124,8 @@ export default function ManageMonths({
                                 <tr key={i} style={{borderTop:'1px solid var(--b1)'}}>
                                   <td style={{padding:'4px 8px', color:'var(--t1)', fontWeight:700}}>{s.label || '(none)'}</td>
                                   <td style={{padding:'4px 8px', color: s.moIdx >= 0 ? '#86efac' : '#fca5a5', fontWeight:600}}>{s.monthLabel}</td>
-                                  <td style={{padding:'4px 8px', textAlign:'center', fontFamily:'monospace', color:'#fbbf24', fontWeight:700}}>{s.targetColLetter}</td>
-                                  <td style={{padding:'4px 8px', textAlign:'center', fontFamily:'monospace', color:'#86efac', fontWeight:700}}>{s.achColLetter}</td>
+                                  <td style={{padding:'4px 8px', textAlign:'center', fontFamily:'monospace', color:'var(--yel)', fontWeight:700}}>{s.targetColLetter}</td>
+                                  <td style={{padding:'4px 8px', textAlign:'center', fontFamily:'monospace', color:'var(--grn)', fontWeight:700}}>{s.achColLetter}</td>
                                   <td style={{padding:'4px 8px', color:'var(--t2)', fontSize:10}}>{s.achHdr}</td>
                                 </tr>
                               ))}
@@ -1182,7 +1182,7 @@ export default function ManageMonths({
                       })}
                     </div>
                     <div style={{fontSize:10, color:'var(--t3)', marginTop:6}}>
-                      <b style={{color:'#fbbf24'}}>Yellow</b> = parser thinks this is Target. <b style={{color:'#86efac'}}>Green</b> = Achieved. <b style={{color:'#a5b4fc'}}>Lavender</b> = Dealer name. <b style={{color:'#22d3ee'}}>Cyan</b> = City/State. <b style={{color:'#fbbf24'}}>Column D</b> is highlighted yellow as the configured Target column.
+                      <b style={{color:'var(--yel)'}}>Yellow</b> = parser thinks this is Target. <b style={{color:'var(--grn)'}}>Green</b> = Achieved. <b style={{color:'#a5b4fc'}}>Lavender</b> = Dealer name. <b style={{color:'#22d3ee'}}>Cyan</b> = City/State. <b style={{color:'var(--yel)'}}>Column D</b> is highlighted yellow as the configured Target column.
                     </div>
                   </div>
 
@@ -1253,8 +1253,8 @@ export default function ManageMonths({
                               <td style={{padding:'5px 8px', color:'var(--t2)'}}>{d.state || '—'}</td>
                               <td style={{padding:'5px 8px', color:'var(--t2)'}}>{d.zone || '—'}</td>
                               <td style={{padding:'5px 8px', color:'var(--t2)'}}>{d.status || '—'}</td>
-                              <td style={{padding:'5px 8px', color:'#fbbf24', fontWeight:700}}>{d.target || '0'}</td>
-                              <td style={{padding:'5px 8px', color:'#86efac', fontWeight:700}}>{d.achieved || '0'}</td>
+                              <td style={{padding:'5px 8px', color:'var(--yel)', fontWeight:700}}>{d.target || '0'}</td>
+                              <td style={{padding:'5px 8px', color:'var(--grn)', fontWeight:700}}>{d.achieved || '0'}</td>
                               <td style={{padding:'5px 8px', color:'var(--t3)', fontSize:10, fontFamily:'monospace'}}>[{(d.months || []).join(', ')}]</td>
                               <td style={{padding:'5px 8px', color:'var(--t3)', fontSize:10, fontFamily:'monospace'}}>{JSON.stringify(d.monthTargets || {})}</td>
                             </tr>

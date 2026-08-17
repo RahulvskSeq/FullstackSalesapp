@@ -56,6 +56,11 @@ captures/
 *.jks
 *.keystore
 keystore.properties
+# Shared DEBUG signing key, intentionally committed. It is not a secret
+# (password is the Android default) but it MUST be identical across CI
+# builds — otherwise every APK is signed with a fresh key and Android
+# refuses to install the update over the existing app.
+!keystore/shared-debug.keystore
 
 # External native build folder generated in Android Studio 2.2 and later
 .externalNativeBuild

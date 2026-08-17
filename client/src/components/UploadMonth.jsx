@@ -692,8 +692,8 @@ import { api } from '../api';
 
 const MODES = [
   { id:'monthly',     label:'Monthly Sales Data',  icon:Upload,      color:'#6366f1', desc:'Upload dealer data for a specific month — target, achieved, status, zone etc.' },
-  { id:'bulk-info',   label:'Bulk Update Info',     icon:Edit3,       color:'#34d399', desc:'Update dealer details in bulk — zone, category, credit limit etc.' },
-  { id:'outstanding', label:'Outstanding Payments', icon:DollarSign,  color:'#f87171', desc:'Upload month-wise outstanding amounts (admin only).' },
+  { id:'bulk-info',   label:'Bulk Update Info',     icon:Edit3,       color:'var(--grn)', desc:'Update dealer details in bulk — zone, category, credit limit etc.' },
+  { id:'outstanding', label:'Outstanding Payments', icon:DollarSign,  color:'var(--red)', desc:'Upload month-wise outstanding amounts (admin only).' },
 ];
 
 export default function UploadMonth({ users, currentUser, onSuccess }) {
@@ -858,7 +858,7 @@ export default function UploadMonth({ users, currentUser, onSuccess }) {
 
         {mode==='outstanding' && (
           <div style={{padding:'8px 12px',background:'rgba(248,113,113,0.08)',border:'1px solid rgba(248,113,113,0.2)',borderRadius:8,marginBottom:14,fontSize:11}}>
-            <strong style={{color:'#f87171'}}>Format:</strong>
+            <strong style={{color:'var(--red)'}}>Format:</strong>
             <span style={{color:'var(--t3)',fontFamily:'monospace',marginLeft:6}}>Dealer Name | Jul-25 | Aug-25 | Sep-25 | ...</span>
             <span style={{color:'var(--t3)',marginLeft:8}}>— each column is one month, value is ₹ outstanding</span>
           </div>
@@ -909,7 +909,7 @@ export default function UploadMonth({ users, currentUser, onSuccess }) {
           <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
             <CheckCircle size={18} color="#34d399"/>
             <div>
-              <div style={{fontSize:14,fontWeight:700,color:'#34d399'}}>
+              <div style={{fontSize:14,fontWeight:700,color:'var(--grn)'}}>
                 Saved to MongoDB ✓ {result.mode==='monthly'?`— ${result.month}`:''}
               </div>
               <div style={{fontSize:11,color:'var(--t3)',marginTop:2}}>
@@ -933,7 +933,7 @@ export default function UploadMonth({ users, currentUser, onSuccess }) {
             ))}
           </div>
           {result.errors?.length>0 && (
-            <div style={{fontSize:11,color:'#f87171'}}>
+            <div style={{fontSize:11,color:'var(--red)'}}>
               <div style={{fontWeight:600,marginBottom:4}}>Errors:</div>
               {result.errors.slice(0,5).map((e,i)=><div key={i}>· {e}</div>)}
               {result.errors.length>5&&<div>...and {result.errors.length-5} more</div>}
@@ -945,7 +945,7 @@ export default function UploadMonth({ users, currentUser, onSuccess }) {
       {error && (
         <div className="card" style={{background:'rgba(248,113,113,0.06)',border:'1px solid rgba(248,113,113,0.2)',display:'flex',alignItems:'center',gap:10}}>
           <AlertCircle size={16} color="#f87171" style={{flexShrink:0}}/>
-          <span style={{fontSize:13,color:'#f87171'}}>{error}</span>
+          <span style={{fontSize:13,color:'var(--red)'}}>{error}</span>
         </div>
       )}
 
@@ -976,7 +976,7 @@ export default function UploadMonth({ users, currentUser, onSuccess }) {
           <div style={{fontSize:11,color:'var(--t3)',fontFamily:'monospace',lineHeight:1.8}}>
             Dealer Name | Jul-25 | Aug-25 | Sep-25 | ...<br/>
             AADINATH PLYWOOD | 36000 | 100625 | 169650<br/>
-            <span style={{color:'#34d399'}}>0 = cleared / fully paid</span>
+            <span style={{color:'var(--grn)'}}>0 = cleared / fully paid</span>
           </div>
         )}
       </div>

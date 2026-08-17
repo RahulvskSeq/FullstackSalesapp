@@ -586,7 +586,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { X, ChevronDown } from 'lucide-react';
 import { MO as MO_CONST, CURRENT_MONTH_IDX } from '../constants';
 import { useMonth } from '../context';
-import { pclr } from '../utils';
+import { pclr, readableOn } from '../utils';
 
 export const StatusBadge = ({status}) => {
   const t=(status||'').toUpperCase();
@@ -595,8 +595,10 @@ export const StatusBadge = ({status}) => {
   else if(t==='KEY ACCOUNT'){bg='rgba(167,139,250,0.12)';cl='#a78bfa';}
   else if(t.includes('INACTIVE')){bg='rgba(251,191,36,0.12)';cl='#fbbf24';}
   else if(t==='DEAD'){bg='rgba(248,113,113,0.12)';cl='#f87171';}
-  else{bg='rgba(255,255,255,.05)';cl='var(--t3)';}
-  return(<span style={{background:bg,color:cl,padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:600,display:'inline-flex',alignItems:'center',gap:4}}><span style={{width:6,height:6,borderRadius:'50%',background:cl}}/>{status||'—'}</span>);
+  else{bg='rgba(255,255,255,.05)';cl='#8a93a8';}
+  // class hook lets a light palette fix the text contrast without touching
+  // this component's (theme-neutral) tinted colours.
+  return(<span className="status-badge" style={{'--c':cl,'--fg':readableOn(cl),background:bg,color:cl,padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:600,display:'inline-flex',alignItems:'center',gap:4}}><span className="sb-dot" style={{width:6,height:6,borderRadius:'50%',background:cl}}/>{status||'—'}</span>);
 };
 
 export const Avatar = ({user,size=28}) => {
@@ -808,18 +810,21 @@ export const MonthSelectorBar = ({selectedMonthIdx,setSelectedMonthIdx,onRefresh
   const curIdx = currentMonthIdx ?? CURRENT_MONTH_IDX;
   const selectedMonth = MO[selectedMonthIdx] || '';
   return (
-  <div style={{display:'flex',alignItems:'center',gap:6,padding:'8px 14px',background:'var(--bg1)',borderBottom:'1px solid var(--b1)',overflowX:'auto',flexShrink:0}}>
-    <span style={{fontSize:10,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'.12em',whiteSpace:'nowrap',marginRight:4}}>Viewing:</span>
+  // Colours route through --chip*/--monthBar*/--ok* variables (originals as
+  // fallbacks) so a palette can restyle this strip. Inline styles outrank CSS,
+  // so a theme cannot override them any other way.
+  <div style={{display:'flex',alignItems:'center',gap:6,padding:'8px 14px',background:'var(--monthBarBg, var(--bg1))',borderBottom:'1px solid var(--monthBarBorder, var(--b1))',overflowX:'auto',flexShrink:0}}>
+    <span style={{fontSize:10,color:'var(--monthBarLabel, var(--t3))',textTransform:'uppercase',letterSpacing:'.12em',whiteSpace:'nowrap',marginRight:4}}>Viewing:</span>
     {MO.map((m,i)=>(
-      <button key={m} onClick={()=>setSelectedMonthIdx(i)} style={{padding:'4px 12px',borderRadius:6,border:selectedMonthIdx===i?'1px solid var(--acc)':'1px solid var(--b2)',background:selectedMonthIdx===i?'var(--accL)':'var(--bg2)',color:selectedMonthIdx===i?'var(--acc)':i===curIdx?'var(--t2)':'var(--t3)',fontWeight:selectedMonthIdx===i?700:i===curIdx?600:400,fontSize:11,cursor:'pointer',whiteSpace:'nowrap',transition:'all .15s',flexShrink:0,position:'relative'}}>
-        {m}{i===curIdx&&<span style={{position:'absolute',top:-3,right:-3,width:6,height:6,background:'#34d399',borderRadius:'50%'}}/>}
+      <button key={m} onClick={()=>setSelectedMonthIdx(i)} style={{padding:'4px 12px',borderRadius:6,border:selectedMonthIdx===i?'1px solid var(--chipActiveBorder, var(--acc))':'1px solid var(--chipBorder, var(--b2))',background:selectedMonthIdx===i?'var(--chipActiveBg, var(--accL))':'var(--chipBg, var(--bg2))',color:selectedMonthIdx===i?'var(--chipActiveText, var(--acc))':i===curIdx?'var(--chipCurrentText, var(--t2))':'var(--chipText, var(--t3))',fontWeight:selectedMonthIdx===i?700:i===curIdx?600:400,fontSize:11,cursor:'pointer',whiteSpace:'nowrap',transition:'all .15s',flexShrink:0,position:'relative'}}>
+        {m}{i===curIdx&&<span style={{position:'absolute',top:-3,right:-3,width:6,height:6,background:'var(--okDot, #34d399)',borderRadius:'50%'}}/>}
       </button>
     ))}
-    {selectedMonthIdx!==curIdx&&(<button onClick={()=>setSelectedMonthIdx(curIdx)} style={{padding:'4px 10px',borderRadius:6,border:'1px solid #34d39944',background:'rgba(52,211,153,0.1)',color:'#34d399',fontSize:11,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0}}>→ Current</button>)}
+    {selectedMonthIdx!==curIdx&&(<button onClick={()=>setSelectedMonthIdx(curIdx)} style={{padding:'4px 10px',borderRadius:6,border:'1px solid var(--okBorder, #34d39944)',background:'var(--okBg, rgba(52,211,153,0.1))',color:'var(--okText, #34d399)',fontSize:11,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0}}>→ Current</button>)}
     {onRefreshMonth && (
       <button onClick={()=>onRefreshMonth(selectedMonth)}
         title={'Refresh ' + selectedMonth + ' data from MongoDB (does NOT touch Google Sheets)'}
-        style={{padding:'4px 10px',borderRadius:6,border:'1px solid #15803d',background:'rgba(34,197,94,0.10)',color:'#86efac',fontSize:11,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,display:'inline-flex',alignItems:'center',gap:4}}>
+        style={{padding:'4px 10px',borderRadius:6,border:'1px solid var(--okBorder, #15803d)',background:'var(--okBg, rgba(34,197,94,0.10))',color:'var(--okText, #86efac)',fontSize:11,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,display:'inline-flex',alignItems:'center',gap:4}}>
         ↻ Refresh {selectedMonth}
       </button>
     )}

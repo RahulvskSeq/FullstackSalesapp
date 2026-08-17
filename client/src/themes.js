@@ -19,7 +19,52 @@ export const THEMES = [
     vars: null, // null = clear all overrides
   },
 
-  // 2. Midnight Blue
+  // 2. Material — light dashboard look (Material Dashboard style):
+  //    grey page, white elevated cards, navy text, green/pink accents.
+  //    Also flips --shadow (cards get soft elevation instead of flat borders)
+  //    and --pickerFilter (native date glyph must NOT be inverted on white).
+  {
+    id: 'material',
+    name: 'Material (Light)',
+    swatch: ['#eef1f5', '#2a3a57', '#2e7d32'],
+    vars: {
+      // Grey page, tinted surfaces. Cards sit slightly above the page but are
+      // not pure white — an all-white sheet washes out at this radius, so the
+      // surfaces carry a light grey tint and the page sits darker beneath.
+      '--bg':  '#e4e8ee',  '--bg1': '#f7f8fa',  '--bg2': '#e9edf3',  '--bg3': '#dde3ea',
+      '--b1':  '#d6dce5',  '--b2':  '#c8d0db',
+      '--t1':  '#252f40',  '--t2':  '#4a5568',  '--t3':  '#7b809a',
+      '--acc': '#344767',  '--accL': 'rgba(52,71,103,0.08)',
+      // Green reads poorly as text on white, so the light palette uses a deep
+      // teal for "positive" values instead — still reads as money/on-track,
+      // but with far more contrast against a white surface than any green.
+      '--grn': '#0f766e',  '--yel': '#b45309', '--red': '#c62828', '--pur': '#6d28d9',
+      // Deeper shadow — with small radii the elevation has to do more of the
+      // work of separating a card from the page.
+      '--shadow':      '0 3px 10px rgba(20,30,60,.16), 0 1px 3px rgba(20,30,60,.12)',
+      '--shadowHover': '0 10px 26px rgba(20,30,60,.26)',
+      '--pickerFilter':'none',
+      // Month strip — its own tone so it reads as a distinct band, with solid
+      // white chips and a filled navy chip for the selected month.
+      '--monthBarBg':     '#d7dee9',
+      '--monthBarBorder': '#bfc9d8',
+      '--monthBarLabel':  '#4a5568',
+      '--chipBg':          '#ffffff',
+      '--chipBorder':      '#aeb9ca',
+      '--chipText':        '#4a5568',
+      '--chipCurrentText': '#252f40',
+      '--chipActiveBg':     '#344767',
+      '--chipActiveText':   '#ffffff',
+      '--chipActiveBorder': '#344767',
+      // Success accents readable on light surfaces.
+      '--okText':   '#1b6e2f',
+      '--okBg':     'rgba(46,125,50,0.12)',
+      '--okBorder': '#8fc79a',
+      '--okDot':    '#2e7d32',
+    },
+  },
+
+  // 3. Midnight Blue
   {
     id: 'midnight',
     name: 'Midnight Blue',
@@ -142,6 +187,8 @@ export const THEMES = [
       '--t1':  '#002b36',  '--t2':  '#073642',  '--t3':  '#586e75',
       '--acc': '#268bd2',  '--accL': 'rgba(38,139,210,0.15)',
       '--grn': '#859900',  '--yel': '#b58900', '--red': '#dc322f', '--pur': '#6c71c4',
+      // Light surface — don't invert the native date-picker glyph.
+      '--pickerFilter':'none',
     },
   },
 
@@ -425,14 +472,18 @@ export function applyTheme(themeId) {
   if(typeof document === 'undefined') return;
   const root = document.documentElement;
   const theme = THEMES.find(t => t.id === themeId);
-  if(!theme || !theme.vars){
-    // Clear any previously-set inline overrides so :root / [data-theme] win.
-    THEMES.forEach(t => {
-      if(!t.vars) return;
-      Object.keys(t.vars).forEach(k => root.style.removeProperty(k));
-    });
-    return;
-  }
+  // ALWAYS clear every override first. Palettes don't all declare the same
+  // keys — e.g. only the light ones set --shadow / --pickerFilter — so
+  // without this, switching from a light palette to a dark one would leave
+  // the light palette's shadows and un-inverted date glyph behind.
+  THEMES.forEach(t => {
+    if(!t.vars) return;
+    Object.keys(t.vars).forEach(k => root.style.removeProperty(k));
+  });
+  // Expose the palette id so Styles.jsx can add shape rules a colour variable
+  // can't express — borderless cards, pill-shaped active nav, etc.
+  root.setAttribute('data-palette', themeId || 'default');
+  if(!theme || !theme.vars) return;   // 'default' → let :root / [data-theme] win
   Object.entries(theme.vars).forEach(([k, v]) => root.style.setProperty(k, v));
 }
 

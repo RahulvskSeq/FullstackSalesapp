@@ -5897,10 +5897,10 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
             <div style={{fontSize:16,fontWeight:700}}>{dealer.name}</div>
             {collectedTotal > 0 ? (
               <div style={{marginTop:2,display:'flex',alignItems:'baseline',gap:8,flexWrap:'wrap'}}>
-                <span style={{fontSize:13,fontWeight:700,color:'#fbbf24'}}>
+                <span style={{fontSize:13,fontWeight:700,color:'var(--yel)'}}>
                   {prefillMonth ? `${prefillMonth} Outstanding: ` : 'Outstanding: '}{fmt(baseAmount)}
                 </span>
-                <span style={{fontSize:11,color:'#34d399'}}>
+                <span style={{fontSize:11,color:'var(--grn)'}}>
                   To be collected {fmt(collectedTotal)}
                 </span>
                 <span style={{fontSize:11,color:'var(--t3)'}}>
@@ -5908,11 +5908,11 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
                 </span>
               </div>
             ) : prefillMonth ? (
-              <div style={{fontSize:12,color:'#fbbf24',marginTop:2,fontWeight:600}}>
+              <div style={{fontSize:12,color:'var(--yel)',marginTop:2,fontWeight:600}}>
                 {prefillMonth} Outstanding: {fmt(baseAmount)}
               </div>
             ) : (
-              <div style={{fontSize:12,color:'#f87171',marginTop:2}}>
+              <div style={{fontSize:12,color:'var(--red)',marginTop:2}}>
                 Outstanding: {fmt(dealer.latestOutstanding)}
               </div>
             )}
@@ -5993,14 +5993,14 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
                   Save
                 </button>
               </div>
-              {collectErr && <div style={{fontSize:11,color:'#f87171',marginTop:8}}>{collectErr}</div>}
+              {collectErr && <div style={{fontSize:11,color:'var(--red)',marginTop:8}}>{collectErr}</div>}
             </div>
           )}
 
           {/* Collection history + running total */}
           {collections.length>0 && (
             <div style={{marginBottom:10}}>
-              <div style={{fontSize:11,fontWeight:600,color:'#34d399',marginBottom:6}}>
+              <div style={{fontSize:11,fontWeight:600,color:'var(--grn)',marginBottom:6}}>
                 💰 To be collected {fmt(collectedTotal)} · Remaining {remaining>0?fmt(remaining):'₹0'}
               </div>
               <div style={{display:'flex',flexDirection:'column',gap:6}}>
@@ -6008,7 +6008,7 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
                   <div key={c._id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',
                     background:'var(--bg)',borderRadius:8,padding:'6px 10px',fontSize:12}}>
                     <div style={{display:'flex',alignItems:'center',gap:8}}>
-                      <span style={{color:'#34d399',fontWeight:700}}>{fmt(Number(c.amount)||0)}</span>
+                      <span style={{color:'var(--grn)',fontWeight:700}}>{fmt(Number(c.amount)||0)}</span>
                       <span style={{color:'var(--t3)'}}>{c.followupDate}</span>
                     </div>
                     <button onClick={()=>handleDeleteCollection(c._id)} title="Delete collection"
@@ -6040,7 +6040,7 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
           {REASONS_NEED_REMARKS.has(reason) && (
             <div style={{marginBottom:8}}>
               <label style={{fontSize:10,color:'var(--t3)',display:'block',marginBottom:4,textTransform:'uppercase'}}>
-                Remarks <span style={{color:'#f87171'}}>*</span>
+                Remarks <span style={{color:'var(--red)'}}>*</span>
               </label>
               <VoiceTextarea value={comment} onChange={setComment}
                 placeholder="Update the remarks… (tap 🎤 to speak)"
@@ -6048,7 +6048,7 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
             </div>
           )}
 
-          {err&&<div style={{fontSize:11,color:'#f87171',marginBottom:8}}>{err}</div>}
+          {err&&<div style={{fontSize:11,color:'var(--red)',marginBottom:8}}>{err}</div>}
 
           {/* Action buttons */}
           <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
@@ -6058,7 +6058,7 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
               Save Follow-up
             </button>
             <button onClick={()=>handleAdd('no-pickup')} disabled={saving} className="btn"
-              style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:'#f87171',border:'1px solid rgba(248,113,113,0.3)'}}>
+              style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:'var(--red)',border:'1px solid rgba(248,113,113,0.3)'}}>
               <PhoneMissed size={11}/> Did Not Pick Call
             </button>
           </div>
@@ -6141,11 +6141,11 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
                         f.months.map(m => (
                           <span key={m} style={{
                             fontSize:10, padding:'1px 6px', borderRadius:4, fontWeight:700,
-                            background:'rgba(251,191,36,0.14)', color:'#fbbf24',
+                            background:'rgba(251,191,36,0.14)', color:'var(--yel)',
                           }}>{m}</span>
                         ))
                       )}
-                      {f.amount>0&&<span style={{fontSize:10,color:'#fbbf24',fontWeight:600}}>₹{Number(f.amount).toLocaleString('en-IN')}</span>}
+                      {f.amount>0&&<span style={{fontSize:10,color:'var(--yel)',fontWeight:600}}>₹{Number(f.amount).toLocaleString('en-IN')}</span>}
                     </div>
                     {f.comment&&(
                       <div style={{fontSize:11,color:'var(--t3)',lineHeight:1.5}}>
@@ -6163,7 +6163,7 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
                         <img src={f.paymentProof} alt="payment proof"
                           onClick={()=>setZoomImg(f.paymentProof)}
                           style={{width:46, height:46, objectFit:'cover', borderRadius:6, border:'1px solid #15803d', cursor:'zoom-in'}}/>
-                        <span style={{fontSize:9, color:'#34d399', fontWeight:600}}>✓ Payment proof attached</span>
+                        <span style={{fontSize:9, color:'var(--grn)', fontWeight:600}}>✓ Payment proof attached</span>
                       </div>
                     )}
                     <div style={{fontSize:9,color:'var(--t3)',marginTop:4}}>
@@ -6324,7 +6324,7 @@ function CommitmentsPanel({ users, canCredit, onOpenDealer, dealers, refreshKey,
     setBusyId(null);
   };
 
-  if(err)   return <div style={{padding:20,color:'#f87171'}}>{err}</div>;
+  if(err)   return <div style={{padding:20,color:'var(--red)'}}>{err}</div>;
   if(!rows) return <div style={{padding:20,color:'var(--t3)'}}>Loading commitments…</div>;
 
   return(
@@ -6384,7 +6384,7 @@ function CommitmentsPanel({ users, canCredit, onOpenDealer, dealers, refreshKey,
                         {r.dealerName}
                       </div>
                       <div style={{display:'flex',alignItems:'center',gap:6,marginTop:3,flexWrap:'wrap'}}>
-                        {partial&&<span style={{fontSize:9,background:'rgba(251,191,36,0.15)',color:'#fbbf24',padding:'1px 5px',borderRadius:3}}>PART PAID</span>}
+                        {partial&&<span style={{fontSize:9,background:'rgba(251,191,36,0.15)',color:'var(--yel)',padding:'1px 5px',borderRadius:3}}>PART PAID</span>}
                         {/* Expand caret — same control as the main table, so
                             every comment for this dealer is one click away. */}
                         {dFu.length>0&&(
@@ -6410,17 +6410,17 @@ function CommitmentsPanel({ users, canCredit, onOpenDealer, dealers, refreshKey,
                     <td style={{whiteSpace:'nowrap'}}>
                       <div style={{fontSize:11}}>{r.followupDate}</div>
                       {r.state==='BROKEN'
-                        ? <div style={{fontSize:10,color:'#f87171',fontWeight:700}}>{late} day{late===1?'':'s'} late</div>
-                        : <div style={{fontSize:10,color:'#34d399'}}>due in {-daysLate(r.followupDate)}d</div>}
+                        ? <div style={{fontSize:10,color:'var(--red)',fontWeight:700}}>{late} day{late===1?'':'s'} late</div>
+                        : <div style={{fontSize:10,color:'var(--grn)'}}>due in {-daysLate(r.followupDate)}d</div>}
                     </td>
                     <td style={{textAlign:'right',color:r.received>0?'#34d399':'var(--t3)'}}>{r.received>0?fmt(r.received):'—'}</td>
-                    <td style={{textAlign:'right',fontWeight:700,color:'#f87171'}}>{fmt(r.shortfall)}</td>
+                    <td style={{textAlign:'right',fontWeight:700,color:'var(--red)'}}>{fmt(r.shortfall)}</td>
                     <td style={{maxWidth:240,fontSize:11,color:'var(--t2)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}
                       title={r.comment||''}>{r.comment||'—'}</td>
                     {canCredit&&(
                       <td style={{textAlign:'center'}}>
                         <button className="btn" disabled={busyId===r._id} onClick={()=>credit(r)}
-                          style={{fontSize:11,fontWeight:700,color:'#34d399',borderColor:'rgba(52,211,153,0.4)'}}>
+                          style={{fontSize:11,fontWeight:700,color:'var(--grn)',borderColor:'rgba(52,211,153,0.4)'}}>
                           {busyId===r._id?'…':'Record payment'}
                         </button>
                       </td>
@@ -6484,7 +6484,7 @@ function SalesmanPerformancePanel({ users }) {
     catch(e){ setErr(e.message||'Report failed'); }
   })(); },[]);
 
-  if(err)  return <div style={{padding:20,color:'#f87171'}}>{err}</div>;
+  if(err)  return <div style={{padding:20,color:'var(--red)'}}>{err}</div>;
   if(!rep) return <div style={{padding:20,color:'var(--t3)'}}>Loading report…</div>;
 
   const rows=[...(rep.rows||[])].sort((a,b)=>b.current-a.current);
@@ -6551,7 +6551,7 @@ function SalesmanPerformancePanel({ users }) {
                     <td style={{textAlign:'right',color:'var(--t3)'}}>{fmt(r.previous)}</td>
                     <td style={{textAlign:'right',fontWeight:700}}>{fmt(r.current)}</td>
                     <td style={{textAlign:'right'}}><Delta cur={r.current} prev={r.previous}/></td>
-                    <td style={{textAlign:'right',color:'#34d399',fontWeight:600}}>{fmt(r.collection)}</td>
+                    <td style={{textAlign:'right',color:'var(--grn)',fontWeight:600}}>{fmt(r.collection)}</td>
                     <td style={{textAlign:'right',color:eff===null?'var(--t3)':eff>=20?'#34d399':eff>=8?'#fbbf24':'#f87171',fontWeight:700}}>{eff===null?'—':eff.toFixed(1)+'%'}</td>
                     <td style={{textAlign:'right',color:r.followupsToday>0?'var(--acc)':'var(--t3)'}}>{r.followupsToday||'—'}</td>
                     <td style={{textAlign:'right',color:r.overdue>0?'#fbbf24':'var(--t3)',fontWeight:r.overdue>0?700:400}}>{r.overdue||'—'}</td>
@@ -6567,7 +6567,7 @@ function SalesmanPerformancePanel({ users }) {
               <td style={{textAlign:'right',fontWeight:700}}>{fmt(T.previous)}</td>
               <td style={{textAlign:'right',fontWeight:700}}>{fmt(T.current)}</td>
               <td style={{textAlign:'right'}}><Delta cur={T.current} prev={T.previous}/></td>
-              <td style={{textAlign:'right',fontWeight:700,color:'#34d399'}}>{fmt(T.collection)}</td>
+              <td style={{textAlign:'right',fontWeight:700,color:'var(--grn)'}}>{fmt(T.collection)}</td>
               <td style={{textAlign:'right',fontWeight:700}}>{T.previous>0?(T.collection/T.previous*100).toFixed(1)+'%':'—'}</td>
               <td style={{textAlign:'right',fontWeight:700}}>{T.today}</td>
               <td style={{textAlign:'right',fontWeight:700,color:T.overdue>0?'#fbbf24':'inherit'}}>{T.overdue}</td>
@@ -6883,7 +6883,7 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
           {overdueFu.length>0&&(
             <div style={{display:'flex',alignItems:'center',gap:5,background:'rgba(248,113,113,0.12)',border:'1px solid rgba(248,113,113,0.3)',borderRadius:6,padding:'3px 10px'}}>
               <Bell size={12} color="#f87171"/>
-              <span style={{fontSize:11,color:'#f87171',fontWeight:600}}>{overdueFu.length} overdue</span>
+              <span style={{fontSize:11,color:'var(--red)',fontWeight:600}}>{overdueFu.length} overdue</span>
             </div>
           )}
         </div>
@@ -6976,8 +6976,8 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
           <RefreshCw size={13} className={loading?'spin':''}/>{loading?'Loading...':'Refresh'}
         </button>
         {filteredOutstanding.length>0&&<span style={{fontSize:12,color:'var(--t3)'}}>{filteredOutstanding.length} dealers</span>}
-        {uploadMsg&&<span style={{fontSize:11,color:'#34d399',fontWeight:600}}>{uploadMsg}</span>}
-        {error&&<span style={{fontSize:11,color:'#f87171'}}>{error}</span>}
+        {uploadMsg&&<span style={{fontSize:11,color:'var(--grn)',fontWeight:600}}>{uploadMsg}</span>}
+        {error&&<span style={{fontSize:11,color:'var(--red)'}}>{error}</span>}
       </div>
 
       {/* KPI */}
@@ -7092,7 +7092,7 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
             )}
             {tab!=='commitments'&&brokenCount>0&&(
               <button onClick={()=>setTab('commitments')} className="btn"
-                style={{fontSize:10,padding:'3px 9px',color:'#f87171',borderColor:'rgba(248,113,113,0.4)'}}>
+                style={{fontSize:10,padding:'3px 9px',color:'var(--red)',borderColor:'rgba(248,113,113,0.4)'}}>
                 {brokenCount} promised but not received →
               </button>
             )}
@@ -7107,7 +7107,7 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
                       {m}
                       {isAdmin && (
                         <button onClick={()=>deleteMonthColumn(m)} title={'Delete '+m+' column'}
-                          style={{background:'none', border:'none', color:'#f87171', cursor:'pointer', padding:0, display:'inline-flex'}}>
+                          style={{background:'none', border:'none', color:'var(--red)', cursor:'pointer', padding:0, display:'inline-flex'}}>
                           <Trash2 size={11}/>
                         </button>
                       )}
@@ -7170,7 +7170,7 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
                               the latest-comment chip (right of the date). */}
                           {cleared && (
                             <div style={{display:'flex',gap:4,marginTop:2,alignItems:'center',flexWrap:'wrap'}}>
-                              <span style={{fontSize:9,background:'rgba(52,211,153,0.15)',color:'#34d399',padding:'1px 5px',borderRadius:3}}>CLEARED</span>
+                              <span style={{fontSize:9,background:'rgba(52,211,153,0.15)',color:'var(--grn)',padding:'1px 5px',borderRadius:3}}>CLEARED</span>
                             </div>
                           )}
                           {/* Latest comment / no-pickup — clearly visible */}
@@ -7199,9 +7199,9 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
                                   flex:'0 1 auto',
                                 }}>
                                   {isNP
-                                    ? <><PhoneMissed size={10} color="#f87171" style={{flexShrink:0}}/><span style={{fontSize:10,color:'#f87171',fontWeight:600,whiteSpace:'nowrap'}}>Did not pick call</span></>
+                                    ? <><PhoneMissed size={10} color="#f87171" style={{flexShrink:0}}/><span style={{fontSize:10,color:'var(--red)',fontWeight:600,whiteSpace:'nowrap'}}>Did not pick call</span></>
                                     : isFollowup
-                                    ? <><Calendar size={10} color="#34d399" style={{flexShrink:0}}/><span style={{fontSize:10,color:'#34d399',fontWeight:600,whiteSpace:'nowrap'}}>Follow-up: {latest.followupDate}</span></>
+                                    ? <><Calendar size={10} color="#34d399" style={{flexShrink:0}}/><span style={{fontSize:10,color:'var(--grn)',fontWeight:600,whiteSpace:'nowrap'}}>Follow-up: {latest.followupDate}</span></>
                                     : <><MessageSquare size={10} color="var(--acc)" style={{flexShrink:0}}/><span style={{fontSize:10,color:'var(--acc)',fontWeight:600,whiteSpace:'nowrap'}}>Note</span></>}
                                   <span style={{fontSize:9,color:'var(--t3)',whiteSpace:'nowrap',flexShrink:0}}>
                                     {latest.createdAt ? new Date(latest.createdAt).toLocaleDateString('en-IN',{day:'2-digit',month:'short'}) : ''}
@@ -7337,7 +7337,7 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
                                       <div style={{fontSize:9,color:'var(--t3)',marginTop:1,display:'flex',gap:8,flexWrap:'wrap'}}>
                                         {f.reason && f.reason!=='Others' && <span>{f.reason}</span>}
                                         {f.followupDate && <span>📅 {f.followupDate}</span>}
-                                        {isCol && f.amount>0 && <span style={{color:'#34d399'}}>💰 {fmt(f.amount)}</span>}
+                                        {isCol && f.amount>0 && <span style={{color:'var(--grn)'}}>💰 {fmt(f.amount)}</span>}
                                         {Array.isArray(f.months) && f.months.length>0 && <span>[{f.months.join(', ')}]</span>}
                                         {created && <span>· {created}</span>}
                                         {f.salesman && <span>· {f.salesman}</span>}
@@ -7364,9 +7364,9 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
                 <td colSpan={2} style={{fontWeight:700}}>TOTAL</td>
                 {allMonthCols.map(m=>{
                   const t=filtered.reduce((s,d)=>s+(d.monthlyOutstanding[m]||0),0);
-                  return<td key={m} style={{textAlign:'right',fontWeight:700,color:'#f87171'}}>{t>0?fmt(t):'—'}</td>;
+                  return<td key={m} style={{textAlign:'right',fontWeight:700,color:'var(--red)'}}>{t>0?fmt(t):'—'}</td>;
                 })}
-                <td style={{textAlign:'right',fontWeight:700,color:'#f87171'}}>{fmt(filtered.reduce((s,d)=>s+d.latestOutstanding,0))}</td>
+                <td style={{textAlign:'right',fontWeight:700,color:'var(--red)'}}>{fmt(filtered.reduce((s,d)=>s+d.latestOutstanding,0))}</td>
                 <td/><td/>
               </tr></tfoot>
             </table>
@@ -7398,7 +7398,7 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
             </div>
             <div style={{display:'flex',gap:14,flexWrap:'wrap',marginBottom:12,fontSize:13}}>
               <span>Rows: <b>{previewData.totalRecords}</b></span>
-              <span style={{color:'#34d399'}}>Matched: <b>{previewData.matched}</b></span>
+              <span style={{color:'var(--grn)'}}>Matched: <b>{previewData.matched}</b></span>
               <span style={{color:previewData.unmappedCount>0?'#fbbf24':'var(--t3)'}}>Unmapped: <b>{previewData.unmappedCount}</b></span>
               <span>Changed values: <b>{previewData.changedRows}</b></span>
             </div>
@@ -7423,7 +7423,7 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
             </table>
             {previewData.unmappedCount>0&&(
               <div style={{background:'rgba(251,191,36,0.08)',border:'1px solid rgba(251,191,36,0.3)',borderRadius:8,padding:'10px 12px',marginBottom:12}}>
-                <div style={{fontSize:12,fontWeight:700,color:'#fbbf24',marginBottom:6}}>
+                <div style={{fontSize:12,fontWeight:700,color:'var(--yel)',marginBottom:6}}>
                   ⚠ {previewData.unmappedCount} part{previewData.unmappedCount===1?'y':'ies'} not found in the Dealer master — these will be SKIPPED (never guessed). You can map them from Upload History after confirming.
                 </div>
                 <div style={{fontSize:12,color:'var(--t2)',maxHeight:90,overflowY:'auto'}}>{(previewData.unmapped||[]).join(' · ')}</div>
@@ -7484,11 +7484,11 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
                       <td style={{maxWidth:170,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{b.fileName||'—'}</td>
                       <td style={{fontSize:11,color:'var(--t3)'}}>{(b.months||[]).join(', ')}</td>
                       <td style={{textAlign:'right',fontWeight:600}}>{fmt(b.totalAmount||0)}</td>
-                      <td style={{textAlign:'right',color:'#34d399'}}>{b.matchedRecords}</td>
+                      <td style={{textAlign:'right',color:'var(--grn)'}}>{b.matchedRecords}</td>
                       <td style={{textAlign:'right',color:b.unmappedRecords>0?'#fbbf24':'var(--t3)'}}>{b.unmappedRecords}</td>
                       <td>{b.status==='REVERTED'
-                        ?<span style={{fontSize:10,fontWeight:700,color:'#f87171'}}>REVERTED</span>
-                        :<span style={{fontSize:10,fontWeight:700,color:'#34d399'}}>ACTIVE</span>}</td>
+                        ?<span style={{fontSize:10,fontWeight:700,color:'var(--red)'}}>REVERTED</span>
+                        :<span style={{fontSize:10,fontWeight:700,color:'var(--grn)'}}>ACTIVE</span>}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -7502,7 +7502,7 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
                     <div style={{fontWeight:700}}>{batchDetail.fileName||'Upload'} · {new Date(batchDetail.createdAt).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'})}</div>
                     <div style={{fontSize:12,color:'var(--t3)'}}>
                       By {batchDetail.uploadedByName||batchDetail.uploadedBy} · {batchDetail.totalRecords} rows · {batchDetail.matchedRecords} matched · {batchDetail.unmappedRecords} unmapped
-                      {batchDetail.status==='REVERTED'&&<span style={{color:'#f87171',fontWeight:700}}> · REVERTED by {batchDetail.revertedBy} ({batchDetail.revertReason||'no reason given'})</span>}
+                      {batchDetail.status==='REVERTED'&&<span style={{color:'var(--red)',fontWeight:700}}> · REVERTED by {batchDetail.revertedBy} ({batchDetail.revertReason||'no reason given'})</span>}
                     </div>
                   </div>
                   <div className="spacer"/>
@@ -7520,7 +7520,7 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
                 </div>
                 {(batchDetail.unmapped||[]).length>0&&(
                   <div style={{background:'rgba(251,191,36,0.08)',border:'1px solid rgba(251,191,36,0.3)',borderRadius:8,padding:'10px 12px',marginBottom:10}}>
-                    <div style={{fontSize:12,fontWeight:700,color:'#fbbf24',marginBottom:8}}>Unmapped parties — pick the matching dealer to apply their amounts</div>
+                    <div style={{fontSize:12,fontWeight:700,color:'var(--yel)',marginBottom:8}}>Unmapped parties — pick the matching dealer to apply their amounts</div>
                     {batchDetail.unmapped.map(u=>(
                       <div key={u.party} style={{display:'flex',gap:8,alignItems:'center',marginBottom:6,flexWrap:'wrap'}}>
                         <div style={{fontSize:12,fontWeight:600,minWidth:160}}>{u.party}</div>

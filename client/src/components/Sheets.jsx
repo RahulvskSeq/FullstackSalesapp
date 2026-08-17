@@ -354,7 +354,7 @@ export default function Sheets({ currentUser, users = {} }) {
         </div>
 
         {err && (
-          <div style={{ padding:'8px 14px', background:'rgba(248,113,113,0.12)', color:'#f87171', fontSize:12, borderBottom:'1px solid rgba(248,113,113,0.3)', flexShrink:0 }}>
+          <div style={{ padding:'8px 14px', background:'rgba(248,113,113,0.12)', color:'var(--red)', fontSize:12, borderBottom:'1px solid rgba(248,113,113,0.3)', flexShrink:0 }}>
             {err} <span onClick={()=>setErr('')} style={{ cursor:'pointer', marginLeft:8, textDecoration:'underline' }}>dismiss</span>
           </div>
         )}

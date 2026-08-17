@@ -384,9 +384,57 @@ router.get('/visits', protect, async (req, res) => {
     // allowDiskUse is a safety net: the $or branch (own visits + region
     // dealers) can make the planner union two indexes and sort afterwards,
     // which the createdAt index can't serve. Spilling to disk beats a 500.
-    const items = await Visit.find(q).sort({ createdAt:-1 }).limit(500).allowDiskUse(true).lean();
+    // ?limit= lets the Reports screen pull a whole date range (a month across
+    // a full team easily exceeds the 500 default) without truncating silently.
+    const limit = Math.min(Math.max(Number(req.query.limit) || 500, 1), 5000);
+    // ?light=1 drops the base64 photos. A list of 5000 visits WITH photos is
+    // tens of MB; list screens fetch light and pull one full visit on click.
+    const projection = (req.query.light === '1' || req.query.light === 'true')
+      ? '-checkInPhoto -checkOutPhoto -photo'
+      : null;
+    const items = await Visit.find(q, projection).sort({ createdAt:-1 }).limit(limit).allowDiskUse(true).lean();
     res.json(items);
   } catch(e){ console.error('[CRM/visits GET]', e.message); res.status(500).json({ error:e.message }); }
+});
+
+// POST /api/crm/visits/photos { ids:[...] } → { <id>: { in, out } }
+// Thumbnails for ONE page of a report table. Photos are base64 and large, so
+// the list endpoint is fetched with ?light=1 and only the visible page's
+// images are pulled through here (capped at 60 ids per call).
+router.post('/visits/photos', protect, async (req, res) => {
+  try {
+    const ids = (Array.isArray(req.body?.ids) ? req.body.ids : []).slice(0, 60)
+      .filter(id => mongoose.Types.ObjectId.isValid(id));
+    if(!ids.length) return res.json({});
+    const rows = await Visit.find({ _id:{ $in:ids } },
+      'checkInPhoto checkOutPhoto photo dealerName userId').lean();
+    const names = await permittedDealerNames(req);
+    const allowed = names === null ? null
+      : new Set(names.map(n => (n||'').toLowerCase().trim()));
+    const out = {};
+    for(const v of rows){
+      if(allowed && v.userId !== req.user.id && !allowed.has((v.dealerName||'').toLowerCase().trim())) continue;
+      out[v._id.toString()] = { in: v.checkInPhoto || v.photo || '', out: v.checkOutPhoto || '' };
+    }
+    res.json(out);
+  } catch(e){ console.error('[CRM/visit photos]', e.message); res.status(500).json({ error:e.message }); }
+});
+
+// GET /api/crm/visits/:id — one visit WITH its photos, for the detail preview.
+// List screens fetch ?light=1 (no photos); this pulls the full record on click.
+router.get('/visits/:id', protect, async (req, res) => {
+  try {
+    const v = await Visit.findById(req.params.id).lean();
+    if(!v) return res.status(404).json({ error:'Visit not found' });
+    // Visibility: staff see all; everyone else only their own visit or one to
+    // a dealer inside their permitted scope — same rule as the list route.
+    const names = await permittedDealerNames(req);
+    if(names !== null && v.userId !== req.user.id){
+      const ok = names.some(n => (n||'').toLowerCase().trim() === (v.dealerName||'').toLowerCase().trim());
+      if(!ok) return res.status(403).json({ error:'Not allowed' });
+    }
+    res.json(v);
+  } catch(e){ console.error('[CRM/visit GET]', e.message); res.status(500).json({ error:e.message }); }
 });
 
 // DELETE /api/crm/visits/:id — STAFF (admin/superadmin) ONLY. Salesmen

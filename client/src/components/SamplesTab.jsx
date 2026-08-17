@@ -190,7 +190,7 @@ export default function SamplesTab({ dealer, currentUser }) {
               </div>
 
               <div style={{textAlign:'right',flexShrink:0}}>
-                <div style={{fontSize:11,color:'#34d399',fontWeight:600}}>✓ Given</div>
+                <div style={{fontSize:11,color:'var(--grn)',fontWeight:600}}>✓ Given</div>
                 <div style={{fontSize:9,color:'var(--t3)'}}>{g.givenDate}</div>
                 {g.notes && <div style={{fontSize:9,color:'var(--t3)',maxWidth:80,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{g.notes}</div>}
               </div>
@@ -246,7 +246,7 @@ export default function SamplesTab({ dealer, currentUser }) {
 
             <span style={{
               fontSize:10, padding:'2px 8px', borderRadius:4, flexShrink:0,
-              background:'rgba(248,113,113,0.12)', color:'#f87171',
+              background:'rgba(248,113,113,0.12)', color:'var(--red)',
             }}>Pending</span>
           </div>
         ))}

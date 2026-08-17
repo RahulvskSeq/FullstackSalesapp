@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { X, ChevronRight, ChevronDown, Globe, Layers, Hash, Type, TrendingUp, Award, ArrowLeft, MapPin, Sun } from 'lucide-react';
 import { MO, DEALER_TYPES } from '../constants';
+import { StatusBadge } from './UI';   // per-status colours + palette-aware solid fill
 import { pct, spct, pclr, monthTarget } from '../utils';
 import { useMonth } from '../context';
 
@@ -208,13 +209,63 @@ const T = {
   t2:    '#a5a4b8',   // secondary text
   t3:    '#6c6b85',   // muted
   acc:   '#22c55e',   // green primary
-  accD:  '#15803d',   // green dark
+  accD:  'var(--grn)',   // green dark
   accBg: '#0e2a18',   // soft green tint
   hot:   '#ef4444',   // selected city / lost
   hot2:  '#fbbf24',   // star
   blue:  '#6366f1',
   cyan:  '#0ea5e9',
 };
+
+// ────────────────────────────────────────────────────────────────────────────
+// Follow the app theme.
+//
+// The values above are only DEFAULTS. syncTokens() re-reads the app's CSS
+// variables and mutates T in place, so the map matches whichever theme/palette
+// is active instead of always rendering dark.
+//
+// Why resolve to literal colours rather than just writing var(--bg1) into T:
+// Leaflet styles polygons through SVG *presentation attributes*
+// (stroke / fill), and those do not accept var(). Resolving here keeps one
+// token object valid for both React inline styles and Leaflet paths.
+// ────────────────────────────────────────────────────────────────────────────
+function syncTokens(){
+  if(typeof document === 'undefined' || typeof getComputedStyle !== 'function') return false;
+  let cs;
+  try { cs = getComputedStyle(document.documentElement); } catch { return false; }
+  const v = (name, fallback) => {
+    const x = (cs.getPropertyValue(name) || '').trim();
+    return x || fallback;
+  };
+  const next = {
+    bg0: v('--bg',  '#08081a'), bg1: v('--bg1','#0c0c1e'), bg2: v('--bg2','#11122a'),
+    bg3: v('--bg3', '#161836'), bd1: v('--b1', '#1e1e38'), bd2: v('--b2', '#252548'),
+    t1:  v('--t1',  '#e2e0f0'), t2:  v('--t2', '#a5a4b8'), t3:  v('--t3', '#6c6b85'),
+    acc: v('--grn', '#22c55e'), hot: v('--red','#ef4444'), hot2:v('--yel','#fbbf24'),
+    blue:v('--acc', '#6366f1'),
+  };
+  // The accent tint / border used by active toolbar buttons and status pills.
+  // Derived from the resolved accent as an ALPHA wash so it sits correctly on
+  // whatever surface is behind it — a fixed dark green (#0e2a18) was the
+  // reason those controls stayed dark on light themes.
+  next.accD  = next.acc;
+  next.accBg = next.acc + '26';
+  let changed = false;
+  for(const k in next){ if(T[k] !== next[k]){ T[k] = next[k]; changed = true; } }
+  return changed;
+}
+
+// True when the active theme uses light surfaces — drives the default basemap
+// and the label/tooltip treatment.
+function themeIsLight(){
+  const hex = String(T.bg1 || '').trim();
+  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex);
+  if(!m) return false;
+  let h = m[1];
+  if(h.length === 3) h = h.split('').map(c => c + c).join('');
+  const r = parseInt(h.slice(0,2),16), g = parseInt(h.slice(2,4),16), b = parseInt(h.slice(4,6),16);
+  return (0.2126*r + 0.7152*g + 0.0722*b) / 255 > 0.55;
+}
 
 // Diverging RED → GREEN heatmap (BI style): low/zero sales = red/salmon,
 // high sales = green, with a neutral light band in the middle.
@@ -276,7 +327,7 @@ const MAP_CSS = `
     white-space: nowrap;
   }
   .stp-state-label-inner .lbl-val {
-    color: #86efac; font-size: 9px; font-weight: 700;
+    color: var(--grn); font-size: 9px; font-weight: 700;
     display: block; margin-top: 1px;
   }
   .stp-city-label-inner {
@@ -293,20 +344,20 @@ const MAP_CSS = `
     box-shadow: 0 2px 8px rgba(0,0,0,.4);
   }
   .stp-city-label-inner .lbl-val {
-    color: #86efac; font-weight: 800; font-size: 10px;
+    color: var(--grn); font-weight: 800; font-size: 10px;
     display: block; margin-top: 1px;
   }
   /* Light basemap: dark, clearly-readable labels on white */
   .stp-mapview.lightmap .stp-state-label-inner { color:#0f172a; text-shadow:none; font-weight:800; }
-  .stp-mapview.lightmap .stp-state-label-inner .lbl-val { color:#15803d; }
-  .stp-mapview.lightmap .stp-city-label-inner { background:#ffffff; color:#0f172a; border-color:#15803d; box-shadow:0 2px 8px rgba(0,0,0,.18); }
-  .stp-mapview.lightmap .stp-city-label-inner .lbl-val { color:#15803d; }
+  .stp-mapview.lightmap .stp-state-label-inner .lbl-val { color:'+T.acc+'; }
+  .stp-mapview.lightmap .stp-city-label-inner { background:#ffffff; color:#0f172a; border-color:'+T.acc+'; box-shadow:0 2px 8px rgba(0,0,0,.18); }
+  .stp-mapview.lightmap .stp-city-label-inner .lbl-val { color:'+T.acc+'; }
   .stp-mapview.lightmap .leaflet-bar a { background-color:#ffffff !important; color:#0f172a !important; border-color:#d0d0d8 !important; }
   /* Dim the light basemap so it's soft, not blinding white */
   .stp-mapview.lightmap .leaflet-tile-pane { filter: brightness(0.88) contrast(1.03); }
   .stp-tooltip {
     background: #0c0c1e !important;
-    border: 1px solid #22c55e44 !important;
+    border: 1px solid var(--grn) !important;
     border-radius: 8px !important;
     padding: 0 !important;
     box-shadow: 0 4px 16px rgba(0,0,0,0.5) !important;
@@ -349,7 +400,7 @@ const ToolBtn = ({active, onClick, icon:Icon, label, disabled=false}) => (
   <button onClick={onClick} disabled={disabled} style={{
     display:'flex', alignItems:'center', gap:4,
     background: active ? T.accBg : T.bg2,
-    color: active ? '#86efac' : T.t2,
+    color: active ? T.acc : T.t2,
     border: '1px solid ' + (active ? T.accD : T.bd2),
     borderRadius: 6, padding:'5px 10px', fontSize:11, fontWeight:600,
     cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1,
@@ -423,6 +474,20 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
   const [showPlaces, setShowPlaces] = useState(true);    // map's built-in places (cities/towns/roads)
   const [showDistricts, setShowDistricts] = useState(true); // district boundaries when drilled in
   const [lightMap, setLightMap] = useState(true);           // light ("clear") basemap is the default
+  // Bumped whenever the app theme/palette changes so every colour-bearing
+  // effect below re-runs against the freshly-resolved tokens.
+  const [tokenVer, setTokenVer] = useState(() => { syncTokens(); return 0; });
+  useEffect(() => {
+    if(syncTokens()) setTokenVer(v => v + 1);
+    let obs = null;
+    try {
+      obs = new MutationObserver(() => { if(syncTokens()) setTokenVer(v => v + 1); });
+      // data-theme = dark/light toggle, data-palette = extra palettes,
+      // style = the inline CSS variables applyTheme() writes on <html>.
+      obs.observe(document.documentElement, { attributes:true, attributeFilter:['data-theme','data-palette','style'] });
+    } catch {}
+    return () => { try { obs && obs.disconnect(); } catch {} };
+  }, []);
   const [summaryView, setSummaryView] = useState(null);     // 'customers'|'sales'|'salesmen'|'zones'|null
   const [districtsReady, setDistrictsReady] = useState(false);
   const [subReady, setSubReady] = useState(false);   // sub-district (taluka) geojson loaded?
@@ -788,18 +853,40 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
       }
       if(mapRef.current) mapRef.current.style.background = lightMap ? '#eef2f0' : T.bg0;
     } catch {}
-  }, [lightMap, leafletReady]);
+  }, [lightMap, leafletReady, tokenVer]);
 
   // Recalculate the map size after the side-by-side layout mounts / on resize
   // (Leaflet needs invalidateSize when its container width changes).
   useEffect(() => {
     if(!leafletReady || !mapObjRef.current) return;
     const map = mapObjRef.current;
-    const fix = () => { try { map.invalidateSize(); } catch {} };
+    // Re-measure AND re-frame. invalidateSize alone keeps the old zoom, so a
+    // sidebar collapse or window resize left the country mis-framed (this is
+    // what made India render tiny inside a very wide panel).
+    const fix = () => {
+      try {
+        map.invalidateSize();
+        const b = stateLyrRef.current?.getBounds?.();
+        if(drillLevel === 'india' && b && b.isValid()) map.fitBounds(b, { padding:[12,12] });
+      } catch {}
+    };
     const t = setTimeout(fix, 120);
     window.addEventListener('resize', fix);
-    return () => { clearTimeout(t); window.removeEventListener('resize', fix); };
-  }, [leafletReady]);
+    // The panel also resizes when the app sidebar opens/closes, which fires no
+    // window resize event — observe the container itself.
+    let ro = null;
+    try {
+      if(mapRef.current && typeof ResizeObserver !== 'undefined'){
+        ro = new ResizeObserver(() => fix());
+        ro.observe(mapRef.current);
+      }
+    } catch {}
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener('resize', fix);
+      try { ro && ro.disconnect(); } catch {}
+    };
+  }, [leafletReady, drillLevel]);
 
   // ── Render choropleth + state labels ─────────────────────────────────────
   useEffect(() => {
@@ -862,7 +949,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
           '<div style="font-family:Inter,system-ui;background:#0c0c1e;border-radius:8px;padding:10px 12px;min-width:170px;color:#e2e0f0">' +
           '<div style="font-size:13px;font-weight:800;color:#e2e0f0;margin-bottom:6px;padding-bottom:5px;border-bottom:1px solid #1e1e38">' + (d?.name || name || '—') + '</div>' +
           '<div style="font-size:11px;color:#a5a4b8;display:flex;align-items:center;gap:6px;margin-bottom:3px">' +
-            '<span style="font-weight:700;color:#86efac">Sales :</span>' +
+            '<span style="font-weight:700;color:'+T.acc+'">Sales :</span>' +
             '<span style="color:#fbbf24;font-weight:700">V : ' + fmtIN(sales) + '</span>' +
             '<span style="color:#6c6b85">|</span>' +
             '<span style="color:#fbbf24;font-weight:700">Q : ' + qty + '</span>' +
@@ -895,6 +982,21 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
 
     stateLyrRef.current = geoLayer;
 
+    // Frame the country. Nothing ever fitted the all-India view — it kept the
+    // hard-coded zoom 4.4 from map creation, which on a wide, short panel
+    // renders half the world with India as a speck in the middle. Fitting to
+    // the real geometry makes it fill the panel at any window size, and the
+    // padded maxBounds stops you panning off into open ocean.
+    if(drillLevel === 'india'){
+      try {
+        const ib = geoLayer.getBounds();
+        if(ib.isValid()){
+          map.setMaxBounds(ib.pad(0.45));
+          map.fitBounds(ib, { padding:[12,12] });
+        }
+      } catch {}
+    }
+
     if(showLabels && drillLevel === 'india'){
       geoRef.current.features.forEach(feature => {
         const name = getFeatureStateName(feature);
@@ -923,7 +1025,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
         } catch {}
       });
     }
-  }, [leafletReady, geoReady, stateData, viewMode, maxStateVal, selected, showLabels, showCount, showNames, drillLevel, selectedMonthIdx, focusArea, lightMap]);
+  }, [tokenVer, leafletReady, geoReady, stateData, viewMode, maxStateVal, selected, showLabels, showCount, showNames, drillLevel, selectedMonthIdx, focusArea, lightMap]);
 
   // ── Render CITY markers when drilled in ──────────────────────────────────
   useEffect(() => {
@@ -970,7 +1072,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
         '<div style="font-family:Inter,system-ui;background:#0c0c1e;border-radius:8px;padding:10px 12px;min-width:170px;color:#e2e0f0">' +
         '<div style="font-size:13px;font-weight:800;color:#e2e0f0;margin-bottom:6px;padding-bottom:5px;border-bottom:1px solid #1e1e38">' + city.name + '</div>' +
         '<div style="font-size:11px;color:#a5a4b8;display:flex;align-items:center;gap:6px;margin-bottom:3px">' +
-          '<span style="font-weight:700;color:#86efac">Sales :</span>' +
+          '<span style="font-weight:700;color:'+T.acc+'">Sales :</span>' +
           '<span style="color:#fbbf24;font-weight:700">V : ' + fmtIN(city.total) + '</span>' +
           '<span style="color:#6c6b85">|</span>' +
           '<span style="color:#fbbf24;font-weight:700">Q : ' + city.qty + '</span>' +
@@ -1172,7 +1274,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
           (g.city ? '<div style="font-size:10px;color:#a5a4b8;font-weight:500;margin-top:2px">' + g.city + '</div>' : '') +
         '</div>' +
         '<div style="font-size:11px;color:#a5a4b8;margin-bottom:2px">' +
-          '<b style="color:#86efac">Sales:</b> ' + fmtIN(g.total) +
+          '<b style="color:'+T.acc+'">Sales:</b> ' + fmtIN(g.total) +
         '</div>' +
         '<div style="font-size:11px;color:#a5a4b8;margin-bottom:2px">' +
           '<b style="color:#e2e0f0">Dealers:</b> ' + g.dealers.length +
@@ -1396,7 +1498,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
           if(focusArea.name.toLowerCase() !== dname) return { opacity:0, fillOpacity:0, weight:0 };
           // …and show the opened district as a clean edge only (no fill), so
           // its inner detail/markers read clearly.
-          return { color:'#34d399', weight:2.5, dashArray:'', fillColor:'transparent', fillOpacity:0, opacity:1 };
+          return { color:T.acc, weight:2.5, dashArray:'', fillColor:'transparent', fillOpacity:0, opacity:1 };
         }
         const d     = districtData[dname];
         const ratio = d && maxDistrictVal ? d.total / maxDistrictVal : 0;
@@ -1421,7 +1523,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
         const pctv  = tgt ? Math.round((total/tgt)*100) : 0;
         layer.bindTooltip(
           '<div style="font-family:Inter,system-ui;background:#0c0c1e;border-radius:8px;padding:9px 12px;min-width:160px;color:#e2e0f0">' +
-          '<div style="font-size:12px;font-weight:800;color:#86efac;margin-bottom:5px;padding-bottom:4px;border-bottom:1px solid #1e1e38">' + dname + ' District</div>' +
+          '<div style="font-size:12px;font-weight:800;color:'+T.acc+';margin-bottom:5px;padding-bottom:4px;border-bottom:1px solid #1e1e38">' + dname + ' District</div>' +
           '<div style="font-size:11px;color:#a5a4b8;margin-bottom:2px"><b style="color:#fbbf24">Sales :</b> V : ' + fmtIN(total) + '</div>' +
           '<div style="font-size:11px;color:#a5a4b8"><b style="color:#fbbf24">Dealers :</b> ' + cnt + (tgt ? ' | ' + pctv + '% of target' : '') + '</div>' +
           (cnt === 0 ? '<div style="font-size:10px;color:#6c6b85;margin-top:5px;padding-top:4px;border-top:1px dashed #1e1e38">No dealers in this district yet</div>' : '') +
@@ -1524,7 +1626,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
         lyr.bindTooltip(
           '<div style="font-family:Inter,system-ui;background:#fff;color:#0f172a;border-radius:8px;padding:8px 11px;min-width:130px">' +
           '<div style="font-weight:800;margin-bottom:3px">' + sn + '</div>' +
-          '<div style="font-size:11px;color:#475569">Sales : <b style="color:#15803d">' + fmtIN(sales) + '</b></div>' +
+          '<div style="font-size:11px;color:#475569">Sales : <b style="color:'+T.acc+'">' + fmtIN(sales) + '</b></div>' +
           '<div style="font-size:9px;color:#94a3b8;margin-top:4px">Click to open this area →</div></div>',
           { sticky:true, opacity:1, className:'stp-tooltip', direction:'top' }
         );
@@ -1568,7 +1670,11 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
     try {
       if(mapObjRef.current){
         mapObjRef.current.setMaxBounds(null);   // release the state lock
-        mapObjRef.current.setView([22, 80], 4.4);
+        // Re-fit to the country rather than restoring the fixed zoom 4.4,
+        // which framed far more than India on wide panels.
+        const b = stateLyrRef.current?.getBounds?.();
+        if(b && b.isValid()) mapObjRef.current.fitBounds(b, { padding:[12,12] });
+        else mapObjRef.current.setView([22, 80], 4.4);
       }
     } catch {}
   };
@@ -1673,7 +1779,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
       }}>
         <KpiGroup title={selected ? (selected + ' — Dealers') : 'Dealers'} accent={T.blue}>
           <div style={{display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:6}}>
-            <KpiCell label="Active"   value={kpis.active}   color="#86efac"/>
+            <KpiCell label="Active"   value={kpis.active}   color="var(--grn)"/>
             <KpiCell label="Star"     value={kpis.star}     color={T.hot2}/>
             <KpiCell label="Inactive" value={kpis.inactive} color={T.t2}/>
             <KpiCell label="Lost"     value={kpis.lost}     color={T.hot}/>
@@ -1682,8 +1788,8 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
 
         <KpiGroup title={selected ? 'In ' + selected : 'Selected'} accent={T.hot2}>
           <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:6}}>
-            <KpiCell label="Qty"   value={fmtIN(kpis.qty)} color="#86efac"/>
-            <KpiCell label="Value" value={fmtIN(kpis.sales)} color="#86efac"/>
+            <KpiCell label="Qty"   value={fmtIN(kpis.qty)} color="var(--grn)"/>
+            <KpiCell label="Value" value={fmtIN(kpis.sales)} color="var(--grn)"/>
           </div>
         </KpiGroup>
 
@@ -1692,12 +1798,12 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
             {selected ? (
               <>
                 <KpiCell label="Total" value={cityData.length} color={T.cyan}/>
-                <KpiCell label="Top"   value={cityData[0]?.name || '—'} color="#86efac" sub={cityData[0] ? fmtIN(cityData[0].total) : null}/>
+                <KpiCell label="Top"   value={cityData[0]?.name || '—'} color="var(--grn)" sub={cityData[0] ? fmtIN(cityData[0].total) : null}/>
               </>
             ) : (
               <>
                 <KpiCell label="Qty"   value={kpis.total ? Math.round(kpis.qty / Math.max(Object.keys(stateData).length,1)) : 0} color={T.cyan}/>
-                <KpiCell label="Value" value={fmtIN(kpis.avgSales)} color="#86efac" sub={kpis.ach ? kpis.ach + '% of target' : null}/>
+                <KpiCell label="Value" value={fmtIN(kpis.avgSales)} color="var(--grn)" sub={kpis.ach ? kpis.ach + '% of target' : null}/>
               </>
             )}
           </div>
@@ -1740,7 +1846,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
               if(!ql) return name;
               const i = name.toLowerCase().indexOf(ql);
               if(i < 0) return name;
-              return <>{name.slice(0,i)}<b style={{color:'#86efac'}}>{name.slice(i, i+ql.length)}</b>{name.slice(i+ql.length)}</>;
+              return <>{name.slice(0,i)}<b style={{color:T.acc}}>{name.slice(i, i+ql.length)}</b>{name.slice(i+ql.length)}</>;
             };
             const pickCity = (c) => {
               setSelectedCity(c.name);
@@ -1758,7 +1864,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
                   style={{display:'flex', alignItems:'center', gap:6, width:'100%', textAlign:'left', cursor:'pointer',
                     background:T.bg1, color: selectedCity ? T.t1 : T.t3, border:'1px solid '+T.bd2,
                     borderRadius:8, padding:'6px 10px', fontSize:12, fontWeight:600}}>
-                  <MapPin size={12} style={{color:'#86efac', flexShrink:0}}/>
+                  <MapPin size={12} style={{color:T.acc, flexShrink:0}}/>
                   <span style={{flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{selectedCity || 'Select city'}</span>
                   {selectedCity && <X size={13} style={{color:T.t3, flexShrink:0}} onClick={(e)=>{ e.stopPropagation(); setSelectedCity(null); setFocusArea(null); }}/>}
                   <ChevronDown size={13} style={{color:T.t3, flexShrink:0, transform: cityPickOpen?'rotate(180deg)':'none', transition:'transform .15s'}}/>
@@ -1782,7 +1888,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
                             onMouseEnter={e=>e.currentTarget.style.background=T.bg2}
                             onMouseLeave={e=>e.currentTarget.style.background = selectedCity===c.name?T.bg2:'transparent'}>
                             <span style={{flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{hl(c.name)}</span>
-                            <span style={{fontSize:11, fontWeight:700, color:'#86efac'}}>{fmtIN(c.total)}</span>
+                            <span style={{fontSize:11, fontWeight:700, color:T.acc}}>{fmtIN(c.total)}</span>
                           </div>
                         ))}
                     </div>
@@ -1863,7 +1969,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
 
         {/* Map area */}
         <div style={{position:'relative', background:T.bg0}}>
-          <div ref={mapRef} style={{height:'clamp(300px, 46vw, 460px)', width:'100%', background:T.bg0}}/>
+          <div ref={mapRef} style={{height:'clamp(300px, 46vw, 460px)', width:'100%', background:lightMap ? '#eef2f0' : T.bg0}}/>
 
           {/* ── Right-side dealer detail panel ────────────────────────
               Shows when the user clicks a dealer in the accordion or a
@@ -1966,7 +2072,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
                     <div style={{display:'flex', gap:12, padding:'6px 0'}}>
                       <div style={{fontSize:11, color:T.t3, width:80}}>Sales · Tgt</div>
                       <div style={{fontSize:11, flex:1, textAlign:'right', fontWeight:700}}>
-                        <span style={{color:'#86efac'}}>{fmtIN(ach)}</span>
+                        <span style={{color:T.acc}}>{fmtIN(ach)}</span>
                         <span style={{color:T.t3, fontWeight:400}}> / </span>
                         <span style={{color:T.t2}}>{fmtIN(tgt)}</span>
                         {tgt > 0 && (
@@ -1979,7 +2085,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
                   {/* Nearby parties */}
                   {nearby.length > 0 && (
                     <div style={{border:'1px solid rgba(52,211,153,0.35)', borderRadius:10, padding:10, background:'rgba(52,211,153,0.05)'}}>
-                      <div style={{fontSize:10, fontWeight:800, color:'#86efac', textTransform:'uppercase', letterSpacing:'.08em', marginBottom:8, display:'flex', alignItems:'center', gap:6}}>
+                      <div style={{fontSize:10, fontWeight:800, color:T.acc, textTransform:'uppercase', letterSpacing:'.08em', marginBottom:8, display:'flex', alignItems:'center', gap:6}}>
                         💡 Nearby Parties (15 km)
                       </div>
                       <div style={{display:'flex', flexDirection:'column'}}>
@@ -1993,7 +2099,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
                             <span style={{width:8, height:8, borderRadius:'50%', background:'#818cf8', flexShrink:0}}/>
                             <span style={{flex:1, minWidth:0, fontSize:11, fontWeight:700, color:T.t1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{n.name}</span>
                             <span style={{fontSize:9, color:T.t3, whiteSpace:'nowrap'}}>{n.city || ''}</span>
-                            <span style={{fontSize:11, color:'#86efac', fontWeight:800, whiteSpace:'nowrap'}}>{n._dist.toFixed(1)}km</span>
+                            <span style={{fontSize:11, color:T.acc, fontWeight:800, whiteSpace:'nowrap'}}>{n._dist.toFixed(1)}km</span>
                           </div>
                         ))}
                       </div>
@@ -2063,7 +2169,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
             <div style={{
               position:'absolute', bottom:14, left:14, zIndex:1000,
               background:'rgba(12,12,30,.95)', border:'1px solid '+T.accD,
-              borderRadius:7, padding:'5px 10px', fontSize:11, color:'#86efac',
+              borderRadius:7, padding:'5px 10px', fontSize:11, color:T.acc,
               fontWeight:700,
             }}>
               District: {hoverDistrict}
@@ -2077,7 +2183,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
           borderTop:'1px solid '+T.bd1,
           display:'flex', alignItems:'center', gap:10,
         }}>
-          <span style={{fontSize:11, fontWeight:700, color:'#86efac'}}>High</span>
+          <span style={{fontSize:11, fontWeight:700, color:T.acc}}>High</span>
           <div style={{
             flex:1, height:14, borderRadius:4,
             background:'linear-gradient(90deg,' + GREEN_SCALE.slice().reverse().join(',') + ')',
@@ -2119,7 +2225,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
                           {[d.city, d.state].filter(Boolean).join(', ') || '—'} · {users?.[d.salesman]?.name || d.salesman || 'Unassigned'}
                         </div>
                       </div>
-                      <div style={{fontSize:13, fontWeight:700, color: ach>0?'#34d399':T.t3, whiteSpace:'nowrap'}}>{ach>0?fmtIN(ach):'—'}</div>
+                      <div style={{fontSize:13, fontWeight:700, color: ach>0?T.acc:T.t3, whiteSpace:'nowrap'}}>{ach>0?fmtIN(ach):'—'}</div>
                     </div>
                   );
                 })}
@@ -2151,8 +2257,8 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
                             <td style={{padding:'8px 10px', fontWeight:600, color:T.t1, maxWidth:220, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{d.name}</td>
                             <td style={{padding:'8px 10px', color:T.t2, whiteSpace:'nowrap'}}>{d.city||'—'}</td>
                             <td style={{padding:'8px 10px', color:T.t2, whiteSpace:'nowrap'}}>{users?.[d.salesman]?.name||d.salesman||'—'}</td>
-                            <td style={{padding:'8px 10px'}}>{d.status && <span style={{fontSize:9, color:'#86efac', background:T.accBg, border:'1px solid '+T.accD, padding:'1px 6px', borderRadius:4, whiteSpace:'nowrap'}}>{d.status}</span>}</td>
-                            <td style={{padding:'8px 10px', textAlign:'right', fontWeight:700, color: ach>0?'#34d399':T.t3, whiteSpace:'nowrap'}}>{ach>0?fmtIN(ach):'—'}</td>
+                            <td style={{padding:'8px 10px'}}>{d.status && <StatusBadge status={d.status}/>}</td>
+                            <td style={{padding:'8px 10px', textAlign:'right', fontWeight:700, color: ach>0?T.acc:T.t3, whiteSpace:'nowrap'}}>{ach>0?fmtIN(ach):'—'}</td>
                           </tr>
                         );
                       })}
@@ -2178,7 +2284,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
           <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, padding:10}}>
             {[
               { key:'customers', label:'Customers', val:viewDealers.length,        color:T.blue },
-              { key:'sales',     label:'Sales',     val:fmtIN(viewSales),           color:'#34d399' },
+              { key:'sales',     label:'Sales',     val:fmtIN(viewSales),           color:T.acc },
               { key:'salesmen',  label:'Salesmen',  val:viewSalesmen.length,        color:'#fbbf24' },
               { key:'zones',     label:'Zones',     val:viewZones.length,           color:'#a5b4fc' },
             ].map(t => (
@@ -2204,8 +2310,8 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
               borderBottom:'1px solid '+T.accD,
               display:'flex', alignItems:'center', gap:8,
             }}>
-              <MapPin size={13} color="#86efac"/>
-              <span style={{fontSize:13, fontWeight:700, color:'#86efac', flex:1}}>
+              <MapPin size={13} color="var(--grn)"/>
+              <span style={{fontSize:13, fontWeight:700, color:T.acc, flex:1}}>
                 Cities in {selected} ({cityData.length})
               </span>
               <span style={{fontSize:11, color:T.t3}}>— {MO[selectedMonthIdx]}</span>
@@ -2234,15 +2340,15 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
                         <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4}}>
                           <div style={{display:'flex', alignItems:'center', gap:6, flex:1, minWidth:0}}>
                             <span style={{fontSize:10, color:T.t3, width:16, textAlign:'right'}}>{i+1}</span>
-                            <span style={{fontSize:12, fontWeight:700, color:isSel ? '#86efac' : T.t1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{city.name}</span>
+                            <span style={{fontSize:12, fontWeight:700, color:isSel ? T.acc : T.t1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{city.name}</span>
                           </div>
                           <div style={{display:'flex', gap:8, alignItems:'center'}}>
                             <span style={{fontSize:10, color:T.t3}}>{city.dealers.length}d</span>
-                            <span style={{fontSize:13, fontWeight:800, color:'#86efac'}}>{fmtIN(city.total)}</span>
+                            <span style={{fontSize:13, fontWeight:800, color:T.acc}}>{fmtIN(city.total)}</span>
                           </div>
                         </div>
                         <div style={{height:4, background:T.bd1, borderRadius:2, marginLeft:22}}>
-                          <div style={{height:'100%', width:bar+'%', background:'linear-gradient(90deg,'+T.acc+',#86efac)', borderRadius:2, transition:'width .5s'}}/>
+                          <div style={{height:'100%', width:bar+'%', background:'linear-gradient(90deg,'+T.acc+','+T.acc+')', borderRadius:2, transition:'width .5s'}}/>
                         </div>
                       </div>
                     );
@@ -2266,7 +2372,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
             </div>
             <div style={{padding:12}}>
               <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:6, marginBottom:12}}>
-                <KpiCell label="Sales"   value={fmtIN(selectedCityObj.total)}   color="#86efac"/>
+                <KpiCell label="Sales"   value={fmtIN(selectedCityObj.total)}   color="var(--grn)"/>
                 <KpiCell label="Dealers" value={selectedCityObj.dealers.length} color={T.blue}/>
                 <KpiCell label="Target"  value={selectedCityObj.target ? fmtIN(selectedCityObj.target) : '—'} color={T.t2}/>
               </div>
@@ -2319,7 +2425,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
                               <span style={{fontFamily:'"JetBrains Mono", monospace', fontSize:12, fontWeight:700, color:T.t1, minWidth:60}}>{a.pin}</span>
                               <span style={{flex:1}}/>
                               <span style={{fontSize:10, color:T.t3}}>{a.dealers.length} deal.</span>
-                              <span style={{fontSize:11, fontWeight:700, color:'#86efac', minWidth:60, textAlign:'right'}}>{fmtIN(a.total)}</span>
+                              <span style={{fontSize:11, fontWeight:700, color:T.acc, minWidth:60, textAlign:'right'}}>{fmtIN(a.total)}</span>
                               {a.target > 0 && (
                                 <span style={{fontSize:10, color:pclr(ap), minWidth:40, textAlign:'right'}}>{spct(a.target, a.total)}</span>
                               )}
@@ -2346,7 +2452,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
                                             <div title={d.address} style={{fontSize:9, color:T.t3, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{d.address}</div>
                                           )}
                                         </div>
-                                        <span style={{fontSize:11, fontWeight:700, color:'#86efac'}}>{fmtIN(ach)}</span>
+                                        <span style={{fontSize:11, fontWeight:700, color:T.acc}}>{fmtIN(ach)}</span>
                                       </div>
                                     );
                                   })}
@@ -2410,9 +2516,9 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
                               )}
                             </td>
                             <td style={{padding:'5px 8px'}}>
-                              {d.status && <span style={{fontSize:9, color:'#86efac', background:T.accBg, padding:'1px 6px', borderRadius:3, whiteSpace:'nowrap', border:'1px solid '+T.accD}}>{d.status}</span>}
+                              {d.status && <StatusBadge status={d.status}/>}
                             </td>
-                            <td style={{padding:'5px 8px', textAlign:'right', fontWeight:700, color:'#86efac', whiteSpace:'nowrap'}}>{fmtIN(ach)}</td>
+                            <td style={{padding:'5px 8px', textAlign:'right', fontWeight:700, color:T.acc, whiteSpace:'nowrap'}}>{fmtIN(ach)}</td>
                             <td style={{padding:'5px 8px', textAlign:'right', fontSize:10, color:pclr(dp), whiteSpace:'nowrap'}}>{spct(tgt, ach)}</td>
                           </tr>
                         );
@@ -2429,8 +2535,8 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
         {drillLevel === 'state' && districtObj && (
           <div className="card" style={{padding:0, overflow:'hidden', background:T.bg1, border:'1px solid '+T.bd1}}>
             <div style={{padding:'10px 12px', background:'#0e2a1a', borderBottom:'1px solid #14532d', display:'flex', alignItems:'center', gap:8}}>
-              <div style={{width:8, height:8, borderRadius:'50%', background:'#34d399'}}/>
-              <span style={{fontSize:13, fontWeight:700, color:'#86efac', flex:1}}>{districtObj.name} <span style={{fontWeight:500, color:T.t3, fontSize:11}}>District</span></span>
+              <div style={{width:8, height:8, borderRadius:'50%', background:T.acc}}/>
+              <span style={{fontSize:13, fontWeight:700, color:T.acc, flex:1}}>{districtObj.name} <span style={{fontWeight:500, color:T.t3, fontSize:11}}>District</span></span>
               <button onClick={() => setFocusArea(null)} style={{background:'none', border:'none', color:T.t3, cursor:'pointer'}}>
                 <X size={13}/>
               </button>
@@ -2459,7 +2565,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
                 return (
                   <>
                     <div style={{display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:6, marginBottom:10}}>
-                      <KpiCell label="Sales"   value={fmtIN(totalSales)} color="#86efac"/>
+                      <KpiCell label="Sales"   value={fmtIN(totalSales)} color="var(--grn)"/>
                       <KpiCell label="Dealers" value={dealers.length}    color={T.blue}/>
                       <KpiCell label="Qty"     value={qty}               color="#fbbf24"/>
                     </div>
@@ -2505,7 +2611,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
                                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                                   <td style={{padding:'5px 8px', fontWeight:600, color:T.t1}}>{r.salesman==='__none__' ? 'Unassigned' : (users?.[r.salesman]?.name || r.salesman)}</td>
                                   <td style={{padding:'5px 8px', textAlign:'right', color:T.blue}}>{r.dealers}</td>
-                                  <td style={{padding:'5px 8px', textAlign:'right', fontWeight:700, color:'#86efac'}}>{fmtIN(r.sales)}</td>
+                                  <td style={{padding:'5px 8px', textAlign:'right', fontWeight:700, color:T.acc}}>{fmtIN(r.sales)}</td>
                                   <td style={{padding:'5px 8px', textAlign:'right', color:'#fbbf24'}}>{r.qty}</td>
                                 </tr>
                               ))
@@ -2520,7 +2626,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
                                       {d.city && <div style={{fontSize:9, color:T.t3}}>{d.city}</div>}
                                     </td>
                                     <td style={{padding:'5px 8px', color:T.t2}}>{users?.[d.salesman]?.name || d.salesman || '—'}</td>
-                                    <td style={{padding:'5px 8px', textAlign:'right', fontWeight:700, color:'#86efac'}}>{fmtIN(ach)}</td>
+                                    <td style={{padding:'5px 8px', textAlign:'right', fontWeight:700, color:T.acc}}>{fmtIN(ach)}</td>
                                   </tr>
                                 );
                               })}
@@ -2567,11 +2673,11 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
                           </div>
                           <div style={{display:'flex', gap:8, alignItems:'center'}}>
                             <span style={{fontSize:10, color:T.t3}}>{dl.length}d</span>
-                            <span style={{fontSize:13, fontWeight:800, color:'#86efac'}}>{fmtIN(total)}</span>
+                            <span style={{fontSize:13, fontWeight:800, color:T.acc}}>{fmtIN(total)}</span>
                           </div>
                         </div>
                         <div style={{height:4, background:T.bd1, borderRadius:2, marginLeft:22}}>
-                          <div style={{height:'100%', width:bar+'%', background:'linear-gradient(90deg,'+T.acc+',#86efac)', borderRadius:2, transition:'width .5s'}}/>
+                          <div style={{height:'100%', width:bar+'%', background:'linear-gradient(90deg,'+T.acc+','+T.acc+')', borderRadius:2, transition:'width .5s'}}/>
                         </div>
                       </div>
                     );
@@ -2587,9 +2693,9 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
           {selected ? [
             {l:'Total dealers',    v:det?.dealers.length || 0, c:T.blue},
             {l:'Districts (total)',v:districtList.length || (districtsReady ? 0 : '…'), c:T.cyan},
-            {l:'Districts with sales', v:districtsWithSales, c:'#86efac'},
-            {l:'Cities covered',   v:cityData.length, c:'#86efac'},
-            {l:'Total sales',      v:fmtIN(det?.total || 0), c:'#86efac'},
+            {l:'Districts with sales', v:districtsWithSales, c:T.acc},
+            {l:'Cities covered',   v:cityData.length, c:T.acc},
+            {l:'Total sales',      v:fmtIN(det?.total || 0), c:T.acc},
             {l:'Total target',     v:fmtIN(det?.target || 0), c:T.cyan},
             {l:'Achievement',      v:det?.target ? pct(det.target, det.total)+'%' : 'N/T', c:pclr(det?.target ? pct(det.target, det.total) : null)},
             {l:'Unmapped cities',  v:unmappedCities.length, c:unmappedCities.length > 0 ? T.hot2 : T.t3},
@@ -2599,8 +2705,8 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
               <span style={{fontWeight:700, color:k.c}}>{k.v}</span>
             </div>
           )) : [
-            {l:'States covered',  v:Object.keys(stateData).length, c:'#86efac'},
-            {l:'Total sales',     v:fmtIN(Object.values(stateData).reduce((s,d) => s + d.total, 0)), c:'#86efac'},
+            {l:'States covered',  v:Object.keys(stateData).length, c:T.acc},
+            {l:'Total sales',     v:fmtIN(Object.values(stateData).reduce((s,d) => s + d.total, 0)), c:T.acc},
             {l:'Total target',    v:fmtIN(Object.values(stateData).reduce((s,d) => s + d.target, 0)), c:T.blue},
             {l:'Mapped dealers',  v:dealers.length - unmapped, c:T.t1},
             {l:'Unmapped',        v:unmapped, c:unmapped > 0 ? T.hot2 : T.t3},
@@ -2657,8 +2763,8 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
                           {[d.city, d.state].filter(Boolean).join(', ') || '—'} · {users?.[d.salesman]?.name || d.salesman || 'Unassigned'}
                         </div>
                       </div>
-                      {d.status && <span style={{fontSize:9, color:'#86efac', background:T.accBg, border:'1px solid '+T.accD, padding:'1px 7px', borderRadius:4, whiteSpace:'nowrap'}}>{d.status}</span>}
-                      <div style={{minWidth:72, textAlign:'right', fontSize:13, fontWeight:700, color: ach>0?'#34d399':T.t3}}>{ach>0?fmtIN(ach):'—'}</div>
+                      {d.status && <StatusBadge status={d.status}/>}
+                      <div style={{minWidth:72, textAlign:'right', fontSize:13, fontWeight:700, color: ach>0?T.acc:T.t3}}>{ach>0?fmtIN(ach):'—'}</div>
                     </div>
                   );
                 })}
@@ -2667,14 +2773,14 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
                     <div style={{flex:1, fontSize:13, fontWeight:600, color:T.t1}}>{r.key==='__none__'?'Unassigned':(users?.[r.key]?.name||r.key)}</div>
                     <span style={{fontSize:11, color:T.blue}}>{r.dealers} cust.</span>
                     <span style={{fontSize:11, color:'#fbbf24'}}>{r.billed} billed</span>
-                    <div style={{minWidth:82, textAlign:'right', fontSize:13, fontWeight:700, color:'#34d399'}}>{fmtIN(r.sales)}</div>
+                    <div style={{minWidth:82, textAlign:'right', fontSize:13, fontWeight:700, color:T.acc}}>{fmtIN(r.sales)}</div>
                   </div>
                 ))}
                 {summaryView==='zones' && zoneGroups.map(r => (
                   <div key={r.key} style={{display:'flex', alignItems:'center', gap:10, padding:'10px 16px', borderBottom:'1px solid '+T.bd1}}>
                     <div style={{flex:1, fontSize:13, fontWeight:600, color:T.t1}}>{r.key==='__none__'?'No zone':r.key}</div>
                     <span style={{fontSize:11, color:T.blue}}>{r.dealers} cust.</span>
-                    <div style={{minWidth:82, textAlign:'right', fontSize:13, fontWeight:700, color:'#34d399'}}>{fmtIN(r.sales)}</div>
+                    <div style={{minWidth:82, textAlign:'right', fontSize:13, fontWeight:700, color:T.acc}}>{fmtIN(r.sales)}</div>
                   </div>
                 ))}
                 {viewDealers.length===0 && <div style={{padding:22, textAlign:'center', color:T.t3, fontSize:12}}>No data in this view.</div>}

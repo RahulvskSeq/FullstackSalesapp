@@ -127,7 +127,7 @@ export default function MapView({dealers,selectedMonthIdx}){
                     <span style={{fontSize:9, color:'var(--t3)', flex:1, textAlign:'right', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{a.city}{a.state?`, ${a.state}`:''}</span>
                   </div>
                   <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end', marginBottom:6}}>
-                    <div style={{fontSize:18, fontWeight:800, color:'#34d399', lineHeight:1}}>{a.units.toLocaleString('en-IN')}</div>
+                    <div style={{fontSize:18, fontWeight:800, color:'var(--grn)', lineHeight:1}}>{a.units.toLocaleString('en-IN')}</div>
                     <div style={{fontSize:10, color:'var(--t3)'}}>{a.dealers} dealer{a.dealers===1?'':'s'}</div>
                   </div>
                   <div style={{height:4, background:'var(--bg2)', borderRadius:2, overflow:'hidden'}}>

@@ -8948,7 +8948,7 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
               {dealer.address&&<span className="chip" title={dealer.address} style={{display:'inline-flex',alignItems:'center',gap:4,maxWidth:340,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{dealer.address}</span>}
               {dealer.category&&<span className="chip" style={{color:'#818cf8',borderColor:'#818cf844'}}><Layers size={9} style={{display:'inline',verticalAlign:'middle',marginRight:3}}/>{dealer.category}{dealer.categoryType?` / ${dealer.categoryType}`:''}</span>}
               {isAdmin&&<span style={{fontSize:11,color:'var(--t3)'}}>· {users[dealer.salesman]?.name||dealer.salesman}</span>}
-              {selectedMonthIdx!==CURRENT_MONTH_IDX&&<span style={{fontSize:10,background:'rgba(251,191,36,0.15)',color:'#fbbf24',padding:'2px 8px',borderRadius:4}}>Viewing {MO[selectedMonthIdx]}</span>}
+              {selectedMonthIdx!==CURRENT_MONTH_IDX&&<span style={{fontSize:10,background:'rgba(251,191,36,0.15)',color:'var(--yel)',padding:'2px 8px',borderRadius:4}}>Viewing {MO[selectedMonthIdx]}</span>}
             </div>
           </div>
           <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
@@ -9054,7 +9054,7 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
                   />
                 )}
                 {dFilterActive && (
-                  <span style={{fontSize:11, color:'#fbbf24', fontWeight:600}}>
+                  <span style={{fontSize:11, color:'var(--yel)', fontWeight:600}}>
                     Showing only {[...(dCatSel.size?dCatSel:[])].join(', ')}
                     {dSubSel.size > 0 && <> · {[...dSubSel].join(', ')}</>}
                   </span>
@@ -9064,9 +9064,9 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
 
             <div style={{marginBottom:14}}>
               <div style={{fontSize:11,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:8}}>
-                11-Month Performance {dealer.target>0&&<span style={{color:'#34d399',marginLeft:8}}>— dashed = target</span>}
-                {selectedMonthIdx!==CURRENT_MONTH_IDX&&<span style={{color:'#fbbf24',marginLeft:8}}>(yellow bar = selected: {MO[selectedMonthIdx]})</span>}
-                {dFilterActive && <span style={{color:'#fbbf24',marginLeft:8}}>· filtered</span>}
+                11-Month Performance {dealer.target>0&&<span style={{color:'var(--grn)',marginLeft:8}}>— dashed = target</span>}
+                {selectedMonthIdx!==CURRENT_MONTH_IDX&&<span style={{color:'var(--yel)',marginLeft:8}}>(yellow bar = selected: {MO[selectedMonthIdx]})</span>}
+                {dFilterActive && <span style={{color:'var(--yel)',marginLeft:8}}>· filtered</span>}
               </div>
               <ResponsiveContainer width="100%" height={220}>
                 <ComposedChart data={chartData} margin={{top:18,right:10,bottom:5,left:0}}>
@@ -9137,7 +9137,7 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
                 <tfoot>
                   <tr>
                     <td style={{color:'var(--t1)',fontWeight:700}}>TOTAL</td>
-                    <td style={{textAlign:'right',fontWeight:700,color:'#34d399'}}>{monthsForView.reduce((a,b)=>a+b,0)}</td>
+                    <td style={{textAlign:'right',fontWeight:700,color:'var(--grn)'}}>{monthsForView.reduce((a,b)=>a+b,0)}</td>
                     <td style={{textAlign:'right',color:'var(--t3)'}}>—</td>
                     <td colSpan="4"/>
                   </tr>
@@ -9262,7 +9262,7 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
               <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
                 <div style={{fontSize:12,fontWeight:600,color:'var(--t2)',display:'flex',alignItems:'center',gap:6}}>
                   <Calendar size={13} color="var(--acc)"/> Payment Follow-ups
-                  {pendingFollowups.length>0&&<span style={{background:'rgba(248,113,113,0.15)',color:'#f87171',fontSize:10,padding:'1px 6px',borderRadius:4,marginLeft:4}}>{pendingFollowups.length} follow-up{pendingFollowups.length>1?'s':''}</span>}
+                  {pendingFollowups.length>0&&<span style={{background:'rgba(248,113,113,0.15)',color:'var(--red)',fontSize:10,padding:'1px 6px',borderRadius:4,marginLeft:4}}>{pendingFollowups.length} follow-up{pendingFollowups.length>1?'s':''}</span>}
                 </div>
                 <button onClick={()=>setShowFuModal(s=>!s)} className="btnp" style={{fontSize:11,padding:'4px 10px',display:'flex',alignItems:'center',gap:4}}>
                   <Plus size={11}/> Add Follow-up
@@ -9317,12 +9317,12 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
                                 color:isDone?'#34d399':isOver?'#f87171':'var(--acc)'}}>
                                 {isDone?'✓ Done':isOver?`${Math.abs(days)}d overdue`:days===0?'Today':`${days}d left`}
                               </span>
-                              {f.amount>0&&<span style={{fontSize:10,color:'#fbbf24',fontWeight:600}}>₹{Number(f.amount).toLocaleString('en-IN')}</span>}
+                              {f.amount>0&&<span style={{fontSize:10,color:'var(--yel)',fontWeight:600}}>₹{Number(f.amount).toLocaleString('en-IN')}</span>}
                             </div>
                             {f.comment&&<div style={{fontSize:11,color:'var(--t3)'}}>{f.comment}</div>}
                           </div>
                           <div style={{display:'flex',gap:4}}>
-                            {!isDone&&<button onClick={()=>markFollowupDone(f._id)} style={{fontSize:10,padding:'2px 6px',borderRadius:4,border:'1px solid #34d399',color:'#34d399',background:'none',cursor:'pointer',display:'flex',alignItems:'center',gap:3}}><Check size={9}/> Done</button>}
+                            {!isDone&&<button onClick={()=>markFollowupDone(f._id)} style={{fontSize:10,padding:'2px 6px',borderRadius:4,border:'1px solid #34d399',color:'var(--grn)',background:'none',cursor:'pointer',display:'flex',alignItems:'center',gap:3}}><Check size={9}/> Done</button>}
                             <button onClick={()=>deleteFollowup(f._id)} style={{background:'none',border:'none',color:'var(--t3)',cursor:'pointer',padding:2}}><Trash2 size={11}/></button>
                           </div>
                         </div>

@@ -151,7 +151,7 @@ const CategorySalesPanel = ({
         </div>
         <div className="spacer"/>
         <div style={{fontSize:11,color:'var(--t3)'}}>Total:</div>
-        <div style={{fontSize:14,fontWeight:800,color:'#34d399'}}>{fmt(grandTotal)}</div>
+        <div style={{fontSize:14,fontWeight:800,color:'var(--grn)'}}>{fmt(grandTotal)}</div>
         {onSeeAll && (
           <button className="btn" style={{padding:'4px 10px',fontSize:11,display:'inline-flex',alignItems:'center',gap:4}}
             onClick={onSeeAll}>See all <ArrowRight size={11}/></button>
@@ -188,7 +188,7 @@ const CategorySalesPanel = ({
             }}>
               <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:6}}>
                 <div style={{fontSize:12,fontWeight:700,flex:1}}>{g.category}</div>
-                <div style={{fontSize:14,fontWeight:800,color:'#34d399'}}>{fmt(g.total)}</div>
+                <div style={{fontSize:14,fontWeight:800,color:'var(--grn)'}}>{fmt(g.total)}</div>
               </div>
               <div style={{height:4,background:'var(--bg2)',borderRadius:2,overflow:'hidden',marginBottom:6}}>
                 <div style={{width:`${pct.toFixed(1)}%`,height:'100%',background:'linear-gradient(90deg,#6366f1,#34d399)'}}/>
@@ -223,7 +223,7 @@ const CategorySalesPanel = ({
                 fontSize:11,padding:'4px 8px',borderRadius:5,
                 background:'var(--bg2)',border:'1px solid var(--b2)',
               }}>
-                {ymToLabel(m.month)}: <b style={{color:'#34d399'}}>{fmt(m.total)}</b>
+                {ymToLabel(m.month)}: <b style={{color:'var(--grn)'}}>{fmt(m.total)}</b>
               </span>
             ))}
           </div>

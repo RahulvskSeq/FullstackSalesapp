@@ -283,8 +283,8 @@ export default function LoginPage({users:propUsers,onLogin,theme,toggleTheme}){
         {/* Server status indicator */}
         <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:6,marginBottom:8,fontSize:11}}>
           {serverOk===null&&<><div style={{width:8,height:8,borderRadius:'50%',background:'#fbbf24',animation:'spin 1s linear infinite'}}/><span style={{color:'var(--t3)'}}>Checking server...</span></>}
-          {serverOk===true&&<><Server size={12} color="#34d399"/><span style={{color:'#34d399',fontWeight:600}}>Server connected — full features available</span></>}
-          {serverOk===false&&<><WifiOff size={12} color="#fbbf24"/><span style={{color:'#fbbf24'}}>Server offline — sheet mode (uploads disabled)</span></>}
+          {serverOk===true&&<><Server size={12} color="#34d399"/><span style={{color:'var(--grn)',fontWeight:600}}>Server connected — full features available</span></>}
+          {serverOk===false&&<><WifiOff size={12} color="#fbbf24"/><span style={{color:'var(--yel)'}}>Server offline — sheet mode (uploads disabled)</span></>}
         </div>
 
         {/* Backend URL config — essential for mobile/APK installs */}

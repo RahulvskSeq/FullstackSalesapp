@@ -217,11 +217,11 @@ export default function TasksPage({ users, currentUser }){
                     )}
                     {iAmCreator && !iAmAssignee && (
                       <span style={{fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:3,
-                        background:'rgba(167,139,250,0.15)', color:'#a78bfa'}}>📤 BY YOU</span>
+                        background:'rgba(167,139,250,0.15)', color:'var(--pur)'}}>📤 BY YOU</span>
                     )}
                     {iAmAssignee && iAmCreator && (
                       <span style={{fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:3,
-                        background:'rgba(251,191,36,0.15)', color:'#fbbf24'}}>SELF</span>
+                        background:'rgba(251,191,36,0.15)', color:'var(--yel)'}}>SELF</span>
                     )}
                     <div style={{flex:1}}/>
                     {T.assignedName && <span style={{fontSize:10, color:'var(--t3)'}}>→ {T.assignedName}</span>}
@@ -289,7 +289,7 @@ function TaskDetailModal({ task, users, isStaff, onClose, onSaved, onDelete, cur
           <div style={{fontSize:17, fontWeight:700}}>{draft.title}</div>
           <span style={{fontSize:10, fontWeight:700, padding:'2px 7px', borderRadius:3, background:sc+'22', color:sc}}>{draft.status}</span>
           {iAmAssignee && <span style={{fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:3, background:'rgba(34,211,238,0.15)', color:'#22d3ee'}}>📥 TO YOU</span>}
-          {iAmCreator && !iAmAssignee && <span style={{fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:3, background:'rgba(167,139,250,0.15)', color:'#a78bfa'}}>📤 BY YOU</span>}
+          {iAmCreator && !iAmAssignee && <span style={{fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:3, background:'rgba(167,139,250,0.15)', color:'var(--pur)'}}>📤 BY YOU</span>}
           <div className="spacer"/>
           <button onClick={onClose} className="btn"><X size={13}/></button>
         </div>
@@ -335,7 +335,7 @@ function TaskDetailModal({ task, users, isStaff, onClose, onSaved, onDelete, cur
               {STATUSES.map(s => <option key={s} value={s}>Set: {s}</option>)}
             </select>
             <div style={{flex:1}}/>
-            {canDelete && <button onClick={onDelete} className="btn" style={{color:'#f87171', border:'1px solid #7f1d1d', fontSize:12, display:'inline-flex', alignItems:'center', gap:4}}><Trash2 size={11}/> Delete</button>}
+            {canDelete && <button onClick={onDelete} className="btn" style={{color:'var(--red)', border:'1px solid #7f1d1d', fontSize:12, display:'inline-flex', alignItems:'center', gap:4}}><Trash2 size={11}/> Delete</button>}
             <button onClick={save} disabled={busy} className="btnp" style={{display:'inline-flex', alignItems:'center', gap:6}}>
               <Send size={12}/> {busy ? 'Saving…' : 'Save'}
             </button>

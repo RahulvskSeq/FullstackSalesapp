@@ -15408,6 +15408,7 @@ import AdminPanel        from './components/AdminPanel';
 import UserManagement    from './components/UserManagement';
 import AddDealerModal    from './components/AddDealerModal';
 import BulkActionModal   from './components/BulkActionModal';
+import UpdateButton, { isNativeApp } from './components/UpdateButton';
 import IndiaMap          from './components/IndiaMap';
 import UploadMonth      from './components/UploadMonth';
 import MonthlyEntry     from './components/Monthlyentry';
@@ -16319,7 +16320,7 @@ export default function App(){
               padding:'8px 14px',
               background:'linear-gradient(90deg, rgba(251,191,36,0.18), rgba(251,191,36,0.08))',
               borderBottom:'1px solid rgba(251,191,36,0.40)',
-              color:'#fbbf24',fontSize:12,fontWeight:600,
+              color:'var(--yel)',fontSize:12,fontWeight:600,
               flexShrink:0,
             }}>
               <span style={{
@@ -16364,12 +16365,12 @@ export default function App(){
             {/* ── Territory bar — hidden on mobile via CSS ── */}
             <div className="territory-bar" style={{display:'flex',alignItems:'center',gap:10,padding:'4px 12px',background:'var(--bg2)',borderRadius:8,border:'1px solid var(--b2)',fontSize:11,flexShrink:0}}>
               <span style={{color:'var(--t3)',fontSize:10,textTransform:'uppercase',letterSpacing:'.08em'}}>{activeMO[selectedMonthIdx].slice(0,3)}</span>
-              <span style={{color:'#34d399',fontWeight:700}}>{taSnap}<span style={{color:'var(--t3)',fontWeight:400,marginLeft:2}}>/{ttSnap}</span></span>
+              <span style={{color:'var(--grn)',fontWeight:700}}>{taSnap}<span style={{color:'var(--t3)',fontWeight:400,marginLeft:2}}>/{ttSnap}</span></span>
               <span style={{color:pclr(sbP),fontWeight:700}}>{spct(ttSnap,taSnap)}</span>
               <span style={{width:1,height:12,background:'var(--b2)',flexShrink:0}}/>
-              <span style={{color:'#34d399',fontSize:11}} title="Active">●{activeCount}</span>
-              <span style={{color:'#fbbf24',fontSize:11}} title="Inactive">◑{inactiveCount}</span>
-              <span style={{color:'#f87171',fontSize:11}} title="Dead">○{deadCount}</span>
+              <span style={{color:'var(--grn)',fontSize:11}} title="Active">●{activeCount}</span>
+              <span style={{color:'var(--yel)',fontSize:11}} title="Inactive">◑{inactiveCount}</span>
+              <span style={{color:'var(--red)',fontSize:11}} title="Dead">○{deadCount}</span>
             </div>
 
             <div className="spacer"/>
@@ -16411,7 +16412,7 @@ export default function App(){
                     fontSize:11, display:'flex', alignItems:'center', gap:4, padding:'6px 8px',
                     background:'rgba(251,191,36,0.10)',
                     border:'1px solid rgba(251,191,36,0.35)',
-                    color:'#fbbf24', fontWeight:700,
+                    color:'var(--yel)', fontWeight:700,
                   }}>
                   <LogIn size={13}/>
                   <span className="hide-sm">Login as</span>
@@ -16496,7 +16497,7 @@ export default function App(){
                             <div style={{
                               display:'inline-flex', alignItems:'center', gap:4,
                               fontSize:10, fontWeight:700, padding:'5px 9px', borderRadius:6,
-                              background:'rgba(251,191,36,0.15)', color:'#fbbf24',
+                              background:'rgba(251,191,36,0.15)', color:'var(--yel)',
                               border:'1px solid rgba(251,191,36,0.35)',
                             }}>
                               <LogIn size={11}/> Login
@@ -16583,7 +16584,7 @@ export default function App(){
             {/* ── Reload from DB button — safe refresh, doesn't touch Sheets ── */}
             <button onClick={handleReloadDB} disabled={syncing || reloadingDB} className="btn"
               title="Reload all dealer data from MongoDB. Safe — never touches Google Sheets."
-              style={{fontSize:11,display:'flex',alignItems:'center',gap:4,padding:'6px 8px',flexShrink:0,color:'#86efac'}}>
+              style={{fontSize:11,display:'flex',alignItems:'center',gap:4,padding:'6px 8px',flexShrink:0,color:'var(--grn)'}}>
               <RefreshCw size={13} className={reloadingDB?'spin':''}/>
               <span className="hide-sm">{reloadingDB ? 'Reloading…' : 'Reload DB'}</span>
             </button>
@@ -16595,7 +16596,10 @@ export default function App(){
               <RefreshCw size={13} className={syncing?'spin':''}/>
               <span className="hide-sm">{syncing?'Syncing':'Sync Sheets'}</span>
             </button>
-            {useDB&&<span style={{fontSize:10,background:'rgba(52,211,153,0.15)',color:'#34d399',padding:'2px 7px',borderRadius:4,fontWeight:600,flexShrink:0}}>🗄 DB</span>}
+            {/* APK update check — only meaningful inside the Android shell,
+                where an APK can actually be installed. */}
+            {isNativeApp() && <UpdateButton compact/>}
+            {useDB&&<span style={{fontSize:10,background:'rgba(52,211,153,0.15)',color:'var(--grn)',padding:'2px 7px',borderRadius:4,fontWeight:600,flexShrink:0}}>🗄 DB</span>}
 
             {/* ── Divider ── */}
             <div className="hide-sm" style={{width:1,height:18,background:'var(--b1)',flexShrink:0}}/>
@@ -16707,7 +16711,7 @@ export default function App(){
               {/* Sidebar snapshot */}
               <div style={{padding:'14px 16px',borderTop:'1px solid var(--b1)'}}>
                 <div style={{fontSize:9,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'.12em',marginBottom:4}}>{activeMO[selectedMonthIdx]} Snapshot</div>
-                {selectedMonthIdx!==activeMonthIdx&&<div style={{fontSize:9,color:'#fbbf24',marginBottom:4}}>HISTORICAL</div>}
+                {selectedMonthIdx!==activeMonthIdx&&<div style={{fontSize:9,color:'var(--yel)',marginBottom:4}}>HISTORICAL</div>}
                 <div style={{fontSize:22,fontWeight:700,color:pclr(sbP)}}>{taSnap} units</div>
                 <div style={{fontSize:10,color:'var(--t3)',marginBottom:6}}>{taSnap} / {ttSnap} · {spct(ttSnap,taSnap)}</div>
                 <div className="prog-bar"><div className="prog-fill" style={{width:`${Math.min(sbP||0,100)}%`,background:pclr(sbP)}}/></div>

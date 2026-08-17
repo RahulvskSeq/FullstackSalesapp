@@ -195,7 +195,7 @@ function LocationCapture({ loc, setLoc, hidden=false }){
             {/* Address can wrap up to 2 lines on phones — full street is
                 shown so the salesman can verify before saving. */}
             <div style={{
-              color:'#34d399', fontWeight:700,
+              color:'var(--grn)', fontWeight:700,
               display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical',
               overflow:'hidden', wordBreak:'break-word',
             }}>
@@ -207,7 +207,7 @@ function LocationCapture({ loc, setLoc, hidden=false }){
             </div>
           </>
         )}
-        {!busy && !okay && error && <span style={{color:'#fbbf24'}}>{error}</span>}
+        {!busy && !okay && error && <span style={{color:'var(--yel)'}}>{error}</span>}
       </div>
       <button type="button" onClick={fetchLocation} title="Refresh location"
         style={{background:'none', border:'none', color:'var(--t3)', cursor:'pointer', padding:4, flexShrink:0}}>
@@ -950,14 +950,14 @@ export function VisitsPage({ dealers, users, currentUser }){
         <div style={{width:1, height:30, background:'var(--b1)'}}/>
         <div>
           <div style={{fontSize:10, color:'var(--t3)', textTransform:'uppercase', letterSpacing:'.12em'}}>Total time</div>
-          <div style={{fontSize:18, fontWeight:700, color:'#34d399'}}>{fmtDuration(totalMins)}</div>
+          <div style={{fontSize:18, fontWeight:700, color:'var(--grn)'}}>{fmtDuration(totalMins)}</div>
         </div>
         {myActive && (
           <>
             <div style={{width:1, height:30, background:'var(--b1)'}}/>
             <div>
-              <div style={{fontSize:10, color:'#fbbf24', textTransform:'uppercase', letterSpacing:'.12em'}}>In progress</div>
-              <div style={{fontSize:14, fontWeight:700, color:'#fbbf24'}}>
+              <div style={{fontSize:10, color:'var(--yel)', textTransform:'uppercase', letterSpacing:'.12em'}}>In progress</div>
+              <div style={{fontSize:14, fontWeight:700, color:'var(--yel)'}}>
                 {myActive.dealerName} · {fmtDuration(liveDuration(myActive.checkInTime))}
               </div>
             </div>
@@ -974,7 +974,7 @@ export function VisitsPage({ dealers, users, currentUser }){
             }
             .crm-checkin textarea:focus { border-color:var(--acc); box-shadow:0 0 0 3px rgba(99,102,241,0.18); outline:none; }
           `}</style>
-          <div style={{fontSize:14, fontWeight:800, marginBottom:6, display:'flex', alignItems:'center', gap:8, color:'#fbbf24'}}>
+          <div style={{fontSize:14, fontWeight:800, marginBottom:6, display:'flex', alignItems:'center', gap:8, color:'var(--yel)'}}>
             <span style={{width:30, height:30, borderRadius:'50%', background:'rgba(251,191,36,0.15)', display:'inline-flex', alignItems:'center', justifyContent:'center'}}>
               <ClipboardList size={15}/>
             </span>
@@ -993,7 +993,7 @@ export function VisitsPage({ dealers, users, currentUser }){
                 rows={6}/>
             </div>
             {coMissing && (
-              <div style={{fontSize:11, color:'#f87171', marginTop:-4}}>Discussion notes are required to check out</div>
+              <div style={{fontSize:11, color:'var(--red)', marginTop:-4}}>Discussion notes are required to check out</div>
             )}
             {/* GPS captured silently — box hidden. */}
             <LocationCapture loc={coLoc} setLoc={setCoLoc} hidden/>
@@ -1164,7 +1164,7 @@ export function VisitsPage({ dealers, users, currentUser }){
               </div>
             )}
             {ciMissing.dealer && (
-              <div style={{fontSize:11, color:'#f87171', marginTop:-4}}>
+              <div style={{fontSize:11, color:'var(--red)', marginTop:-4}}>
                 {ciNewDealerMode ? 'Type the new dealer name' : 'Party / Dealer name is required'}
               </div>
             )}
@@ -1177,7 +1177,7 @@ export function VisitsPage({ dealers, users, currentUser }){
               {VISIT_PURPOSES.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
             {ciMissing.purpose && (
-              <div style={{fontSize:11, color:'#f87171', marginTop:-4}}>Pick a Purpose of Visit</div>
+              <div style={{fontSize:11, color:'var(--red)', marginTop:-4}}>Pick a Purpose of Visit</div>
             )}
 
             <VoiceTextarea placeholder="Quick note (optional)"
@@ -1516,12 +1516,12 @@ export function VisitsPage({ dealers, users, currentUser }){
                     <span style={{display:'inline-flex', alignItems:'center', gap:4, color:'var(--t2)', fontWeight:600}}>
                       <Calendar size={11}/> {visitDate}
                     </span>
-                    <span>📥 In: <b style={{color:'#34d399'}}>{fmtClock(v.checkInTime)}</b></span>
+                    <span>📥 In: <b style={{color:'var(--grn)'}}>{fmtClock(v.checkInTime)}</b></span>
                     {v.checkOutTime
-                      ? <span>📤 Out: <b style={{color:'#fbbf24'}}>{fmtClock(v.checkOutTime)}</b>
+                      ? <span>📤 Out: <b style={{color:'var(--yel)'}}>{fmtClock(v.checkOutTime)}</b>
                           {outOtherDay && <span style={{color:'var(--t3)'}}> ({fmtDate(v.checkOutTime)})</span>}
                         </span>
-                      : <span style={{color:'#fbbf24'}}>Awaiting check-out</span>}
+                      : <span style={{color:'var(--yel)'}}>Awaiting check-out</span>}
                   </div>
 
                   {/* Photos row */}
@@ -1567,12 +1567,12 @@ export function VisitsPage({ dealers, users, currentUser }){
                           the salesman can start fresh. */}
                       {isSuper && v.status === 'in-progress' && (
                         <button onClick={()=>forceCloseVisit(v._id)} title="Force-close this stuck visit so the salesman can check in again"
-                          style={{background:'none', border:'1px solid #fbbf24', borderRadius:6, color:'#fbbf24', cursor:'pointer', padding:'4px 10px', fontSize:11, display:'inline-flex', alignItems:'center', gap:4}}>
+                          style={{background:'none', border:'1px solid #fbbf24', borderRadius:6, color:'var(--yel)', cursor:'pointer', padding:'4px 10px', fontSize:11, display:'inline-flex', alignItems:'center', gap:4}}>
                           <RefreshCw size={11}/> Reset / Force close
                         </button>
                       )}
                       <button onClick={()=>removeVisit(v._id)} title="Delete visit"
-                        style={{background:'none', border:'none', color:'#f87171', cursor:'pointer', padding:4, fontSize:11, display:'inline-flex', alignItems:'center', gap:4}}>
+                        style={{background:'none', border:'none', color:'var(--red)', cursor:'pointer', padding:4, fontSize:11, display:'inline-flex', alignItems:'center', gap:4}}>
                         <Trash2 size={11}/> Delete
                       </button>
                     </div>
@@ -1833,7 +1833,7 @@ function _LeadsBody({ users, currentUser, isStaff }){
                 title="Bulk-upload leads from CSV / Excel"
                 style={{
                   display:'inline-flex', alignItems:'center', gap:4, padding:'4px 10px', fontSize:11,
-                  background:'rgba(52,211,153,0.10)', color:'#34d399', border:'1px solid #15803d',
+                  background:'rgba(52,211,153,0.10)', color:'var(--grn)', border:'1px solid #15803d',
                 }}>
                 <Upload size={11}/> {bulkBusy ? 'Uploading…' : 'Upload Leads'}
               </button>
@@ -1930,7 +1930,7 @@ function _LeadsBody({ users, currentUser, isStaff }){
                       <span style={{fontSize:10, color:'var(--t3)'}}>→ {L.assignedName}</span>
                     )}
                     {L.value > 0 && (
-                      <span style={{fontSize:10, color:'#34d399', fontWeight:600}}>
+                      <span style={{fontSize:10, color:'var(--grn)', fontWeight:600}}>
                         ₹{Number(L.value).toLocaleString('en-IN')}
                       </span>
                     )}
@@ -2055,7 +2055,7 @@ function LeadDetailModal({ lead, users, currentUser, isStaff, onClose, onSaved, 
               {(lead.city || lead.state) && <span style={{fontSize:12, color:'var(--t3)', display:'inline-flex', alignItems:'center', gap:4}}><MapPin size={11}/> {[lead.city, lead.state].filter(Boolean).join(', ')}</span>}
             </div>
             {lead.notes && <div style={{fontSize:12, color:'var(--t2)', marginTop:8, whiteSpace:'pre-wrap'}}>{lead.notes}</div>}
-            {lead.value > 0 && <div style={{fontSize:12, color:'#34d399', fontWeight:700, marginTop:6}}>Value: ₹{Number(lead.value).toLocaleString('en-IN')}</div>}
+            {lead.value > 0 && <div style={{fontSize:12, color:'var(--grn)', fontWeight:700, marginTop:6}}>Value: ₹{Number(lead.value).toLocaleString('en-IN')}</div>}
           </div>
         )}
 
@@ -2074,7 +2074,7 @@ function LeadDetailModal({ lead, users, currentUser, isStaff, onClose, onSaved, 
               {LEAD_STATUSES.map(s => <option key={s} value={s}>Set: {s}</option>)}
             </select>
             <div style={{flex:1}}/>
-            {isStaff && <button onClick={onDelete} className="btn" style={{color:'#f87171', border:'1px solid #7f1d1d', fontSize:12, display:'inline-flex', alignItems:'center', gap:4}}><Trash2 size={11}/> Delete</button>}
+            {isStaff && <button onClick={onDelete} className="btn" style={{color:'var(--red)', border:'1px solid #7f1d1d', fontSize:12, display:'inline-flex', alignItems:'center', gap:4}}><Trash2 size={11}/> Delete</button>}
             <button onClick={save} disabled={busy} className="btnp" style={{display:'inline-flex', alignItems:'center', gap:6}}>
               <Send size={12}/> {busy ? 'Saving…' : 'Save'}
             </button>
@@ -2271,11 +2271,11 @@ function _LeavesBody({ users, currentUser, isStaff }){
                   {isStaff && l.status === 'PENDING' && (
                     <div style={{display:'flex', gap:4}}>
                       <button onClick={()=>review(l,'APPROVED')} className="btn" title="Approve"
-                        style={{background:'rgba(52,211,153,0.10)', color:'#34d399', border:'1px solid #15803d', padding:'4px 8px', fontSize:11}}>
+                        style={{background:'rgba(52,211,153,0.10)', color:'var(--grn)', border:'1px solid #15803d', padding:'4px 8px', fontSize:11}}>
                         <CheckCircle2 size={11}/>
                       </button>
                       <button onClick={()=>review(l,'REJECTED')} className="btn" title="Reject"
-                        style={{background:'rgba(248,113,113,0.10)', color:'#f87171', border:'1px solid #7f1d1d', padding:'4px 8px', fontSize:11}}>
+                        style={{background:'rgba(248,113,113,0.10)', color:'var(--red)', border:'1px solid #7f1d1d', padding:'4px 8px', fontSize:11}}>
                         <X size={11}/>
                       </button>
                     </div>

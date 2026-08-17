@@ -123,7 +123,7 @@ const CategoryFilter = ({
             style={{
               fontSize:11, padding:'4px 9px', borderRadius:6,
               border:'1px solid #15803d', background:'rgba(34,197,94,0.08)',
-              color:'#86efac', cursor:'pointer', fontWeight:600,
+              color:'var(--grn)', cursor:'pointer', fontWeight:600,
             }}>
             Save as default
           </button>

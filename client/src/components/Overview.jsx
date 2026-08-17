@@ -130,8 +130,8 @@
 //         {decliningList.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'DECLINING SHARPLY',color:'#f87171',icon:'📉',sub:'sales down >20% last 3 vs prior 3 months',list:decliningList})} style={{background:'rgba(248,113,113,0.1)',color:'#f87171',cursor:'pointer'}}><ArrowDownRight size={13}/> {decliningList.length} declining sharply</div>}
 //         {dormantList.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'DORMANT 3+ MONTHS',color:'#fbbf24',icon:'💤',sub:'zero sales last 3 months but had history',list:dormantList})} style={{background:'rgba(251,191,36,0.1)',color:'#fbbf24',cursor:'pointer'}}><Clock size={13}/> {dormantList.length} dormant 3+ months</div>}
 //         {recentlyInactiveList.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'REACTIVE',color:'#fb923c',icon:'⏸',sub:'no orders this month but had orders before',list:recentlyInactiveList})} style={{background:'rgba(251,146,60,0.1)',color:'#fb923c',cursor:'pointer'}}><Clock size={13}/> {recentlyInactiveList.length} recently inactive</div>}
-//         {inactiveByStatus.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'INACTIVE (STATUS)',color:'#fbbf24',icon:'⚠️',sub:'marked as Inactive or Recently Inactive',list:inactiveByStatus})} style={{background:'rgba(251,191,36,0.08)',color:'#fbbf24',cursor:'pointer'}}><AlertTriangle size={13}/> {inactiveByStatus.length} inactive</div>}
-//         {deadByStatus.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'DEAD CUSTOMERS',color:'#f87171',icon:'✕',sub:'marked as Dead',list:deadByStatus})} style={{background:'rgba(248,113,113,0.08)',color:'#f87171',cursor:'pointer'}}><X size={13}/> {deadByStatus.length} dead customers</div>}
+//         {inactiveByStatus.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'INACTIVE (STATUS)',color:'#fbbf24',icon:'⚠️',sub:'marked as Inactive or Recently Inactive',list:inactiveByStatus})} style={{background:'rgba(251,191,36,0.1)',color:'#fbbf24',cursor:'pointer'}}><AlertTriangle size={13}/> {inactiveByStatus.length} inactive</div>}
+//         {deadByStatus.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'DEAD CUSTOMERS',color:'#f87171',icon:'✕',sub:'marked as Dead',list:deadByStatus})} style={{background:'rgba(248,113,113,0.1)',color:'#f87171',cursor:'pointer'}}><X size={13}/> {deadByStatus.length} dead customers</div>}
 //         {overdueFollowups>0&&<div className="insight-chip" onClick={()=>onNavigate('followups')} style={{background:'rgba(99,102,241,0.1)',color:'var(--acc)',cursor:'pointer'}}><Bell size={13}/> {overdueFollowups} overdue follow-ups</div>}
 //       </div>
 
@@ -1283,7 +1283,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Users, Target, Award, Activity, TrendingUp, Clock, Bell, AlertTriangle, Search, MapPin, Star, ArrowUpRight, ArrowDownRight, X, GripVertical, Hash } from 'lucide-react';
 import { MO as MO_CONST, CURRENT_MONTH_IDX, DEALER_TYPES } from '../constants';
-import { pct, spct, pclr, trendPct, forecast, monthTarget } from '../utils';
+import { pct, spct, pclr, trendPct, forecast, monthTarget, readableOn } from '../utils';
 import { useMonth } from '../context';
 import { StatusBadge, Avatar, MiniBars, StatCard, MultiSelect } from './UI';
 import MapView from './MapView';
@@ -1639,7 +1639,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
         <div style={{flex:'1 1 auto', minWidth:240}}>
           <div style={{fontSize:11,color:'var(--acc)',textTransform:'uppercase',letterSpacing:'0.15em',marginBottom:4}}>
             {viewingLabel}
-            {selectedMonthIdx!==CURRENT_MONTH_IDX&&<span style={{marginLeft:8,background:'rgba(251,191,36,0.15)',color:'#fbbf24',padding:'2px 8px',borderRadius:4,fontSize:10}}>HISTORICAL VIEW</span>}
+            {selectedMonthIdx!==CURRENT_MONTH_IDX&&<span style={{marginLeft:8,background:'rgba(251,191,36,0.15)',color:'var(--yel)',padding:'2px 8px',borderRadius:4,fontSize:10}}>HISTORICAL VIEW</span>}
           </div>
           <div style={{fontSize:24,fontWeight:700,letterSpacing:'-0.02em'}}>
             {(currentUser.role==='admin'||currentUser.role==='superadmin')?'All Territories':'Your Territory'} — Overview
@@ -1651,7 +1651,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
               padding:'6px 12px', borderRadius:8,
               background:'rgba(52,211,153,0.10)',
               border:'1px solid rgba(52,211,153,0.30)',
-              fontSize:12, color:'#86efac', fontWeight:600,
+              fontSize:12, color:'var(--grn)', fontWeight:600,
             }}
               title="Most recent change to any dealer's Target / Achieved / Status / Zone / etc.">
               <span style={{
@@ -1659,7 +1659,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
                 boxShadow:'0 0 8px rgba(52,211,153,0.7)',
               }}/>
               <span style={{color:'var(--t3)', fontWeight:500}}>Last updated on</span>
-              <b style={{color:'#86efac'}}>{lastUpdatedFull}</b>
+              <b style={{color:'var(--grn)'}}>{lastUpdatedFull}</b>
               <span style={{color:'var(--t3)', fontWeight:500, fontSize:11}}>({lastUpdatedLabel})</span>
             </div>
           )}
@@ -1715,13 +1715,13 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
 
       {/* Insight chips — all based on real data calculations */}
       <div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:18}}>
-        <div className="insight-chip" onClick={()=>setInsightPopup({label:'TRENDING UP',color:'#34d399',icon:'📈',sub:'sales up >30% vs previous month',list:risingList})} style={{background:'rgba(52,211,153,0.1)',color:'#34d399',cursor:'pointer'}}><TrendingUp size={13}/> {risingList.length} dealers trending up</div>
-        <div className="insight-chip" onClick={()=>setInsightPopup({label:'DECLINING SHARPLY',color:'#f87171',icon:'📉',sub:'sales down >20% vs previous month',list:decliningList})} style={{background:'rgba(248,113,113,0.1)',color:'#f87171',cursor:'pointer'}}><ArrowDownRight size={13}/> {decliningList.length} declining sharply</div>
-        {dormantList.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'DORMANT 3+ MONTHS',color:'#fbbf24',icon:'💤',sub:'zero sales last 3 months but had history',list:dormantList})} style={{background:'rgba(251,191,36,0.1)',color:'#fbbf24',cursor:'pointer'}}><Clock size={13}/> {dormantList.length} dormant 3+ months</div>}
-        {recentlyInactiveList.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'REACTIVE',color:'#fb923c',icon:'⏸',sub:'no orders this month but had orders before',list:recentlyInactiveList})} style={{background:'rgba(251,146,60,0.1)',color:'#fb923c',cursor:'pointer'}}><Clock size={13}/> {recentlyInactiveList.length} reactive</div>}
-        {inactiveByStatus.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'INACTIVE (STATUS)',color:'#fbbf24',icon:'⚠️',sub:'marked as Inactive or Reactive',list:inactiveByStatus})} style={{background:'rgba(251,191,36,0.08)',color:'#fbbf24',cursor:'pointer'}}><AlertTriangle size={13}/> {inactiveByStatus.length} inactive</div>}
-        {deadByStatus.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'DEAD CUSTOMERS',color:'#f87171',icon:'✕',sub:'marked as Dead',list:deadByStatus})} style={{background:'rgba(248,113,113,0.08)',color:'#f87171',cursor:'pointer'}}><X size={13}/> {deadByStatus.length} dead customers</div>}
-        {overdueFollowups>0&&<div className="insight-chip" onClick={()=>onNavigate('followups')} style={{background:'rgba(99,102,241,0.1)',color:'var(--acc)',cursor:'pointer'}}><Bell size={13}/> {overdueFollowups} overdue follow-ups</div>}
+        <div className="insight-chip" onClick={()=>setInsightPopup({label:'TRENDING UP',color:'var(--grn)',icon:'📈',sub:'sales up >30% vs previous month',list:risingList})} style={{'--c':'#34d399','--fg':readableOn('#34d399'),background:'rgba(52,211,153,0.1)',color:'var(--grn)',cursor:'pointer'}}><TrendingUp size={13}/> {risingList.length} dealers trending up</div>
+        <div className="insight-chip" onClick={()=>setInsightPopup({label:'DECLINING SHARPLY',color:'var(--red)',icon:'📉',sub:'sales down >20% vs previous month',list:decliningList})} style={{'--c':'#f87171','--fg':readableOn('#f87171'),background:'rgba(248,113,113,0.1)',color:'var(--red)',cursor:'pointer'}}><ArrowDownRight size={13}/> {decliningList.length} declining sharply</div>
+        {dormantList.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'DORMANT 3+ MONTHS',color:'var(--yel)',icon:'💤',sub:'zero sales last 3 months but had history',list:dormantList})} style={{'--c':'#fbbf24','--fg':readableOn('#fbbf24'),background:'rgba(251,191,36,0.1)',color:'var(--yel)',cursor:'pointer'}}><Clock size={13}/> {dormantList.length} dormant 3+ months</div>}
+        {recentlyInactiveList.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'REACTIVE',color:'#fb923c',icon:'⏸',sub:'no orders this month but had orders before',list:recentlyInactiveList})} style={{'--c':'#fb923c','--fg':readableOn('#fb923c'),background:'rgba(251,146,60,0.1)',color:'#fb923c',cursor:'pointer'}}><Clock size={13}/> {recentlyInactiveList.length} reactive</div>}
+        {inactiveByStatus.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'INACTIVE (STATUS)',color:'var(--yel)',icon:'⚠️',sub:'marked as Inactive or Reactive',list:inactiveByStatus})} style={{'--c':'#fbbf24','--fg':readableOn('#fbbf24'),background:'rgba(251,191,36,0.1)',color:'var(--yel)',cursor:'pointer'}}><AlertTriangle size={13}/> {inactiveByStatus.length} inactive</div>}
+        {deadByStatus.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'DEAD CUSTOMERS',color:'var(--red)',icon:'✕',sub:'marked as Dead',list:deadByStatus})} style={{'--c':'#f87171','--fg':readableOn('#f87171'),background:'rgba(248,113,113,0.1)',color:'var(--red)',cursor:'pointer'}}><X size={13}/> {deadByStatus.length} dead customers</div>}
+        {overdueFollowups>0&&<div className="insight-chip" onClick={()=>onNavigate('followups')} style={{'--c':'#6366f1','--fg':readableOn('#6366f1'),background:'rgba(99,102,241,0.1)',color:'var(--acc)',cursor:'pointer'}}><Bell size={13}/> {overdueFollowups} overdue follow-ups</div>}
       </div>
 
       <div className="stat-grid">
@@ -1801,12 +1801,13 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
         </div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:10}}>
           {[
-            {label:'TOP PERFORMER',sub:'> 250 units',count:topPerformers.length,color:'#fbbf24',icon:'⭐',list:topPerformers},
-            {label:'PRIORITY ACCOUNT',sub:'100 – 250 units',count:priorityAccount.length,color:'#a78bfa',icon:'◆',list:priorityAccount},
+            {label:'TOP PERFORMER',sub:'> 250 units',count:topPerformers.length,color:'var(--yel)',icon:'⭐',list:topPerformers},
+            {label:'PRIORITY ACCOUNT',sub:'100 – 250 units',count:priorityAccount.length,color:'var(--pur)',icon:'◆',list:priorityAccount},
             {label:'RISING STAR',sub:'50 – 100 units',count:risingStar.length,color:'#22d3ee',icon:'★',list:risingStar},
           ].map(t=>(
             <div key={t.label} onClick={()=>{if(t.list.length>0)setTierPopup(t);}}
-              style={{background:`linear-gradient(135deg, ${t.color}1a, ${t.color}08)`,border:`1px solid ${t.color}44`,borderRadius:12,padding:'14px 16px',cursor:'pointer',transition:'transform .15s'}}
+              className="tier-card"
+              style={{'--c':t.color,'--fg':readableOn(t.color),background:`linear-gradient(135deg, ${t.color}1a, ${t.color}08)`,border:`1px solid ${t.color}44`,borderRadius:12,padding:'14px 16px',cursor:'pointer',transition:'transform .15s'}}
               onMouseEnter={e=>{e.currentTarget.style.transform='translateY(-2px)';}}
               onMouseLeave={e=>{e.currentTarget.style.transform='translateY(0)';}}>
               <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
@@ -1816,7 +1817,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
               <div style={{fontSize:30,fontWeight:700,color:'var(--t1)',lineHeight:1,marginBottom:6}}>{t.count}<span style={{fontSize:11,color:'var(--t3)',fontWeight:400,marginLeft:6}}>dealers</span></div>
               {t.list.slice(0,3).map(d=>(
                 <span key={d.id} onClick={e=>{e.stopPropagation();onOpenDealer(d.id);}}
-                  style={{display:'inline-block',fontSize:10,padding:'2px 8px',background:'var(--bg2)',border:'1px solid var(--b2)',borderRadius:4,color:'var(--t2)',cursor:'pointer',margin:'2px',maxWidth:140,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                  className="tier-pill" style={{display:'inline-block',fontSize:10,padding:'2px 8px',background:'var(--bg2)',border:'1px solid var(--b2)',borderRadius:4,color:'var(--t2)',cursor:'pointer',margin:'2px',maxWidth:140,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
                   {d.name} · {d.achieved}
                 </span>
               ))}
@@ -1874,15 +1875,15 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
           return(
             <div draggable onDragStart={e=>dragStart(e,s,sec)} onDragOver={e=>dragOver(e,s)} onDrop={e=>drop(e,s,sec)} onDragEnd={dragEnd}
               onClick={()=>onNavigate('dealers',{status:s})}
-              style={{background:isOver?clr+'30':clr+'14',border:`1px solid ${isOver?clr:clr+'33'}`,borderRadius:10,padding:'12px 14px',cursor:'pointer',
-                opacity:dragStatus===s?0.5:1,transition:'all .15s',position:'relative'}}>
+              className="status-card"
+              style={{'--c':clr,'--fg':readableOn(clr),background:isOver?clr+'30':clr+'14',border:`1px solid ${isOver?clr:clr+'33'}`,borderRadius:10,padding:'12px 14px',cursor:'pointer',opacity:dragStatus===s?0.5:1,transition:'all .15s',position:'relative'}}>
               <div style={{position:'absolute',top:6,right:6,opacity:0.3,cursor:'grab'}}><GripVertical size={10}/></div>
               <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:6}}>
-                <span style={{width:8,height:8,borderRadius:'50%',background:clr,flexShrink:0}}/>
+                <span className="sc-dot" style={{width:8,height:8,borderRadius:'50%',background:clr,flexShrink:0}}/>
                 <span style={{fontSize:11,color:clr,fontWeight:600,textTransform:'uppercase',letterSpacing:'.05em',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s}</span>
               </div>
               <div style={{fontSize:24,fontWeight:700,color:'var(--t1)',lineHeight:1}}>{v}<span style={{fontSize:11,color:'var(--t3)',fontWeight:400,marginLeft:6}}>{pctOfTotal}%</span></div>
-              <div style={{height:3,background:'var(--b1)',borderRadius:2,marginTop:8,overflow:'hidden'}}>
+              <div className="sc-bar" style={{height:3,background:'var(--b1)',borderRadius:2,marginTop:8,overflow:'hidden'}}>
                 <div style={{height:'100%',width:pctOfTotal+'%',background:clr,borderRadius:2,transition:'width .8s ease'}}/>
               </div>
             </div>

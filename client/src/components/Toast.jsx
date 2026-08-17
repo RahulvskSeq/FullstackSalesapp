@@ -40,10 +40,10 @@ export const confirmDialog = (opts) => new Promise((resolve) => {
 
 // ── Visuals ───────────────────────────────────────────────────────────────
 const TYPE_STYLE = {
-  success: { bg:'rgba(34,197,94,0.10)',  border:'#15803d', color:'#86efac', Icon: CheckCircle2 },
+  success: { bg:'rgba(34,197,94,0.10)',  border:'#15803d', color:'var(--grn)', Icon: CheckCircle2 },
   error:   { bg:'rgba(248,113,113,0.10)', border:'#7f1d1d', color:'#fca5a5', Icon: AlertTriangle },
   info:    { bg:'rgba(99,102,241,0.10)',  border:'#3730a3', color:'#a5b4fc', Icon: Info },
-  warn:    { bg:'rgba(251,191,36,0.10)',  border:'#92400e', color:'#fbbf24', Icon: AlertCircle },
+  warn:    { bg:'rgba(251,191,36,0.10)',  border:'#92400e', color:'var(--yel)', Icon: AlertCircle },
 };
 
 function Toast({ t, onClose }){
@@ -103,7 +103,7 @@ function ConfirmModal({ c, onResolve }){
           display:'flex', alignItems:'center', gap:10, marginBottom:10,
         }}>
           {c.danger
-            ? <AlertTriangle size={20} style={{color:'#f87171', flexShrink:0}}/>
+            ? <AlertTriangle size={20} style={{color:'var(--red)', flexShrink:0}}/>
             : <AlertCircle   size={20} style={{color:'#a5b4fc', flexShrink:0}}/>}
           <div style={{fontSize:15, fontWeight:700, color:'var(--t1)'}}>{c.title}</div>
         </div>
