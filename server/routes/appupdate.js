@@ -24,6 +24,15 @@ const BUCKET      = 'apk';
 
 const bucket = () => new mongoose.mongo.GridFSBucket(mongoose.connection.db, { bucketName: BUCKET });
 
+// Public URL of this request. nginx terminates TLS and forwards plain HTTP to
+// node, so req.protocol reports the *internal* hop ("http") and we'd hand the
+// phone a cleartext URL — which Android 9+ blocks outright. The real scheme is
+// only in X-Forwarded-Proto.
+const publicOrigin = (req) => {
+  const proto = String(req.headers['x-forwarded-proto'] || req.protocol).split(',')[0].trim();
+  return `${proto}://${req.get('host')}`;
+};
+
 // ── GET /api/app/version ──────────────────────────────────────────────────
 // Deliberately unauthenticated: the updater runs before/independently of login.
 // Returns nulls (not an error) when nothing has been published yet.
@@ -38,7 +47,7 @@ router.get('/version', async (req, res) => {
       sizeBytes:   v?.sizeBytes ?? null,
       publishedAt: v?.publishedAt || null,
       // Absolute URL so the Android download manager can resolve it.
-      downloadUrl: v ? `${req.protocol}://${req.get('host')}/api/app/download` : null,
+      downloadUrl: v ? `${publicOrigin(req)}/api/app/download` : null,
     });
   } catch (e) {
     console.error('[APP/version]', e.message);
