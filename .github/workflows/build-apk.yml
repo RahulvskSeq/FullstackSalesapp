@@ -18,8 +18,8 @@ jobs:
     # Job-level so the publish step's `if:` can actually read them — a step's
     # own env block is not in scope for its own condition.
     env:
-      APP_PUBLISH_URL: ${{ secrets.APP_PUBLISH_URL }}
-      APP_PUBLISH_KEY: ${{ secrets.APP_PUBLISH_KEY }}
+      APP_PUBLISH_URL: ${{ secrets.APP_PUBLISH_URL || vars.APP_PUBLISH_URL }}
+      APP_PUBLISH_KEY: ${{ secrets.APP_PUBLISH_KEY || vars.APP_PUBLISH_KEY }}
 
     steps:
       - name: Check out code
@@ -100,8 +100,17 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish APK to the app server (powers in-app "Check for updates")
-        if: env.APP_PUBLISH_URL != ''
         run: |
+          if [ -z "$APP_PUBLISH_URL" ] || [ -z "$APP_PUBLISH_KEY" ]; then
+            echo "::error title=Update channel not configured::APP_PUBLISH_URL / APP_PUBLISH_KEY are empty."
+            echo "Set BOTH under Settings -> Secrets and variables -> Actions (Secrets tab):"
+            echo "  APP_PUBLISH_URL = https://sequence.salestracker.in/api/app/publish"
+            echo "  APP_PUBLISH_KEY = <the key in the server .env>"
+            echo "URL set: $([ -n "$APP_PUBLISH_URL" ] && echo yes || echo NO)"
+            echo "KEY set: $([ -n "$APP_PUBLISH_KEY" ] && echo yes || echo NO)"
+            exit 1
+          fi
+          echo "Publishing build ${{ github.run_number }} to $APP_PUBLISH_URL"
           curl -sS --fail-with-body -X POST "$APP_PUBLISH_URL" \
             -H "X-API-Key: $APP_PUBLISH_KEY" \
             -F "file=@client/android/app/build/outputs/apk/debug/app-debug.apk" \
