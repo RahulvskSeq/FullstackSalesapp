@@ -23,8 +23,12 @@ android {
         // build is strictly newer than the last. Android REFUSES to install an
         // APK whose versionCode is not greater than the installed one, which is
         // half the reason updates previously needed an uninstall.
-        versionCode (System.getenv("APP_VERSION_CODE") ?: "2").toInteger()
-        versionName System.getenv("APP_VERSION_NAME") ?: "1.1"
+        // NOTE the parentheses. Groovy binds a paren-less method call tighter
+        // than `?:`, so `versionName System.getenv(X) ?: "1.1"` parses as
+        // `versionName(System.getenv(X)) ?: "1.1"` — passing null straight in
+        // and failing with "Value is null" whenever the env var is unset.
+        versionCode Integer.parseInt(System.getenv("APP_VERSION_CODE") ?: "2")
+        versionName(System.getenv("APP_VERSION_NAME") ?: "1.1")
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

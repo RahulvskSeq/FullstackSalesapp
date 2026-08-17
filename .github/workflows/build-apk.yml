@@ -15,6 +15,12 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    # Job-level so the publish step's `if:` can actually read them — a step's
+    # own env block is not in scope for its own condition.
+    env:
+      APP_PUBLISH_URL: ${{ secrets.APP_PUBLISH_URL }}
+      APP_PUBLISH_KEY: ${{ secrets.APP_PUBLISH_KEY }}
+
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -94,10 +100,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish APK to the app server (powers in-app "Check for updates")
-        if: github.event_name == 'push' && env.APP_PUBLISH_URL != ''
-        env:
-          APP_PUBLISH_URL: ${{ secrets.APP_PUBLISH_URL }}
-          APP_PUBLISH_KEY: ${{ secrets.APP_PUBLISH_KEY }}
+        if: env.APP_PUBLISH_URL != ''
         run: |
           curl -sS --fail-with-body -X POST "$APP_PUBLISH_URL" \
             -H "X-API-Key: $APP_PUBLISH_KEY" \
