@@ -1151,18 +1151,46 @@ router.post('/sync-db', protect, adminOnly, async (req,res) => {
           // existing doc check happens via the upsert query; the actual guard
           // is below via a $setOnInsert + conditional $set
         }
+        const rx = new RegExp(`^${d.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+
+        // Match on NAME ALONE. The salesman must never be part of the upsert
+        // key: when the sheet moves a dealer to a new rep, a {name, salesman}
+        // query matches nothing and the upsert INSERTS A SECOND DEALER instead
+        // of reassigning the existing one. That left the history under the old
+        // rep, a duplicate under the new one, and every month double-counted
+        // org-wide. (One sync produced 90 such duplicates across 89 dealers.)
+        const existing = await Dealer.findOne({ name: rx }).lean();
+
+        // Reassignment = handover, not a rewrite of the past. Months already on
+        // the record stay stamped to whoever owned them, so the incoming rep
+        // only ever sees business they actually did.
+        const prevOwner    = existing?.salesman || '';
+        const ownerChanged = !!existing && !!prevOwner && prevOwner !== d.salesman;
+
         Object.entries(monthsToWrite).forEach(([m, entry]) => {
-          update[`monthlyData.${m}`] = entry;
+          // The sheet payload carries no per-month salesman, so writing `entry`
+          // verbatim would wipe an existing stamp. Carry it forward instead.
+          const stamp = existing?.monthlyData?.[m]?.salesman
+                     || (ownerChanged ? prevOwner : '');
+          update[`monthlyData.${m}`] = stamp ? { ...entry, salesman: stamp } : entry;
           monthsTouched++;
         });
 
-        const rx = new RegExp(`^${d.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+        // Months the sheet didn't send still need stamping on a handover,
+        // otherwise they fall back to the dealer's current owner in the UI.
+        if(ownerChanged){
+          Object.entries(existing.monthlyData || {}).forEach(([m, e]) => {
+            if(monthsToWrite[m]) return;          // already handled above
+            if(e?.salesman) return;               // never overwrite a real stamp
+            update[`monthlyData.${m}.salesman`] = prevOwner;
+          });
+        }
 
         // Two-phase write to avoid overwriting a manually-set global target:
         //   1. Upsert with $setOnInsert for target — only applied on insert
         //   2. $set everything else
         await Dealer.findOneAndUpdate(
-          { name: rx, salesman: d.salesman },
+          { name: rx },
           {
             $set: update,
             $setOnInsert: { target: Number(d.target) || 0 },
