@@ -15409,6 +15409,7 @@ import UserManagement    from './components/UserManagement';
 import AddDealerModal    from './components/AddDealerModal';
 import BulkActionModal   from './components/BulkActionModal';
 import UpdateButton, { isNativeApp } from './components/UpdateButton';
+import { SHEET_SYNC_ENABLED } from './featureFlags';
 import IndiaMap          from './components/IndiaMap';
 import UploadMonth      from './components/UploadMonth';
 import MonthlyEntry     from './components/Monthlyentry';
@@ -16595,12 +16596,12 @@ export default function App(){
               </button>
 
               {/* ── Sync from Sheets button — icon only on mobile ── */}
-              <button onClick={syncSheets} disabled={syncing} className="btn"
+              {SHEET_SYNC_ENABLED && <button onClick={syncSheets} disabled={syncing} className="btn"
                 title="Pull latest from Google Sheets. Months not in the sheet are preserved."
                 style={{fontSize:11,display:'flex',alignItems:'center',gap:4,padding:'6px 8px',flexShrink:0}}>
                 <RefreshCw size={13} className={syncing?'spin':''}/>
                 <span className="hide-sm">{syncing?'Syncing':'Sync Sheets'}</span>
-              </button>
+              </button>}
             </>)}
             {/* APK update check — only meaningful inside the Android shell,
                 where an APK can actually be installed. */}

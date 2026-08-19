@@ -272,6 +272,7 @@ import CategoryFilter from './CategoryFilter';
 import { useGlobalCategoryFilter } from '../hooks/useGlobalCategoryFilter';
 import { api } from '../api';
 import { notify, confirmDialog } from './Toast';
+import { SHEET_SYNC_ENABLED } from '../featureFlags';
 
 const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,syncErrs,onNavigate,onOpenDealer,monthConfig,saveMonthConfig,currentUser,onLoginAs})=>{
   const {selectedMonthIdx, MO:ctxMO}=useMonth();
@@ -456,7 +457,7 @@ const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,sync
           <AdminCategoryFilterButton dealers={dealers} selectedMonthIdx={selectedMonthIdx} MO={MO}/>
 
           {/* ── Sync sheets (admin & superadmin) ─────────────────────── */}
-          <button onClick={onSync} className="btnp" style={{display:'flex',alignItems:'center',gap:8}} disabled={syncing}><RefreshCw size={13} className={syncing?'spin':''}/> {syncing?'Syncing...':'Sync Sheets'}</button>
+          {SHEET_SYNC_ENABLED && <button onClick={onSync} className="btnp" style={{display:'flex',alignItems:'center',gap:8}} disabled={syncing}><RefreshCw size={13} className={syncing?'spin':''}/> {syncing?'Syncing...':'Sync Sheets'}</button>}
         </div>
       </div>
       <div className="tabs">

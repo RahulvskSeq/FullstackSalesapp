@@ -7,6 +7,7 @@ import {
 import { api } from '../api';
 import { monthTarget, fetchCSV, parseRow, parseCSV } from '../utils';
 import { notify, confirmDialog } from './Toast';
+import { SHEET_SYNC_ENABLED } from '../featureFlags';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -663,7 +664,7 @@ export default function ManageMonths({
               <RefreshCw size={14}/>
               Reload from DB
             </button>
-            <button onClick={handleSync} disabled={busy || syncing}
+            {SHEET_SYNC_ENABLED && <button onClick={handleSync} disabled={busy || syncing}
               title="Pull latest from Google Sheets. Months not in the sheet (e.g. June) are preserved."
               style={{
                 flex:'1 1 130px',
@@ -675,7 +676,7 @@ export default function ManageMonths({
               }}>
               <RefreshCw size={14} className={syncing ? 'spin' : ''}/>
               {syncing ? 'Syncing…' : 'Sync from Sheets'}
-            </button>
+            </button>}
             <button onClick={handleRepairTargets} disabled={busy}
               title="Back-fill per-month targets from each dealer's baseline target. Run once after a sync if targets look wrong."
               style={{
