@@ -1327,7 +1327,7 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
   const catFilterOn  = !!(catFilter && catFilter.size > 0);
   const isSuperAdmin = currentUser.role==='superadmin' && !catFilterOn;
   const [viewMode,setViewMode]=useState('table'); // 'table' | 'kanban'
-  const [filters,setFilters]=useState({q:'',zone:[],status:[],sm:[],credit:'',minPct:'',maxPct:'',city:[],state:[],category:[],categoryType:[]});
+  const [filters,setFilters]=useState({q:'',zone:[],status:[],sm:[],credit:'',minPct:'',maxPct:'',city:[],state:[],category:[],categoryType:[],pin:''});
   const [sort,setSort]=useState({col:'name',dir:1});
   const [editCell,setEditCell]=useState(null);   // { id, i } — month cell being typed into
   const [editVal,setEditVal]  =useState('');
@@ -1373,6 +1373,16 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
   const allStates      =useMemo(()=>[...new Set(dealers.map(x=>(x.state||'').trim()).filter(Boolean))].sort(),[dealers]);
   const allCategories  =useMemo(()=>[...new Set(dealers.map(x=>(x.category||'').trim()).filter(Boolean))].sort(),[dealers]);
   const allCategoryTypes=useMemo(()=>[...new Set(dealers.map(x=>(x.categoryType||'').trim()).filter(Boolean))].sort(),[dealers]);
+  // Counts sit inside the location filter's own options, so you can see how
+  // many records each choice selects before applying it.
+  const pinCounts=useMemo(()=>{
+    const blank=v=>!String(v??'').trim();
+    return {
+      noPin:  dealers.filter(x=>blank(x.pincode)).length,
+      noAddr: dealers.filter(x=>blank(x.address)).length,
+      noBoth: dealers.filter(x=>blank(x.pincode)&&blank(x.address)).length,
+    };
+  },[dealers]);
 
   const filtered=useMemo(()=>{
     let d=dealersForMonth;
@@ -1384,6 +1394,16 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
     if(filters.credit==='no')d=d.filter(x=>!x.creditLimit);
     if(filters.city.length>0)d=d.filter(x=>filters.city.includes((x.city||'').trim()));
     if(filters.state.length>0)d=d.filter(x=>filters.state.includes((x.state||'').trim()));
+    // Location-completeness filter. Mainly used to find records to clean up:
+    // the sheet sync creates dealers with no pincode/address, and those are
+    // almost always the ones worth reviewing before a bulk delete.
+    if(filters.pin){
+      const blank=v=>!String(v??'').trim();
+      if(filters.pin==='noPin')  d=d.filter(x=>blank(x.pincode));
+      if(filters.pin==='noAddr') d=d.filter(x=>blank(x.address));
+      if(filters.pin==='noBoth') d=d.filter(x=>blank(x.pincode)&&blank(x.address));
+      if(filters.pin==='hasPin') d=d.filter(x=>!blank(x.pincode));
+    }
     if(filters.category.length>0)d=d.filter(x=>filters.category.includes(x.category||''));
     if(filters.categoryType.length>0)d=d.filter(x=>filters.categoryType.includes(x.categoryType||''));
     if(filters.minPct)d=d.filter(x=>(pct(x.target,x.achieved)||0)>=num(filters.minPct));
@@ -1401,8 +1421,8 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
   const overdueCount =id=>notes.filter(n=>n.dealerId===id&&n.type==='followup'&&!n.completed&&new Date(n.dueDate)<new Date()).length;
   const toggleSel    =id=>setSelected(s=>s.includes(id)?s.filter(x=>x!==id):[...s,id]);
   const toggleAll    =()=>{if(selected.length===filtered.length)setSelected([]);else setSelected(filtered.map(x=>x.id));};
-  const hasF=filters.q||filters.zone.length>0||filters.status.length>0||filters.sm.length>0||filters.credit||filters.city.length>0||filters.state.length>0||filters.category.length>0||filters.categoryType.length>0||filters.minPct||filters.maxPct;
-  const clearFilters =()=>setFilters({q:'',zone:[],status:[],sm:[],credit:'',minPct:'',maxPct:'',city:[],state:[],category:[],categoryType:[]});
+  const hasF=filters.q||filters.zone.length>0||filters.status.length>0||filters.sm.length>0||filters.credit||filters.city.length>0||filters.state.length>0||filters.category.length>0||filters.categoryType.length>0||filters.minPct||filters.maxPct||filters.pin;
+  const clearFilters =()=>setFilters({q:'',zone:[],status:[],sm:[],credit:'',minPct:'',maxPct:'',city:[],state:[],category:[],categoryType:[],pin:''});
 
   const onUpdateStatus=(dealerId,newStatus)=>{
     onUpdateDealer&&onUpdateDealer(dealerId,{status:newStatus});
@@ -1533,6 +1553,15 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
         {allCategoryTypes.length>0&&<MultiSelect options={allCategoryTypes} selected={filters.categoryType} onChange={v=>setFilters({...filters,categoryType:v})} placeholder="Cat Type (All)"/>}
         {allCities.length>0&&<MultiSelect options={allCities} selected={filters.city} onChange={v=>setFilters({...filters,city:v})} placeholder="City (All)"/>}
         {allStates.length>0&&<MultiSelect options={allStates} selected={filters.state} onChange={v=>setFilters({...filters,state:v})} placeholder="State (All)"/>}
+        <select className="inp" style={{width:210}} value={filters.pin}
+          title="Find records with missing location details — useful for reviewing dealers created by a sheet sync"
+          onChange={e=>setFilters({...filters,pin:e.target.value})}>
+          <option value="">Pincode (All)</option>
+          <option value="noBoth">No pincode &amp; no address ({pinCounts.noBoth})</option>
+          <option value="noPin">No pincode ({pinCounts.noPin})</option>
+          <option value="noAddr">No address ({pinCounts.noAddr})</option>
+          <option value="hasPin">Has pincode</option>
+        </select>
         {isAdmin&&<MultiSelect options={Object.values(users).filter(u=>u.role==='salesman').map(s=>s.id)} selected={filters.sm}
           onChange={v=>setFilters({...filters,sm:v})} placeholder="Salesman (All)"
           renderOption={id=>{const s=users[id];return s?<div style={{display:'flex',alignItems:'center',gap:6}}><Avatar user={s} size={18}/><span style={{fontSize:12}}>{s.name}</span></div>:<span>{id}</span>;}}/>}
