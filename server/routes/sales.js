@@ -749,6 +749,11 @@ async function monthFilter(req) {
     return f;
   }
 
+  // A salesman's scope is their own book, full stop — settled before any
+  // permission lookup so no territory grant widens or narrows it.
+  // See dealers.js dealerScope().
+  if (req.user?.role === 'salesman') { f.salesman = req.user.id; return f; }
+
   // Load the user's data-access permissions from the DB.
   const User = (await import('../models/User.js')).default;
   const u = await User.findOne({ id: req.user.id }, 'permissions').lean();

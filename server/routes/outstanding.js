@@ -122,6 +122,13 @@ router.get('/', protect, async (req, res) => {
     const hasSalesmen = Array.isArray(p.salesmen) && p.salesmen.length > 0;
 
     let dealerFilter = {};
+    // A salesman's scope is their own book, full stop — no territory grant
+    // widens or narrows it. See dealers.js dealerScope().
+    if (req.user?.role === 'salesman') {
+      const myDealers = await Dealer.find({ salesman: req.user.id }, 'name').lean();
+      const myNames = new Set(myDealers.map(d => d.name.toLowerCase().trim()));
+      return res.json(all.filter(o => myNames.has(o.dealerName?.toLowerCase().trim())).map(toPlain));
+    }
     if (hasStates || hasCities || hasZones || hasSalesmen) {
       // Case-insensitive state/city/zone match — see dealers.js for rationale.
       const escape = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -133,8 +140,6 @@ router.get('/', protect, async (req, res) => {
       if (hasZones)  geo.push({ zone:  { $in: p.zones.map(ciMatch) } });
       if (geo.length) dealerFilter.$or = geo;
       if (hasSalesmen) dealerFilter.salesman = { $in: p.salesmen };
-    } else if (req.user?.role === 'salesman') {
-      dealerFilter = { salesman: req.user.id };
     } else {
       // admin with no permissions → see everything
       return res.json(all.map(toPlain));

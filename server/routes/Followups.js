@@ -28,6 +28,15 @@ router.get('/', protect, async (req,res) => {
     const hasSalesmen = Array.isArray(p.salesmen) && p.salesmen.length > 0;
 
     let allowedNames = null;
+    // A salesman's scope is their own book, full stop — resolved before the
+    // permission branches so no territory grant can alter it. See dealers.js.
+    if (req.user?.role === 'salesman') {
+      const own = await Dealer.find({ salesman: req.user.id }, 'name').lean();
+      const names = new Set(own.map(d => (d.name || '').toLowerCase().trim()));
+      const mine = (await OutstandingFollowup.find({}).sort({createdAt:-1}).lean())
+        .filter(f => names.has((f.dealerName||'').toLowerCase().trim()));
+      return res.json(mine);
+    }
     if (hasStates || hasCities || hasZones || hasSalesmen) {
       const escape = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const ciMatch = v => new RegExp('^\\s*' + escape(v) + '\\s*$', 'i');
@@ -149,7 +158,11 @@ router.get('/commitments', protect, async (req,res) => {
       const u = await User.findOne({ id:req.user.id }, 'permissions').lean();
       const p = u?.permissions || {};
       const has = k => Array.isArray(p[k]) && p[k].length > 0;
-      if(has('states')||has('cities')||has('zones')||has('salesmen')){
+      // Salesman = own book, full stop. See dealers.js dealerScope().
+      if(req.user?.role === 'salesman'){
+        const ds = await Dealer.find({ salesman:req.user.id },'name').lean();
+        allowed = new Set(ds.map(d=>(d.name||'').toLowerCase().trim()));
+      } else if(has('states')||has('cities')||has('zones')||has('salesmen')){
         const esc = s => String(s).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
         const ci  = v => new RegExp('^\\s*'+esc(v)+'\\s*$','i');
         const filt = {}; const geo = [];
@@ -159,9 +172,6 @@ router.get('/commitments', protect, async (req,res) => {
         if(geo.length) filt.$or = geo;
         if(has('salesmen')) filt.salesman = { $in:p.salesmen };
         const ds = await Dealer.find(filt,'name').lean();
-        allowed = new Set(ds.map(d=>(d.name||'').toLowerCase().trim()));
-      } else if(req.user?.role === 'salesman'){
-        const ds = await Dealer.find({ salesman:req.user.id },'name').lean();
         allowed = new Set(ds.map(d=>(d.name||'').toLowerCase().trim()));
       }
     }

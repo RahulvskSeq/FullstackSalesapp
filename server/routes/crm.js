@@ -37,6 +37,13 @@ async function permittedDealerNames(req) {
   if (req.user?.role === 'superadmin') return null;
   try {
     const Dealer = (await import('../models/Dealer.js')).default;
+    // A salesman's scope is their own book, full stop — resolved before any
+    // permission lookup so no territory grant can widen or narrow it.
+    // See dealers.js dealerScope() for why.
+    if (req.user?.role === 'salesman') {
+      const own = await Dealer.find({ salesman: req.user.id }, 'name').lean();
+      return own.map(d => d.name);
+    }
     const u = await User.findOne({ id: req.user.id }, 'permissions').lean();
     const p = u?.permissions || {};
     const hasStates   = Array.isArray(p.states)   && p.states.length   > 0;

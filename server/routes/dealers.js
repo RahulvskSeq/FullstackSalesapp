@@ -160,6 +160,18 @@ async function dealerScopeFilter(req) {
   const role = req.user?.role;
   if (role === 'superadmin') return {};
 
+  // A salesman's scope is their own book, full stop — checked BEFORE any
+  // permission lookup so no grant can alter it.
+  //
+  // Territory grants exist to scope an oversight role (employee / admin). For
+  // a salesman they must neither widen nor narrow: the old code returned the
+  // geography filter alone and never reached the own-dealers default below, so
+  // one city grant exposed every other rep's dealers in that city (kenadi:
+  // 24 dealers readable, 1 actually his, two colleagues' books included).
+  // AND-ing territory instead would have been just as wrong — it would have
+  // hidden the 2 of his own dealers that sit outside those cities.
+  if (role === 'salesman') return { salesman: req.user.id };
+
   // Pull permissions from the DB (not the JWT — JWT doesn't carry them).
   let User;
   try { User = (await import('../models/User.js')).default; } catch { User = null; }
