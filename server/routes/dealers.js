@@ -3,6 +3,7 @@ import multer from 'multer';
 import XLSX from 'xlsx';
 import mongoose from 'mongoose';
 import { protect, adminOnly, superAdminOnly, requireFeature } from '../middleware/auth.js';
+import { todayStr } from '../lib/commitments.js';
 
 const router = express.Router();
 const upload = multer({ storage:multer.memoryStorage(), limits:{ fileSize:10*1024*1024 } });
@@ -1301,7 +1302,40 @@ router.put('/:id', protect, async (req,res) => {
         setObj[`monthlyData.${label}.salesman`] = ex.salesman;
       });
     }
+    // Day-level capture. Monthly Entry writes a month's running TOTAL, so the
+    // day's actual business is the difference from what was there before —
+    // computed here, where the pre-update document is still in hand.
+    // Logged after the write so a failed update never records a phantom sale.
+    const moves = [];
+    for(const [path, val] of Object.entries(setObj)){
+      const m = /^monthlyData\.([^.]+)\.achieved$/.exec(path);
+      if(!m) continue;
+      const label = m[1];
+      const md = ex.monthlyData;
+      const before = (md && typeof md.get === 'function') ? md.get(label) : md?.[label];
+      const prev = Number(before?.achieved) || 0;
+      const next = Number(val) || 0;
+      if(prev === next) continue;          // a save that changed nothing isn't a sale
+      moves.push({
+        dealerId: ex._id, dealerName: ex.name,
+        // Attribute to whoever owns the month, falling back to the dealer's
+        // current owner — matches how the rest of the app reads attribution.
+        salesman: before?.salesman || setObj.salesman || ex.salesman || '',
+        month: label, dateStr: todayStr(),
+        prev, next, delta: next - prev,
+        by: req.user?.id || '', source: 'entry',
+      });
+    }
+
     const d=await Dealer.findByIdAndUpdate(req.params.id,{$set:setObj},{new:true,runValidators:false}).lean();
+
+    if(moves.length){
+      // Never let reporting break a save the user asked for.
+      try {
+        const SalesDelta = (await import('../models/SalesDelta.js')).default;
+        await SalesDelta.insertMany(moves, { ordered:false });
+      } catch(e){ console.warn('[SalesDelta]', e.message); }
+    }
     res.json(fmt(d,[]));
   }catch(e){res.status(500).json({error:e.message});}
 });

@@ -632,6 +632,7 @@ export default function Reports({ dealers, users, currentUser, monthConfig, outs
     { id:'attendance', label:'Attendance',         group:'CRM',   icon:Camera,        color:'var(--yel)' },
     { id:'leads',      label:'Leads',              group:'CRM',   icon:UserCheck,     color:'#22d3ee' },
     { id:'leaves',     label:'Leaves',             group:'CRM',   icon:Plane,         color:'#fb923c' },
+    { id:'dailySales', label:'Daily Sales',        group:'Sales', icon:Calendar,      color:'#14b8a6' },
     { id:'monthCompare',label:'Month Comparison',  group:'Sales', icon:Activity,      color:'#0ea5e9' },
     { id:'dealerPerf', label:'Dealer Performance', group:'Sales', icon:TrendingUp,    color:'#6366f1' },
     { id:'smSummary',  label:'Salesman Summary',   group:'Sales', icon:Users,         color:'var(--grn)' },
@@ -641,8 +642,10 @@ export default function Reports({ dealers, users, currentUser, monthConfig, outs
   ];
   const groups = ['CRM','Sales','Admin'];
   const activeReport = REPORTS.find(r=>r.id===active) || REPORTS[0];
-  const usesDates  = activeReport.group==='CRM';
-  const usesMonths = activeReport.group==='Sales';
+  // Daily Sales is a Sales report but reads by DATE, not by month — it groups
+  // the day each entry was made, so it needs the date pickers.
+  const usesDates  = activeReport.group==='CRM'   || activeReport.id==='dailySales';
+  const usesMonths = activeReport.group==='Sales' && activeReport.id!=='dailySales';
 
   const renderActive = () => {
     switch(active){
@@ -694,6 +697,55 @@ export default function Reports({ dealers, users, currentUser, monthConfig, outs
             ]}));
           }}
           kpis={rows=>[{label:'Applications',value:rows.length}]}/>;
+      case 'dailySales':
+        return <ApiReport exportName="DailySales" deps={[fromDate,toDate]}
+          columns={[{label:'Date',w:110},{label:'Day',w:80},{label:'Entries',w:80,align:'right'},
+                    {label:'Dealers',w:80,align:'right'},{label:'Qty',w:90,align:'right'},
+                    {label:'Same day last month',w:150,align:'right'},{label:'Δ',w:90,align:'right'}]}
+          loader={async ()=>{
+            // Build a date one calendar month earlier. Returns null when that
+            // day doesn't exist (e.g. the 31st of a 30-day month) rather than
+            // silently rolling into the next month, which would compare the
+            // 31st against the 1st.
+            const monthBefore = (ds) => {
+              const [y,m,d] = ds.split('-').map(Number);
+              const py = m === 1 ? y-1 : y, pm = m === 1 ? 12 : m-1;
+              const lastDay = new Date(Date.UTC(py, pm, 0)).getUTCDate();
+              return d > lastDay ? null : `${py}-${String(pm).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+            };
+            const earliest = monthBefore(fromDate) || fromDate;
+            const r = await api.salesDaily({ from: earliest, to: toDate });
+            const by = Object.fromEntries((r?.days||[]).map(d=>[d.dateStr, d]));
+
+            const rows = [];
+            for(let t = new Date(fromDate+'T12:00:00Z'); t <= new Date(toDate+'T12:00:00Z'); t.setUTCDate(t.getUTCDate()+1)){
+              const ds   = t.toISOString().slice(0,10);
+              const prev = monthBefore(ds);
+              const a = by[ds], b = prev ? by[prev] : null;
+              const qty = a?.qty || 0, pQty = b?.qty;
+              rows.push({ cells:[
+                ds,
+                t.toLocaleDateString('en-IN',{weekday:'short',timeZone:'UTC'}),
+                a?.entries || 0,
+                a?.dealers || 0,
+                qty,
+                pQty === undefined ? '—' : pQty,
+                pQty === undefined ? '—' : (qty - pQty >= 0 ? '+' : '') + (qty - pQty),
+              ]});
+            }
+            return rows;
+          }}
+          kpis={rows=>{
+            const tot  = rows.reduce((s,r)=>s+(Number(r.cells[4])||0),0);
+            const prev = rows.reduce((s,r)=>s+(Number(r.cells[5])||0),0);
+            const active = rows.filter(r=>Number(r.cells[4])).length;
+            return [
+              { label:'Total qty',        value: tot.toLocaleString('en-IN') },
+              { label:'Same days last month', value: prev.toLocaleString('en-IN') },
+              { label:'Change',           value: (tot-prev>=0?'+':'') + (tot-prev).toLocaleString('en-IN') },
+              { label:'Days with entries',value: `${active} / ${rows.length}` },
+            ];
+          }}/>;
       case 'monthCompare':
         return <DataTable columns={monthCompare.columns} rows={monthCompare.rows}
           exportName={`MonthComparison-${MO[toI]||''}`} kpis={monthCompare.kpis}/>;

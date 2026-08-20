@@ -6,6 +6,7 @@ import Category from '../models/Category.js';
 import Dealer from '../models/Dealer.js';
 import SalesTarget from '../models/SalesTarget.js';
 import { protect, adminOnly, superAdminOnly, requireFeature } from '../middleware/auth.js';
+import { todayStr } from '../lib/commitments.js';
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
@@ -960,6 +961,46 @@ router.get('/dealer/:name', protect, async (req, res) => {
  *  POST /api/sales/targets                 → upsert {salesmanId, category, month, target}
  *  POST /api/sales/targets/bulk            → array of upserts in one round-trip
  * ----------------------------------------------------------------- */
+// ── GET /api/sales/daily ──────────────────────────────────────────────────
+// Day-level movement, derived from Monthly Entry edits (see models/SalesDelta).
+//
+//   ?from=YYYY-MM-DD&to=YYYY-MM-DD   window (defaults to the last 60 days)
+//   ?month=Aug-26                    only movement booked INTO that month
+//   ?salesman=id                     one rep
+//   ?includeUploads=1                include bulk uploads (excluded by default,
+//                                    since one upload rewrites a whole month
+//                                    and would read as a single enormous day)
+//
+// Returns { days:[{ dateStr, qty, entries, dealers }], total }.
+router.get('/daily', protect, async (req, res) => {
+  try {
+    const SalesDelta = (await import('../models/SalesDelta.js')).default;
+    const to   = String(req.query.to   || '').slice(0,10) || todayStr();
+    const from = String(req.query.from || '').slice(0,10) ||
+      new Date(Date.now() - 59*864e5).toISOString().slice(0,10);
+
+    const q = { dateStr: { $gte: from, $lte: to } };
+    if (req.query.month) q.month = String(req.query.month);
+    if (String(req.query.includeUploads||'') !== '1') q.source = 'entry';
+
+    // A salesman only ever sees their own movement; staff may narrow by rep.
+    if (req.user?.role === 'salesman') q.salesman = req.user.id;
+    else if (req.query.salesman)       q.salesman = String(req.query.salesman);
+
+    const days = await SalesDelta.aggregate([
+      { $match: q },
+      { $group: { _id:'$dateStr', qty:{ $sum:'$delta' },
+                  entries:{ $sum:1 }, dealers:{ $addToSet:'$dealerName' } } },
+      { $project: { _id:0, dateStr:'$_id', qty:1, entries:1, dealers:{ $size:'$dealers' } } },
+      { $sort: { dateStr:1 } },
+    ]);
+    res.json({ days, total: days.reduce((s,d)=>s+d.qty, 0), from, to });
+  } catch (e) {
+    console.error('[SALES/daily]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.get('/targets', protect, async (req, res) => {
   const month = normMonth(req.query.month) || String(req.query.month || '');
   const filter = month ? { month } : {};

@@ -2118,6 +2118,9 @@ export const api = {
   salesForDealer:    (name)     => fetch(`${BASE}/sales/dealer/${encodeURIComponent(name)}`,{headers:authHeaders()}).then(handle),
   // Raw Sale rows (paged). Used by trend charts that need cross-month data.
   salesRaw:          (q={})     => fetch(`${BASE}/sales/raw?${new URLSearchParams(q)}`,{headers:authHeaders()}).then(handle),
+
+  // Day-level movement derived from Monthly Entry edits. {from,to,month,salesman,includeUploads}
+  salesDaily:        (q={})     => fetch(`${BASE}/sales/daily?${new URLSearchParams(q)}`,{headers:authHeaders()}).then(handle),
   salesDeleteMonth:  (m)        => fetch(`${BASE}/sales/month/${encodeURIComponent(m)}`,{method:'DELETE',headers:authHeaders()}).then(handle),
 
   // ── Per-(salesman × category × month) volume targets ─────────────────
