@@ -1875,6 +1875,9 @@ export const api = {
   // permissions editor to render a checkbox per state.
   dealerDistinctStates: () => fetch(`${BASE}/dealers/distinct-states`,{ headers:authHeaders() }).then(handle),
 
+  // Unique zones — the fourth scoping dimension dealerScope() enforces.
+  dealerDistinctZones: () => fetch(`${BASE}/dealers/distinct-zones`,{ headers:authHeaders() }).then(handle),
+
   // Unique cities. Pass ?state=<name> to filter to one state's cities (useful
   // when the admin scopes to a subset first).
   dealerDistinctCities: (state) => fetch(

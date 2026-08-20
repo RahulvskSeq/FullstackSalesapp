@@ -216,6 +216,22 @@ router.get('/distinct-states', protect, async (req, res) => {
   }
 });
 
+// ── GET /api/dealers/distinct-zones ───────────────────────────────────────
+// Unique zones across the roster. Zone scoping is enforced by dealerScope()
+// alongside states/cities, but until now there was no way to SEE the zone
+// list, so the permission editor could never offer it. Admin+ only.
+router.get('/distinct-zones', protect, async (req, res) => {
+  if (req.user.role !== 'superadmin' && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin only' });
+  }
+  try {
+    const zones = await Dealer.distinct('zone');
+    res.json({ zones: zones.filter(z => z && z.trim()).sort() });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── GET /api/dealers/distinct-cities ──────────────────────────────────────
 // Unique cities in the dealer roster — used by the permission editor to
 // grant city-level access. Optionally filter by ?state=Karnataka to keep

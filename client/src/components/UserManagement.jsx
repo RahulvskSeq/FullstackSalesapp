@@ -33,6 +33,7 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
   // roster on first open so the admin can tick the relevant ones.
   const [allStates,    setAllStates]    = useState([]);
   const [allCities,    setAllCities]    = useState([]);
+  const [allZones,     setAllZones]     = useState([]);
   const [createStates, setCreateStates] = useState(new Set());
   const [createCities, setCreateCities] = useState(new Set());
   useEffect(() => {
@@ -49,6 +50,7 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
     };
     api.dealerDistinctStates().then(r => setAllStates(dedupCI(r?.states))).catch(() => {});
     api.dealerDistinctCities().then(r => setAllCities(dedupCI(r?.cities))).catch(() => {});
+    api.dealerDistinctZones().then(r => setAllZones(dedupCI(r?.zones))).catch(() => {});
   }, []);
 
   const colors = ['#818cf8','#34d399','#f472b6','#fb923c','#fbbf24','#22d3ee','#e879f9','#a78bfa','#f87171','#4ade80'];
@@ -116,6 +118,8 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
   const [permsForUid,    setPermsForUid]    = useState(null);
   const [permsStates,    setPermsStates]    = useState(new Set());
   const [permsCities,    setPermsCities]    = useState(new Set());
+  const [permsZones,     setPermsZones]     = useState(new Set());
+  const [permsSalesmen,  setPermsSalesmen]  = useState(new Set());
   const [permsFeatures,  setPermsFeatures]  = useState(new Set());
   const [permsPages,     setPermsPages]     = useState(new Set());   // left-nav page access
   const [permsSaving,    setPermsSaving]    = useState(false);
@@ -156,6 +160,8 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
     };
     setPermsStates(toCanon(cur.states, allStates));
     setPermsCities(toCanon(cur.cities, allCities));
+    setPermsZones(toCanon(cur.zones, allZones));
+    setPermsSalesmen(new Set(Array.isArray(cur.salesmen) ? cur.salesmen : []));
     setPermsFeatures(new Set(Array.isArray(cur.features) ? cur.features : []));
     setPermsPages(new Set(Array.isArray(cur.pages) ? cur.pages : []));
     setPermsForUid(uid);
@@ -167,8 +173,8 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
       const next = {
         states:   [...permsStates],
         cities:   [...permsCities],
-        zones:    [],
-        salesmen: [],
+        zones:    [...permsZones],
+        salesmen: [...permsSalesmen],
         features: [...permsFeatures],
         pages:    [...permsPages],
       };
@@ -908,6 +914,88 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
                 })()}
               </>
             )}
+
+            {/* ── Zone-level permissions ───────────────────────────────── */}
+            <div style={{fontSize:11, color:'var(--t3)', textTransform:'uppercase', letterSpacing:'.08em', marginBottom:6, marginTop:4}}>
+              Zones <span style={{textTransform:'none', fontWeight:400}}>(optional)</span>
+            </div>
+            {allZones.length === 0 ? (
+              <div style={{fontSize:11, color:'var(--t3)', padding:'6px 0 12px'}}>No zones found in dealer data yet.</div>
+            ) : (
+              <>
+                <div style={{
+                  display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(150px, 1fr))', gap:6, marginBottom:14,
+                  padding:12, background:'var(--bg2)', borderRadius:6, maxHeight:200, overflowY:'auto',
+                }}>
+                  {allZones.map(z => {
+                    const on = permsZones.has(z);
+                    return (
+                      <label key={z} style={{
+                        fontSize:12, display:'inline-flex', alignItems:'center', gap:6, cursor:'pointer',
+                        padding:'6px 10px', borderRadius:5,
+                        background: on ? 'rgba(139,92,246,0.18)' : 'transparent',
+                        border:'1px solid ' + (on ? 'rgba(139,92,246,0.5)' : 'var(--b1)'),
+                        color: on ? '#c4b5fd' : 'var(--t2)', fontWeight: on?700:500,
+                      }}>
+                        <input type="checkbox" checked={on} onChange={()=>{
+                          const next = new Set(permsZones);
+                          on ? next.delete(z) : next.add(z);
+                          setPermsZones(next);
+                        }} style={{margin:0}}/>
+                        {z}
+                      </label>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            {/* ── Salesman-level permissions ───────────────────────────── */}
+            <div style={{fontSize:11, color:'var(--t3)', textTransform:'uppercase', letterSpacing:'.08em', marginBottom:6, marginTop:4}}>
+              Salesmen <span style={{textTransform:'none', fontWeight:400}}>(optional — whose dealers this user can see)</span>
+            </div>
+            {(() => {
+              const roster = Object.values(allUsers || users || {}).filter(u => u.role === 'salesman' && u.active !== false);
+              if (roster.length === 0) return <div style={{fontSize:11, color:'var(--t3)', padding:'6px 0 12px'}}>No salesmen found.</div>;
+              return (
+                <div style={{
+                  display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(150px, 1fr))', gap:6, marginBottom:10,
+                  padding:12, background:'var(--bg2)', borderRadius:6, maxHeight:220, overflowY:'auto',
+                }}>
+                  {roster.map(s => {
+                    const on = permsSalesmen.has(s.id);
+                    return (
+                      <label key={s.id} style={{
+                        fontSize:12, display:'inline-flex', alignItems:'center', gap:6, cursor:'pointer',
+                        padding:'6px 10px', borderRadius:5,
+                        background: on ? 'rgba(16,185,129,0.18)' : 'transparent',
+                        border:'1px solid ' + (on ? 'rgba(16,185,129,0.5)' : 'var(--b1)'),
+                        color: on ? '#6ee7b7' : 'var(--t2)', fontWeight: on?700:500,
+                      }}>
+                        <input type="checkbox" checked={on} onChange={()=>{
+                          const next = new Set(permsSalesmen);
+                          on ? next.delete(s.id) : next.add(s.id);
+                          setPermsSalesmen(next);
+                        }} style={{margin:0}}/>
+                        {s.name}
+                      </label>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
+            {/* How the four scopes combine — worth stating, because getting this
+                backwards silently grants far more access than intended. */}
+            <div style={{
+              fontSize:11, color:'var(--t3)', lineHeight:1.6, marginBottom:14,
+              padding:'8px 10px', background:'var(--bg2)', borderRadius:6, border:'1px solid var(--b1)',
+            }}>
+              <strong style={{color:'var(--t2)'}}>How these combine:</strong> States, Cities and Zones are matched with <strong>OR</strong> —
+              granting a few territories shows dealers in any of them. Salesmen is <strong>AND</strong>ed on top, narrowing
+              within that territory. Leave a list empty for no restriction on that dimension; leave all four empty and the
+              user falls back to their role default. Superadmins ignore all of it.
+            </div>
 
             {/* ── Left-navigation PAGE access ─────────────────────── */}
             <div style={{fontSize:11, color:'var(--t3)', textTransform:'uppercase', letterSpacing:'.08em', marginBottom:8, marginTop:4, display:'flex', alignItems:'center', gap:8}}>
