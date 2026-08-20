@@ -561,12 +561,78 @@ export default function Reports({ dealers, users, currentUser, monthConfig, outs
     return { columns, rows };
   },[users]);
 
+  // ── Month-over-month comparison ──────────────────────────────────────
+  // Anchored on the "To" month, compared against the month before it and the
+  // same month a year earlier.
+  //
+  // This is deliberately monthly, not daily. A Sale row is one dealer × one
+  // sub-category × one MONTH (see models/Sale.js) — there is no per-sale date
+  // anywhere in the pipeline, and createdAt is the upload timestamp, not the
+  // trade date. Month is the finest granularity the data actually supports.
+  const monthCompare = useMemo(()=>{
+    const curI = toI, prevI = toI - 1, lyI = toI - 12;
+    const has  = i => i >= 0 && i < MO.length;
+
+    const columns = [
+      { label:'Salesman', w:130 }, { label:'Dealer', w:220 }, { label:'City', w:110 },
+      { label:MO[curI] || 'This', w:95, align:'right' },
+    ];
+    if(has(prevI)) columns.push({label:MO[prevI],w:95,align:'right'},{label:'Δ MoM',w:90,align:'right'},{label:'MoM %',w:85,align:'right'});
+    if(has(lyI))   columns.push({label:MO[lyI],  w:95,align:'right'},{label:'Δ YoY',w:90,align:'right'},{label:'YoY %',w:85,align:'right'});
+
+    // "new" rather than a bogus percentage — growth off a zero base is undefined,
+    // and printing 100% or ∞ there quietly misleads.
+    const pctOf = (cur, base) => base > 0 ? Math.round((cur - base) / base * 100) + '%' : (cur > 0 ? 'new' : '');
+
+    let tCur=0, tPrev=0, tLy=0, up=0, down=0, started=0, stopped=0;
+    const rows = (dealers||[])
+      .map(d=>{
+        const cur  = Number(d.months?.[curI]) || 0;
+        const prev = has(prevI) ? Number(d.months?.[prevI]) || 0 : 0;
+        const ly   = has(lyI)   ? Number(d.months?.[lyI])   || 0 : 0;
+        return { d, cur, prev, ly };
+      })
+      // Drop dealers with nothing in any of the three months — otherwise the
+      // report is mostly blank rows for dealers who simply weren't active.
+      .filter(r => r.cur || r.prev || r.ly)
+      .map(r=>{
+        const { d, cur, prev, ly } = r;
+        tCur+=cur; tPrev+=prev; tLy+=ly;
+        if(has(prevI)){
+          if(cur>prev) up++; else if(cur<prev) down++;
+          if(prev===0 && cur>0) started++;
+          if(prev>0 && cur===0) stopped++;
+        }
+        const cells = [nameOf(d.salesman), d.name, d.city||'', cur];
+        if(has(prevI)) cells.push(prev, cur-prev, pctOf(cur,prev));
+        if(has(lyI))   cells.push(ly,  cur-ly,   pctOf(cur,ly));
+        return { cells, _mov: Math.abs(cur - prev) };
+      })
+      // Biggest movers first, in either direction — a dealer who collapsed
+      // matters as much as one who doubled.
+      .sort((a,b)=> b._mov - a._mov)
+      .map(({_mov, ...row}) => row);
+
+    const n = v => v.toLocaleString('en-IN');
+    const sign = v => (v >= 0 ? '+' : '') + n(v);
+    const kpis = [{ label: MO[curI] || 'This month', value: n(tCur) }];
+    if(has(prevI)) kpis.push(
+      { label: MO[prevI], value: n(tPrev) },
+      { label: 'Change',  value: sign(tCur - tPrev) + (tPrev > 0 ? ` (${Math.round((tCur-tPrev)/tPrev*100)}%)` : '') },
+      { label: 'Up / Down',         value: `${up} / ${down}` },
+      { label: 'Started / Stopped', value: `${started} / ${stopped}` },
+    );
+    if(has(lyI)) kpis.push({ label: `vs ${MO[lyI]}`, value: sign(tCur - tLy) });
+    return { columns, rows, kpis };
+  },[dealers,toI,MO,users]);
+
   // ── Report registry — drives the left rail ───────────────────────────
   const REPORTS = [
     { id:'visits',     label:'Visit',              group:'CRM',   icon:ClipboardList, color:'var(--pur)' },
     { id:'attendance', label:'Attendance',         group:'CRM',   icon:Camera,        color:'var(--yel)' },
     { id:'leads',      label:'Leads',              group:'CRM',   icon:UserCheck,     color:'#22d3ee' },
     { id:'leaves',     label:'Leaves',             group:'CRM',   icon:Plane,         color:'#fb923c' },
+    { id:'monthCompare',label:'Month Comparison',  group:'Sales', icon:Activity,      color:'#0ea5e9' },
     { id:'dealerPerf', label:'Dealer Performance', group:'Sales', icon:TrendingUp,    color:'#6366f1' },
     { id:'smSummary',  label:'Salesman Summary',   group:'Sales', icon:Users,         color:'var(--grn)' },
     { id:'outstanding',label:'Outstanding',        group:'Sales', icon:AlertTriangle, color:'var(--red)' },
@@ -628,6 +694,9 @@ export default function Reports({ dealers, users, currentUser, monthConfig, outs
             ]}));
           }}
           kpis={rows=>[{label:'Applications',value:rows.length}]}/>;
+      case 'monthCompare':
+        return <DataTable columns={monthCompare.columns} rows={monthCompare.rows}
+          exportName={`MonthComparison-${MO[toI]||''}`} kpis={monthCompare.kpis}/>;
       case 'dealerPerf':
         return <DataTable columns={dealerPerf.columns} rows={dealerPerf.rows} exportName="DealerPerformance"
           kpis={[{label:'Dealers',value:dealerPerf.rows.length},{label:'Months',value:rangeMonths.length}]}/>;
