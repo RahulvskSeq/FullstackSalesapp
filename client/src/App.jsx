@@ -15677,6 +15677,18 @@ export default function App(){
     pushScreen(screen);
   },[screen]);
 
+  // Re-fetch the roster whenever a session becomes active. There are three
+  // ways that happens — fresh login, cookie restore, impersonation restore —
+  // so this watches the result rather than patching each call site.
+  //
+  // It matters because the boot-time fetch runs while anonymous, and
+  // /auth/users deliberately withholds role / permissions / sheet URLs from
+  // anonymous callers. Without this the app would keep a roster with no
+  // `role` on it and every users[id].role check would silently fail.
+  useEffect(()=>{
+    if(currentUser?.id) refreshUsersFromServer();
+  },[currentUser?.id, refreshUsersFromServer]);
+
   // Page-access guard: if the user has an explicit page allowlist and the
   // current screen isn't in it, redirect to their first allowed page. Keeps a
   // restricted user out of a page even via a saved URL / hash.

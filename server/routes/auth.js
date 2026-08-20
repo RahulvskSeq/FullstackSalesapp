@@ -42,10 +42,23 @@ router.post('/login', async (req, res) => {
 // By default, returns ONLY active users (so login dropdowns, salesman
 // pickers etc. don't show de-activated accounts). UserManagement calls
 // with ?includeInactive=1 so admins can still see and re-activate them.
+// Optional auth. The login page needs a roster before anyone holds a token,
+// so this stays reachable without one — but an anonymous caller gets ONLY the
+// fields that dropdown renders.
+//
+// It previously returned the full document to anyone on the internet: every
+// role (naming the superadmin to target), every user's permission set, and
+// url / url2 / url_outstanding — which are Google "publish to web" CSV links
+// that serve live sales data to anyone who opens them, no login required.
 router.get('/users', async (req, res) => {
-  const includeInactive = String(req.query.includeInactive || '') === '1';
+  let authed = false;
+  const hdr = req.headers.authorization;
+  if (hdr?.startsWith('Bearer ')) {
+    try { jwt.verify(hdr.split(' ')[1], process.env.JWT_SECRET); authed = true; } catch { /* treat as anonymous */ }
+  }
+  const includeInactive = authed && String(req.query.includeInactive || '') === '1';
   const filter = includeInactive ? {} : { active: { $ne: false } };
-  const users = await User.find(filter, '-pass -__v');
+  const users = await User.find(filter, authed ? '-pass -__v' : 'id name color ini active');
   const map = {};
   users.forEach(u => { const o=u.toObject(); delete o._id; map[o.id]=o; });
   res.json(map);
