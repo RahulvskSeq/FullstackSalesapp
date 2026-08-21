@@ -41,6 +41,10 @@ const CategoryFilter = ({
   onClear,
   onSelectOnly,
   onSaveAsDefault,
+  // Optional: replace the whole excluded set in one write. When a caller
+  // provides it, Select all / None cost a single update instead of one per
+  // category (which also means one server push, not N).
+  onSetExcluded,
   label = 'Categories',
   compact = false,
 }) => {
@@ -84,6 +88,22 @@ const CategoryFilter = ({
   const totalCount    = items.length;
   const includedCount = items.filter(i => !excluded.has(i.category)).length;
   const isAll         = excluded.size === 0;
+  const isNone        = totalCount > 0 && includedCount === 0;
+
+  // Include everything / exclude everything.
+  // Falls back to flipping only the categories that actually need it — the
+  // hook's toggle re-reads storage each call, so sequential toggles compose
+  // (same approach CategorySalesPanel already uses for its clear).
+  const setAll = (includeEverything) => {
+    if (onSetExcluded) {
+      onSetExcluded(new Set(includeEverything ? [] : items.map(i => i.category)));
+      return;
+    }
+    items.forEach(i => {
+      const excludedNow = excluded.has(i.category);
+      if (excludedNow === includeEverything) onToggle && onToggle(i.category);
+    });
+  };
 
   // On mobile, keep the button text very short so it doesn't overflow.
   const summary = isMobile
@@ -95,15 +115,44 @@ const CategoryFilter = ({
   // Dropdown panel (shared by desktop popup + mobile sheet)
   const panelInner = (
     <>
-      {/* Header — Select all / Close */}
+      {/* Header — Select all / Deselect all / Close.
+          Wraps rather than overflowing, so the row stays usable on a phone. */}
       <div style={{
-        display:'flex', alignItems:'center', gap:8,
+        display:'flex', alignItems:'center', gap:8, flexWrap:'wrap',
         padding:'8px 10px', borderBottom:'1px solid var(--b1)', marginBottom:6,
       }}>
         <span style={{fontSize:10,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'.08em'}}>
           Include categories
         </span>
-        <div style={{flex:1}}/>
+        <div style={{flex:1, minWidth:0}}/>
+        <button
+          type="button"
+          onClick={()=>setAll(true)}
+          disabled={isAll}
+          title="Include every category"
+          style={{
+            fontSize:11, padding:'4px 9px', borderRadius:6, fontWeight:600,
+            border:'1px solid ' + (isAll ? 'var(--b1)' : 'var(--b2)'),
+            background: isAll ? 'transparent' : 'var(--bg2)',
+            color: isAll ? 'var(--t3)' : 'var(--t1)',
+            cursor: isAll ? 'default' : 'pointer', opacity: isAll ? 0.5 : 1,
+          }}>
+          Select all
+        </button>
+        <button
+          type="button"
+          onClick={()=>setAll(false)}
+          disabled={isNone}
+          title="Exclude every category"
+          style={{
+            fontSize:11, padding:'4px 9px', borderRadius:6, fontWeight:600,
+            border:'1px solid ' + (isNone ? 'var(--b1)' : 'var(--b2)'),
+            background: isNone ? 'transparent' : 'var(--bg2)',
+            color: isNone ? 'var(--t3)' : 'var(--t1)',
+            cursor: isNone ? 'default' : 'pointer', opacity: isNone ? 0.5 : 1,
+          }}>
+          Deselect all
+        </button>
         {onSaveAsDefault && (
           <button
             type="button"

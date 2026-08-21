@@ -456,6 +456,7 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
             onSelectOnly={(cat)=>{
               setExcluded(new Set(allCategories.filter(c=>c!==cat)));
             }}
+            onSetExcluded={setExcluded}
             label="Categories"
           />
         )}

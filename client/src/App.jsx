@@ -16555,8 +16555,15 @@ export default function App(){
                 <div style={{
                   position:'fixed', top:palettePos.top, right:palettePos.right, zIndex:9999,
                   background:'var(--bg2)', border:'1px solid var(--b2)',
-                  borderRadius:8, minWidth:240, maxHeight:420, overflowY:'auto',
-                  boxShadow:'0 10px 30px rgba(0,0,0,0.45)', padding:6,
+                  borderRadius:8, padding:6,
+                  boxShadow:'0 10px 30px rgba(0,0,0,0.45)',
+                  // Clamp to the viewport. A fixed 240px min with no max ran
+                  // off the side of a narrow phone, and 420px of height could
+                  // exceed a short screen with no way to scroll to the end.
+                  minWidth:'min(240px, calc(100vw - 16px))',
+                  maxWidth:'calc(100vw - 16px)',
+                  maxHeight:'min(420px, calc(100vh - 96px))',
+                  overflowY:'auto', overscrollBehavior:'contain',
                 }}>
                   <div style={{fontSize:9, color:'var(--t3)', letterSpacing:'.12em', textTransform:'uppercase', padding:'6px 10px 4px'}}>
                     Theme — {THEMES.length} palettes

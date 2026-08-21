@@ -783,6 +783,7 @@ function AdminCategoryFilterButton({ dealers, selectedMonthIdx, MO }) {
       onToggle={g.toggle}
       onClear={g.clear}
       onSelectOnly={(cat) => g.set(new Set(totals.map(t=>t.category).filter(c=>c!==cat)))}
+      onSetExcluded={g.set}
       label="Categories"
       compact
     />
