@@ -1635,17 +1635,17 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
 
   return(
     <div className="fade">
-      <div style={{marginBottom:22, display:'flex', alignItems:'flex-start', gap:16, flexWrap:'wrap'}}>
+      <div className="page-head" style={{marginBottom:22, display:'flex', alignItems:'flex-start', gap:16, flexWrap:'wrap'}}>
         <div style={{flex:'1 1 auto', minWidth:240}}>
-          <div style={{fontSize:11,color:'var(--acc)',textTransform:'uppercase',letterSpacing:'0.15em',marginBottom:4}}>
+          <div className="page-eyebrow" style={{fontSize:11,color:'var(--acc)',textTransform:'uppercase',letterSpacing:'0.15em',marginBottom:4}}>
             {viewingLabel}
             {selectedMonthIdx!==CURRENT_MONTH_IDX&&<span style={{marginLeft:8,background:'rgba(251,191,36,0.15)',color:'var(--yel)',padding:'2px 8px',borderRadius:4,fontSize:10}}>HISTORICAL VIEW</span>}
           </div>
-          <div style={{fontSize:24,fontWeight:700,letterSpacing:'-0.02em'}}>
+          <div className="page-title" style={{fontSize:24,fontWeight:700,letterSpacing:'-0.02em'}}>
             {(currentUser.role==='admin'||currentUser.role==='superadmin')?'All Territories':'Your Territory'} — Overview
           </div>
           {lastUpdatedFull && (
-            <div style={{
+            <div className="page-stamp" style={{
               marginTop:8,
               display:'inline-flex', alignItems:'center', gap:8,
               padding:'6px 12px', borderRadius:8,

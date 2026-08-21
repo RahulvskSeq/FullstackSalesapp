@@ -438,6 +438,15 @@ export default function Styles({theme}){
       .modal{padding:16px;border-radius:12px}
       table{font-size:12px}
       th,td{padding:6px 8px}
+
+      /* Page headers eat a lot of the first screen on a phone: a 24px title,
+         a 22px gap under the block, and a roomy "last updated" pill pushed
+         the actual numbers below the fold. Tighten all of it — the desktop
+         sizes are untouched. */
+      .page-head{margin-bottom:10px !important;gap:10px !important}
+      .page-head .page-eyebrow{font-size:10px !important;letter-spacing:.1em !important;margin-bottom:2px !important}
+      .page-head .page-title{font-size:18px !important;line-height:1.25}
+      .page-head .page-stamp{margin-top:6px !important;padding:4px 9px !important;font-size:11px !important}
     }
 
     /* Mobile: 480px and below */
