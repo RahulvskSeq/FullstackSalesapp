@@ -10,6 +10,10 @@ const S = new mongoose.Schema({
   //   admin      — sees all data, can manage salesmen, cannot manage admins/superadmins, cannot impersonate
   //   superadmin — full access including managing all users and impersonating any user
   role:            { type:String, enum:['salesman','employee','admin','superadmin'], default:'salesman' },
+  // Work email. Optional and NOT a login credential — sign-in is still by
+  // `id`. Deliberately excluded from the anonymous /auth/users projection so
+  // the roster can't be scraped for addresses.
+  email:           { type:String, default:'', trim:true, lowercase:true },
   color:           { type:String, default:'#818cf8' },
   ini:             { type:String, default:'??' },
   url:             { type:String, default:null },

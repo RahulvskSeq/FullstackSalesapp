@@ -543,7 +543,7 @@ export default function Reports({ dealers, users, currentUser, monthConfig, outs
 
   const userMaster = useMemo(()=>{
     const columns=[
-      {label:'User ID',w:110},{label:'Name',w:150},{label:'Role',w:110},{label:'Active',w:80},
+      {label:'User ID',w:110},{label:'Name',w:150},{label:'Email',w:200},{label:'Role',w:110},{label:'Active',w:80},
       {label:'Approver',w:130},{label:'Perm States',w:160},{label:'Perm Cities',w:160},
       {label:'Perm Zones',w:130},{label:'Perm Salesmen',w:180},{label:'Pages',w:200},
       {label:'Features',w:160},{label:'Sheet URL',w:200},
@@ -552,7 +552,7 @@ export default function Reports({ dealers, users, currentUser, monthConfig, outs
     const rows=Object.values(users||{})
       .sort((a,b)=>(order[a.role]??4)-(order[b.role]??4)||(a.name||'').localeCompare(b.name||''))
       .map(u=>{ const p=u.permissions||{}; return { cells:[
-        u.id,u.name,u.role,u.active===false?'No':'Yes',
+        u.id,u.name,u.email||'',u.role,u.active===false?'No':'Yes',
         u.approver?nameOf(u.approver):'',
         (p.states||[]).join('; '),(p.cities||[]).join('; '),(p.zones||[]).join('; '),
         (p.salesmen||[]).map(s=>nameOf(s)).join('; '),

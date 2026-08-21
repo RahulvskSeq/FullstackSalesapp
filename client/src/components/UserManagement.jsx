@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, UserPlus, LogIn, KeyRound, Link as LinkIcon, Trash2, Shield, ShieldCheck, Power, PowerOff, MapPin } from 'lucide-react';
+import { X, UserPlus, LogIn, KeyRound, Link as LinkIcon, Trash2, Shield, ShieldCheck, Power, PowerOff, MapPin, Mail } from 'lucide-react';
 import { Avatar } from './UI';
 import { api } from '../api';
 import { NAV_PAGES } from '../constants';
@@ -25,6 +25,7 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
   const [pass,    setPass]    = useState('');
   const [role,    setRole]    = useState('salesman');
   const [url,     setUrl]     = useState('');
+  const [email,   setEmail]   = useState('');
   const [color,   setColor]   = useState('#818cf8');
   const [busy,    setBusy]    = useState(false);
   const [msg,     setMsg]     = useState(null);
@@ -74,15 +75,16 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
     try {
       const ini = name.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
       const permissions = { states: [...createStates], cities: [...createCities], zones: [], salesmen: [] };
-      const newUser = await api.createUser({ id: idC, name, pass, role, color, ini, permissions });
+      const newUser = await api.createUser({ id: idC, name, pass, role, color, ini, permissions, email: email.trim() });
       // Optimistically update local cache for instant feedback…
-      setUsers({ ...users, [idC]: { id: idC, name, pass, role, color, ini, url: url.trim() || null, active:true, permissions } });
-      setAllUsers({ ...allUsers, [idC]: { id: idC, name, pass, role, color, ini, url: url.trim() || null, active:true, permissions } });
+      const cached = { id: idC, name, pass, role, color, ini, email: email.trim(), url: url.trim() || null, active:true, permissions };
+      setUsers({ ...users, [idC]: cached });
+      setAllUsers({ ...allUsers, [idC]: cached });
       // …then trigger a server-side refresh so the new user appears with all
       // server-side fields and persists across page reloads + other devices.
       onUsersChanged?.();
       refreshAll();
-      setName(''); setId(''); setPass(''); setUrl(''); setRole('salesman'); setCreateStates(new Set()); setCreateCities(new Set());
+      setName(''); setId(''); setPass(''); setUrl(''); setEmail(''); setRole('salesman'); setCreateStates(new Set()); setCreateCities(new Set());
       flash('success', 'Created ' + name + ' (' + idC + '). Password: ' + pass);
     } catch(e){
       flash('error', 'Create failed: ' + e.message);
@@ -112,6 +114,25 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
       onUsersChanged?.();
       flash('success', 'Sheet URL updated');
     } catch(e){ flash('error', 'Update failed: ' + e.message); }
+  };
+
+  const editEmail = async (uid) => {
+    const np = prompt('Email for ' + allUsers[uid]?.name + ' (blank to remove):', allUsers[uid]?.email || '');
+    if(np === null) return;
+    const e = np.trim().toLowerCase();
+    // Mirror the server's check so an obvious typo is caught before the round
+    // trip; the server still validates and owns uniqueness.
+    if(e && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)){
+      flash('error', 'That email address is not valid');
+      return;
+    }
+    try {
+      await api.updateUser(uid, { email: e });
+      setUsers({ ...users, [uid]: { ...users[uid], email: e } });
+      setAllUsers({ ...allUsers, [uid]: { ...allUsers[uid], email: e } });
+      onUsersChanged?.();
+      flash('success', e ? 'Email updated' : 'Email removed');
+    } catch(err){ flash('error', 'Update failed: ' + err.message); }
   };
 
   // ── Edit data-access + feature permissions ─────────────────────────────
@@ -466,8 +487,10 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
                     )}
                     {isSelf && <span style={{fontSize:9, color:'var(--t3)'}}>(you)</span>}
                   </div>
-                  <div style={{fontSize:10, color:'var(--t3)', marginTop:2}}>
-                    {u.id} · {u.url ? <span style={{color:'var(--grn)'}}>Sheet ✓</span> : <span style={{color:'var(--t3)'}}>No sheet</span>}
+                  <div style={{fontSize:10, color:'var(--t3)', marginTop:2, wordBreak:'break-word'}}>
+                    {u.id}
+                    {u.email && <> · <span style={{color:'var(--acc)'}}>{u.email}</span></>}
+                    {' · '}{u.url ? <span style={{color:'var(--grn)'}}>Sheet ✓</span> : <span style={{color:'var(--t3)'}}>No sheet</span>}
                     {u.role === 'salesman' && (
                       <> · Approver: <span style={{color: u.approver ? '#a5b4fc' : '#fbbf24'}}>
                         {u.approver ? (allUsers[u.approver]?.name || u.approver) : 'any admin'}
@@ -518,6 +541,10 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
                     )}
                     <button className="btn" style={{fontSize:11, padding:'4px 8px'}} onClick={()=>reset(u.id)} title="Reset password">
                       <KeyRound size={11}/>
+                    </button>
+                    <button className="btn" style={{fontSize:11, padding:'4px 8px'}} onClick={()=>editEmail(u.id)}
+                      title={u.email ? `Email: ${u.email}` : 'Add an email address'}>
+                      <Mail size={11} style={{color: u.email ? 'var(--acc)' : undefined}}/>
                     </button>
                     <button className="btn" style={{fontSize:11, padding:'4px 8px'}} onClick={()=>editUrl(u.id)} title="Edit sheet URL">
                       <LinkIcon size={11}/>
@@ -603,6 +630,11 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
               <select className="inp sel" value={role} onChange={e=>setRole(e.target.value)}>
                 {createRoleOptions.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
               </select>
+            </div>
+            <div className="field full">
+              <label>Email <span style={{color:'var(--t3)', fontSize:10}}>(optional — sign-in is still by username)</span></label>
+              <input className="inp" type="email" autoComplete="off" value={email}
+                onChange={e=>setEmail(e.target.value)} placeholder="name@sequencesurface.com"/>
             </div>
             <div className="field full">
               <label>Sheet CSV URL <span style={{color:'var(--t3)', fontSize:10}}>(optional, mainly for salesmen)</span></label>

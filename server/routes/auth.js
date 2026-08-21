@@ -160,15 +160,15 @@ router.put('/users/:id', protect, async (req, res) => {
   // Authorize the edit
   let allowed = [];
   if(isSuperAdmin){
-    allowed = ['url','url2','url_outstanding','pass','name','color','ini','role','approver','active','permissions'];
+    allowed = ['url','url2','url_outstanding','pass','name','color','ini','role','approver','active','permissions','email'];
   } else if(isAdmin){
     if(isSelf) {
       // editing own profile
-      allowed = ['url','url2','url_outstanding','pass','name','color','ini'];
+      allowed = ['url','url2','url_outstanding','pass','name','color','ini','email'];
     } else if(target.role === 'salesman') {
       // admin editing a salesman — can activate / deactivate, but NOT grant
       // data permissions (only superadmin may set permissions).
-      allowed = ['url','url2','url_outstanding','pass','name','color','ini','approver','active'];
+      allowed = ['url','url2','url_outstanding','pass','name','color','ini','approver','active','email'];
     } else if(target.role === 'admin') {
       // Admins can (de)activate other admins but cannot set permissions or role.
       allowed = ['active'];
@@ -179,6 +179,20 @@ router.put('/users/:id', protect, async (req, res) => {
     // salesman
     if(!isSelf) return res.status(403).json({ error:'Not allowed' });
     allowed = ['pass'];
+  }
+
+  // Same rules as create: an obvious non-address is rejected rather than
+  // stored, and one address can't sit on two accounts. Clearing it is fine.
+  if (allowed.includes('email') && req.body.email !== undefined) {
+    const e = String(req.body.email || '').trim().toLowerCase();
+    if (e && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) {
+      return res.status(400).json({ error:'That email address is not valid' });
+    }
+    if (e) {
+      const taken = await User.findOne({ email: e, id: { $ne: targetId } });
+      if (taken) return res.status(400).json({ error:`That email is already on ${taken.id}` });
+    }
+    req.body.email = e;
   }
 
   const update = {};
@@ -236,10 +250,21 @@ router.put('/users/:id', protect, async (req, res) => {
 // ── POST /api/auth/users ───────────────────────────────────────────────────
 // Admin can create salesmen only. Superadmin can create any role.
 router.post('/users', protect, adminOnly, async (req, res) => {
-  const { id, name, pass, role, color, ini, permissions } = req.body;
+  const { id, name, pass, role, color, ini, permissions, email } = req.body;
   if(!id||!name||!pass) return res.status(400).json({ error:'id, name, pass required' });
   const exists = await User.findOne({ id });
   if(exists) return res.status(400).json({ error:'User already exists' });
+
+  // Optional, but reject something that plainly isn't an address rather than
+  // storing a typo everyone later trusts.
+  const cleanEmail = String(email || '').trim().toLowerCase();
+  if(cleanEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)){
+    return res.status(400).json({ error:'That email address is not valid' });
+  }
+  if(cleanEmail){
+    const taken = await User.findOne({ email: cleanEmail });
+    if(taken) return res.status(400).json({ error:`That email is already on ${taken.id}` });
+  }
 
   const wantRole = role || 'salesman';
   // Only superadmin can create elevated roles (employee/admin/superadmin).
@@ -250,6 +275,7 @@ router.post('/users', protect, adminOnly, async (req, res) => {
   const doc = {
     id, name, pass,
     role: wantRole,
+    email: cleanEmail,
     color: color || '#818cf8',
     ini: ini || name.slice(0, 2).toUpperCase(),
   };
