@@ -1659,6 +1659,38 @@ const handle = async (res) => {
   return data;
 };
 
+// Multipart POST with optional upload progress.
+//
+// fetch() cannot report UPLOAD progress — only download — so any caller that
+// wants a percentage needs XHR. Without an onProgress callback this stays on
+// fetch, so nothing else changes behaviour.
+//
+// Note what 100% means: the last byte has been SENT. The server then parses
+// the spreadsheet, which for a large sheet is the slower half — show
+// "processing" at that point rather than claiming the job is finished.
+function postForm(url, fd, onProgress){
+  if(typeof onProgress !== 'function'){
+    return fetch(url,{method:'POST',headers:{Authorization:`Bearer ${getToken()}`},body:fd}).then(handle);
+  }
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url);
+    xhr.setRequestHeader('Authorization', `Bearer ${getToken()}`);
+    xhr.upload.onprogress = (ev) => {
+      if(ev.lengthComputable) onProgress(Math.round((ev.loaded / ev.total) * 100));
+    };
+    xhr.onload = () => {
+      let body = {};
+      try { body = JSON.parse(xhr.responseText || '{}'); } catch {}
+      if(xhr.status >= 200 && xhr.status < 300) resolve(body);
+      else reject(new Error(body.error || `HTTP ${xhr.status}`));
+    };
+    xhr.onerror   = () => reject(new Error('Network error'));
+    xhr.ontimeout = () => reject(new Error('Upload timed out'));
+    xhr.send(fd);
+  });
+}
+
 export const api = {
   health: () => fetch(`${BASE}/health`,{ signal:AbortSignal.timeout(3000) }).then(handle).catch(()=>null),
 
@@ -1694,11 +1726,11 @@ export const api = {
   deleteDealer: (id)    => fetch(`${BASE}/dealers/${id}`,{method:'DELETE',headers:authHeaders()}).then(handle),
   syncToDB:     (dealers,MO) => fetch(`${BASE}/dealers/sync-db`,{method:'POST',headers:authHeaders(),body:JSON.stringify({dealers,MO})}).then(handle),
 
-  uploadMonth: (file,month,salesman) => {
+  uploadMonth: (file,month,salesman,onProgress) => {
     const fd = new FormData();
     fd.append('file',file); fd.append('month',month);
     if(salesman) fd.append('salesman',salesman);
-    return fetch(`${BASE}/dealers/upload`,{method:'POST',headers:{Authorization:`Bearer ${getToken()}`},body:fd}).then(handle);
+    return postForm(`${BASE}/dealers/upload`, fd, onProgress);
   },
   bulkUpdateInfo: (file,salesman) => {
     const fd = new FormData();
@@ -2101,13 +2133,13 @@ export const api = {
   //   month       — YYYY-MM (required, normalised on the server)
   //   monthLabel  — optional MO label like "Jun-26" so dealer.monthlyData also gets written
   //   replace     — replace Sale rows for the month
-  salesUpload: (file, month, replace=true, monthLabel='') => {
+  salesUpload: (file, month, replace=true, monthLabel='', onProgress) => {
     const fd = new FormData();
     fd.append('file', file);
     fd.append('month', month);
     fd.append('replace', String(replace));
     if (monthLabel) fd.append('monthLabel', monthLabel);
-    return fetch(`${BASE}/sales/upload`,{method:'POST',headers:{Authorization:`Bearer ${getToken()}`},body:fd}).then(handle);
+    return postForm(`${BASE}/sales/upload`, fd, onProgress);
   },
   salesMonths:       ()         => fetch(`${BASE}/sales/months`,{headers:authHeaders()}).then(handle),
   salesByCategory:   (q={})     => fetch(`${BASE}/sales/by-category?${new URLSearchParams(q)}`,{headers:authHeaders()}).then(handle),

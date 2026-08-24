@@ -652,6 +652,13 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
   // ── Bulk Excel: download/upload per-salesman template ──────────────────────
   const fileRef = useRef(null);
   const [bulkBusy, setBulkBusy] = useState(false);
+  // Save progress: {done,total} while the per-dealer loop runs. The loop is
+  // sequential (one request per dealer) so this is a real count, not an
+  // animation.
+  const [saveProg, setSaveProg] = useState(null);
+  // File upload: {pct, phase}. phase flips to 'processing' once the last
+  // byte is sent, because the server still has to parse the sheet.
+  const [upProg,   setUpProg]   = useState(null);
   const [bulkMsg, setBulkMsg]   = useState(null); // { type:'success'|'error', text }
 
   // ── Category-wise Sales: download dynamic template + upload wide Excel ─────
@@ -824,7 +831,12 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
     setCatBusy(true); setCatMsg(null);
     try {
       const ym  = toYearMonth(month) || month;   // YYYY-MM for Sale rows
-      const res = await api.salesUpload(f, ym, catReplace, month /* MO label */);
+      setUpProg({ pct:0, phase:'uploading' });
+      const res = await api.salesUpload(f, ym, catReplace, month /* MO label */, (pct) => {
+        // 100% = last byte sent. The server still has to parse the sheet and
+        // write the rows, so say "processing" instead of pretending it's done.
+        setUpProg({ pct, phase: pct >= 100 ? 'processing' : 'uploading' });
+      });
       const parts = [`${month}: ${res.inserted} category-sale rows inserted.`];
       if (res.dealersUpdated)     parts.push(`${res.dealersUpdated} dealers updated.`);
       if (res.dealersCreated)     parts.push(`${res.dealersCreated} new dealers created.`);
@@ -842,6 +854,7 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
       setCatMsg({ type:'error', text: `Upload failed: ${e.message}` });
     } finally {
       setCatBusy(false);
+      setUpProg(null);
     }
   };
 
@@ -932,11 +945,14 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
 
     const errs = [];
     let ok = 0;
+    const total = Object.keys(changes).length;
+    let done = 0;
+    setSaveProg({ done:0, total });
     const token = localStorage.getItem('stp_jwt');
 
     if(!token) {
       setErrors(['Not connected to server. Start server and re-login to save data to database.']);
-      setSaving(false);
+      setSaving(false); setSaveProg(null);
       return;
     }
 
@@ -988,12 +1004,19 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
       } catch(e) {
         errs.push(`${dealer.name}: ${e.message}`);
       }
+      // Count attempts, not successes — the bar tracks how far through the
+      // list we are, and a failed dealer is reported separately in `errors`.
+      done++;
+      setSaveProg({ done, total });
+      // Yield to the browser so the bar actually repaints between requests.
+      await new Promise(r => setTimeout(r, 0));
     }
 
     setErrors(errs);
     setSaved(true);
     setChanges({});
     setSaving(false);
+    setSaveProg(null);
     if(ok > 0 && onSaved) onSaved();   // refresh dashboard data after successful save
   };
 
@@ -1074,11 +1097,15 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
     e.target.value = '';
     if(!f) return;
     setBulkBusy(true); setBulkMsg(null);
+    setUpProg({ pct:0, phase:'uploading' });
     try {
       // When admin selects "All Salesmen", send '_all' so the server reads the
       // per-row Salesman column. Otherwise send the picked salesman id.
       const targetSm = isAdmin ? (salesman === 'all' ? '_all' : salesman) : currentUser?.id;
-      const res = await api.uploadMonth(f, month, targetSm);
+      const res = await api.uploadMonth(f, month, targetSm, (pct) => {
+        // 100% means "sent", not "done" — the server parses afterwards.
+        setUpProg({ pct, phase: pct >= 100 ? 'processing' : 'uploading' });
+      });
 
       // Build a readable summary, including per-salesman counts for all-mode.
       let summary = '';
@@ -1093,7 +1120,7 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
       if(onSaved) onSaved();    // refresh dashboard data
     } catch(err){
       setBulkMsg({type:'error', text:'Upload failed: ' + err.message});
-    } finally { setBulkBusy(false); }
+    } finally { setBulkBusy(false); setUpProg(null); }
   };
 
   return (
@@ -1163,8 +1190,31 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
             <div style={{flex:1}}/>
             <button onClick={()=>{setChanges({});setSaved(false);}} className="btn" style={{fontSize:12}}>Discard</button>
             <button onClick={saveAll} disabled={saving} className="btnp" style={{display:'flex',alignItems:'center',gap:6,fontSize:12}}>
-              {saving ? <><div style={{width:11,height:11,border:'2px solid #fff',borderTopColor:'transparent',borderRadius:'50%',animation:'spin .7s linear infinite'}}/> Saving...</> : <><Save size={12}/> Save {changedCount} Changes</>}
+              {saving
+                ? <><div style={{width:11,height:11,border:'2px solid #fff',borderTopColor:'transparent',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>
+                    Saving{saveProg ? ` ${Math.round(saveProg.done / Math.max(1, saveProg.total) * 100)}%` : '…'}</>
+                : <><Save size={12}/> Save {changedCount} Changes</>}
             </button>
+
+            {/* Real progress — the save loop sends one request per dealer, so
+                this counts actual completed dealers rather than animating. */}
+            {saving && saveProg && (
+              <div style={{flexBasis:'100%', marginTop:2}}>
+                <div style={{
+                  height:6, borderRadius:99, overflow:'hidden',
+                  background:'var(--bg2)', border:'1px solid var(--b1)',
+                }}>
+                  <div style={{
+                    width: `${Math.round(saveProg.done / Math.max(1, saveProg.total) * 100)}%`,
+                    height:'100%', background:'var(--acc)',
+                    transition:'width .15s linear',
+                  }}/>
+                </div>
+                <div style={{fontSize:11, color:'var(--t3)', marginTop:4}}>
+                  {saveProg.done} of {saveProg.total} dealers saved
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1222,9 +1272,36 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
                 cursor: catBusy ? 'not-allowed' : 'pointer', opacity: catBusy ? 0.6 : 1,
               }}>
               {catBusy && !catTplBusy
-                ? <><div style={{width:11,height:11,border:'2px solid currentColor',borderTopColor:'transparent',borderRadius:'50%',animation:'spin .7s linear infinite'}}/> Uploading…</>
+                ? <><div style={{width:11,height:11,border:'2px solid currentColor',borderTopColor:'transparent',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>
+                    {upProg
+                      ? (upProg.phase === 'processing' ? 'Processing…' : `Uploading ${upProg.pct}%`)
+                      : 'Uploading…'}</>
                 : <><Upload size={13}/> Upload Filled Excel</>}
             </button>
+
+            {/* Byte-level upload progress. Once the file is fully sent the bar
+                holds at 100% and the label switches to "processing", because
+                the server is still parsing the sheet — pretending that part is
+                instant is what makes a stuck upload look like a crash. */}
+            {catBusy && upProg && (
+              <div style={{flexBasis:'100%', marginTop:2}}>
+                <div style={{
+                  height:6, borderRadius:99, overflow:'hidden',
+                  background:'var(--bg2)', border:'1px solid var(--b1)',
+                }}>
+                  <div style={{
+                    width: `${upProg.pct}%`, height:'100%',
+                    background: upProg.phase === 'processing' ? 'var(--yel)' : 'var(--grn)',
+                    transition:'width .15s linear',
+                  }}/>
+                </div>
+                <div style={{fontSize:11, color:'var(--t3)', marginTop:4}}>
+                  {upProg.phase === 'processing'
+                    ? 'File sent — server is reading the sheet and writing rows…'
+                    : `Uploading file… ${upProg.pct}%`}
+                </div>
+              </div>
+            )}
             <button onClick={handleMergeNameVariants} disabled={catBusy}
               title="Merge dealers whose names differ only by spaces or punctuation (e.g. '76 EAST' and '76EAST') — sale rows are preserved. Use this AFTER an upload that created duplicates."
               style={{
