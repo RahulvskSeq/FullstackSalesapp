@@ -1430,8 +1430,18 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
   const hasF=filters.q||filters.zone.length>0||filters.status.length>0||filters.sm.length>0||filters.credit||filters.city.length>0||filters.state.length>0||filters.category.length>0||filters.categoryType.length>0||filters.minPct||filters.maxPct||filters.pin||filters.perf.length>0;
   const clearFilters =()=>setFilters({q:'',zone:[],status:[],sm:[],credit:'',minPct:'',maxPct:'',city:[],state:[],category:[],categoryType:[],pin:'',perf:[]});
 
-  const onUpdateStatus=(dealerId,newStatus)=>{
+  // Potential Status — the salesman's own label. Persist it, don't just move
+  // it in local state: this previously updated React only, so a pick (or a
+  // Kanban drag, which lands here too) was lost on the next refresh.
+  const onUpdateStatus=async(dealerId,newStatus)=>{
+    const prev = dealers.find(d=>d.id===dealerId)?.status;
     onUpdateDealer&&onUpdateDealer(dealerId,{status:newStatus});
+    try{ await api.updateDealer(dealerId,{status:newStatus}); }
+    catch(e){
+      // Put the row back rather than showing a value the server rejected.
+      onUpdateDealer&&onUpdateDealer(dealerId,{status:prev});
+      notify.error('Could not save status: ' + (e?.message||'network error'));
+    }
   };
   // Change a dealer's commercial type inline — persist to the server too.
   const onUpdateDealerType=async(dealerId,newType)=>{
