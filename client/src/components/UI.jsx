@@ -620,6 +620,23 @@ const STATUS_COLORS = {
   'NONE':              '#8a93a8',   // grey
 };
 
+// Brand mark — the same rising bar chart as the Android launcher icon, so the
+// app looks like its own icon on the home screen.
+//
+// Inline SVG rather than an image file: it inherits the current text colour,
+// so it works on any palette without shipping a light and a dark variant.
+export const LogoMark = ({ size = 18, color = 'currentColor' }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true"
+       style={{ flexShrink: 0, display: 'block' }}>
+    <rect x="2"    y="14"  width="4.4" height="8"  rx="1.2" fill={color} opacity="0.55"/>
+    <rect x="9.8"  y="10"  width="4.4" height="12" rx="1.2" fill={color} opacity="0.78"/>
+    <rect x="17.6" y="5"   width="4.4" height="17" rx="1.2" fill={color}/>
+    <path d="M3 10.5 L9 5.8 L13.5 8 L21.5 1.8" stroke={color} strokeWidth="2"
+          strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M22.4 1.4 L17.2 1.9 L21.9 6.6 Z" fill={color}/>
+  </svg>
+);
+
 export const StatusBadge = ({status}) => {
   const t=(status||'').toUpperCase();
   let cl = STATUS_COLORS[t];
@@ -728,7 +745,10 @@ export const LoadingScreen = ({ message='Loading...' }) => (
       }}/>
     </div>
     <div style={{textAlign:'center'}}>
-      <div style={{fontSize:20, fontWeight:700, color:'var(--t1)', marginBottom:6}}>STP</div>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,marginBottom:6}}>
+        <LogoMark size={20} color="var(--acc)"/>
+        <span style={{fontSize:20, fontWeight:700, color:'var(--t1)'}}>STP</span>
+      </div>
       <div style={{fontSize:13, color:'var(--t3)'}}>{message}</div>
     </div>
   </div>

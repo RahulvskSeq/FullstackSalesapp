@@ -15387,7 +15387,7 @@ import { pct, spct, pclr, uid, isoNow, storage, parseCSV, fetchCSV, parseOutstan
 import { api, dbDealerToApp, dbOutstandingToApp, saveToken, getToken } from './api';
 import { MonthContext } from './context';
 import Styles            from './components/Styles';
-import { MonthSelectorBar, Avatar, SkeletonLoader, LoadingScreen } from './components/UI';
+import { MonthSelectorBar, Avatar, SkeletonLoader, LoadingScreen, LogoMark } from './components/UI';
 import NotificationCenter, { notify, confirmDialog } from './components/Toast';
 import { THEMES, applyTheme, loadSavedTheme, saveTheme } from './themes';
 import CRM, { AttendancePage, VisitsPage, LeadsPage, LeavesPage } from './components/CRM';
@@ -16376,8 +16376,9 @@ export default function App(){
             </button>
 
             {/* ── Brand — hide on very small ── */}
-            <div className="topbar-brand" style={{fontFamily:'"JetBrains Mono",monospace',fontSize:11,color:'var(--acc)',letterSpacing:3,fontWeight:500,flexShrink:0,whiteSpace:'nowrap'}}>
-              ▸ STP
+            <div className="topbar-brand" style={{display:'flex',alignItems:'center',gap:6,color:'var(--acc)',flexShrink:0,whiteSpace:'nowrap'}}>
+              <LogoMark size={17}/>
+              <span style={{fontFamily:'"JetBrains Mono",monospace',fontSize:11,letterSpacing:3,fontWeight:500}}>STP</span>
             </div>
 
             {/* ── Territory bar — hidden on mobile via CSS ── */}
