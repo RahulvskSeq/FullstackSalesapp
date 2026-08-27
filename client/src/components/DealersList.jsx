@@ -1487,7 +1487,7 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
     // Export EVERY column shown in the All Dealers table (plus the raw values
     // behind the derived ones), so the download matches what's on screen.
     const h=['Dealer Name','Salesman','Zone','Dealer Type','City','State','PIN','Address',
-      'Status','Target','Achieved','Ach %','Trend %','6M Avg',
+      'Performance Status','Potential Status','Target','Achieved','Ach %','Trend %','6M Avg',
       ...MO,'Cr Days','Cr Limit'];
     const rows=filtered.map(x=>[
       x.name,
@@ -1498,6 +1498,7 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
       x.state||'',
       x.pincode||'',
       x.address||'',
+      x.perfStatus||'',
       x.status||'',
       x.target||0,
       x.achieved||0,
@@ -1551,9 +1552,9 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
           <Search size={14} style={{position:'absolute',left:10,top:'50%',transform:'translateY(-50%)',color:'var(--t3)'}}/>
           <input className="inp" style={{width:200,paddingLeft:32}} placeholder="Search name/city/state..." value={filters.q} onChange={e=>setFilters({...filters,q:e.target.value})}/>
         </div>
-        <MultiSelect options={allStatuses} selected={filters.status} onChange={v=>setFilters({...filters,status:v})} placeholder="Account (All)"
+        <MultiSelect options={allStatuses} selected={filters.status} onChange={v=>setFilters({...filters,status:v})} placeholder="Potential Status (All)"
           renderOption={s=><StatusBadge status={s}/>}/>
-        <MultiSelect options={PERF_STATUSES} selected={filters.perf} onChange={v=>setFilters({...filters,perf:v})} placeholder="Performance (All)"
+        <MultiSelect options={PERF_STATUSES} selected={filters.perf} onChange={v=>setFilters({...filters,perf:v})} placeholder="Performance Status (All)"
           renderOption={s=><StatusBadge status={s}/>}/>
         <MultiSelect options={allZones} selected={filters.zone} onChange={v=>setFilters({...filters,zone:v})} placeholder="Zone (All)"/>
         {allCategories.length>0&&<MultiSelect options={allCategories} selected={filters.category} onChange={v=>setFilters({...filters,category:v})} placeholder="Category (All)"
@@ -1620,8 +1621,8 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
                   <th style={{minWidth:130}}>Dealer Type</th>
                   {sh('city','City')}{sh('state','State')}
                   {sh('pincode','PIN')}<th style={{minWidth:180}}>Address</th>
-                  {sh('perfStatus','Performance')}
-                  {sh('status','Account')}
+                  {sh('perfStatus','Performance Status')}
+                  {sh('status','Potential Status')}
                   {sh('target','Tgt')}{sh('achieved','Ach')}<th>%</th><th>Trend</th>
                   {sh('avg6m','6m Avg')}
                   {[...MO].map((_,di)=>{const i=MO.length-1-di;return<th key={i} style={{background:i===selectedMonthIdx?'rgba(99,102,241,.08)':'var(--bg1)'}}>{MO[i]}</th>;})}
