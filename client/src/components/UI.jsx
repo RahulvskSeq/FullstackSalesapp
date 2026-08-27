@@ -594,21 +594,30 @@ import { pclr, readableOn } from '../utils';
 // Explicit map rather than substring tests, because 'RECENTLY INACTIVE' and
 // 'INACTIVE' mean different things and a `.includes('INACTIVE')` check
 // collapses them into one colour.
+// Two dimensions, two palettes. They previously shared four colours —
+// TOP PERFORMER and STAR were both amber, PRIORITY ACCOUNT and KEY ACCOUNT
+// both violet — which is unreadable now that both badges sit side by side on
+// the same row.
+//
+// Type 1 (calculated) is a ladder, so it runs a single green -> amber -> red
+// ramp that reads as a scale at a glance.
+// Type 2 (chosen) is a set of unrelated labels, so it uses distinct hues from
+// a different part of the wheel: pink, indigo, teal, sky.
 const STATUS_COLORS = {
-  // Type 1
-  'TOP PERFORMER':     '#fbbf24',
-  'PRIORITY ACCOUNT':  '#a78bfa',
-  'RISING STAR':       '#22d3ee',
-  'ACTIVE':            '#34d399',
-  'RECENTLY INACTIVE': '#fb923c',
-  'INACTIVE':          '#f59e0b',
-  'DEAD':              '#f87171',
-  // Type 2
-  'STAR':              '#fbbf24',
-  'KEY ACCOUNT':       '#a78bfa',
-  'ACHIEVER':          '#34d399',
-  'REACTIVE':          '#22d3ee',
-  'NONE':              '#8a93a8',
+  // Type 1 — performance ramp, best to worst
+  'TOP PERFORMER':     '#16a34a',   // deep green
+  'PRIORITY ACCOUNT':  '#65a30d',   // lime
+  'RISING STAR':       '#ca8a04',   // gold
+  'ACTIVE':            '#0891b2',   // cyan — trading, but not a tier
+  'RECENTLY INACTIVE': '#f97316',   // orange
+  'INACTIVE':          '#dc2626',   // red
+  'DEAD':              '#7f1d1d',   // dark red
+  // Type 2 — chosen labels, deliberately off the Type 1 ramp
+  'STAR':              '#db2777',   // pink
+  'KEY ACCOUNT':       '#4f46e5',   // indigo
+  'ACHIEVER':          '#0d9488',   // teal
+  'REACTIVE':          '#0284c7',   // sky
+  'NONE':              '#8a93a8',   // grey
 };
 
 export const StatusBadge = ({status}) => {

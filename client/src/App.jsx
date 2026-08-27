@@ -16760,7 +16760,7 @@ export default function App(){
                     if(ra !== rb) return ra - rb;
                     return b[1] - a[1]; // tie-break by larger count
                   }).map(([s,c])=>{
-                    const statusColors={'TOP PERFORMER':'#fbbf24','PRIORITY ACCOUNT':'#a78bfa','RISING STAR':'#22d3ee','ACTIVE':'#34d399','RECENTLY INACTIVE':'#fb923c','INACTIVE':'#f59e0b','DEAD':'#f87171'};
+                    const statusColors={'TOP PERFORMER':'#16a34a','PRIORITY ACCOUNT':'#65a30d','RISING STAR':'#ca8a04','ACTIVE':'#0891b2','RECENTLY INACTIVE':'#f97316','INACTIVE':'#dc2626','DEAD':'#7f1d1d','STAR':'#db2777','KEY ACCOUNT':'#4f46e5','ACHIEVER':'#0d9488','REACTIVE':'#0284c7','NONE':'#8a93a8'};
                     const cl=statusColors[s.toUpperCase()]||'#55546a';
                     return(<div key={s} style={{display:'flex',justifyContent:'space-between',fontSize:10}}>
                       <span style={{color:cl,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:110}}>{s}</span>

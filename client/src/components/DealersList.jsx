@@ -1171,60 +1171,32 @@ const STATUS_COLORS = {
 };
 const getStatusColor = s => STATUS_COLORS[(s||'').toUpperCase()] || '#55546a';
 
-function KanbanBoard({ dealers, selectedMonthIdx, users, onEdit, onUpdateStatus, isAdmin }) {
-  // ordered columns — persisted in localStorage for drag reorder
-  const defaultCols = [...new Set(dealers.map(d=>(d.status||'OTHER').trim()))].filter(Boolean);
-  const [cols, setCols] = useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem('stp_kanban_cols')||'null');
-      if(saved) {
-        // merge: add new statuses from data, keep saved order
-        const merged = [...saved.filter(c=>defaultCols.includes(c)), ...defaultCols.filter(c=>!saved.includes(c))];
-        return merged;
-      }
-    } catch {}
-    return defaultCols;
-  });
-  const [dragCol, setDragCol] = useState(null);       // col being reordered
+function KanbanBoard({ dealers, selectedMonthIdx, users, onEdit, onUpdateStatus, isAdmin, groupBy='status' }) {
+  // Which dimension the board is showing. Cards can only be dragged when it is
+  // the manual one — the performance tier is calculated from sales, so dropping
+  // a card into "DEAD" would be a lie the next recompute erases.
+  const isManual = groupBy === 'status';
+
+  // Columns come from the canonical lists in a meaningful order (best to worst
+  // for the tier), not from whatever happens to be in the data. That also means
+  // an empty column still appears, so "nothing is Top Performer this month" is
+  // visible rather than silently missing.
+  const ORDER = isManual ? ACCOUNT_STATUSES : PERF_STATUSES;
+
   const [dragCard, setDragCard] = useState(null);     // {dealerId, fromStatus}
   const [overCol, setOverCol] = useState(null);
   const [overCard, setOverCard] = useState(null);
 
-  // keep cols in sync when new statuses appear
-  useEffect(()=>{
-    const current = [...new Set(dealers.map(d=>(d.status||'OTHER').trim()))].filter(Boolean);
-    setCols(prev => {
-      const merged = [...prev.filter(c=>current.includes(c)), ...current.filter(c=>!prev.includes(c))];
-      localStorage.setItem('stp_kanban_cols', JSON.stringify(merged));
-      return merged;
-    });
-  },[dealers]);
-
-  // ── Column drag ────────────────────────────────────────
-  const onColDragStart = (e, col) => { setDragCol(col); e.dataTransfer.effectAllowed='move'; };
-  const onColDragOver  = (e, col) => { e.preventDefault(); setOverCol(col); };
-  const onColDrop      = (e, targetCol) => {
-    e.preventDefault();
-    if(!dragCol||dragCol===targetCol)return;
-    setCols(prev=>{
-      const next=[...prev];
-      const fi=next.indexOf(dragCol), ti=next.indexOf(targetCol);
-      if(fi<0||ti<0)return prev;
-      next.splice(fi,1); next.splice(ti,0,dragCol);
-      localStorage.setItem('stp_kanban_cols', JSON.stringify(next));
-      return next;
-    });
-    setDragCol(null); setOverCol(null);
-  };
-
-  // ── Card drag (move dealer to different status) ────────
+  // ── Card drag (move dealer to a different Potential Status) ────────
   const onCardDragStart = (e, dealerId, status) => {
+    if(!isManual) return;                 // calculated tier: not draggable
     setDragCard({dealerId, fromStatus:status});
     e.dataTransfer.effectAllowed='move';
     e.stopPropagation();
   };
   const onCardDrop = (e, targetStatus) => {
     e.preventDefault();
+    if(!isManual) return;
     if(!dragCard||dragCard.fromStatus===targetStatus)return;
     onUpdateStatus(dragCard.dealerId, targetStatus);
     setDragCard(null); setOverCol(null);
@@ -1233,12 +1205,15 @@ function KanbanBoard({ dealers, selectedMonthIdx, users, onEdit, onUpdateStatus,
   const dealersByStatus = useMemo(()=>{
     const map={};
     dealers.forEach(d=>{
-      const s=(d.status||'OTHER').trim();
-      if(!map[s])map[s]=[];
-      map[s].push(d);
+      const raw = groupBy==='status' ? (d.status||'NONE') : (d.perfStatus||'');
+      const s = String(raw).trim().toUpperCase();
+      if(!s) return;
+      (map[s] ||= []).push(d);
     });
     return map;
-  },[dealers]);
+  },[dealers, groupBy]);
+
+  const cols = ORDER.filter(c=>(dealersByStatus[c]||[]).length>0);
 
   return(
     <div style={{display:'flex',gap:10,overflowX:'auto',paddingBottom:12,alignItems:'flex-start',minHeight:400}}>
@@ -1249,20 +1224,21 @@ function KanbanBoard({ dealers, selectedMonthIdx, users, onEdit, onUpdateStatus,
         const isOver=overCol===col&&dragCard&&dragCard.fromStatus!==col;
         return(
           <div key={col}
-            draggable onDragStart={e=>onColDragStart(e,col)} onDragOver={e=>onColDragOver(e,col)}
-            onDrop={e=>{ dragCol?onColDrop(e,col):onCardDrop(e,col); }} onDragEnd={()=>{setDragCol(null);setDragCard(null);setOverCol(null);}}
+            onDragOver={e=>{ if(isManual){ e.preventDefault(); setOverCol(col); } }}
+            onDrop={e=>onCardDrop(e,col)}
+            onDragEnd={()=>{setDragCard(null);setOverCol(null);}}
             style={{
               minWidth:220, maxWidth:240, flexShrink:0,
               background: isOver?`${clr}18`:'var(--bg1)',
-              border:`1.5px solid ${isOver?clr:dragCol===col?clr+'66':'var(--b1)'}`,
+              border:`1.5px solid ${isOver?clr:'var(--b1)'}`,
               borderRadius:10, overflow:'hidden',
               transition:'border .15s,background .15s',
-              opacity: dragCol===col?0.5:1,
             }}>
-            {/* Column header */}
+            {/* Column header. Columns are in a fixed, meaningful order now —
+                best-to-worst for the tier — so there is nothing to reorder. */}
             <div style={{padding:'10px 12px',background:`${clr}18`,borderBottom:`1px solid ${clr}33`,
-              display:'flex',alignItems:'center',gap:6,cursor:'grab',userSelect:'none'}}>
-              <GripVertical size={12} color={clr} style={{flexShrink:0}}/>
+              display:'flex',alignItems:'center',gap:6,userSelect:'none'}}>
+              <span style={{width:8,height:8,borderRadius:'50%',background:clr,flexShrink:0}}/>
               <span style={{width:8,height:8,borderRadius:'50%',background:clr,flexShrink:0}}/>
               <span style={{fontSize:12,fontWeight:700,color:clr,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{col}</span>
               <span style={{fontSize:11,color:clr,fontWeight:700,background:`${clr}22`,padding:'1px 6px',borderRadius:8}}>{colDealers.length}</span>
@@ -1277,7 +1253,7 @@ function KanbanBoard({ dealers, selectedMonthIdx, users, onEdit, onUpdateStatus,
                 const sm=users[d.salesman];
                 return(
                   <div key={d.id}
-                    draggable onDragStart={e=>onCardDragStart(e,d.id,col)}
+                    draggable={isManual} onDragStart={e=>onCardDragStart(e,d.id,col)}
                     onClick={()=>onEdit(d.id)}
                     style={{background:'var(--bg2)',borderRadius:8,padding:'9px 11px',cursor:'pointer',
                       border:`1px solid ${overCard===d.id?clr:'var(--b2)'}`,
@@ -1332,6 +1308,9 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
   const catFilterOn  = !!(catFilter && catFilter.size > 0);
   const isSuperAdmin = currentUser.role==='superadmin' && !catFilterOn;
   const [viewMode,setViewMode]=useState('table'); // 'table' | 'kanban'
+  // Which dimension the Kanban groups by. Potential is the default because
+  // it is the one a rep can actually change by dragging.
+  const [kanbanBy,setKanbanBy]=useState('status'); // 'status' | 'perfStatus'
   const [filters,setFilters]=useState({q:'',zone:[],status:[],sm:[],credit:'',minPct:'',maxPct:'',city:[],state:[],category:[],categoryType:[],pin:'',perf:[]});
   const [sort,setSort]=useState({col:'name',dir:1});
   const [editCell,setEditCell]=useState(null);   // { id, i } — month cell being typed into

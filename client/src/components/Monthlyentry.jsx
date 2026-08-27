@@ -631,7 +631,7 @@ import { useMonth } from '../context';
 import { MO as MO_DEFAULT } from '../constants';
 import { num, pct, spct, pclr, monthTarget } from '../utils';
 import { api } from '../api';
-import { Avatar } from './UI';
+import { Avatar, StatusBadge } from './UI';
 import { confirmDialog, notify } from './Toast';
 
 // Potential Status only — the performance tier is calculated, not entered.
@@ -929,7 +929,14 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
     const md = d.monthlyData?.[month];
     if(field === 'achieved') return moIdx >= 0 ? (d.months?.[moIdx]||0) : 0;
     if(field === 'target')   return moIdx >= 0 ? (d.monthTargets?.[moIdx]||0) : 0;
-    if(field === 'status')   return d.monthStatus?.[moIdx] || d.status || 'ACTIVE';
+    if(field === 'status'){
+      // Potential Status only. This used to fall back to 'ACTIVE' and to read
+      // monthStatus, both of which now hold calculated words the dropdown does
+      // not offer — so the select rendered a value that wasn't one of its own
+      // options and silently reset on save.
+      const v = String(d.status || '').trim().toUpperCase();
+      return STATUSES.includes(v) ? v : 'NONE';
+    }
     return '';
   };
 
@@ -1415,6 +1422,7 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
                 <th style={{textAlign:'right',color:'var(--acc)',background:'rgba(99,102,241,.06)'}}>Target</th>
                 <th style={{textAlign:'right',color:'var(--grn)',background:'rgba(52,211,153,.06)'}}>Achieved</th>
                 <th style={{textAlign:'right'}}>Ach%</th>
+                <th>Performance</th>
                 <th>Potential Status</th>
               </tr>
             </thead>
@@ -1462,7 +1470,14 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
                       {target>0 ? spct(target,achieved) : '—'}
                     </td>
 
-                    {/* Status - editable */}
+                    {/* Performance — calculated, read-only */}
+                    <td style={{padding:'4px 8px'}}>
+                      {dealer.perfStatus
+                        ? <StatusBadge status={dealer.perfStatus}/>
+                        : <span style={{fontSize:11,color:'var(--t3)'}}>—</span>}
+                    </td>
+
+                    {/* Potential Status — editable */}
                     <td style={{padding:'4px 8px'}}>
                       <select value={status} onChange={e=>setVal(dealer.id,'status',e.target.value)}
                         style={{background:'transparent',border:'none',

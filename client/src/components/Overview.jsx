@@ -1538,7 +1538,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
   }));
   const projected=trendData.slice(-3).reduce((s,d)=>s+d.units,0)/3;
 
-  const statusColorMap={'TOP PERFORMER':'#fbbf24','PRIORITY ACCOUNT':'#a78bfa','RISING STAR':'#22d3ee','ACTIVE':'#34d399','RECENTLY INACTIVE':'#fb923c','INACTIVE':'#f59e0b','DEAD':'#f87171','STAR':'#fbbf24','KEY ACCOUNT':'#a78bfa','ACHIEVER':'#34d399','REACTIVE':'#22d3ee','NONE':'#55546a'};
+  const statusColorMap={'TOP PERFORMER':'#16a34a','PRIORITY ACCOUNT':'#65a30d','RISING STAR':'#ca8a04','ACTIVE':'#0891b2','RECENTLY INACTIVE':'#f97316','INACTIVE':'#dc2626','DEAD':'#7f1d1d','STAR':'#db2777','KEY ACCOUNT':'#4f46e5','ACHIEVER':'#0d9488','REACTIVE':'#0284c7','NONE':'#8a93a8'};
   const fallbackPalette=['#6366f1','#34d399','#fbbf24','#f472b6','#22d3ee','#fb923c','#a78bfa','#f87171','#84cc16','#e879f9'];
   const colorForStatus=(name,idx)=>statusColorMap[name.toUpperCase()]||fallbackPalette[idx%fallbackPalette.length];
   const statusCounts=(()=>{
