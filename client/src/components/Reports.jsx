@@ -42,6 +42,21 @@ function exportCSV(filename, headers, rows){
 
 const fmtTime = (d) => d ? new Date(d).toLocaleString('en-IN', { dateStyle:'medium', timeStyle:'short' }) : '';
 const fmtDT   = (d) => d ? new Date(d).toLocaleString('en-IN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}).replace(',','') : '';
+// Leave length in WORKING days. Sunday is the only weekly holiday here, so a
+// Friday-to-Monday leave is 3 days, not 4 — counting calendar days quietly
+// charges people for their day off.
+const workingDays = (from, to) => {
+  if(!from) return 0;
+  const a = new Date(from + 'T12:00:00Z');
+  const b = new Date((to || from) + 'T12:00:00Z');
+  if(isNaN(a) || isNaN(b) || b < a) return 0;
+  let n = 0;
+  for(let d = new Date(a); d <= b; d.setUTCDate(d.getUTCDate() + 1)){
+    if(d.getUTCDay() !== 0) n++;          // 0 = Sunday
+  }
+  return n;
+};
+
 const fmtHM   = (m) => { const n=Number(m)||0; if(!n) return ''; return n>=60?`${Math.floor(n/60)}h ${n%60}m`:`${n}m`; };
 
 /* ─────────────────────────────────────────────────────────────────────── *
@@ -578,12 +593,16 @@ function AttendanceReport({ fromDate, toDate, users }){
 
   const complete   = rows.filter(r=>r.cells[3]==='Complete').length;
   const noCheckout = rows.filter(r=>r.cells[3]==='No check-out').length;
+  // Working days in the selected range, Sundays excluded — the yardstick the
+  // present-days count is actually measured against.
+  const wdInRange  = workingDays(fromDate, toDate);
   const kpis = [
-    { label:'Days',         value:rows.length },
-    { label:'Complete',     value:complete, accent:'#34d399' },
-    { label:'No check-out', value:noCheckout, accent:'#fb923c' },
-    { label:'People',       value:new Set(items.map(a=>a.userId).filter(Boolean)).size },
-    { label:'Total hours',  value:`${Math.floor(totalMin/60)}h ${totalMin%60}m`, accent:'#7c3aed' },
+    { label:'Days marked',   value:rows.length },
+    { label:'Working days',  value:wdInRange, accent:'#818cf8' },
+    { label:'Complete',      value:complete, accent:'#34d399' },
+    { label:'No check-out',  value:noCheckout, accent:'#fb923c' },
+    { label:'People',        value:new Set(items.map(a=>a.userId).filter(Boolean)).size },
+    { label:'Total hours',   value:`${Math.floor(totalMin/60)}h ${totalMin%60}m`, accent:'#7c3aed' },
   ];
 
   return (<>
@@ -598,6 +617,85 @@ function AttendanceReport({ fromDate, toDate, users }){
       </div>
     )}
   </>);
+}
+
+/* Leave summary — one row per person: how much leave they have taken.
+   The detail list answers "what was applied for"; this answers "who is off,
+   how often, and how much of it is still unapproved". */
+function LeaveSummaryReport({ users }){
+  const [items,  setItems]  = useState([]);
+  const [loading,setLoading]= useState(false);
+  const [err,    setErr]    = useState('');
+
+  const load = useCallback(async ()=>{
+    setLoading(true); setErr('');
+    try {
+      const d = await api.leavesList({});
+      setItems(Array.isArray(d)?d:[]);
+    } catch(e){ setErr(e.message||'Could not load leaves'); setItems([]); }
+    setLoading(false);
+  },[]);
+  useEffect(()=>{ load(); },[load]);
+
+  const columns = [
+    { label:'Salesman',       w:150 },
+    { label:'Applications',   w:110, align:'right' },
+    { label:'Approved days',  w:120, align:'right' },
+    { label:'Pending days',   w:115, align:'right' },
+    { label:'Rejected days',  w:120, align:'right' },
+    { label:'By type',        w:220 },
+    { label:'First leave',    w:110 },
+    { label:'Last leave',     w:110 },
+  ];
+
+  const rows = useMemo(()=>{
+    const by = {};
+    items.forEach(l=>{
+      const k = l.userId || l.userName || '?';
+      const r = (by[k] ||= { id:k, name:l.userName, apps:0, approved:0, pending:0, rejected:0, types:{}, first:null, last:null });
+      const days = workingDays(l.fromDate, l.toDate);
+      const st = String(l.status||'PENDING').toUpperCase();
+      r.apps++;
+      if(st==='APPROVED')      r.approved += days;
+      else if(st==='REJECTED') r.rejected += days;
+      else                     r.pending  += days;
+      // Type totals count only days actually granted — a rejected application
+      // isn't leave taken.
+      if(st==='APPROVED'){
+        const t = String(l.leaveType||'OTHER').toUpperCase();
+        r.types[t] = (r.types[t]||0) + days;
+      }
+      if(l.fromDate && (!r.first || l.fromDate < r.first)) r.first = l.fromDate;
+      if(l.toDate   && (!r.last  || l.toDate  > r.last))   r.last  = l.toDate;
+    });
+
+    return Object.values(by)
+      .sort((a,b)=> b.approved - a.approved || String(a.name||a.id).localeCompare(String(b.name||b.id)))
+      .map(r=>({
+        cells:[
+          r.name || users?.[r.id]?.name || r.id,
+          r.apps,
+          r.approved,
+          r.pending,
+          r.rejected,
+          Object.entries(r.types).sort((a,b)=>b[1]-a[1]).map(([t,n])=>`${t} ${n}`).join(' · ') || '—',
+          r.first || '',
+          r.last  || '',
+        ],
+      }));
+  },[items,users]);
+
+  const tot = (i) => rows.reduce((s,r)=>s+(Number(r.cells[i])||0),0);
+  const kpis = [
+    { label:'People who took leave', value:rows.length },
+    { label:'Applications',          value:items.length },
+    { label:'Approved days',         value:tot(2), accent:'#34d399' },
+    { label:'Pending days',          value:tot(3), accent:'#fb923c' },
+  ];
+
+  return <DataTable columns={columns} rows={rows} loading={loading} err={err}
+    onRefresh={load} exportName="LeaveSummary" kpis={kpis}
+    note="working days only — Sunday is not counted"/>;
 }
 
 /* Generic API-backed report (attendance / leads / leaves) */
@@ -782,6 +880,7 @@ export default function Reports({ dealers, users, currentUser, monthConfig, outs
     { id:'attendance', label:'Attendance',         group:'CRM',   icon:Camera,        color:'var(--yel)' },
     { id:'leads',      label:'Leads',              group:'CRM',   icon:UserCheck,     color:'#22d3ee' },
     { id:'leaves',     label:'Leaves',             group:'CRM',   icon:Plane,         color:'#fb923c' },
+    { id:'leaveSummary',label:'Leave Summary',     group:'CRM',   icon:Plane,         color:'#f59e0b' },
     { id:'dailySales', label:'Daily Sales',        group:'Sales', icon:Calendar,      color:'#14b8a6' },
     { id:'monthCompare',label:'Month Comparison',  group:'Sales', icon:Activity,      color:'#0ea5e9' },
     { id:'dealerPerf', label:'Dealer Performance', group:'Sales', icon:TrendingUp,    color:'#6366f1' },
@@ -829,11 +928,13 @@ export default function Reports({ dealers, users, currentUser, monthConfig, outs
             const items = await api.leavesList({});
             return (items||[]).map(l=>({ cells:[
               l.userName||l.userId, l.leaveType||'', l.fromDate||'', l.toDate||'',
-              Math.max(1, Math.round((new Date(l.toDate)-new Date(l.fromDate))/86400000)+1),
+              workingDays(l.fromDate, l.toDate),
               l.status||'', l.reason||'', l.reviewedByName||'', l.reviewComment||'', fmtTime(l.createdAt),
             ]}));
           }}
           kpis={rows=>[{label:'Applications',value:rows.length}]}/>;
+      case 'leaveSummary':
+        return <LeaveSummaryReport users={users}/>;
       case 'dailySales':
         return <ApiReport exportName="DailySales" deps={[fromDate,toDate]}
           columns={[{label:'Date',w:110},{label:'Day',w:80},{label:'Entries',w:80,align:'right'},
