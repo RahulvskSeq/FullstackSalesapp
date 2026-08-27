@@ -114,31 +114,49 @@ export default function UpdateButton({ compact = false }) {
 
   const mb = latest?.sizeBytes ? (latest.sizeBytes / 1048576).toFixed(1) + ' MB' : '';
 
+  // Styling matches the other topbar buttons — same class, size, padding and
+  // the hide-sm label — so it sits in the row instead of looking bolted on.
+  const base = { fontSize:11, display:'flex', alignItems:'center', gap:4,
+                 padding:'6px 8px', flexShrink:0, whiteSpace:'nowrap' };
+
+  // An update is waiting: this is the one state that should pull the eye, so
+  // it gets the accent treatment and a pulsing dot rather than blending in.
   if (latest) {
+    const downloading = pct !== null;
     return (
       <button onClick={install} disabled={busy} className="btnp"
-        title={latest.notes || `Install ${latest.versionName}`}
-        style={{ display:'inline-flex', alignItems:'center', gap:6, fontSize:12, whiteSpace:'nowrap', position:'relative', overflow:'hidden' }}>
-        {pct !== null && (
+        title={latest.notes || `Install ${latest.versionName}${mb ? ' · ' + mb : ''}`}
+        style={{ ...base, position:'relative', overflow:'hidden', fontWeight:700 }}>
+        {downloading && (
           <span style={{
             position:'absolute', left:0, top:0, bottom:0, width:`${pct}%`,
-            background:'rgba(255,255,255,0.25)', transition:'width .15s linear', pointerEvents:'none',
+            background:'rgba(255,255,255,0.28)', transition:'width .15s linear',
+            pointerEvents:'none',
           }}/>
         )}
-        <Download size={13}/>
-        {pct === null
-          ? <>Update to {latest.versionName}{mb ? ` · ${mb}` : ''}</>
-          : (pct < 100 ? `Downloading ${pct}%` : 'Opening installer…')}
+        {!downloading && (
+          <span style={{
+            width:6, height:6, borderRadius:'50%', background:'currentColor',
+            flexShrink:0, animation:'pulse 1.6s ease-in-out infinite',
+          }}/>
+        )}
+        <Download size={13} style={{ position:'relative' }}/>
+        <span style={{ position:'relative' }}>
+          {downloading
+            ? (pct < 100 ? `${pct}%` : 'Installing…')
+            : <>Update<span className="hide-sm"> {latest.versionName}</span></>}
+        </span>
       </button>
     );
   }
 
+  // Idle: quiet. Nothing to do, so it shouldn't compete with the rest of the bar.
   return (
     <button onClick={check} disabled={busy} className="btn"
-      title={INSTALLED_NAME ? `Installed version ${INSTALLED_NAME}` : 'Check the server for a newer app build'}
-      style={{ display:'inline-flex', alignItems:'center', gap:6, fontSize:12, whiteSpace:'nowrap' }}>
-      {busy ? <RefreshCw size={13} className="spin"/> : <Check size={13}/>}
-      {compact ? (busy ? '' : 'Update') : (busy ? 'Checking…' : 'Check for updates')}
+      title={INSTALLED_NAME ? `You're on ${INSTALLED_NAME} — check for a newer build` : 'Check the server for a newer app build'}
+      style={{ ...base, color:'var(--t2)' }}>
+      {busy ? <RefreshCw size={13} className="spin"/> : <Download size={13}/>}
+      <span className="hide-sm">{busy ? 'Checking…' : 'Update'}</span>
     </button>
   );
 }

@@ -214,6 +214,8 @@ export default function Styles({theme}){
     input,select,textarea{outline:none}
 
     @keyframes spin{to{transform:rotate(360deg)}}
+    /* Used by the update button's dot — a quiet nudge that a build is waiting. */
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
     @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
     @keyframes popIn{0%{opacity:0;transform:scale(.94)}100%{opacity:1;transform:scale(1)}}
     @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
