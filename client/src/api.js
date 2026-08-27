@@ -1722,6 +1722,9 @@ export const api = {
   getDealers:   (MO=[]) => fetch(`${BASE}/dealers?mo=${MO.join(',')}`,{headers:authHeaders()}).then(handle),
   createDealer: (d)     => fetch(`${BASE}/dealers`,{method:'POST',headers:authHeaders(),body:JSON.stringify(d)}).then(handle),
   updateDealer: (id,d)  => fetch(`${BASE}/dealers/${id}`,{method:'PUT',headers:authHeaders(),body:JSON.stringify(d)}).then(handle),
+  // Recalculate Type 1 (performance tier) for every dealer from the Sale
+  // rows. Runs automatically after a sales upload; this is the manual nudge.
+  recomputeStatus: (dry=false) => fetch(`${BASE}/dealers/recompute-status${dry?'?dry=1':''}`,{method:'POST',headers:authHeaders()}).then(handle),
   normalizeGeo: ()      => fetch(`${BASE}/dealers/normalize-geo`,{method:'POST',headers:authHeaders()}).then(handle),
   deleteDealer: (id)    => fetch(`${BASE}/dealers/${id}`,{method:'DELETE',headers:authHeaders()}).then(handle),
   syncToDB:     (dealers,MO) => fetch(`${BASE}/dealers/sync-db`,{method:'POST',headers:authHeaders(),body:JSON.stringify({dealers,MO})}).then(handle),
@@ -2216,6 +2219,10 @@ export const dbDealerToApp = (d, MO=[]) => {
     state:         d.state||'',
     zone:          d.zone||'',
     status:        d.status||'ACTIVE',
+    // Type 1 (auto tier) travels alongside Type 2 (`status`, chosen by the rep).
+    perfStatus:    d.perfStatus||'DEAD',
+    perfQty:       d.perfQty||0,
+    perfMonth:     d.perfMonth||'',
     dealerType:    d.dealerType||'None',
     address:       d.address||'',
     pincode:       d.pincode||'',

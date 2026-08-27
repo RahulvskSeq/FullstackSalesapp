@@ -588,13 +588,40 @@ import { MO as MO_CONST, CURRENT_MONTH_IDX } from '../constants';
 import { useMonth } from '../context';
 import { pclr, readableOn } from '../utils';
 
+// Colours for both status dimensions.
+//   Type 1 (auto)   — TOP PERFORMER … DEAD, a performance ladder.
+//   Type 2 (manual) — STAR / KEY ACCOUNT / ACHIEVER / REACTIVE.
+// Explicit map rather than substring tests, because 'RECENTLY INACTIVE' and
+// 'INACTIVE' mean different things and a `.includes('INACTIVE')` check
+// collapses them into one colour.
+const STATUS_COLORS = {
+  // Type 1
+  'TOP PERFORMER':     '#fbbf24',
+  'PRIORITY ACCOUNT':  '#a78bfa',
+  'RISING STAR':       '#22d3ee',
+  'ACTIVE':            '#34d399',
+  'RECENTLY INACTIVE': '#fb923c',
+  'INACTIVE':          '#f59e0b',
+  'DEAD':              '#f87171',
+  // Type 2
+  'STAR':              '#fbbf24',
+  'KEY ACCOUNT':       '#a78bfa',
+  'ACHIEVER':          '#34d399',
+  'REACTIVE':          '#22d3ee',
+  'NONE':              '#8a93a8',
+};
+
 export const StatusBadge = ({status}) => {
   const t=(status||'').toUpperCase();
-  let bg,cl;
-  if(t==='ACTIVE'||t==='ACHIVERS'||t==='ACHIEVERS'){bg='rgba(52,211,153,0.12)';cl='#34d399';}
-  else if(t==='KEY ACCOUNT'){bg='rgba(167,139,250,0.12)';cl='#a78bfa';}
+  let cl = STATUS_COLORS[t];
+  let bg;
+  if(cl){
+    // 1f hex ≈ 12% alpha — the same tint weight the old literals used, and it
+    // adapts to whatever background the active palette paints.
+    bg = cl + '1f';
+  }
+  else if(t==='ACHIVERS'||t==='ACHIEVERS'){bg='rgba(52,211,153,0.12)';cl='#34d399';}
   else if(t.includes('INACTIVE')){bg='rgba(251,191,36,0.12)';cl='#fbbf24';}
-  else if(t==='DEAD'){bg='rgba(248,113,113,0.12)';cl='#f87171';}
   else{bg='rgba(255,255,255,.05)';cl='#8a93a8';}
   // class hook lets a light palette fix the text contrast without touching
   // this component's (theme-neutral) tinted colours.

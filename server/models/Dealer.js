@@ -70,6 +70,13 @@ const dealerSchema = new mongoose.Schema({
   state:        { type:String, default:'' },
   zone:         { type:String, default:'' },
   status:       { type:String, default:'ACTIVE' },
+  // Type 1 — auto-calculated performance tier (see lib/accountStatus.js).
+  // Never typed by a human; recomputed from Sale rows after every upload.
+  perfStatus:   { type:String, default:'DEAD' },
+  // Qty in the tier categories for the month perfStatus came from — kept so
+  // the UI can explain WHY a dealer landed in a tier.
+  perfQty:      { type:Number, default:0 },
+  perfMonth:    { type:String, default:'' },
   // Commercial classification, editable by the salesperson.
   // One of: 'None' | 'Regular Dealer' | 'Premium Dealer' | 'OEM/SEMI OEM' | 'ENTERPRISE'
   dealerType:   { type:String, default:'None' },

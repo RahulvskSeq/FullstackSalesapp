@@ -1302,6 +1302,32 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
                 </div>
               </div>
             )}
+            <button
+              onClick={async ()=>{
+                try {
+                  const r = await api.recomputeStatus();
+                  const c = r?.counts || {};
+                  notify.success(
+                    `Performance status recalculated for ${r.dealers} dealers from ${r.month} — ` +
+                    `${c['TOP PERFORMER']||0} top, ${c['PRIORITY ACCOUNT']||0} priority, ` +
+                    `${c['RISING STAR']||0} rising, ${c['ACTIVE']||0} active, ` +
+                    `${c['RECENTLY INACTIVE']||0} recently inactive, ${c['INACTIVE']||0} inactive, ${c['DEAD']||0} dead.`
+                  );
+                  if(onSaved) onSaved();
+                } catch(e){ notify.error(e.message || 'Recalculate failed'); }
+              }}
+              disabled={catBusy}
+              title="Recalculate the auto Performance status (Top Performer / Priority / Rising Star / Active / Inactive / Dead) from sales in LAMINATE, LOUVRES, POLYMER SHEET, ROLLS and DECORATIVE. Runs automatically after an upload — this is the manual nudge."
+              style={{
+                display:'flex', alignItems:'center', gap:6,
+                color:'#93c5fd',
+                background:'rgba(59,130,246,0.10)',
+                border:'1px solid rgba(59,130,246,0.45)',
+                padding:'8px 12px', borderRadius:6, fontSize:11, fontWeight:700,
+                cursor: catBusy ? 'not-allowed' : 'pointer', opacity: catBusy ? 0.6 : 1,
+              }}>
+              Recalculate performance status
+            </button>
             <button onClick={handleMergeNameVariants} disabled={catBusy}
               title="Merge dealers whose names differ only by spaces or punctuation (e.g. '76 EAST' and '76EAST') — sale rows are preserved. Use this AFTER an upload that created duplicates."
               style={{

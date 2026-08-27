@@ -1314,6 +1314,11 @@ function KanbanBoard({ dealers, selectedMonthIdx, users, onEdit, onUpdateStatus,
 }
 
 // ── Main DealersList ──────────────────────────────────────
+// Type 2 — the only values a salesman may choose. Kept in step with
+// server/lib/accountStatus.js; Type 1 is calculated and never picked here.
+const ACCOUNT_STATUSES = ['NONE','STAR','KEY ACCOUNT','ACHIEVER','REACTIVE'];
+const PERF_STATUSES = ['TOP PERFORMER','PRIORITY ACCOUNT','RISING STAR','ACTIVE','RECENTLY INACTIVE','INACTIVE','DEAD'];
+
 const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,setSelected,onBulkAction,notes,pendingFilters,clearPending,onUpdateDealer})=>{
   const {selectedMonthIdx, MO:ctxMO}=useMonth();
   const MO = ctxMO || MO_CONST;
@@ -1327,7 +1332,7 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
   const catFilterOn  = !!(catFilter && catFilter.size > 0);
   const isSuperAdmin = currentUser.role==='superadmin' && !catFilterOn;
   const [viewMode,setViewMode]=useState('table'); // 'table' | 'kanban'
-  const [filters,setFilters]=useState({q:'',zone:[],status:[],sm:[],credit:'',minPct:'',maxPct:'',city:[],state:[],category:[],categoryType:[],pin:''});
+  const [filters,setFilters]=useState({q:'',zone:[],status:[],sm:[],credit:'',minPct:'',maxPct:'',city:[],state:[],category:[],categoryType:[],pin:'',perf:[]});
   const [sort,setSort]=useState({col:'name',dir:1});
   const [editCell,setEditCell]=useState(null);   // { id, i } — month cell being typed into
   const [editVal,setEditVal]  =useState('');
@@ -1389,6 +1394,7 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
     if(filters.q)d=d.filter(x=>x.name.toLowerCase().includes(filters.q.toLowerCase())||(x.city||'').toLowerCase().includes(filters.q.toLowerCase())||(x.state||'').toLowerCase().includes(filters.q.toLowerCase()));
     if(filters.zone.length>0)d=d.filter(x=>filters.zone.includes(x.zone||''));
     if(filters.status.length>0)d=d.filter(x=>filters.status.map(s=>s.toUpperCase()).includes((x.status||'').toUpperCase()));
+    if(filters.perf.length>0)d=d.filter(x=>filters.perf.includes(String(x.perfStatus||'').toUpperCase()));
     if(isAdmin&&filters.sm.length>0)d=d.filter(x=>filters.sm.includes(x.salesman));
     if(filters.credit==='yes')d=d.filter(x=>x.creditLimit>0);
     if(filters.credit==='no')d=d.filter(x=>!x.creditLimit);
@@ -1421,8 +1427,8 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
   const overdueCount =id=>notes.filter(n=>n.dealerId===id&&n.type==='followup'&&!n.completed&&new Date(n.dueDate)<new Date()).length;
   const toggleSel    =id=>setSelected(s=>s.includes(id)?s.filter(x=>x!==id):[...s,id]);
   const toggleAll    =()=>{if(selected.length===filtered.length)setSelected([]);else setSelected(filtered.map(x=>x.id));};
-  const hasF=filters.q||filters.zone.length>0||filters.status.length>0||filters.sm.length>0||filters.credit||filters.city.length>0||filters.state.length>0||filters.category.length>0||filters.categoryType.length>0||filters.minPct||filters.maxPct||filters.pin;
-  const clearFilters =()=>setFilters({q:'',zone:[],status:[],sm:[],credit:'',minPct:'',maxPct:'',city:[],state:[],category:[],categoryType:[],pin:''});
+  const hasF=filters.q||filters.zone.length>0||filters.status.length>0||filters.sm.length>0||filters.credit||filters.city.length>0||filters.state.length>0||filters.category.length>0||filters.categoryType.length>0||filters.minPct||filters.maxPct||filters.pin||filters.perf.length>0;
+  const clearFilters =()=>setFilters({q:'',zone:[],status:[],sm:[],credit:'',minPct:'',maxPct:'',city:[],state:[],category:[],categoryType:[],pin:'',perf:[]});
 
   const onUpdateStatus=(dealerId,newStatus)=>{
     onUpdateDealer&&onUpdateDealer(dealerId,{status:newStatus});
@@ -1545,7 +1551,9 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
           <Search size={14} style={{position:'absolute',left:10,top:'50%',transform:'translateY(-50%)',color:'var(--t3)'}}/>
           <input className="inp" style={{width:200,paddingLeft:32}} placeholder="Search name/city/state..." value={filters.q} onChange={e=>setFilters({...filters,q:e.target.value})}/>
         </div>
-        <MultiSelect options={allStatuses} selected={filters.status} onChange={v=>setFilters({...filters,status:v})} placeholder="Status (All)"
+        <MultiSelect options={allStatuses} selected={filters.status} onChange={v=>setFilters({...filters,status:v})} placeholder="Account (All)"
+          renderOption={s=><StatusBadge status={s}/>}/>
+        <MultiSelect options={PERF_STATUSES} selected={filters.perf} onChange={v=>setFilters({...filters,perf:v})} placeholder="Performance (All)"
           renderOption={s=><StatusBadge status={s}/>}/>
         <MultiSelect options={allZones} selected={filters.zone} onChange={v=>setFilters({...filters,zone:v})} placeholder="Zone (All)"/>
         {allCategories.length>0&&<MultiSelect options={allCategories} selected={filters.category} onChange={v=>setFilters({...filters,category:v})} placeholder="Category (All)"
@@ -1612,7 +1620,8 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
                   <th style={{minWidth:130}}>Dealer Type</th>
                   {sh('city','City')}{sh('state','State')}
                   {sh('pincode','PIN')}<th style={{minWidth:180}}>Address</th>
-                  {sh('status','Status')}
+                  {sh('perfStatus','Performance')}
+                  {sh('status','Account')}
                   {sh('target','Tgt')}{sh('achieved','Ach')}<th>%</th><th>Trend</th>
                   {sh('avg6m','6m Avg')}
                   {[...MO].map((_,di)=>{const i=MO.length-1-di;return<th key={i} style={{background:i===selectedMonthIdx?'rgba(99,102,241,.08)':'var(--bg1)'}}>{MO[i]}</th>;})}
@@ -1640,7 +1649,22 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
                       <td style={{fontSize:11,color:'var(--t2)'}}>{x.state||'—'}</td>
                       <td style={{fontSize:11,color:'var(--t2)',fontFamily:'"JetBrains Mono", monospace'}}>{x.pincode||'—'}</td>
                       <td title={x.address||''} style={{fontSize:11,color:'var(--t3)',maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{x.address||'—'}</td>
-                      <td><StatusBadge status={x.status}/></td>
+                      {/* Type 1 — auto. Read-only by design: it is derived from
+                          sales, so anything typed here would be overwritten by
+                          the next upload. */}
+                      <td title={x.perfMonth ? `${x.perfQty} units in ${x.perfMonth} (tier categories only)` : 'No sales data yet'}>
+                        <StatusBadge status={x.perfStatus}/>
+                      </td>
+                      {/* Type 2 — the salesman's own label, independent of the tier. */}
+                      <td onClick={e=>e.stopPropagation()}>
+                        <select className="inp"
+                          value={ACCOUNT_STATUSES.includes(String(x.status||'').toUpperCase()) ? String(x.status).toUpperCase() : 'NONE'}
+                          onChange={e=>onUpdateStatus(x.id, e.target.value)}
+                          title="Set by the salesman — independent of the calculated tier"
+                          style={{fontSize:11, padding:'3px 6px', width:'auto', maxWidth:130}}>
+                          {ACCOUNT_STATUSES.map(t=><option key={t} value={t}>{t}</option>)}
+                        </select>
+                      </td>
                       <td style={{textAlign:'right'}}>{x.target||'—'}</td>
                       <td style={{textAlign:'right',fontWeight:600,color:x.achieved>0?'var(--t1)':'var(--t3)'}}>{x.achieved||'—'}</td>
                       <td style={{textAlign:'right',fontWeight:700,color:pclr(p)}}>{spct(x.target,x.achieved)}</td>

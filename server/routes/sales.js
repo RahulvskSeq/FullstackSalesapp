@@ -702,8 +702,38 @@ router.post('/upload', protect, superAdminOnly, upload.single('file'), async (re
 
     if (docs.length) await Sale.insertMany(docs);
 
+    // Type 1 status is derived from these rows, so it is stale the moment an
+    // upload lands. Recompute here rather than leaving it to someone to
+    // remember. Never let it fail the upload — the rows are already saved.
+    let statusRecount = null;
+    try {
+      const { TIER_CATEGORIES, perfStatusFor } = await import('../lib/accountStatus.js');
+      const months = (await Sale.distinct('month')).filter(Boolean).sort();
+      const agg = await Sale.aggregate([
+        { $match: { category: { $in: TIER_CATEGORIES } } },
+        { $group: { _id: { d: '$dealerName', m: '$month' }, qty: { $sum: '$qty' } } },
+      ]);
+      const byDealer = {};
+      agg.forEach(r => { (byDealer[r._id.d] ||= {})[r._id.m] = r.qty; });
+      const all = await Dealer.find({}, 'name perfStatus').lean();
+      const latest = months.at(-1);
+      const ops = all.map(d => {
+        const q = byDealer[d.name] || {};
+        return { updateOne: { filter: { _id: d._id }, update: { $set: {
+          perfStatus: perfStatusFor(q, months),
+          perfQty: Number(q[latest]) || 0,
+          perfMonth: latest,
+        } } } };
+      });
+      if (ops.length) await Dealer.bulkWrite(ops, { ordered: false });
+      statusRecount = ops.length;
+    } catch (e) {
+      console.warn('[SALES/upload] status recompute skipped:', e.message);
+    }
+
     res.json({
       ok: true,
+      statusRecomputed: statusRecount,
       month,
       monthLabel,
       inserted: docs.length,

@@ -29,6 +29,13 @@ const dealerSchema = new mongoose.Schema({
   state:        { type:String, default:'' },
   zone:         { type:String, default:'' },
   status:       { type:String, default:'ACTIVE' },
+  // Type 1 — auto-calculated performance tier (see lib/accountStatus.js).
+  // Never typed by a human; recomputed from Sale rows after every upload.
+  perfStatus:   { type:String, default:'DEAD' },
+  // Qty in the tier categories for the month perfStatus came from — kept so
+  // the UI can explain WHY a dealer landed in a tier.
+  perfQty:      { type:Number, default:0 },
+  perfMonth:    { type:String, default:'' },
   dealerType:   { type:String, default:'None' },   // Regular/Premium/OEM/Enterprise
   // Keep in step with models/Dealer.js — this file registers the 'Dealer'
   // model first, so a field missing here is silently stripped on write.
@@ -84,6 +91,8 @@ const fmt = (d, MO=[]) => {
   return {
     id:d._id?.toString(), name:d.name, salesman:d.salesman,
     city:d.city||'', state:d.state||'', zone:d.zone||'', status:d.status||'ACTIVE',
+    // Type 1 (auto) alongside Type 2 (`status`, chosen by the salesman).
+    perfStatus:d.perfStatus||'DEAD', perfQty:d.perfQty||0, perfMonth:d.perfMonth||'',
     dealerType:d.dealerType||'None',
     address:d.address||'', pincode:d.pincode||'',
     category:d.category||'', categoryType:d.categoryType||'', target:d.target||0,
@@ -225,6 +234,58 @@ router.get('/distinct-states', protect, async (req, res) => {
     const states = await Dealer.distinct('state');
     res.json({ states: states.filter(s => s && s.trim()).sort() });
   } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── POST /api/dealers/recompute-status ────────────────────────────────────
+// Recomputes Type 1 (perfStatus) for every dealer from the Sale rows.
+//
+// Runs automatically after a sales upload; also callable by hand. Type 2
+// (`status`) is the salesman's own label and is never touched here.
+//
+// ?dry=1 reports what WOULD change without writing.
+router.post('/recompute-status', protect, adminOnly, async (req, res) => {
+  try {
+    const { TIER_CATEGORIES, perfStatusFor } = await import('../lib/accountStatus.js');
+    const Sale = (await import('../models/Sale.js')).default;
+
+    const months = (await Sale.distinct('month')).filter(Boolean).sort();
+    if (!months.length) return res.status(400).json({ error: 'No sale data to compute from' });
+
+    // Category-restricted qty per dealer per month.
+    const rows = await Sale.aggregate([
+      { $match: { category: { $in: TIER_CATEGORIES } } },
+      { $group: { _id: { d: '$dealerName', m: '$month' }, qty: { $sum: '$qty' } } },
+    ]);
+    const byDealer = {};
+    rows.forEach(r => { (byDealer[r._id.d] ||= {})[r._id.m] = r.qty; });
+
+    // Match on the dealer's own name so a dealer with no sale rows at all is
+    // still evaluated — that absence is exactly what makes it DEAD.
+    const dealers = await Dealer.find({}, 'name perfStatus').lean();
+    const latest = months.at(-1);
+    const ops = [], counts = {}, changed = [];
+
+    for (const d of dealers) {
+      const q = byDealer[d.name] || {};
+      const next = perfStatusFor(q, months);
+      counts[next] = (counts[next] || 0) + 1;
+      if (next !== d.perfStatus) changed.push({ name: d.name, from: d.perfStatus || '(unset)', to: next });
+      ops.push({ updateOne: { filter: { _id: d._id }, update: { $set: {
+        perfStatus: next, perfQty: Number(q[latest]) || 0, perfMonth: latest,
+      } } } });
+    }
+
+    if (String(req.query.dry || '') === '1') {
+      return res.json({ dry: true, month: latest, dealers: dealers.length, counts,
+                        wouldChange: changed.length, sample: changed.slice(0, 20) });
+    }
+    if (ops.length) await Dealer.bulkWrite(ops, { ordered: false });
+    console.log(`[RECOMPUTE-STATUS] ${dealers.length} dealers, ${changed.length} changed, month ${latest}`);
+    res.json({ ok: true, month: latest, dealers: dealers.length, counts, changed: changed.length });
+  } catch (e) {
+    console.error('[RECOMPUTE-STATUS]', e.message);
     res.status(500).json({ error: e.message });
   }
 });
