@@ -1571,8 +1571,22 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
       {/* Kanban view */}
       {viewMode==='kanban'&&(
         <div className="card" style={{padding:14,marginBottom:0}}>
-          <div style={{fontSize:11,color:'var(--t3)',marginBottom:10}}>
-            Drag columns to reorder · Drag cards to change status
+          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10,flexWrap:'wrap'}}>
+            <span style={{fontSize:11,color:'var(--t3)'}}>Group by</span>
+            <div style={{display:'flex',border:'1px solid var(--b2)',borderRadius:6,overflow:'hidden'}}>
+              {[['status','Potential Status'],['perfStatus','Performance Status']].map(([v,label])=>(
+                <button key={v} onClick={()=>setKanbanBy(v)}
+                  style={{background:kanbanBy===v?'var(--acc)':'transparent',color:kanbanBy===v?'#fff':'var(--t3)',
+                    border:'none',padding:'5px 12px',cursor:'pointer',fontSize:11,fontWeight:600}}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <span style={{fontSize:11,color:'var(--t3)'}}>
+              {kanbanBy==='status'
+                ? '· drag a card between columns to change it'
+                : '· calculated from sales — read-only'}
+            </span>
           </div>
           <KanbanBoard
             dealers={filtered}
@@ -1581,6 +1595,7 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
             onEdit={onEdit}
             onUpdateStatus={onUpdateStatus}
             isAdmin={isAdmin}
+            groupBy={kanbanBy}
           />
         </div>
       )}

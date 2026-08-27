@@ -1623,7 +1623,7 @@ const _resolveBaseUrl = () => {
   if (_isCapacitor()) return PROD_API_URL.replace(/\/$/, '');
   return (import.meta.env?.VITE_API_URL || 'http://localhost:5000/api').replace(/\/$/, '');
 };
-
+// kjdsfkdjfh
 const BASE = _resolveBaseUrl();
 
 // Exports for the Settings screen
