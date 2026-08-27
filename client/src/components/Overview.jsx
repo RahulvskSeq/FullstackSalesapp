@@ -1828,23 +1828,38 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
           both held the same kind of value. That is no longer true, so the
           sections are fixed by type and the cross-section drag is gone. */}
       {(()=>{
+        // Keep the dealers themselves, not just counts — clicking a card opens
+        // the same modal the tier cards use, and that needs the list.
         const perfMap={}, potMap={};
         myD.forEach(x=>{
-          const p=(x.perfStatus||'').trim(); if(p) perfMap[p]=(perfMap[p]||0)+1;
-          const s=(x.status||'NONE').trim()||'NONE'; potMap[s]=(potMap[s]||0)+1;
+          const p=(x.perfStatus||'').trim(); if(p) (perfMap[p] ||= []).push(x);
+          const s=(x.status||'NONE').trim()||'NONE'; (potMap[s] ||= []).push(x);
         });
+        // What each bucket actually means, shown in the modal header.
+        const SUBS = {
+          'ACTIVE':'1 – 49 units this month',
+          'RECENTLY INACTIVE':'no order this month, ordered last month',
+          'INACTIVE':'no order for two months',
+          'DEAD':'no order in three months',
+          'STAR':'marked Star by the salesman',
+          'KEY ACCOUNT':'marked Key Account by the salesman',
+          'ACHIEVER':'marked Achiever by the salesman',
+          'REACTIVE':'marked Reactive by the salesman',
+          'NONE':'no potential status set yet',
+        };
         // Top Performer / Priority Account / Rising Star already have the
         // Performance Tiers row above — repeating them here is noise.
         const ACTIVITY  = ['ACTIVE','RECENTLY INACTIVE','INACTIVE','DEAD'];
         const POTENTIAL = ['STAR','KEY ACCOUNT','ACHIEVER','REACTIVE','NONE'];
-        const activityKeys  = ACTIVITY.filter(k=>perfMap[k]>0);
-        const potentialKeys = POTENTIAL.filter(k=>potMap[k]>0);
+        const activityKeys  = ACTIVITY.filter(k=>(perfMap[k]||[]).length>0);
+        const potentialKeys = POTENTIAL.filter(k=>(potMap[k]||[]).length>0);
 
-        const Card=({s,count,filterKey})=>{
+        const Card=({s,list})=>{
+          const count=list.length;
           const pctOfTotal=myD.length?Math.round((count/myD.length)*100):0;
           const clr=statusColorMap[s.toUpperCase()]||'#55546a';
           return(
-            <div onClick={()=>onNavigate('dealers',{[filterKey]:s})}
+            <div onClick={()=>{ if(count) setTierPopup({label:s,sub:SUBS[s]||'',color:clr,icon:'●',list}); }}
               className="status-card"
               style={{'--c':clr,'--fg':readableOn(clr),background:clr+'14',border:'1px solid '+clr+'33',borderRadius:10,padding:'12px 14px',cursor:'pointer',transition:'all .15s'}}>
               <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:6}}>
@@ -1858,24 +1873,24 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
             </div>
           );
         };
-        const Section=({icon,title,note,keys,map,filterKey}) => keys.length===0 ? null : (
+        const Section=({icon,title,note,keys,map}) => keys.length===0 ? null : (
           <div className="card" style={{marginBottom:12}}>
             <div style={{fontSize:13,fontWeight:600,color:'var(--t2)',marginBottom:12,display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
               {icon} {title}
               <span style={{fontSize:11,color:'var(--t3)',fontWeight:400}}>{note}</span>
             </div>
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:10}}>
-              {keys.map(k=><Card key={k} s={k} count={map[k]||0} filterKey={filterKey}/>)}
+              {keys.map(k=><Card key={k} s={k} list={map[k]||[]}/>)}
             </div>
           </div>
         );
         return(<>
           <Section icon={<Clock size={14} color="#fb923c"/>}
-            title="Account Activity" note="(calculated from sales · click to filter)"
-            keys={activityKeys} map={perfMap} filterKey="perf"/>
+            title="Account Activity" note="(calculated from sales · click to view)"
+            keys={activityKeys} map={perfMap}/>
           <Section icon={<Star size={14} color="#34d399"/>}
-            title="Potential Status" note="(set by the salesman · click to filter)"
-            keys={potentialKeys} map={potMap} filterKey="status"/>
+            title="Potential Status" note="(set by the salesman · click to view)"
+            keys={potentialKeys} map={potMap}/>
         </>);
       })()}
 
