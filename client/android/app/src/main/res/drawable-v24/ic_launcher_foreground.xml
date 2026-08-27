@@ -15,21 +15,26 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Bars, short to tall, left to right -->
-    <path android:fillColor="#FFFFFF" android:fillAlpha="0.55"
-          android:pathData="M30,62 h9 a2,2 0 0 1 2,2 v16 a2,2 0 0 1 -2,2 h-9 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/>
-    <path android:fillColor="#FFFFFF" android:fillAlpha="0.75"
-          android:pathData="M46,52 h9 a2,2 0 0 1 2,2 v26 a2,2 0 0 1 -2,2 h-9 a2,2 0 0 1 -2,-2 v-26 a2,2 0 0 1 2,-2 z"/>
-    <path android:fillColor="#FFFFFF"
-          android:pathData="M62,40 h9 a2,2 0 0 1 2,2 v38 a2,2 0 0 1 -2,2 h-9 a2,2 0 0 1 -2,-2 v-38 a2,2 0 0 1 2,-2 z"/>
+    <!-- Scaled toward the centre so the mask never clips the bars.
+         The launcher crops the outer ~25% of the 108 grid. -->
+    <group android:scaleX="0.72" android:scaleY="0.72"
+           android:pivotX="54" android:pivotY="54">
+        <!-- Bars, short to tall, left to right -->
+        <path android:fillColor="#FFFFFF" android:fillAlpha="0.55"
+              android:pathData="M30,62 h9 a2,2 0 0 1 2,2 v16 a2,2 0 0 1 -2,2 h-9 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/>
+        <path android:fillColor="#FFFFFF" android:fillAlpha="0.75"
+              android:pathData="M46,52 h9 a2,2 0 0 1 2,2 v26 a2,2 0 0 1 -2,2 h-9 a2,2 0 0 1 -2,-2 v-26 a2,2 0 0 1 2,-2 z"/>
+        <path android:fillColor="#FFFFFF"
+              android:pathData="M62,40 h9 a2,2 0 0 1 2,2 v38 a2,2 0 0 1 -2,2 h-9 a2,2 0 0 1 -2,-2 v-38 a2,2 0 0 1 2,-2 z"/>
 
-    <!-- Trend line climbing across the bars -->
-    <path android:strokeColor="#FFFFFF" android:strokeWidth="4"
-          android:strokeLineCap="round" android:strokeLineJoin="round"
-          android:fillColor="#00000000"
-          android:pathData="M28,50 L44,38 L56,44 L78,26"/>
+        <!-- Trend line climbing across the bars -->
+        <path android:strokeColor="#FFFFFF" android:strokeWidth="4"
+              android:strokeLineCap="round" android:strokeLineJoin="round"
+              android:fillColor="#00000000"
+              android:pathData="M28,50 L44,38 L56,44 L78,26"/>
 
-    <!-- Arrow head on the trend line -->
-    <path android:fillColor="#FFFFFF"
-          android:pathData="M80,24 l-14,1 a1.6,1.6 0 0 0 -1,2.7 l10,10 a1.6,1.6 0 0 0 2.7,-1 z"/>
+        <!-- Arrow head on the trend line -->
+        <path android:fillColor="#FFFFFF"
+              android:pathData="M80,24 l-14,1 a1.6,1.6 0 0 0 -1,2.7 l10,10 a1.6,1.6 0 0 0 2.7,-1 z"/>
+    </group>
 </vector>
