@@ -130,7 +130,7 @@
 //         {decliningList.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'DECLINING SHARPLY',color:'#f87171',icon:'📉',sub:'sales down >20% last 3 vs prior 3 months',list:decliningList})} style={{background:'rgba(248,113,113,0.1)',color:'#f87171',cursor:'pointer'}}><ArrowDownRight size={13}/> {decliningList.length} declining sharply</div>}
 //         {dormantList.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'DORMANT 3+ MONTHS',color:'#fbbf24',icon:'💤',sub:'zero sales last 3 months but had history',list:dormantList})} style={{background:'rgba(251,191,36,0.1)',color:'#fbbf24',cursor:'pointer'}}><Clock size={13}/> {dormantList.length} dormant 3+ months</div>}
 //         {recentlyInactiveList.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'REACTIVE',color:'#fb923c',icon:'⏸',sub:'no orders this month but had orders before',list:recentlyInactiveList})} style={{background:'rgba(251,146,60,0.1)',color:'#fb923c',cursor:'pointer'}}><Clock size={13}/> {recentlyInactiveList.length} recently inactive</div>}
-//         {inactiveByStatus.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'INACTIVE (STATUS)',color:'#fbbf24',icon:'⚠️',sub:'marked as Inactive or Recently Inactive',list:inactiveByStatus})} style={{background:'rgba(251,191,36,0.1)',color:'#fbbf24',cursor:'pointer'}}><AlertTriangle size={13}/> {inactiveByStatus.length} inactive</div>}
+//         {inactiveByStatus.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'INACTIVE',color:'#fbbf24',icon:'⚠️',sub:'marked as Inactive or Recently Inactive',list:inactiveByStatus})} style={{background:'rgba(251,191,36,0.1)',color:'#fbbf24',cursor:'pointer'}}><AlertTriangle size={13}/> {inactiveByStatus.length} inactive</div>}
 //         {deadByStatus.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'DEAD CUSTOMERS',color:'#f87171',icon:'✕',sub:'marked as Dead',list:deadByStatus})} style={{background:'rgba(248,113,113,0.1)',color:'#f87171',cursor:'pointer'}}><X size={13}/> {deadByStatus.length} dead customers</div>}
 //         {overdueFollowups>0&&<div className="insight-chip" onClick={()=>onNavigate('followups')} style={{background:'rgba(99,102,241,0.1)',color:'var(--acc)',cursor:'pointer'}}><Bell size={13}/> {overdueFollowups} overdue follow-ups</div>}
 //       </div>
@@ -770,7 +770,7 @@
 //         {decliningList.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'DECLINING SHARPLY',color:'#f87171',icon:'📉',sub:'sales down >20% last 3 vs prior 3 months',list:decliningList})} style={{background:'rgba(248,113,113,0.1)',color:'#f87171',cursor:'pointer'}}><ArrowDownRight size={13}/> {decliningList.length} declining sharply</div>}
 //         {dormantList.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'DORMANT 3+ MONTHS',color:'#fbbf24',icon:'💤',sub:'zero sales last 3 months but had history',list:dormantList})} style={{background:'rgba(251,191,36,0.1)',color:'#fbbf24',cursor:'pointer'}}><Clock size={13}/> {dormantList.length} dormant 3+ months</div>}
 //         {recentlyInactiveList.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'REACTIVE',color:'#fb923c',icon:'⏸',sub:'no orders this month but had orders before',list:recentlyInactiveList})} style={{background:'rgba(251,146,60,0.1)',color:'#fb923c',cursor:'pointer'}}><Clock size={13}/> {recentlyInactiveList.length} recently inactive</div>}
-//         {inactiveByStatus.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'INACTIVE (STATUS)',color:'#fbbf24',icon:'⚠️',sub:'marked as Inactive or Recently Inactive',list:inactiveByStatus})} style={{background:'rgba(251,191,36,0.08)',color:'#fbbf24',cursor:'pointer'}}><AlertTriangle size={13}/> {inactiveByStatus.length} inactive</div>}
+//         {inactiveByStatus.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'INACTIVE',color:'#fbbf24',icon:'⚠️',sub:'marked as Inactive or Recently Inactive',list:inactiveByStatus})} style={{background:'rgba(251,191,36,0.08)',color:'#fbbf24',cursor:'pointer'}}><AlertTriangle size={13}/> {inactiveByStatus.length} inactive</div>}
 //         {deadByStatus.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'DEAD CUSTOMERS',color:'#f87171',icon:'✕',sub:'marked as Dead',list:deadByStatus})} style={{background:'rgba(248,113,113,0.08)',color:'#f87171',cursor:'pointer'}}><X size={13}/> {deadByStatus.length} dead customers</div>}
 //         {overdueFollowups>0&&<div className="insight-chip" onClick={()=>onNavigate('followups')} style={{background:'rgba(99,102,241,0.1)',color:'var(--acc)',cursor:'pointer'}}><Bell size={13}/> {overdueFollowups} overdue follow-ups</div>}
 //       </div>
@@ -1510,26 +1510,17 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
     const before  = sumRange(x.months, 0, ci - 2);
     return last3 === 0 && before > 0;
   });
-  const recentlyInactiveList = dealersFiltered.filter(x => {
-    if(!Array.isArray(x.months)) return false;
-    const thisMonth = Number(x.months[ci]) || 0;
-    const earlier   = sumRange(x.months, 0, ci);
-    return thisMonth === 0 && earlier > 0;
-  });
-  const inactiveByData = dealersFiltered.filter(x => {
-    if(!Array.isArray(x.months)) return false;
-    const last3 = sumRange(x.months, ci - 2, ci + 1);
-    const prev  = sumRange(x.months, ci - 5, ci - 2);
-    return last3 === 0 && prev > 0;
-  });
-  const deadByData = dealers.filter(x => {
-    if(!Array.isArray(x.months)) return false;
-    const last6 = sumRange(x.months, ci - 5, ci + 1);
-    const everAny = x.months.reduce((a,b) => a + Number(b||0), 0);
-    return last6 === 0 && everAny > 0;
-  });
-  // Also count by status field
-  const inactiveByStatus=dealers.filter(x=>['INACTIVE','REACTIVE'].includes((x.status||'').toUpperCase()));
+  // recentlyInactiveList / inactiveByData / deadByData used to live here —
+  // three more definitions of "hasn't ordered lately", each over a different
+  // window and none agreeing with the others. The calculated tier answers that
+  // question once now, so they were dead scans over every dealer per render.
+  // Activity chips read the calculated tier so there is ONE definition of
+  // "inactive" in the app. This previously filtered `status` for
+  // INACTIVE|REACTIVE — after the stale sheet values were cleared, INACTIVE no
+  // longer exists in that field, so the chip was counting REACTIVE (a Potential
+  // label a rep chooses) and labelling it "inactive".
+  const inactiveByStatus   = dealers.filter(x=>(x.perfStatus||'').toUpperCase()==='INACTIVE');
+  const recentlyInactiveTier = dealers.filter(x=>(x.perfStatus||'').toUpperCase()==='RECENTLY INACTIVE');
   // Reads the calculated tier, not the rep's Potential label — 'dead' is a
   // statement about ordering history, which only the tier knows.
   const deadByStatus=dealers.filter(x=>(x.perfStatus||'').toUpperCase()==='DEAD');
@@ -1721,8 +1712,8 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
         <div className="insight-chip" onClick={()=>setInsightPopup({label:'TRENDING UP',color:'var(--grn)',icon:'📈',sub:'sales up >30% vs previous month',list:risingList})} style={{'--c':'#34d399','--fg':readableOn('#34d399'),background:'rgba(52,211,153,0.1)',color:'var(--grn)',cursor:'pointer'}}><TrendingUp size={13}/> {risingList.length} dealers trending up</div>
         <div className="insight-chip" onClick={()=>setInsightPopup({label:'DECLINING SHARPLY',color:'var(--red)',icon:'📉',sub:'sales down >20% vs previous month',list:decliningList})} style={{'--c':'#f87171','--fg':readableOn('#f87171'),background:'rgba(248,113,113,0.1)',color:'var(--red)',cursor:'pointer'}}><ArrowDownRight size={13}/> {decliningList.length} declining sharply</div>
         {dormantList.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'DORMANT 3+ MONTHS',color:'var(--yel)',icon:'💤',sub:'zero sales last 3 months but had history',list:dormantList})} style={{'--c':'#fbbf24','--fg':readableOn('#fbbf24'),background:'rgba(251,191,36,0.1)',color:'var(--yel)',cursor:'pointer'}}><Clock size={13}/> {dormantList.length} dormant 3+ months</div>}
-        {recentlyInactiveList.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'REACTIVE',color:'#fb923c',icon:'⏸',sub:'no orders this month but had orders before',list:recentlyInactiveList})} style={{'--c':'#fb923c','--fg':readableOn('#fb923c'),background:'rgba(251,146,60,0.1)',color:'#fb923c',cursor:'pointer'}}><Clock size={13}/> {recentlyInactiveList.length} reactive</div>}
-        {inactiveByStatus.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'INACTIVE (STATUS)',color:'var(--yel)',icon:'⚠️',sub:'marked as Inactive or Reactive',list:inactiveByStatus})} style={{'--c':'#fbbf24','--fg':readableOn('#fbbf24'),background:'rgba(251,191,36,0.1)',color:'var(--yel)',cursor:'pointer'}}><AlertTriangle size={13}/> {inactiveByStatus.length} inactive</div>}
+        {recentlyInactiveTier.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'RECENTLY INACTIVE',color:'#fb923c',icon:'⏸',sub:'no order this month, but ordered last month',list:recentlyInactiveTier})} style={{'--c':'#fb923c','--fg':readableOn('#fb923c'),background:'rgba(251,146,60,0.1)',color:'#fb923c',cursor:'pointer'}}><Clock size={13}/> {recentlyInactiveTier.length} recently inactive</div>}
+        {inactiveByStatus.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'INACTIVE',color:'var(--yel)',icon:'⚠️',sub:'no order for two months',list:inactiveByStatus})} style={{'--c':'#fbbf24','--fg':readableOn('#fbbf24'),background:'rgba(251,191,36,0.1)',color:'var(--yel)',cursor:'pointer'}}><AlertTriangle size={13}/> {inactiveByStatus.length} inactive</div>}
         {deadByStatus.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'DEAD CUSTOMERS',color:'var(--red)',icon:'✕',sub:'marked as Dead',list:deadByStatus})} style={{'--c':'#f87171','--fg':readableOn('#f87171'),background:'rgba(248,113,113,0.1)',color:'var(--red)',cursor:'pointer'}}><X size={13}/> {deadByStatus.length} dead customers</div>}
         {overdueFollowups>0&&<div className="insight-chip" onClick={()=>onNavigate('followups')} style={{'--c':'#6366f1','--fg':readableOn('#6366f1'),background:'rgba(99,102,241,0.1)',color:'var(--acc)',cursor:'pointer'}}><Bell size={13}/> {overdueFollowups} overdue follow-ups</div>}
       </div>
