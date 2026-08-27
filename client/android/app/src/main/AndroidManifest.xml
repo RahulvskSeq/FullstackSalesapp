@@ -56,4 +56,10 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
                      android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+
+    <!-- In-app updates: lets the app hand a downloaded APK to Android's
+         package installer instead of bouncing the user out to a browser.
+         The user still confirms the install on the system dialog, and still
+         has to allow this app once under "Install unknown apps". -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 </manifest>

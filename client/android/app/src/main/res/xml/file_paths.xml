@@ -2,4 +2,8 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <external-path name="my_images" path="." />
     <cache-path name="my_cache_images" path="." />
+    <!-- Downloaded APKs. The installer opens the file through this provider;
+         a raw file:// URI throws FileUriExposedException on Android 7+. -->
+    <files-path name="app_updates" path="." />
+    <external-files-path name="ext_app_updates" path="." />
 </paths>

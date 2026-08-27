@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Launcher icon foreground: a rising bar chart with a trend arrow.
+
+  Drawn as a vector rather than shipped as PNGs so one file covers every
+  density, and the icon stays sharp on any screen.
+
+  The 108x108 canvas is the adaptive-icon standard; only the middle 72x72 is
+  guaranteed visible once the launcher applies its mask, so everything here
+  stays inside roughly x/y 26..82.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Bars, short to tall, left to right -->
+    <path android:fillColor="#FFFFFF" android:fillAlpha="0.55"
+          android:pathData="M30,62 h9 a2,2 0 0 1 2,2 v16 a2,2 0 0 1 -2,2 h-9 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/>
+    <path android:fillColor="#FFFFFF" android:fillAlpha="0.75"
+          android:pathData="M46,52 h9 a2,2 0 0 1 2,2 v26 a2,2 0 0 1 -2,2 h-9 a2,2 0 0 1 -2,-2 v-26 a2,2 0 0 1 2,-2 z"/>
+    <path android:fillColor="#FFFFFF"
+          android:pathData="M62,40 h9 a2,2 0 0 1 2,2 v38 a2,2 0 0 1 -2,2 h-9 a2,2 0 0 1 -2,-2 v-38 a2,2 0 0 1 2,-2 z"/>
+
+    <!-- Trend line climbing across the bars -->
+    <path android:strokeColor="#FFFFFF" android:strokeWidth="4"
+          android:strokeLineCap="round" android:strokeLineJoin="round"
+          android:fillColor="#00000000"
+          android:pathData="M28,50 L44,38 L56,44 L78,26"/>
+
+    <!-- Arrow head on the trend line -->
+    <path android:fillColor="#FFFFFF"
+          android:pathData="M80,24 l-14,1 a1.6,1.6 0 0 0 -1,2.7 l10,10 a1.6,1.6 0 0 0 2.7,-1 z"/>
+</vector>
