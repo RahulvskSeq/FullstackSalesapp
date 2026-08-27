@@ -1652,8 +1652,12 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
                       {/* Type 1 — auto. Read-only by design: it is derived from
                           sales, so anything typed here would be overwritten by
                           the next upload. */}
-                      <td title={x.perfMonth ? `${x.perfQty} units in ${x.perfMonth} (tier categories only)` : 'No sales data yet'}>
-                        <StatusBadge status={x.perfStatus}/>
+                      <td title={x.perfMonth
+                          ? `${x.perfQty} units in ${x.perfMonth} (tier categories only)`
+                          : 'Not calculated yet — run "Recalculate performance status" in Monthly Entry'}>
+                        {x.perfStatus
+                          ? <StatusBadge status={x.perfStatus}/>
+                          : <span style={{fontSize:11,color:'var(--t3)'}}>—</span>}
                       </td>
                       {/* Type 2 — the salesman's own label, independent of the tier. */}
                       <td onClick={e=>e.stopPropagation()}>

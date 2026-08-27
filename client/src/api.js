@@ -2220,7 +2220,7 @@ export const dbDealerToApp = (d, MO=[]) => {
     zone:          d.zone||'',
     status:        d.status||'ACTIVE',
     // Type 1 (auto tier) travels alongside Type 2 (`status`, chosen by the rep).
-    perfStatus:    d.perfStatus||'DEAD',
+    perfStatus:    d.perfStatus||'',
     perfQty:       d.perfQty||0,
     perfMonth:     d.perfMonth||'',
     dealerType:    d.dealerType||'None',

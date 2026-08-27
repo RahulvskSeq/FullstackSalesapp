@@ -31,7 +31,7 @@ const dealerSchema = new mongoose.Schema({
   status:       { type:String, default:'ACTIVE' },
   // Type 1 — auto-calculated performance tier (see lib/accountStatus.js).
   // Never typed by a human; recomputed from Sale rows after every upload.
-  perfStatus:   { type:String, default:'DEAD' },
+  perfStatus:   { type:String, default:'' },
   // Qty in the tier categories for the month perfStatus came from — kept so
   // the UI can explain WHY a dealer landed in a tier.
   perfQty:      { type:Number, default:0 },
@@ -92,7 +92,7 @@ const fmt = (d, MO=[]) => {
     id:d._id?.toString(), name:d.name, salesman:d.salesman,
     city:d.city||'', state:d.state||'', zone:d.zone||'', status:d.status||'ACTIVE',
     // Type 1 (auto) alongside Type 2 (`status`, chosen by the salesman).
-    perfStatus:d.perfStatus||'DEAD', perfQty:d.perfQty||0, perfMonth:d.perfMonth||'',
+    perfStatus:d.perfStatus||'', perfQty:d.perfQty||0, perfMonth:d.perfMonth||'',
     dealerType:d.dealerType||'None',
     address:d.address||'', pincode:d.pincode||'',
     category:d.category||'', categoryType:d.categoryType||'', target:d.target||0,
