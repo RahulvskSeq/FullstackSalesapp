@@ -1343,7 +1343,7 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
       const f={q:'',zone:[],status:[],sm:[],credit:'',minPct:'',maxPct:'',city:[],state:[],category:[],categoryType:[]};
       Object.keys(pendingFilters).forEach(k=>{
         if(k==='_ts')return;
-        if(['status','category','categoryType','sm','city','state','zone'].includes(k))f[k]=[pendingFilters[k]];
+        if(['status','perf','category','categoryType','sm','city','state','zone'].includes(k))f[k]=[pendingFilters[k]];
         else f[k]=pendingFilters[k];
       });
       setFilters(f);

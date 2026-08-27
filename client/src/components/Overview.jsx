@@ -1423,14 +1423,9 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
   const [popupSearch,setPopupSearch]=useState('');
 
   // Drag-reorder for status sections
-  const CORE_STATUSES = ['ACTIVE','KEY ACCOUNT','ACHIVERS','ACHIEVERS','ACHIEVER','STAR'];
-  const [coreOrder,setCoreOrder]=useState(()=>{
-    try{ const s=JSON.parse(localStorage.getItem('stp_core_status_order')||'null'); if(s&&s.includes('KEY ACCOUNT'))return s; return ['ACTIVE','KEY ACCOUNT','ACHIVERS','ACHIEVERS','ACHIEVER','STAR']; }catch{ return ['ACTIVE','KEY ACCOUNT','ACHIVERS','ACHIEVERS','ACHIEVER','STAR']; }
-  });
-  const [otherOrder,setOtherOrder]=useState(null); // null = auto from data
-  const [dragStatus,setDragStatus]=useState(null);
-  const [dragSection,setDragSection]=useState(null);
-  const [overStatus,setOverStatus]=useState(null);
+  // The drag-to-reorder state that lived here went with the old Core/Other
+  // sections. Both status sections are fixed by type now, so there is
+  // nothing left to reorder and nothing to persist in localStorage.
 
   const allCitiesOv=useMemo(()=>[...new Set(dealers.map(x=>(x.city||'').trim()).filter(Boolean))].sort(),[dealers]);
   const allStatesOv=useMemo(()=>[...new Set(dealers.map(x=>(x.state||'').trim()).filter(Boolean))].sort(),[dealers]);
@@ -1826,97 +1821,64 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
         </div>
       </div>
 
-      {/* ── Status: TWO drag-reorder sections ── */}
+      {/* ── Status, split by KIND ─────────────────────────────────────────
+          Two sections answering two different questions. They used to be
+          "Core" and "Other", both slicing the SAME field by a hard-coded
+          whitelist — dragging a card between them made sense only because
+          both held the same kind of value. That is no longer true, so the
+          sections are fixed by type and the cross-section drag is gone. */}
       {(()=>{
-        // Build map of all status counts
-        const smap={};
-        myD.forEach(x=>{const s=(x.status||'NONE').trim()||'NONE';smap[s]=(smap[s]||0)+1;});
-        const coreKeys=CORE_STATUSES.filter(s=>smap[s]>0);
-        const otherKeys=Object.keys(smap).filter(s=>!CORE_STATUSES.includes(s));
-        // Apply saved orders
-        const orderedCore=[...coreOrder.filter(s=>coreKeys.includes(s)),...coreKeys.filter(s=>!coreOrder.includes(s))];
-        const savedOther=otherOrder||[...otherKeys];
-        const orderedOther=[...savedOther.filter(s=>otherKeys.includes(s)),...otherKeys.filter(s=>!savedOther.includes(s))];
+        const perfMap={}, potMap={};
+        myD.forEach(x=>{
+          const p=(x.perfStatus||'').trim(); if(p) perfMap[p]=(perfMap[p]||0)+1;
+          const s=(x.status||'NONE').trim()||'NONE'; potMap[s]=(potMap[s]||0)+1;
+        });
+        // Top Performer / Priority Account / Rising Star already have the
+        // Performance Tiers row above — repeating them here is noise.
+        const ACTIVITY  = ['ACTIVE','RECENTLY INACTIVE','INACTIVE','DEAD'];
+        const POTENTIAL = ['STAR','KEY ACCOUNT','ACHIEVER','REACTIVE','NONE'];
+        const activityKeys  = ACTIVITY.filter(k=>perfMap[k]>0);
+        const potentialKeys = POTENTIAL.filter(k=>potMap[k]>0);
 
-        const dragStart=(e,s,sec)=>{setDragStatus(s);setDragSection(sec);e.dataTransfer.effectAllowed='move';};
-        const dragOver=(e,s)=>{e.preventDefault();setOverStatus(s);};
-        const dragEnd=()=>{setDragStatus(null);setDragSection(null);setOverStatus(null);};
-        const reorder=(arr,from,to)=>{const a=[...arr];const fi=a.indexOf(from),ti=a.indexOf(to);if(fi<0||ti<0)return arr;a.splice(fi,1);a.splice(ti,0,from);return a;};
-        const drop=(e,target,targetSec)=>{
-          e.preventDefault();
-          if(!dragStatus||dragStatus===target)return;
-          const fromSec=dragSection;
-          if(fromSec===targetSec){
-            if(targetSec==='core'){const n=reorder(orderedCore,dragStatus,target);setCoreOrder(n);localStorage.setItem('stp_core_status_order',JSON.stringify(n));}
-            else{setOtherOrder(reorder(orderedOther,dragStatus,target));}
-          } else if(targetSec==='core'){
-            const newOther=orderedOther.filter(s=>s!==dragStatus);
-            const newCore=[...orderedCore];
-            const ti=newCore.indexOf(target);
-            newCore.splice(ti>=0?ti:newCore.length,0,dragStatus);
-            setCoreOrder(newCore);setOtherOrder(newOther);
-            localStorage.setItem('stp_core_status_order',JSON.stringify(newCore));
-          } else {
-            const newCore=orderedCore.filter(s=>s!==dragStatus);
-            const newOther=[...orderedOther];
-            const ti=newOther.indexOf(target);
-            newOther.splice(ti>=0?ti:newOther.length,0,dragStatus);
-            setCoreOrder(newCore);setOtherOrder(newOther);
-            localStorage.setItem('stp_core_status_order',JSON.stringify(newCore));
-          }
-          setDragStatus(null);setDragSection(null);setOverStatus(null);
-        };
-        const StatusCard=({s,sec})=>{
-          const v=smap[s]||0;
-          const pctOfTotal=myD.length?Math.round((v/myD.length)*100):0;
-          const clr=statusColorMap[s.toUpperCase()]||fallbackPalette[Object.keys(smap).indexOf(s)%fallbackPalette.length];
-          const isOver=overStatus===s&&dragStatus&&dragStatus!==s;
+        const Card=({s,count,filterKey})=>{
+          const pctOfTotal=myD.length?Math.round((count/myD.length)*100):0;
+          const clr=statusColorMap[s.toUpperCase()]||'#55546a';
           return(
-            <div draggable onDragStart={e=>dragStart(e,s,sec)} onDragOver={e=>dragOver(e,s)} onDrop={e=>drop(e,s,sec)} onDragEnd={dragEnd}
-              onClick={()=>onNavigate('dealers',{status:s})}
+            <div onClick={()=>onNavigate('dealers',{[filterKey]:s})}
               className="status-card"
-              style={{'--c':clr,'--fg':readableOn(clr),background:isOver?clr+'30':clr+'14',border:`1px solid ${isOver?clr:clr+'33'}`,borderRadius:10,padding:'12px 14px',cursor:'pointer',opacity:dragStatus===s?0.5:1,transition:'all .15s',position:'relative'}}>
-              <div style={{position:'absolute',top:6,right:6,opacity:0.3,cursor:'grab'}}><GripVertical size={10}/></div>
+              style={{'--c':clr,'--fg':readableOn(clr),background:clr+'14',border:'1px solid '+clr+'33',borderRadius:10,padding:'12px 14px',cursor:'pointer',transition:'all .15s'}}>
               <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:6}}>
                 <span className="sc-dot" style={{width:8,height:8,borderRadius:'50%',background:clr,flexShrink:0}}/>
                 <span style={{fontSize:11,color:clr,fontWeight:600,textTransform:'uppercase',letterSpacing:'.05em',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s}</span>
               </div>
-              <div style={{fontSize:24,fontWeight:700,color:'var(--t1)',lineHeight:1}}>{v}<span style={{fontSize:11,color:'var(--t3)',fontWeight:400,marginLeft:6}}>{pctOfTotal}%</span></div>
+              <div style={{fontSize:24,fontWeight:700,color:'var(--t1)',lineHeight:1}}>{count}<span style={{fontSize:11,color:'var(--t3)',fontWeight:400,marginLeft:6}}>{pctOfTotal}%</span></div>
               <div className="sc-bar" style={{height:3,background:'var(--b1)',borderRadius:2,marginTop:8,overflow:'hidden'}}>
                 <div style={{height:'100%',width:pctOfTotal+'%',background:clr,borderRadius:2,transition:'width .8s ease'}}/>
               </div>
             </div>
           );
         };
+        const Section=({icon,title,note,keys,map,filterKey}) => keys.length===0 ? null : (
+          <div className="card" style={{marginBottom:12}}>
+            <div style={{fontSize:13,fontWeight:600,color:'var(--t2)',marginBottom:12,display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+              {icon} {title}
+              <span style={{fontSize:11,color:'var(--t3)',fontWeight:400}}>{note}</span>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:10}}>
+              {keys.map(k=><Card key={k} s={k} count={map[k]||0} filterKey={filterKey}/>)}
+            </div>
+          </div>
+        );
         return(<>
-          {orderedCore.length>0&&(
-            <div className="card" style={{marginBottom:12}}>
-              <div style={{fontSize:13,fontWeight:600,color:'var(--t2)',marginBottom:12,display:'flex',alignItems:'center',gap:6}}>
-                <Star size={14} color="#34d399"/> Core Status
-                <span style={{fontSize:11,color:'var(--t3)',fontWeight:400}}>(drag to reorganize · click to filter)</span>
-              </div>
-              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:10}}
-                onDragOver={e=>e.preventDefault()}
-                onDrop={e=>{ if(dragSection==='other'&&dragStatus){ const newOther=orderedOther.filter(s=>s!==dragStatus);const newCore=[...orderedCore,dragStatus];setCoreOrder(newCore);setOtherOrder(newOther);localStorage.setItem('stp_core_status_order',JSON.stringify(newCore));setDragStatus(null);setDragSection(null);setOverStatus(null); } }}>
-                {orderedCore.map(s=><StatusCard key={s} s={s} sec="core"/>)}
-              </div>
-            </div>
-          )}
-          {orderedOther.length>0&&(
-            <div className="card" style={{marginBottom:12}}>
-              <div style={{fontSize:13,fontWeight:600,color:'var(--t2)',marginBottom:12,display:'flex',alignItems:'center',gap:6}}>
-                <Hash size={14} color="var(--t3)"/> Other Statuses
-                <span style={{fontSize:11,color:'var(--t3)',fontWeight:400}}>({orderedOther.length} · drag to reorganize)</span>
-              </div>
-              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:10}}
-                onDragOver={e=>e.preventDefault()}
-                onDrop={e=>{ if(dragSection==='core'&&dragStatus){ const newCore=orderedCore.filter(s=>s!==dragStatus);const newOther=[...orderedOther,dragStatus];setCoreOrder(newCore);setOtherOrder(newOther);localStorage.setItem('stp_core_status_order',JSON.stringify(newCore));setDragStatus(null);setDragSection(null);setOverStatus(null); } }}>
-                {orderedOther.map(s=><StatusCard key={s} s={s} sec="other"/>)}
-              </div>
-            </div>
-          )}
+          <Section icon={<Clock size={14} color="#fb923c"/>}
+            title="Account Activity" note="(calculated from sales · click to filter)"
+            keys={activityKeys} map={perfMap} filterKey="perf"/>
+          <Section icon={<Star size={14} color="#34d399"/>}
+            title="Potential Status" note="(set by the salesman · click to filter)"
+            keys={potentialKeys} map={potMap} filterKey="status"/>
         </>);
       })()}
+
 
       {/* Map View */}
       <MapView dealers={dealers} selectedMonthIdx={selectedMonthIdx}/>
