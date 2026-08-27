@@ -42,6 +42,46 @@ function exportCSV(filename, headers, rows){
 
 const fmtTime = (d) => d ? new Date(d).toLocaleString('en-IN', { dateStyle:'medium', timeStyle:'short' }) : '';
 const fmtDT   = (d) => d ? new Date(d).toLocaleString('en-IN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}).replace(',','') : '';
+// Office rules, in one place so the detail report and the summary can't drift.
+//   start 10:00  ·  after 10:00 = Late  ·  after 13:00 = Half day
+const OFFICE_START_MIN = 10 * 60;
+const HALF_DAY_MIN     = 13 * 60;
+
+// Minutes past midnight IN IST, not in whatever timezone the viewer's device
+// is set to — otherwise the same punch reads as late on one laptop and on
+// time on another.
+const istMinutes = (d) => {
+  if(!d) return null;
+  const t = new Date(d);
+  if(isNaN(t)) return null;
+  const hhmm = t.toLocaleTimeString('en-GB', { timeZone:'Asia/Kolkata', hour:'2-digit', minute:'2-digit', hour12:false });
+  const [h, m] = hhmm.split(':').map(Number);
+  return h * 60 + m;
+};
+
+// '' when there is no check-in at all — that is an absence, not a punctuality
+// verdict, and the caller decides what to call it.
+const punctuality = (inAt) => {
+  const m = istMinutes(inAt);
+  if(m === null) return '';
+  if(m > HALF_DAY_MIN)     return 'Half day';
+  if(m > OFFICE_START_MIN) return 'Late';
+  return 'On time';
+};
+
+// Every working day (Sunday excluded) between two dates, as YYYY-MM-DD.
+const workingDayList = (from, to) => {
+  const out = [];
+  if(!from) return out;
+  const a = new Date(from + 'T12:00:00Z');
+  const b = new Date((to || from) + 'T12:00:00Z');
+  if(isNaN(a) || isNaN(b) || b < a) return out;
+  for(let d = new Date(a); d <= b; d.setUTCDate(d.getUTCDate() + 1)){
+    if(d.getUTCDay() !== 0) out.push(d.toISOString().slice(0,10));
+  }
+  return out;
+};
+
 // Leave length in WORKING days. Sunday is the only weekly holiday here, so a
 // Friday-to-Monday leave is 3 days, not 4 — counting calendar days quietly
 // charges people for their day off.
@@ -524,6 +564,11 @@ function AttendanceReport({ fromDate, toDate, users }){
           background:v==='Complete'?'rgba(52,211,153,.15)':v==='No check-out'?'rgba(251,146,60,.15)':'rgba(248,113,113,.15)',
           color:v==='Complete'?'#34d399':v==='No check-out'?'#fb923c':'#f87171'}}>{v}</span>) },
     { label:'In Time',     w:90  },
+    { label:'Punctuality', w:100, render:(v)=> v ? (
+        <span style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:3,whiteSpace:'nowrap',
+          background:v==='On time'?'rgba(52,211,153,.15)':v==='Late'?'rgba(251,191,36,.15)':'rgba(248,113,113,.15)',
+          color:v==='On time'?'#34d399':v==='Late'?'#fbbf24':'#f87171'}}>{v}</span>
+      ) : <span style={{color:'var(--t3)'}}>—</span> },
     { label:'In Photo',    w:76, noFilter:true, render:(_v,meta)=><Thumb src={photos[meta.inId]}/> },
     { label:'In Address',  w:250 },
     { label:'In GPS',      w:150, render:gpsCell },
@@ -573,6 +618,7 @@ function AttendanceReport({ fromDate, toDate, users }){
             r.day ? new Date(r.day+'T12:00:00Z').toLocaleDateString('en-IN',{weekday:'short',timeZone:'UTC'}) : '',
             status,
             t(r.in?.createdAt),
+            punctuality(r.in?.createdAt),
             '',                                   // in photo
             r.in?.address || '',
             gps(r.in),
@@ -596,9 +642,13 @@ function AttendanceReport({ fromDate, toDate, users }){
   // Working days in the selected range, Sundays excluded — the yardstick the
   // present-days count is actually measured against.
   const wdInRange  = workingDays(fromDate, toDate);
+  const late = rows.filter(r=>r.cells[5]==='Late').length;
+  const half = rows.filter(r=>r.cells[5]==='Half day').length;
   const kpis = [
     { label:'Days marked',   value:rows.length },
     { label:'Working days',  value:wdInRange, accent:'#818cf8' },
+    { label:'Late',          value:late, accent:'#fbbf24' },
+    { label:'Half day',      value:half, accent:'#f87171' },
     { label:'Complete',      value:complete, accent:'#34d399' },
     { label:'No check-out',  value:noCheckout, accent:'#fb923c' },
     { label:'People',        value:new Set(items.map(a=>a.userId).filter(Boolean)).size },
@@ -617,6 +667,112 @@ function AttendanceReport({ fromDate, toDate, users }){
       </div>
     )}
   </>);
+}
+
+/* Attendance summary — per person, derived from the punches themselves.
+
+   Answers "who was absent, who is late, who is scraping in after 1pm" without
+   anyone filing anything. Absent = a working day in the range with no check-in
+   at all; that is leave whether or not it was ever applied for, which is
+   exactly the gap worth seeing. */
+function AttendanceSummaryReport({ fromDate, toDate, users }){
+  const [items,  setItems]  = useState([]);
+  const [loading,setLoading]= useState(false);
+  const [err,    setErr]    = useState('');
+
+  const load = useCallback(async ()=>{
+    setLoading(true); setErr('');
+    try {
+      const d = await api.attListAttendance({ from: fromDate, to: toDate, limit: 5000, light: 1 });
+      setItems(Array.isArray(d)?d:[]);
+    } catch(e){ setErr(e.message||'Could not load attendance'); setItems([]); }
+    setLoading(false);
+  },[fromDate,toDate]);
+  useEffect(()=>{ load(); },[load]);
+
+  const columns = [
+    { label:'Salesman',     w:150 },
+    { label:'Working days', w:110, align:'right' },
+    { label:'Present',      w:90,  align:'right' },
+    { label:'Absent',       w:90,  align:'right' },
+    { label:'On time',      w:90,  align:'right' },
+    { label:'Late',         w:80,  align:'right' },
+    { label:'Half day',     w:90,  align:'right' },
+    { label:'No check-out', w:110, align:'right' },
+    { label:'Hours',        w:100, align:'right' },
+    { label:'Attendance %', w:110, align:'right' },
+  ];
+
+  const rows = useMemo(()=>{
+    const wdays = workingDayList(fromDate, toDate);
+    const wset  = new Set(wdays);
+
+    // Everyone who should be showing up: the salesman roster, plus anyone who
+    // punched in the range but isn't on it (kept so their days aren't lost).
+    const roster = {};
+    Object.values(users||{})
+      .filter(u=>u.role==='salesman' && u.active!==false)
+      .forEach(u=>{ roster[u.id] = u.name || u.id; });
+    items.forEach(a=>{ if(a.userId && !roster[a.userId]) roster[a.userId] = a.userName || a.userId; });
+
+    // Pair punches per person per day, same rule as the detail report:
+    // earliest IN, latest OUT.
+    const byUserDay = {};
+    items.forEach(a=>{
+      const day = a.dateStr || String(a.createdAt||'').slice(0,10);
+      if(!wset.has(day)) return;                 // Sundays and out-of-range punches
+      const slot = (byUserDay[`${a.userId}|${day}`] ||= { in:null, out:null });
+      if(a.type==='in'){
+        if(!slot.in  || new Date(a.createdAt) < new Date(slot.in.createdAt))  slot.in  = a;
+      } else {
+        if(!slot.out || new Date(a.createdAt) > new Date(slot.out.createdAt)) slot.out = a;
+      }
+    });
+
+    return Object.entries(roster).map(([uid,name])=>{
+      let present=0, onTime=0, late=0, half=0, noOut=0, mins=0;
+      wdays.forEach(day=>{
+        const s = byUserDay[`${uid}|${day}`];
+        if(!s || !s.in) return;                  // no check-in = absent
+        present++;
+        const p = punctuality(s.in.createdAt);
+        if(p==='On time') onTime++; else if(p==='Late') late++; else if(p==='Half day') half++;
+        if(s.out) mins += Math.max(0, Math.round((new Date(s.out.createdAt) - new Date(s.in.createdAt))/60000));
+        else      noOut++;
+      });
+      const absent = wdays.length - present;
+      return {
+        _sort: absent,
+        cells:[
+          name,
+          wdays.length,
+          present,
+          absent,
+          onTime,
+          late,
+          half,
+          noOut,
+          `${Math.floor(mins/60)}h ${mins%60}m`,
+          wdays.length ? Math.round((present/wdays.length)*100)+'%' : '—',
+        ],
+      };
+    })
+    .sort((a,b)=> b._sort - a._sort)              // most absent first — the list worth reading
+    .map(({_sort, ...r})=>r);
+  },[items,users,fromDate,toDate]);
+
+  const sum = (i) => rows.reduce((s,r)=>s+(Number(r.cells[i])||0),0);
+  const kpis = [
+    { label:'People',       value:rows.length },
+    { label:'Working days', value:workingDayList(fromDate,toDate).length, accent:'#818cf8' },
+    { label:'Absent days',  value:sum(3), accent:'#f87171' },
+    { label:'Late',         value:sum(5), accent:'#fbbf24' },
+    { label:'Half days',    value:sum(6), accent:'#fb923c' },
+  ];
+
+  return <DataTable columns={columns} rows={rows} loading={loading} err={err}
+    onRefresh={load} exportName="AttendanceSummary" kpis={kpis}
+    note="Sundays excluded · after 10:00 = Late · after 13:00 = Half day · absent = no check-in"/>;
 }
 
 /* Leave summary — one row per person: how much leave they have taken.
@@ -880,6 +1036,7 @@ export default function Reports({ dealers, users, currentUser, monthConfig, outs
     { id:'attendance', label:'Attendance',         group:'CRM',   icon:Camera,        color:'var(--yel)' },
     { id:'leads',      label:'Leads',              group:'CRM',   icon:UserCheck,     color:'#22d3ee' },
     { id:'leaves',     label:'Leaves',             group:'CRM',   icon:Plane,         color:'#fb923c' },
+    { id:'attSummary', label:'Attendance Summary',group:'CRM',   icon:Camera,        color:'#22d3ee' },
     { id:'leaveSummary',label:'Leave Summary',     group:'CRM',   icon:Plane,         color:'#f59e0b' },
     { id:'dailySales', label:'Daily Sales',        group:'Sales', icon:Calendar,      color:'#14b8a6' },
     { id:'monthCompare',label:'Month Comparison',  group:'Sales', icon:Activity,      color:'#0ea5e9' },
@@ -933,6 +1090,8 @@ export default function Reports({ dealers, users, currentUser, monthConfig, outs
             ]}));
           }}
           kpis={rows=>[{label:'Applications',value:rows.length}]}/>;
+      case 'attSummary':
+        return <AttendanceSummaryReport fromDate={fromDate} toDate={toDate} users={users}/>;
       case 'leaveSummary':
         return <LeaveSummaryReport users={users}/>;
       case 'dailySales':
