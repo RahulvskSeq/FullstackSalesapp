@@ -451,10 +451,13 @@ function VisitsReport({ fromDate, toDate, users }){
   </>);
 }
 
-/* Attendance report — selfie thumbnails + full punch detail.
-   Built like VisitsReport rather than the generic table: attendance carries a
-   photo and GPS, and a row of text without the picture is the one thing nobody
-   can verify. */
+/* Attendance report — one row per person per day, check-in and check-out
+   side by side with both selfies.
+
+   Attendance is stored as one document per punch, so a day is two rows. Shown
+   raw that way you cannot read a day at a glance, cannot see who forgot to
+   check out, and cannot compute hours — so the rows are paired here on
+   user + date, the way the day is actually lived. */
 function AttendanceReport({ fromDate, toDate, users }){
   const [items,  setItems]  = useState([]);
   const [loading,setLoading]= useState(false);
@@ -473,10 +476,13 @@ function AttendanceReport({ fromDate, toDate, users }){
   },[fromDate,toDate]);
   useEffect(()=>{ load(); },[load]);
 
+  // A paired row needs BOTH punches' photos, so collect both ids per row.
   const onPageRows = useCallback((pageRows)=>{
-    const need = pageRows.map(r=>r.meta?.id).filter(id=>id && photos[id]===undefined);
+    const need = pageRows
+      .flatMap(r=>[r.meta?.inId, r.meta?.outId])
+      .filter(id=>id && photos[id]===undefined);
     if(!need.length) return;
-    api.attPhotos(need)
+    api.attPhotos([...new Set(need)])
       .then(map=>setPhotos(p=>({ ...p, ...map })))
       .catch(()=>setPhotos(p=>{ const n={...p}; need.forEach(id=>{ n[id]=''; }); return n; }));
   },[photos]);
@@ -487,59 +493,104 @@ function AttendanceReport({ fromDate, toDate, users }){
     : <div style={{width:54,height:54,borderRadius:6,border:'1px dashed var(--b2)',
         display:'flex',alignItems:'center',justifyContent:'center',fontSize:8,color:'var(--t3)'}}>none</div>;
 
+  const gpsCell = (v)=> v
+    ? <a href={`https://www.google.com/maps?q=${v}`} target="_blank" rel="noreferrer"
+         onClick={e=>e.stopPropagation()} style={{fontSize:11,color:'var(--acc)'}}>{v}</a>
+    : <span style={{color:'var(--t3)'}}>—</span>;
+
+  // Every column filters except the two image cells — there is nothing to type
+  // against a photo.
   const columns = [
-    { label:'Salesman', w:140 },
-    { label:'Type',     w:80, render:(v)=>(
-        <span style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:3,
-          background:v==='IN'?'rgba(52,211,153,.15)':'rgba(251,146,60,.15)',
-          color:v==='IN'?'#34d399':'#fb923c'}}>{v}</span>) },
-    { label:'Photo',    w:76, noFilter:true, render:(_v,meta)=><Thumb src={photos[meta.id]}/> },
-    { label:'Date',     w:110 },
-    { label:'Time',     w:90 },
-    { label:'Address',  w:280 },
-    { label:'City',     w:120 },
-    { label:'State',    w:120 },
-    { label:'GPS',      w:150, render:(v)=> v
-        ? <a href={`https://www.google.com/maps?q=${v}`} target="_blank" rel="noreferrer"
-             onClick={e=>e.stopPropagation()}
-             style={{fontSize:11,color:'var(--acc)'}}>{v}</a>
-        : <span style={{color:'var(--t3)'}}>—</span> },
-    { label:'Note',     w:200 },
+    { label:'Salesman',    w:140 },
+    { label:'Date',        w:110 },
+    { label:'Day',         w:70  },
+    { label:'Status',      w:110, render:(v)=>(
+        <span style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:3,whiteSpace:'nowrap',
+          background:v==='Complete'?'rgba(52,211,153,.15)':v==='No check-out'?'rgba(251,146,60,.15)':'rgba(248,113,113,.15)',
+          color:v==='Complete'?'#34d399':v==='No check-out'?'#fb923c':'#f87171'}}>{v}</span>) },
+    { label:'In Time',     w:90  },
+    { label:'In Photo',    w:76, noFilter:true, render:(_v,meta)=><Thumb src={photos[meta.inId]}/> },
+    { label:'In Address',  w:250 },
+    { label:'In GPS',      w:150, render:gpsCell },
+    { label:'In Note',     w:160 },
+    { label:'Out Time',    w:90  },
+    { label:'Out Photo',   w:76, noFilter:true, render:(_v,meta)=><Thumb src={photos[meta.outId]}/> },
+    { label:'Out Address', w:250 },
+    { label:'Out GPS',     w:150, render:gpsCell },
+    { label:'Out Note',    w:160 },
+    { label:'Hours',       w:90  },
+    { label:'City',        w:120 },
+    { label:'State',       w:120 },
   ];
 
-  const rows = useMemo(()=>items.map(a=>({
-    meta:{ id:a._id },
-    cells:[
-      a.userName || users?.[a.userId]?.name || a.userId || '',
-      a.type==='in' ? 'IN' : 'OUT',
-      '', // photo
-      a.dateStr || String(a.createdAt||'').slice(0,10),
-      a.createdAt ? new Date(a.createdAt).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}) : '',
-      a.address || '',
-      a.city  || '',
-      a.state || '',
-      (a.lat!=null && a.lng!=null) ? `${a.lat},${a.lng}` : '',
-      a.note || '',
-    ],
-  })),[items,users]);
+  const { rows, totalMin } = useMemo(()=>{
+    const byDay = {};
+    items.forEach(a=>{
+      const day = a.dateStr || String(a.createdAt||'').slice(0,10);
+      const key = `${a.userId}|${day}`;
+      const slot = (byDay[key] ||= { userId:a.userId, userName:a.userName, day, in:null, out:null });
+      // Keep the earliest IN and the latest OUT, so a duplicate punch can't
+      // shrink the day.
+      if(a.type==='in'){
+        if(!slot.in  || new Date(a.createdAt) < new Date(slot.in.createdAt))  slot.in  = a;
+      } else {
+        if(!slot.out || new Date(a.createdAt) > new Date(slot.out.createdAt)) slot.out = a;
+      }
+    });
 
-  // Days present counts distinct user+date pairs with a check-IN — a check-out
-  // alone isn't a day worked, and counting rows would double every full day.
-  const daysPresent = new Set(
-    items.filter(a=>a.type==='in').map(a=>`${a.userId}|${a.dateStr}`)
-  ).size;
+    const t = (d) => d ? new Date(d).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}) : '';
+    const gps = (a) => (a && a.lat!=null && a.lng!=null) ? `${a.lat},${a.lng}` : '';
+    let mins = 0;
+
+    const out = Object.values(byDay)
+      .sort((a,b)=> b.day.localeCompare(a.day) || String(a.userName||a.userId).localeCompare(String(b.userName||b.userId)))
+      .map(r=>{
+        const dur = (r.in && r.out)
+          ? Math.max(0, Math.round((new Date(r.out.createdAt) - new Date(r.in.createdAt))/60000))
+          : 0;
+        mins += dur;
+        const status = r.in && r.out ? 'Complete' : (r.in ? 'No check-out' : 'No check-in');
+        return {
+          meta:{ inId:r.in?._id, outId:r.out?._id },
+          cells:[
+            r.userName || users?.[r.userId]?.name || r.userId || '',
+            r.day,
+            r.day ? new Date(r.day+'T12:00:00Z').toLocaleDateString('en-IN',{weekday:'short',timeZone:'UTC'}) : '',
+            status,
+            t(r.in?.createdAt),
+            '',                                   // in photo
+            r.in?.address || '',
+            gps(r.in),
+            r.in?.note || '',
+            t(r.out?.createdAt),
+            '',                                   // out photo
+            r.out?.address || '',
+            gps(r.out),
+            r.out?.note || '',
+            fmtHM(dur),
+            r.in?.city  || r.out?.city  || '',
+            r.in?.state || r.out?.state || '',
+          ],
+        };
+      });
+    return { rows: out, totalMin: mins };
+  },[items,users]);
+
+  const complete   = rows.filter(r=>r.cells[3]==='Complete').length;
+  const noCheckout = rows.filter(r=>r.cells[3]==='No check-out').length;
   const kpis = [
-    { label:'Punches',      value:items.length },
-    { label:'Days present', value:daysPresent, accent:'#34d399' },
+    { label:'Days',         value:rows.length },
+    { label:'Complete',     value:complete, accent:'#34d399' },
+    { label:'No check-out', value:noCheckout, accent:'#fb923c' },
     { label:'People',       value:new Set(items.map(a=>a.userId).filter(Boolean)).size },
-    { label:'With photo',   value:`${Object.values(photos).filter(Boolean).length} loaded` },
+    { label:'Total hours',  value:`${Math.floor(totalMin/60)}h ${totalMin%60}m`, accent:'#7c3aed' },
   ];
 
   return (<>
     <DataTable columns={columns} rows={rows} loading={loading} err={err}
       onRefresh={load} exportName="Attendance" kpis={kpis}
       onPageRowsChange={onPageRows}
-      note="click a photo to enlarge · GPS opens in Maps"/>
+      note="one row per person per day · click a photo to enlarge · GPS opens in Maps"/>
     {zoom && (
       <div onClick={()=>setZoom('')} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.9)',zIndex:9999,
         display:'flex',alignItems:'center',justifyContent:'center',cursor:'zoom-out',padding:20}}>
