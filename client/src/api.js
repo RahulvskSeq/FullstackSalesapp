@@ -1986,6 +1986,12 @@ export const api = {
     const p = new URLSearchParams(q).toString();
     return fetch(`${BASE}/crm/attendance${p?'?'+p:''}`,{ headers:authHeaders() }).then(handle);
   },
+  // Selfies for one page of the attendance report → { id: '<dataUrl>' }.
+  // Pairs with ?light=1 on the list so hundreds of rows don't drag base64
+  // photos along with them.
+  attPhotos: (ids) => fetch(`${BASE}/crm/attendance/photos`,{
+    method:'POST', headers:authHeaders(), body: JSON.stringify({ ids }),
+  }).then(handle),
   attPunch: (body) => fetch(`${BASE}/crm/attendance`,{
     method:'POST',
     headers:authHeaders(),

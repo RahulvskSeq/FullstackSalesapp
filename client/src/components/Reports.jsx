@@ -451,6 +451,104 @@ function VisitsReport({ fromDate, toDate, users }){
   </>);
 }
 
+/* Attendance report — selfie thumbnails + full punch detail.
+   Built like VisitsReport rather than the generic table: attendance carries a
+   photo and GPS, and a row of text without the picture is the one thing nobody
+   can verify. */
+function AttendanceReport({ fromDate, toDate, users }){
+  const [items,  setItems]  = useState([]);
+  const [loading,setLoading]= useState(false);
+  const [err,    setErr]    = useState('');
+  const [photos, setPhotos] = useState({});
+  const [zoom,   setZoom]   = useState('');
+
+  const load = useCallback(async ()=>{
+    setLoading(true); setErr('');
+    try {
+      // light=1: no base64 in the list. Thumbnails arrive per visible page.
+      const d = await api.attListAttendance({ from: fromDate, to: toDate, limit: 5000, light: 1 });
+      setItems(Array.isArray(d)?d:[]); setPhotos({});
+    } catch(e){ setErr(e.message||'Could not load attendance'); setItems([]); }
+    setLoading(false);
+  },[fromDate,toDate]);
+  useEffect(()=>{ load(); },[load]);
+
+  const onPageRows = useCallback((pageRows)=>{
+    const need = pageRows.map(r=>r.meta?.id).filter(id=>id && photos[id]===undefined);
+    if(!need.length) return;
+    api.attPhotos(need)
+      .then(map=>setPhotos(p=>({ ...p, ...map })))
+      .catch(()=>setPhotos(p=>{ const n={...p}; need.forEach(id=>{ n[id]=''; }); return n; }));
+  },[photos]);
+
+  const Thumb = ({src}) => src
+    ? <img src={src} alt="" onClick={e=>{e.stopPropagation();setZoom(src);}}
+        style={{width:54,height:54,objectFit:'cover',borderRadius:6,cursor:'zoom-in',border:'1px solid var(--b2)'}}/>
+    : <div style={{width:54,height:54,borderRadius:6,border:'1px dashed var(--b2)',
+        display:'flex',alignItems:'center',justifyContent:'center',fontSize:8,color:'var(--t3)'}}>none</div>;
+
+  const columns = [
+    { label:'Salesman', w:140 },
+    { label:'Type',     w:80, render:(v)=>(
+        <span style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:3,
+          background:v==='IN'?'rgba(52,211,153,.15)':'rgba(251,146,60,.15)',
+          color:v==='IN'?'#34d399':'#fb923c'}}>{v}</span>) },
+    { label:'Photo',    w:76, noFilter:true, render:(_v,meta)=><Thumb src={photos[meta.id]}/> },
+    { label:'Date',     w:110 },
+    { label:'Time',     w:90 },
+    { label:'Address',  w:280 },
+    { label:'City',     w:120 },
+    { label:'State',    w:120 },
+    { label:'GPS',      w:150, render:(v)=> v
+        ? <a href={`https://www.google.com/maps?q=${v}`} target="_blank" rel="noreferrer"
+             onClick={e=>e.stopPropagation()}
+             style={{fontSize:11,color:'var(--acc)'}}>{v}</a>
+        : <span style={{color:'var(--t3)'}}>—</span> },
+    { label:'Note',     w:200 },
+  ];
+
+  const rows = useMemo(()=>items.map(a=>({
+    meta:{ id:a._id },
+    cells:[
+      a.userName || users?.[a.userId]?.name || a.userId || '',
+      a.type==='in' ? 'IN' : 'OUT',
+      '', // photo
+      a.dateStr || String(a.createdAt||'').slice(0,10),
+      a.createdAt ? new Date(a.createdAt).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}) : '',
+      a.address || '',
+      a.city  || '',
+      a.state || '',
+      (a.lat!=null && a.lng!=null) ? `${a.lat},${a.lng}` : '',
+      a.note || '',
+    ],
+  })),[items,users]);
+
+  // Days present counts distinct user+date pairs with a check-IN — a check-out
+  // alone isn't a day worked, and counting rows would double every full day.
+  const daysPresent = new Set(
+    items.filter(a=>a.type==='in').map(a=>`${a.userId}|${a.dateStr}`)
+  ).size;
+  const kpis = [
+    { label:'Punches',      value:items.length },
+    { label:'Days present', value:daysPresent, accent:'#34d399' },
+    { label:'People',       value:new Set(items.map(a=>a.userId).filter(Boolean)).size },
+    { label:'With photo',   value:`${Object.values(photos).filter(Boolean).length} loaded` },
+  ];
+
+  return (<>
+    <DataTable columns={columns} rows={rows} loading={loading} err={err}
+      onRefresh={load} exportName="Attendance" kpis={kpis}
+      onPageRowsChange={onPageRows}
+      note="click a photo to enlarge · GPS opens in Maps"/>
+    {zoom && (
+      <div onClick={()=>setZoom('')} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.9)',zIndex:9999,
+        display:'flex',alignItems:'center',justifyContent:'center',cursor:'zoom-out',padding:20}}>
+        <img src={zoom} alt="" style={{maxWidth:'100%',maxHeight:'100%',borderRadius:8}}/>
+      </div>
+    )}
+  </>);
+}
+
 /* Generic API-backed report (attendance / leads / leaves) */
 function ApiReport({ loader, columns, exportName, deps=[], kpis }){
   const [rows,setRows]=useState([]);
@@ -653,20 +751,7 @@ export default function Reports({ dealers, users, currentUser, monthConfig, outs
       case 'visits':
         return <VisitsReport fromDate={fromDate} toDate={toDate} users={users}/>;
       case 'attendance':
-        return <ApiReport exportName="Attendance" deps={[fromDate,toDate]}
-          columns={[{label:'User',w:140},{label:'Type',w:80},{label:'Date',w:110},{label:'Time',w:90},
-                    {label:'Address',w:280},{label:'City',w:120},{label:'State',w:120},
-                    {label:'Lat',w:100},{label:'Lng',w:100},{label:'Note',w:200}]}
-          loader={async ()=>{
-            const items = await api.attListAttendance({ from: fromDate, to: toDate });
-            return (items||[]).map(x=>({ cells:[
-              x.userName||x.userId, x.type==='in'?'IN':'OUT',
-              x.dateStr||String(x.createdAt||'').slice(0,10),
-              x.createdAt?new Date(x.createdAt).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}):'',
-              x.address||'', x.city||'', x.state||'', x.lat??'', x.lng??'', x.note||'',
-            ]}));
-          }}
-          kpis={rows=>[{label:'Punches',value:rows.length}]}/>;
+        return <AttendanceReport fromDate={fromDate} toDate={toDate} users={users}/>;
       case 'leads':
         return <ApiReport exportName="Leads" deps={[]}
           columns={[{label:'Name',w:160},{label:'Company',w:160},{label:'Phone',w:120},{label:'Email',w:180},

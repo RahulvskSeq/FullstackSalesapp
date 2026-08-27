@@ -135,9 +135,34 @@ router.get('/attendance', protect, async (req, res) => {
       if(req.query.from) q.dateStr.$gte = req.query.from;
       if(req.query.to)   q.dateStr.$lte = req.query.to;
     }
-    const items = await Attendance.find(q).sort({ createdAt:-1 }).limit(500).lean();
+    // ?light=1 drops the base64 selfie. Without it this ships up to 500
+    // photos in one response, which is most of the payload and all of the
+    // slowness — the report only needs thumbnails for the rows on screen and
+    // fetches those through /attendance/photos.
+    const light = String(req.query.light || '') === '1';
+    const limit = Math.min(Number(req.query.limit) || 500, 5000);
+    const projection = light ? '-photo' : '';
+    const items = await Attendance.find(q, projection)
+      .sort({ createdAt:-1 }).limit(limit).lean();
     res.json(items);
   } catch(e){ console.error('[CRM/attendance GET]', e.message); res.status(500).json({ error:e.message }); }
+});
+
+// ── POST /api/crm/attendance/photos ────────────────────────────────────────
+// Selfies for a specific set of records — the companion to ?light=1, so a
+// report can page through hundreds of rows and only pull the images it is
+// actually showing. Body: { ids:[...] } → { <id>: '<dataUrl>' }
+router.post('/attendance/photos', protect, async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.slice(0, 60) : [];
+    if(!ids.length) return res.json({});
+    const q = { _id: { $in: ids } };
+    if(!isStaff(req)) q.userId = req.user.id;      // a salesman only sees their own
+    const rows = await Attendance.find(q, 'photo').lean();
+    const out = {};
+    rows.forEach(r => { out[String(r._id)] = r.photo || ''; });
+    res.json(out);
+  } catch(e){ console.error('[CRM/attendance photos]', e.message); res.status(500).json({ error:e.message }); }
 });
 
 // ── GET /api/crm/attendance/feed — EXTERNAL read-only attendance API ────────
