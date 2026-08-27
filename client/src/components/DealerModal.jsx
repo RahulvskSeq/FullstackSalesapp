@@ -9161,7 +9161,7 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
                 {DEALER_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
               </select>
             </div>
-            <div className="field"><label>Status</label>
+            <div className="field"><label>Potential Status</label>
               <select className="sel inp" value={edit.status} onChange={e=>setEdit({...edit,status:e.target.value})}>
                 {['NONE','STAR','KEY ACCOUNT','ACHIEVER','REACTIVE'].map(s=><option key={s}>{s}</option>)}
               </select>

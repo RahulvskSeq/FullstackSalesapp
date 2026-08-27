@@ -122,7 +122,7 @@ export default function SalesEntry({ dealers, users, onUpdateDealer, onAddDealer
   // ── Export entries as CSV ────────────────────────────
   const exportCSV = () => {
     const rows = [
-      ['Date','Dealer Name','Salesman','Category','Sub Category','Qty','Target','Status','Zone','City','State'],
+      ['Date','Dealer Name','Salesman','Category','Sub Category','Qty','Target','Potential Status','Zone','City','State'],
       ...entries.map(e=>[
         MO[e.monthIdx], e.dealerName,
         users[e.salesman]?.name||e.salesman,
@@ -178,7 +178,7 @@ export default function SalesEntry({ dealers, users, onUpdateDealer, onAddDealer
 
             {/* Status */}
             <div className="field">
-              <label>Status</label>
+              <label>Potential Status</label>
               <select className="sel inp" value={form.status} onChange={e=>set('status',e.target.value)}>
                 {['NONE','STAR','KEY ACCOUNT','ACHIEVER','REACTIVE'].map(s=><option key={s}>{s}</option>)}
               </select>

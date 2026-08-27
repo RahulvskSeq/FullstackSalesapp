@@ -1045,7 +1045,7 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
     const includeSalesman = isAdmin;
     const headers = [
       ...(includeSalesman ? ['Salesman'] : []),
-      'Dealer Name', 'City', 'State', 'Zone', 'Status',
+      'Dealer Name', 'City', 'State', 'Zone', 'Potential Status',
       'Target', 'Achieved',
       'Category Type', 'Sub Category',
       'Credit Days', 'Credit Limit',
@@ -1415,7 +1415,7 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
                 <th style={{textAlign:'right',color:'var(--acc)',background:'rgba(99,102,241,.06)'}}>Target</th>
                 <th style={{textAlign:'right',color:'var(--grn)',background:'rgba(52,211,153,.06)'}}>Achieved</th>
                 <th style={{textAlign:'right'}}>Ach%</th>
-                <th>Status</th>
+                <th>Potential Status</th>
               </tr>
             </thead>
             <tbody>

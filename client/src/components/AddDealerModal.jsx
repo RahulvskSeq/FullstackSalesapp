@@ -126,7 +126,7 @@ const AddDealerModal = ({users, currentUser, onAdd, onClose, MO:propMO}) => {
             </select>
           </Field>
 
-          <Field label="Status">
+          <Field label="Potential Status">
             <select className="inp" value={d.status} onChange={e=>set('status',e.target.value)}>
               {STATUSES.map(s=><option key={s}>{s}</option>)}
             </select>
