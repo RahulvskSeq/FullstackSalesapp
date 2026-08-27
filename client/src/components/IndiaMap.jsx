@@ -597,11 +597,14 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
     const list = det ? det.dealers : dealers;
     const k = { active:0, star:0, inactive:0, lost:0, total:list.length, sales:0, target:0, qty:0 };
     list.forEach(d => {
-      const s = (d.status || '').toUpperCase();
-      if(s.includes('STAR'))                          k.star++;
-      else if(s.includes('LOST'))                     k.lost++;
-      else if(s.includes('INACTIVE') || s === 'DEAD') k.inactive++;
-      else                                            k.active++;
+      // Activity buckets come from the calculated tier, not the rep's Potential
+      // label. 'RISING STAR' is a performance tier and must not fall into the
+      // star bucket, so match it before the generic STAR test.
+      const s = (d.perfStatus || '').toUpperCase();
+      if(s === 'TOP PERFORMER' || s === 'PRIORITY ACCOUNT') k.star++;
+      else if(s === 'DEAD')                                 k.lost++;
+      else if(s.includes('INACTIVE'))                       k.inactive++;
+      else                                                  k.active++;
       const ach = Number(d.months?.[selectedMonthIdx] || 0);
       const tgt = monthTarget(d, selectedMonthIdx);
       k.sales  += ach;

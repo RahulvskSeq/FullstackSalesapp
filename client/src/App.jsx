@@ -16256,9 +16256,14 @@ export default function App(){
   }
 
   // All status counts for territory bar (plain derivation, no hook)
-  const allStatuses = (() => { const map={}; myDealers.forEach(d=>{ const s=(d.status||'OTHER').trim()||'OTHER'; map[s]=(map[s]||0)+1; }); return map; })();
-  const activeCount = (allStatuses['ACTIVE']||0)+(allStatuses['ACHIVERS']||0)+(allStatuses['ACHIEVERS']||0)+(allStatuses['KEY ACCOUNT']||0);
-  const inactiveCount = (allStatuses['INACTIVE']||0)+(allStatuses['REACTIVE']||0);
+  // Territory counts describe PERFORMANCE, so they read the calculated tier.
+  // They used to read `status`, which is now the rep's own Potential label —
+  // after the stale sheet values were cleared that field is mostly NONE, and
+  // these counts would have silently read zero.
+  const allStatuses = (() => { const map={}; myDealers.forEach(d=>{ const s=(d.perfStatus||'').trim(); if(s) map[s]=(map[s]||0)+1; }); return map; })();
+  const activeCount = (allStatuses['TOP PERFORMER']||0)+(allStatuses['PRIORITY ACCOUNT']||0)
+                    + (allStatuses['RISING STAR']||0)+(allStatuses['ACTIVE']||0);
+  const inactiveCount = (allStatuses['RECENTLY INACTIVE']||0)+(allStatuses['INACTIVE']||0);
   const deadCount = allStatuses['DEAD']||0;
 
   // Three sections are SUPERADMIN ONLY no matter what features are granted:
@@ -16745,17 +16750,17 @@ export default function App(){
                   {Object.entries(allStatuses).sort((a,b)=>{
                     // Custom priority — top-tier customers first, then activity tiers, then dead.
                     const order = {
-                      'STAR':0, 'KEY ACCOUNT':1,
-                      'ACHIEVER':2, 'ACHIEVERS':2, 'ACHIVERS':2,
+                      'TOP PERFORMER':0, 'PRIORITY ACCOUNT':1,
+                      'RISING STAR':2,
                       'ACTIVE':3,
-                      'REACTIVE':4, 'INACTIVE':5, 'DEAD':6,
+                      'RECENTLY INACTIVE':4, 'INACTIVE':5, 'DEAD':6,
                     };
                     const sa = a[0].toUpperCase(), sb = b[0].toUpperCase();
                     const ra = order[sa] ?? 99, rb = order[sb] ?? 99;
                     if(ra !== rb) return ra - rb;
                     return b[1] - a[1]; // tie-break by larger count
                   }).map(([s,c])=>{
-                    const statusColors={'STAR':'#fbbf24','KEY ACCOUNT':'#a78bfa','ACTIVE':'#34d399','ACHIVERS':'#34d399','ACHIEVERS':'#34d399','ACHIEVER':'#34d399','INACTIVE':'#fbbf24','REACTIVE':'#fb923c','DEAD':'#f87171'};
+                    const statusColors={'TOP PERFORMER':'#fbbf24','PRIORITY ACCOUNT':'#a78bfa','RISING STAR':'#22d3ee','ACTIVE':'#34d399','RECENTLY INACTIVE':'#fb923c','INACTIVE':'#f59e0b','DEAD':'#f87171'};
                     const cl=statusColors[s.toUpperCase()]||'#55546a';
                     return(<div key={s} style={{display:'flex',justifyContent:'space-between',fontSize:10}}>
                       <span style={{color:cl,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:110}}>{s}</span>

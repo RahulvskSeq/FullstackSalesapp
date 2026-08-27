@@ -1463,9 +1463,10 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
   const ap=pct(tt,ta);
   // Full status breakdown for territory overview
   const statusMap = {};
-  myD.forEach(x=>{ const s=(x.status||'OTHER').trim(); statusMap[s]=(statusMap[s]||0)+1; });
-  const active = (statusMap['ACTIVE']||0)+(statusMap['ACHIVERS']||0)+(statusMap['ACHIEVERS']||0)+(statusMap['KEY ACCOUNT']||0);
-  const inactive = (statusMap['INACTIVE']||0)+(statusMap['REACTIVE']||0);
+  myD.forEach(x=>{ const s=(x.perfStatus||'').trim(); if(s) statusMap[s]=(statusMap[s]||0)+1; });
+  const active = (statusMap['TOP PERFORMER']||0)+(statusMap['PRIORITY ACCOUNT']||0)
+               + (statusMap['RISING STAR']||0)+(statusMap['ACTIVE']||0);
+  const inactive = (statusMap['RECENTLY INACTIVE']||0)+(statusMap['INACTIVE']||0);
   const dead = statusMap['DEAD']||0;
   const other = myD.length - active - inactive - dead;
 
@@ -1529,7 +1530,9 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
   });
   // Also count by status field
   const inactiveByStatus=dealers.filter(x=>['INACTIVE','REACTIVE'].includes((x.status||'').toUpperCase()));
-  const deadByStatus=dealers.filter(x=>(x.status||'').toUpperCase()==='DEAD');
+  // Reads the calculated tier, not the rep's Potential label — 'dead' is a
+  // statement about ordering history, which only the tier knows.
+  const deadByStatus=dealers.filter(x=>(x.perfStatus||'').toUpperCase()==='DEAD');
   const overdueFollowups=notes.filter(n=>n.type==='followup'&&!n.completed&&new Date(n.dueDate)<new Date()).length;
 
   const top5=[...myD].filter(x=>x.achieved>0).sort((a,b)=>b.achieved-a.achieved).slice(0,5);
@@ -1549,7 +1552,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
   }));
   const projected=trendData.slice(-3).reduce((s,d)=>s+d.units,0)/3;
 
-  const statusColorMap={'ACTIVE':'#34d399','ACHIVERS':'#10b981','KEY ACCOUNT':'#a78bfa','INACTIVE':'#fb923c','REACTIVE':'#f59e0b','DEAD':'#f87171','NEW':'#22d3ee','PROSPECT':'#818cf8'};
+  const statusColorMap={'TOP PERFORMER':'#fbbf24','PRIORITY ACCOUNT':'#a78bfa','RISING STAR':'#22d3ee','ACTIVE':'#34d399','RECENTLY INACTIVE':'#fb923c','INACTIVE':'#f59e0b','DEAD':'#f87171','STAR':'#fbbf24','KEY ACCOUNT':'#a78bfa','ACHIEVER':'#34d399','REACTIVE':'#22d3ee','NONE':'#55546a'};
   const fallbackPalette=['#6366f1','#34d399','#fbbf24','#f472b6','#22d3ee','#fb923c','#a78bfa','#f87171','#84cc16','#e879f9'];
   const colorForStatus=(name,idx)=>statusColorMap[name.toUpperCase()]||fallbackPalette[idx%fallbackPalette.length];
   const statusCounts=(()=>{

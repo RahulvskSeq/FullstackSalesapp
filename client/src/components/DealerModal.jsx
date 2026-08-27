@@ -9163,7 +9163,7 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
             </div>
             <div className="field"><label>Status</label>
               <select className="sel inp" value={edit.status} onChange={e=>setEdit({...edit,status:e.target.value})}>
-                {['ACTIVE','ACHIVERS','KEY ACCOUNT','INACTIVE','DEAD','REACTIVE'].map(s=><option key={s}>{s}</option>)}
+                {['NONE','STAR','KEY ACCOUNT','ACHIEVER','REACTIVE'].map(s=><option key={s}>{s}</option>)}
               </select>
             </div>
             <div className="field"><label>City</label><input className="inp" value={edit.city} onChange={e=>setEdit({...edit,city:e.target.value})} placeholder="e.g. Bengaluru"/></div>

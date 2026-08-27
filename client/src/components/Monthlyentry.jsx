@@ -634,7 +634,8 @@ import { api } from '../api';
 import { Avatar } from './UI';
 import { confirmDialog, notify } from './Toast';
 
-const STATUSES = ['STAR','ACTIVE','KEY ACCOUNT','ACHIVERS','REACTIVE','INACTIVE','DEAD','NEW','PROSPECT'];
+// Potential Status only — the performance tier is calculated, not entered.
+const STATUSES = ['NONE','STAR','KEY ACCOUNT','ACHIEVER','REACTIVE'];
 
 export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDealer, onSaved }) {
   const { MO:ctxMO, currentMonthIdx } = useMonth();

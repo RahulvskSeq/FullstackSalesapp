@@ -5,7 +5,9 @@ import { useMonth } from '../context';
 import { api } from '../api';
 
 const ZONES    = ['ZONE 1','ZONE 2','ZONE 3','ZONE 4','ZONE 5'];
-const STATUSES = ['ACTIVE','STAR','ACHIVERS','KEY ACCOUNT','REACTIVE','INACTIVE','DEAD','NEW','PROSPECT'];
+// Potential Status only. ACTIVE / INACTIVE / DEAD are calculated now and
+// must not be typed — see server/lib/accountStatus.js.
+const STATUSES = ['NONE','STAR','KEY ACCOUNT','ACHIEVER','REACTIVE'];
 
 const Field = ({label,children,full}) => (
   <div className={`field${full?' full':''}`}>

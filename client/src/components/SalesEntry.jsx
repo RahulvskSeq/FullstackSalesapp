@@ -180,7 +180,7 @@ export default function SalesEntry({ dealers, users, onUpdateDealer, onAddDealer
             <div className="field">
               <label>Status</label>
               <select className="sel inp" value={form.status} onChange={e=>set('status',e.target.value)}>
-                {['ACTIVE','KEY ACCOUNT','ACHIVERS','INACTIVE','DEAD','NEW'].map(s=><option key={s}>{s}</option>)}
+                {['NONE','STAR','KEY ACCOUNT','ACHIEVER','REACTIVE'].map(s=><option key={s}>{s}</option>)}
               </select>
             </div>
 
