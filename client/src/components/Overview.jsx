@@ -1552,9 +1552,14 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
     return Object.entries(map).map(([name,value],i)=>({name,value,color:colorForStatus(name,i)})).sort((a,b)=>b.value-a.value);
   })();
 
-  const topPerformers=myD.filter(x=>x.achieved>250);
-  const priorityAccount=myD.filter(x=>x.achieved>=100&&x.achieved<=250);
-  const risingStar=myD.filter(x=>x.achieved>=50&&x.achieved<100);
+  // Read the calculated tier rather than re-deriving from `achieved`. That
+  // used the month's ALL-CATEGORY total with slightly different bounds
+  // (>250 / 100-250), so this row disagreed with the Performance Status
+  // column and the sidebar — 38 Priority Accounts here against 26 there.
+  const byPerf = (t) => myD.filter(x=>(x.perfStatus||'').toUpperCase()===t);
+  const topPerformers   = byPerf('TOP PERFORMER');
+  const priorityAccount = byPerf('PRIORITY ACCOUNT');
+  const risingStar      = byPerf('RISING STAR');
   const hasGeoFilter=geoFilter.city||geoFilter.state;
   const viewingLabel=rangeActive?`${periodFull} (Range)`:(selectedMonthIdx===CURRENT_MONTH_IDX?`${selMoFull} (Current)`:selMoFull);
 
@@ -1795,8 +1800,8 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
         </div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:10}}>
           {[
-            {label:'TOP PERFORMER',sub:'> 250 units',count:topPerformers.length,color:'var(--yel)',icon:'⭐',list:topPerformers},
-            {label:'PRIORITY ACCOUNT',sub:'100 – 250 units',count:priorityAccount.length,color:'var(--pur)',icon:'◆',list:priorityAccount},
+            {label:'TOP PERFORMER',sub:'250+ units',count:topPerformers.length,color:'var(--yel)',icon:'⭐',list:topPerformers},
+            {label:'PRIORITY ACCOUNT',sub:'101 – 250 units',count:priorityAccount.length,color:'var(--pur)',icon:'◆',list:priorityAccount},
             {label:'RISING STAR',sub:'50 – 100 units',count:risingStar.length,color:'#22d3ee',icon:'★',list:risingStar},
           ].map(t=>(
             <div key={t.label} onClick={()=>{if(t.list.length>0)setTierPopup(t);}}
@@ -2201,7 +2206,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
                   <table>
                     <thead>
                       <tr>
-                        <th>#</th><th>Dealer Name</th><th>Salesman</th><th>Zone</th><th>Dealer Type</th><th>City</th><th>State</th><th>Status</th>
+                        <th>#</th><th>Dealer Name</th><th>Salesman</th><th>Zone</th><th>Dealer Type</th><th>City</th><th>State</th><th>Performance</th><th>Potential</th>
                         <th style={{textAlign:'right'}}>Tgt</th><th style={{textAlign:'right'}}>Ach</th><th style={{textAlign:'right'}}>%</th>
                         <th style={{textAlign:'right'}}>6m Avg</th><th>Trend</th><th style={{textAlign:'right'}}>Fcst</th>
                         {[...MO].map((_,di)=>{const i=MO.length-1-di;return<th key={i} style={{textAlign:'right',background:i===selectedMonthIdx?'rgba(99,102,241,.08)':'var(--bg1)'}}>{MO[i]}</th>;})}
@@ -2226,6 +2231,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
                             </td>
                             <td style={{fontSize:11}}>{x.city||'—'}</td>
                             <td style={{fontSize:11}}>{x.state||'—'}</td>
+                            <td><StatusBadge status={x.perfStatus}/></td>
                             <td><StatusBadge status={x.status}/></td>
                             <td style={{textAlign:'right'}}>{x.target||'—'}</td>
                             <td style={{textAlign:'right',fontWeight:700,color:popup.color}}>{x.achieved}</td>
