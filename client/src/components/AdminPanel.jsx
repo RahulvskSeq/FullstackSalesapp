@@ -355,7 +355,12 @@ const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,sync
   })),[dealers, selectedMonthIdx]);
 
   const tt=dealersForMonth.reduce((s,x)=>s+x.target,0),ta=dealersForMonth.reduce((s,x)=>s+x.achieved,0);
-  const active=dealersForMonth.filter(x=>['ACTIVE','ACHIVERS','KEY ACCOUNT'].includes((x.status||'').toUpperCase())).length;
+  // "Active" is a performance statement, so it reads the calculated tier.
+  // This used to match ACTIVE / ACHIVERS / KEY ACCOUNT on `status` — after the
+  // stale sheet values were cleared, ACTIVE no longer exists there and the
+  // count silently became 'dealers a rep tagged Key Account'.
+  const ACTIVE_TIERS=['TOP PERFORMER','PRIORITY ACCOUNT','RISING STAR','ACTIVE'];
+  const active=dealersForMonth.filter(x=>ACTIVE_TIERS.includes((x.perfStatus||'').toUpperCase())).length;
   // Month-aware attribution: month i of a dealer belongs to whoever owned the
   // dealer THAT month (stamped on reassignment), not the current owner. A
   // salesman who received a dealer mid-year gets credit only from the handover

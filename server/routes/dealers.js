@@ -4,6 +4,7 @@ import XLSX from 'xlsx';
 import mongoose from 'mongoose';
 import { protect, adminOnly, superAdminOnly, requireFeature } from '../middleware/auth.js';
 import { todayStr } from '../lib/commitments.js';
+import { normalizeAccountStatus } from '../lib/accountStatus.js';
 
 const router = express.Router();
 const upload = multer({ storage:multer.memoryStorage(), limits:{ fileSize:10*1024*1024 } });
@@ -1227,7 +1228,10 @@ router.post('/sync-db', protect, adminOnly, async (req,res) => {
           city:  d.city  || '',
           state: d.state || '',
           zone:  d.zone  || '',
-          status: d.status || 'ACTIVE',
+          // Potential Status only. A sheet's Status column carries words like
+          // ACTIVE / DEAD, which are calculated answers now — writing them here
+          // would quietly refill the field we just cleared.
+          status: normalizeAccountStatus(d.status),
           category: d.category || '',
           categoryType: d.categoryType || '',
           avg6m: Number(d.avg6m) || 0,

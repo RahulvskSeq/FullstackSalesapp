@@ -53,7 +53,7 @@ const Compare=({dealers,onOpenDealer})=>{
               </thead>
               <tbody>
                 {[
-                  ['Status',d=>d.status],['Zone',d=>d.zone||'—'],['City',d=>d.city||'—'],['State',d=>d.state||'—'],
+                  ['Performance',d=>d.perfStatus||'—'],['Potential',d=>d.status||'—'],['Zone',d=>d.zone||'—'],['City',d=>d.city||'—'],['State',d=>d.state||'—'],
                   ['Category',d=>d.category||'—'],['Cat Type',d=>d.categoryType||'—'],
                   [`${selMoLabel} Ach`,d=>d.months[selectedMonthIdx]||0],['Target',d=>(monthTarget(d, selectedMonthIdx)||'—')],
                   ['Trend',d=>(trendPct(d.months)>0?'+':'')+trendPct(d.months)+'%'],['Forecast',d=>forecast(d.months)],

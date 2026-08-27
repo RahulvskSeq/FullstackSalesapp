@@ -1768,7 +1768,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontSize:13,fontWeight:600,color:'var(--t1)',marginBottom:2}}>{d.name}</div>
                       <div style={{display:'flex',gap:8,alignItems:'center',fontSize:11,color:'var(--t3)'}}>
-                        <StatusBadge status={d.status}/>
+                        <StatusBadge status={d.perfStatus}/>{d.status&&d.status!=='NONE'&&<StatusBadge status={d.status}/>}
                         {d.zone&&<span>· {d.zone}</span>}
                         {(d.city||d.state)&&<span>· {[d.city,d.state].filter(Boolean).join(', ')}</span>}
                         {d.category&&<span>· {d.category}</span>}
@@ -2100,7 +2100,8 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
                 <th>Zone</th>
                 <th>Dealer Type</th>
                 <th>City / State</th>
-                <th>Status</th>
+                <th>Performance</th>
+                <th>Potential</th>
                 <th style={{textAlign:'right'}}>Tgt</th>
                 <th style={{textAlign:'right'}}>Ach</th>
                 <th style={{textAlign:'right'}}>%</th>
@@ -2140,7 +2141,8 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
                         </select>
                       </td>
                       <td style={{fontSize:11,color:'var(--t2)'}}>{[x.city,x.state].filter(Boolean).join(', ')||'—'}</td>
-                      <td><StatusBadge status={x.status}/></td>
+                      <td><StatusBadge status={x.perfStatus}/></td>
+                      <td>{x.status&&x.status!=='NONE'?<StatusBadge status={x.status}/>:<span style={{fontSize:11,color:'var(--t3)'}}>—</span>}</td>
                       <td style={{textAlign:'right'}}>{x.target||'—'}</td>
                       <td style={{textAlign:'right',fontWeight:600,color:x.achieved>0?'var(--t1)':'var(--t3)'}}>{x.achieved||'—'}</td>
                       <td style={{textAlign:'right',fontWeight:700,color:pclr(p)}}>{spct(x.target,x.achieved)}</td>
@@ -2209,7 +2211,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
                             <td style={{fontSize:11}}>{x.city||'—'}</td>
                             <td style={{fontSize:11}}>{x.state||'—'}</td>
                             <td><StatusBadge status={x.perfStatus}/></td>
-                            <td><StatusBadge status={x.status}/></td>
+                            <td>{x.status&&x.status!=='NONE'?<StatusBadge status={x.status}/>:<span style={{fontSize:11,color:'var(--t3)'}}>—</span>}</td>
                             <td style={{textAlign:'right'}}>{x.target||'—'}</td>
                             <td style={{textAlign:'right',fontWeight:700,color:popup.color}}>{x.achieved}</td>
                             <td style={{textAlign:'right',fontWeight:700,color:pclr(p)}}>{spct(x.target,x.achieved)}</td>

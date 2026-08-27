@@ -8942,7 +8942,7 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
           <div style={{flex:1,minWidth:200}}>
             <div style={{fontSize:20,fontWeight:700,marginBottom:6}}>{dealer.name}</div>
             <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
-              <StatusBadge status={dealer.status}/>
+              <StatusBadge status={dealer.perfStatus}/>{dealer.status && dealer.status!=='NONE' && <StatusBadge status={dealer.status}/>}
               {dealer.zone&&<span className="chip">{dealer.zone}</span>}
               {(dealer.city||dealer.state)&&<span className="chip" style={{display:'inline-flex',alignItems:'center',gap:4}}><MapPin size={10}/> {[dealer.city,dealer.state].filter(Boolean).join(', ')}{dealer.pincode?` — ${dealer.pincode}`:''}</span>}
               {dealer.address&&<span className="chip" title={dealer.address} style={{display:'inline-flex',alignItems:'center',gap:4,maxWidth:340,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{dealer.address}</span>}
