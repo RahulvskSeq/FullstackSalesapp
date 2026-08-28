@@ -225,9 +225,19 @@ export default function Styles({theme}){
     /* ── Layout ── */
     #app{display:flex;flex-direction:column;height:100vh;height:100dvh;overflow:hidden}
 
+    /* Safe areas. targetSdk 35 means Android 15 draws the app edge-to-edge, so
+       the WebView sits BEHIND the status bar and the nav bar — the top row
+       collided with the system clock and the page bottom sat under the
+       navigation buttons. env() only returns non-zero with viewport-fit=cover,
+       which is set in index.html. */
     #topbar{
-      height:50px;min-height:50px;background:var(--bg1);border-bottom:1px solid var(--b1);
-      display:flex;align-items:center;padding:0 10px;gap:8px;flex-shrink:0;z-index:1200;
+      /* Inset goes FIRST in the shorthand. A separate padding-top line would
+         be silently wiped by the padding shorthand that follows it. */
+      padding:env(safe-area-inset-top) 10px 0;
+      height:calc(50px + env(safe-area-inset-top));
+      min-height:calc(50px + env(safe-area-inset-top));
+      background:var(--bg1);border-bottom:1px solid var(--b1);
+      display:flex;align-items:center;gap:8px;flex-shrink:0;z-index:1200;
       overflow:hidden;
     }
     #topbar .territory-bar{
@@ -239,6 +249,7 @@ export default function Styles({theme}){
     #body{display:flex;flex:1;overflow:hidden;position:relative}
 
     #sidebar{
+      padding-bottom:env(safe-area-inset-bottom);
       width:200px;min-width:200px;background:var(--bg1);border-right:1px solid var(--b1);
       display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;
       transition:transform .25s ease,min-width .25s ease,width .25s ease;
@@ -252,7 +263,7 @@ export default function Styles({theme}){
     }
     #sb-overlay.open{display:block}
 
-    #main{flex:1;overflow-y:auto;overflow-x:hidden;padding:18px;min-width:0}
+    #main{flex:1;overflow-y:auto;overflow-x:hidden;padding:18px;padding-bottom:calc(18px + env(safe-area-inset-bottom));min-width:0}
 
     /* ── Nav ── */
     .nav-item{padding:11px 14px;font-size:14px;font-weight:600;cursor:pointer;color:var(--t2);border-left:2px solid transparent;display:flex;align-items:center;gap:10px;transition:all .15s;user-select:none;white-space:nowrap;letter-spacing:.01em}
@@ -420,12 +431,14 @@ export default function Styles({theme}){
 
     /* Tablet: 768px and below */
     @media(max-width:768px){
-      #topbar{padding:0 8px;gap:6px;height:48px;min-height:48px}
+      #topbar{padding:env(safe-area-inset-top) 8px 0;gap:6px;
+        height:calc(48px + env(safe-area-inset-top));
+        min-height:calc(48px + env(safe-area-inset-top))}
       #topbar .territory-bar{display:none !important}
       .hide-sm{display:none !important}
       .topbar-brand{display:none !important}
       #sidebar{
-        position:fixed;left:0;top:48px;bottom:0;
+        position:fixed;left:0;top:calc(48px + env(safe-area-inset-top));bottom:0;
         width:240px;min-width:240px;
         transform:translateX(-100%);
         box-shadow:4px 0 24px rgba(0,0,0,.4);
