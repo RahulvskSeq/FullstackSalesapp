@@ -10,7 +10,6 @@
 import React, { useState } from 'react';
 import { Download, RefreshCw, Check } from 'lucide-react';
 import { Filesystem, Directory } from '@capacitor/filesystem';
-import { FileOpener } from '@capacitor-community/file-opener';
 import { api } from '../api';
 import { notify } from './Toast';
 
@@ -24,6 +23,16 @@ export const isNativeApp = () =>
   (!!window.Capacitor?.isNativePlatform?.() || /\bwv\b|Android.*Version\/[\d.]+.*Chrome/.test(navigator.userAgent || ''));
 
 const APK_MIME = 'application/vnd.android.package-archive';
+
+// Reached through Capacitor's runtime registry rather than an import.
+//
+// The plugin has no web implementation, so importing it made the WEB build
+// depend on a native-only package — and the server build failed outright when
+// npm skipped it over a peer conflict. Capacitor registers native plugins on
+// window at runtime, so the APK still gets the real thing while the browser
+// bundle carries no reference to it at all.
+const nativeFileOpener = () =>
+  (typeof window !== 'undefined' && window.Capacitor?.Plugins?.FileOpener) || null;
 
 export default function UpdateButton({ compact = false }) {
   const [busy, setBusy]     = useState(false);
@@ -100,7 +109,9 @@ export default function UpdateButton({ compact = false }) {
         directory: Directory.External,   // app-private external dir, covered by FileProvider
       });
 
-      await FileOpener.open({ filePath: written.uri, contentType: APK_MIME });
+      const opener = nativeFileOpener();
+      if(!opener) throw new Error('installer unavailable');
+      await opener.open({ filePath: written.uri, contentType: APK_MIME });
       notify.info('Tap Install when Android asks.');
     } catch (e) {
       // Falling back to the browser is better than a dead button — the user
