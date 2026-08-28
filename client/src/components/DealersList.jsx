@@ -1311,6 +1311,12 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
   // Which dimension the Kanban groups by. Potential is the default because
   // it is the one a rep can actually change by dragging.
   const [kanbanBy,setKanbanBy]=useState('status'); // 'status' | 'perfStatus'
+  // Export dialog: which sale categories the downloaded month figures should
+  // count. Empty selection = every category, i.e. the dealer's own totals.
+  const [exportOpen,setExportOpen] = useState(false);
+  const [exportCats,setExportCats] = useState(new Set());
+  const [allSaleCats,setAllSaleCats] = useState([]);
+  const [exportBusy,setExportBusy] = useState(false);
   const [filters,setFilters]=useState({q:'',zone:[],status:[],sm:[],credit:'',minPct:'',maxPct:'',city:[],state:[],category:[],categoryType:[],pin:'',perf:[]});
   const [sort,setSort]=useState({col:'name',dir:1});
   const [editCell,setEditCell]=useState(null);   // { id, i } — month cell being typed into
@@ -1472,35 +1478,77 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
     }
   };
 
-  const exportCsv=()=>{
-    // Export EVERY column shown in the All Dealers table (plus the raw values
-    // behind the derived ones), so the download matches what's on screen.
-    const h=['Dealer Name','Salesman','Zone','Dealer Type','City','State','PIN','Address',
-      'Performance Status','Potential Status','Target','Achieved','Ach %','Trend %','6M Avg',
-      ...MO,'Cr Days','Cr Limit'];
-    const rows=filtered.map(x=>[
-      x.name,
-      users[x.salesman]?.name||x.salesman||'',
-      x.zone||'',
-      x.dealerType||'None',
-      x.city||'',
-      x.state||'',
-      x.pincode||'',
-      x.address||'',
-      x.perfStatus||'',
-      x.status||'',
-      x.target||0,
-      x.achieved||0,
-      spct(x.target,x.achieved),
-      trendPct(x.months)+'%',
-      x.avg6m||0,
-      ...x.months,
-      x.creditDays||0,
-      x.creditLimit||0,
-    ]);
-    const csv=[h,...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
-    const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,﻿'+encodeURIComponent(csv);a.download='dealers_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
+
+  // Load the sale-category list the first time the dialog opens. Categories
+  // live on Sale rows, not on the dealer record, so they cannot come from the
+  // dealers prop.
+  const openExport = async () => {
+    setExportOpen(true);
+    if(allSaleCats.length) return;
+    try {
+      const cm = await api.categoriesList();
+      setAllSaleCats((cm||[]).map(c=>c.name).filter(Boolean).sort());
+    } catch { setAllSaleCats([]); }
   };
+
+  // Export with the month figures restricted to the ticked categories.
+  //
+  // A dealer record only stores a month TOTAL, so a category-specific export
+  // has to come from the Sale rows: we ask the server for per-dealer-per-month
+  // quantities excluding everything NOT ticked. Months with no category data at
+  // all keep the dealer total — pre-June has no breakdown, and blanking those
+  // would read as lost sales.
+  const runExport = async () => {
+    setExportBusy(true);
+    try {
+      const picked = [...exportCats];
+      const partial = picked.length > 0 && picked.length < allSaleCats.length;
+      let included = null, catMonths = new Set();
+      if(partial){
+        const exclude = allSaleCats.filter(c=>!exportCats.has(c));
+        const r = await api.salesByDealerMonths(exclude);
+        included  = r?.includedByDealerMonth || {};
+        catMonths = new Set(r?.monthsWithCategoryData || []);
+      }
+      const MONS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const ymOf = (label) => {
+        const [mon,yy] = String(label).split('-');
+        const k = MONS.findIndex(m=>m.toLowerCase()===String(mon).slice(0,3).toLowerCase());
+        return k<0 ? null : '20'+yy+'-'+String(k+1).padStart(2,'0');
+      };
+      const monthVal = (d,idx) => {
+        if(!included) return d.months?.[idx] ?? 0;
+        const ym = ymOf(MO[idx]);
+        if(!ym || !catMonths.has(ym)) return d.months?.[idx] ?? 0;
+        return included[String(d.name||'').toLowerCase().trim()]?.[ym] ?? 0;
+      };
+
+      const scope = partial ? ' ('+picked.join(' + ')+')' : '';
+      const h=['Dealer Name','Salesman','Zone','Dealer Type','City','State','PIN','Address',
+        'Performance Status','Potential Status','Target','Achieved','Ach %','Trend %','6M Avg',
+        ...MO.map(m=>m+scope),'Cr Days','Cr Limit'];
+      const rows=filtered.map(x=>[
+        x.name,
+        users[x.salesman]?.name||x.salesman||'',
+        x.zone||'', x.dealerType||'None', x.city||'', x.state||'', x.pincode||'', x.address||'',
+        x.perfStatus||'', x.status||'',
+        x.target||0, x.achieved||0, spct(x.target,x.achieved), trendPct(x.months)+'%', x.avg6m||0,
+        ...MO.map((_,i)=>monthVal(x,i)),
+        x.creditDays||0, x.creditLimit||0,
+      ]);
+      const csv=[h,...rows].map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+      const tag = partial ? '_'+picked.join('-').replace(/[^A-Za-z0-9-]/g,'') : '';
+      const a=document.createElement('a');
+      a.href='data:text/csv;charset=utf-8,﻿'+encodeURIComponent(csv);
+      a.download='dealers'+tag+'_'+new Date().toISOString().slice(0,10)+'.csv';
+      a.click();
+      setExportOpen(false);
+    } catch(e){
+      notify.error('Export failed: ' + (e?.message || 'could not load category data'));
+    }
+    setExportBusy(false);
+  };
+
 
   const sh=(col,lbl)=>(
     <th className="sort" onClick={()=>setSort(s=>s.col===col?{col,dir:-s.dir}:{col,dir:1})}>
@@ -1531,7 +1579,7 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
           <button onClick={()=>setViewMode('table')} style={{background:viewMode==='table'?'var(--acc)':'transparent',color:viewMode==='table'?'#fff':'var(--t3)',border:'none',padding:'6px 12px',cursor:'pointer',display:'flex',alignItems:'center',gap:4,fontSize:12,transition:'all .15s'}}><List size={13}/> Table</button>
           <button onClick={()=>setViewMode('kanban')} style={{background:viewMode==='kanban'?'var(--acc)':'transparent',color:viewMode==='kanban'?'#fff':'var(--t3)',border:'none',padding:'6px 12px',cursor:'pointer',display:'flex',alignItems:'center',gap:4,fontSize:12,borderLeft:'1px solid var(--b2)',transition:'all .15s'}}><Columns size={13}/> Kanban</button>
         </div>
-        <button onClick={exportCsv} className="btn" style={{fontSize:12,display:'flex',alignItems:'center',gap:5}}><Download size={13}/> Export</button>
+        <button onClick={openExport} className="btn" style={{fontSize:12,display:'flex',alignItems:'center',gap:5}}><Download size={13}/> Export</button>
         <button onClick={onAdd} className="btnp" style={{display:'flex',alignItems:'center',gap:5}}><Plus size={14}/> Add Dealer</button>
       </div>
 
@@ -1567,6 +1615,67 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
         <input className="inp" style={{width:80}} type="number" placeholder="Max %" value={filters.maxPct} onChange={e=>setFilters({...filters,maxPct:e.target.value})}/>
         {hasF&&<button onClick={clearFilters} className="btn" style={{color:'var(--red)',fontSize:12}}><X size={12} style={{display:'inline',verticalAlign:'middle'}}/> Clear</button>}
       </div>
+
+      {/* Export dialog — pick which sale categories the month columns count */}
+      {exportOpen && (
+        <div className="overlay" onClick={e=>e.target===e.currentTarget&&setExportOpen(false)}>
+          <div className="modal" style={{maxWidth:520}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+              <Download size={16} color="var(--acc)"/>
+              <div style={{fontSize:16,fontWeight:700}}>Export {filtered.length} dealers</div>
+              <div style={{flex:1}}/>
+              <button className="btn" onClick={()=>setExportOpen(false)} style={{padding:'4px 8px'}}><X size={14}/></button>
+            </div>
+            <div style={{fontSize:12,color:'var(--t3)',marginBottom:14}}>
+              Tick categories to export only their quantities in the month columns.
+              Leave everything ticked (or nothing) to export each dealer's full total.
+            </div>
+
+            <div style={{display:'flex',gap:8,marginBottom:8,flexWrap:'wrap'}}>
+              <button className="btn" style={{fontSize:11,padding:'4px 10px'}}
+                onClick={()=>setExportCats(new Set(allSaleCats))}>Select all</button>
+              <button className="btn" style={{fontSize:11,padding:'4px 10px'}}
+                onClick={()=>setExportCats(new Set())}>Deselect all</button>
+              <div style={{flex:1}}/>
+              <span style={{fontSize:11,color:'var(--t3)',alignSelf:'center'}}>
+                {exportCats.size===0 || exportCats.size===allSaleCats.length
+                  ? 'all categories' : `${exportCats.size} of ${allSaleCats.length}`}
+              </span>
+            </div>
+
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(170px,1fr))',gap:6,
+              padding:12,background:'var(--bg2)',borderRadius:8,maxHeight:260,overflowY:'auto',marginBottom:14}}>
+              {allSaleCats.length===0
+                ? <div style={{fontSize:11,color:'var(--t3)'}}>Loading categories…</div>
+                : allSaleCats.map(c=>{
+                    const on = exportCats.has(c);
+                    return (
+                      <label key={c} style={{fontSize:12,display:'inline-flex',alignItems:'center',gap:6,cursor:'pointer',
+                        padding:'6px 10px',borderRadius:5,
+                        background:on?'rgba(99,102,241,0.18)':'transparent',
+                        border:'1px solid '+(on?'rgba(99,102,241,0.5)':'var(--b1)'),
+                        color:on?'#a5b4fc':'var(--t2)',fontWeight:on?700:500}}>
+                        <input type="checkbox" checked={on} onChange={()=>{
+                          const next=new Set(exportCats);
+                          on?next.delete(c):next.add(c);
+                          setExportCats(next);
+                        }} style={{margin:0}}/>
+                        {c}
+                      </label>
+                    );
+                  })}
+            </div>
+
+            <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+              <button className="btn" onClick={()=>setExportOpen(false)}>Cancel</button>
+              <button className="btnp" onClick={runExport} disabled={exportBusy}
+                style={{display:'inline-flex',alignItems:'center',gap:6}}>
+                <Download size={13}/>{exportBusy?'Preparing…':'Download CSV'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Kanban view */}
       {viewMode==='kanban'&&(
