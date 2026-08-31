@@ -449,6 +449,12 @@ export default function Styles({theme}){
       .stat-grid{grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
       .stat-card{padding:10px 12px}
       .card{padding:12px 14px}
+      /* .row is the shared toolbar class (display:flex, no wrap). With four or
+         five buttons it runs off the side of a phone — measured 293px of
+         overflow on Leads, 39px on Leaves. Wrapping only under the mobile
+         breakpoint leaves every desktop layout untouched. */
+      .row{flex-wrap:wrap}
+
       .hmob{display:none}
       .modal{padding:16px;border-radius:12px}
       table{font-size:12px}

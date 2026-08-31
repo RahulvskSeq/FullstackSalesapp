@@ -302,11 +302,13 @@ function DataTable({ columns, rows, loading, err, onRefresh, exportName, kpis=[]
           )}
         </div>
         {onRefresh && <button onClick={onRefresh} disabled={loading} className="btn" style={{fontSize:12}}>{loading?'Loading…':'Refresh'}</button>}
-        <div style={{position:'relative'}}>
+        {/* A hard width:190 could not shrink, so on a phone this hung 14px past
+            the edge. Let it take the remaining width instead. */}
+        <div style={{position:'relative', flex:'1 1 160px', minWidth:0, maxWidth:190}}>
           <Search size={13} style={{position:'absolute',left:9,top:'50%',transform:'translateY(-50%)',color:'var(--t3)'}}/>
           <input className="inp" placeholder="Search…" value={q}
             onChange={e=>{setQ(e.target.value);setPage(1);}}
-            style={{width:190,fontSize:12,padding:'6px 10px 6px 28px'}}/>
+            style={{width:'100%',fontSize:12,padding:'6px 10px 6px 28px'}}/>
         </div>
       </div>
 
@@ -1220,10 +1222,10 @@ export default function Reports({ dealers, users, currentUser, monthConfig, outs
           {usesDates && (
             <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
               <input type="date" className="inp" value={fromDate} max={toDate||undefined}
-                onChange={e=>setFromDate(e.target.value)} style={{padding:'6px 10px',fontSize:12,width:'auto'}}/>
+                onChange={e=>setFromDate(e.target.value)} style={{padding:'6px 10px',fontSize:12,width:'auto',flex:'1 1 140px',minWidth:0,maxWidth:'100%'}}/>
               <span style={{color:'var(--t3)'}}>→</span>
               <input type="date" className="inp" value={toDate} min={fromDate||undefined}
-                onChange={e=>setToDate(e.target.value)} style={{padding:'6px 10px',fontSize:12,width:'auto'}}/>
+                onChange={e=>setToDate(e.target.value)} style={{padding:'6px 10px',fontSize:12,width:'auto',flex:'1 1 140px',minWidth:0,maxWidth:'100%'}}/>
               {[['Today',0],['7d',-6],['30d',-29]].map(([lbl,off])=>(
                 <button key={lbl} className="btn" style={{fontSize:11,padding:'4px 9px'}}
                   onClick={()=>{

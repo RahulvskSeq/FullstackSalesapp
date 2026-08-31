@@ -594,7 +594,7 @@ export default function ManageMonths({
       )}
 
       {/* ── Add month + Sync row ────────────────────────────────────────── */}
-      <div style={{display:'grid', gridTemplateColumns:'2fr 1fr', gap:10, marginBottom:14}}>
+      <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(260px,1fr))', gap:10, marginBottom:14}}>
         <div className="card" style={{padding:14}}>
           <div style={{fontSize:11, fontWeight:700, color:'var(--t3)', textTransform:'uppercase', letterSpacing:'.08em', marginBottom:8}}>
             Add a new month
