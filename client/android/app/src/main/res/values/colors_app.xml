@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Sits behind the web view. Once the view is inset for the system bars,
+         this is what shows in the status-bar and navigation-bar strips, so it
+         has to match the app's own chrome or you get white bands top and
+         bottom on a dark UI. Same value as the dark palette's bg1 token. -->
+    <color name="appWindowBackground">#0E0E1A</color>
+</resources>

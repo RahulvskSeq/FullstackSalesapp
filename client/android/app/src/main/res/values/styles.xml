@@ -13,6 +13,12 @@
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
+        <!-- Fills the system-bar strips left exposed once the web view is
+             inset; without it they render white against the dark app. -->
+        <item name="android:windowBackground">@color/appWindowBackground</item>
+        <!-- Light icons, because that background is dark. -->
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
     </style>
 
 
