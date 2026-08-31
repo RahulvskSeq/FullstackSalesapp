@@ -16541,9 +16541,15 @@ export default function App(){
                   // overflow:hidden doesn't clip it.
                   const r = paletteBtnRef.current?.getBoundingClientRect();
                   if(r){
+                    // Right-align to the button, but never so far that the
+                    // panel's LEFT edge leaves the screen. The Theme button
+                    // sits mid-bar on a phone, so anchoring to it alone put
+                    // the 240px panel at left:-19 with the swatches cut off.
+                    const PANEL = 248;                       // 240 + an 8px margin
+                    const maxRight = Math.max(8, window.innerWidth - PANEL);
                     setPalettePos({
                       top: r.bottom + 6,
-                      right: Math.max(8, window.innerWidth - r.right),
+                      right: Math.min(Math.max(8, window.innerWidth - r.right), maxRight),
                     });
                   }
                   setPaletteOpen(o=>!o);
