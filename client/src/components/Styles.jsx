@@ -345,6 +345,9 @@ export default function Styles({theme}){
     .insight-card{transition:transform .15s, box-shadow .15s, filter .15s}
     .insight-card:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.28);filter:brightness(1.06)}
     .insight-card:active{transform:translateY(0)}
+    /* Category filter trigger — same lift as the movement cards it sits beside. */
+    .cat-filter-btn{transition:transform .15s, box-shadow .15s, filter .15s}
+    .cat-filter-btn:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.22);filter:brightness(1.05)}
     .skel{background:linear-gradient(90deg,var(--bg2) 0%,var(--bg3) 50%,var(--bg2) 100%);background-size:200% 100%;animation:shimmer 1.4s ease-in-out infinite;border-radius:6px;display:block}
 
     /* ── Material palette shape rules ──────────────────────────────────

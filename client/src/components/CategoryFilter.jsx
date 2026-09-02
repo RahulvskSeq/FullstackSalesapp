@@ -266,27 +266,39 @@ const CategoryFilter = ({
         type="button"
         onClick={()=>setOpen(o=>!o)}
         title="Include or exclude categories from totals"
+        className="cat-filter-btn"
         style={{
-          display:'inline-flex', alignItems:'center', gap:6,
-          padding: compact ? '5px 10px' : '6px 12px',
-          borderRadius:8,
-          background: excluded.size ? 'rgba(251,191,36,.10)' : 'var(--bg2)',
-          border:'1px solid '+(excluded.size ? 'rgba(251,191,36,.5)' : 'var(--b2)'),
-          color: excluded.size ? '#fbbf24' : 'var(--t2)',
-          fontSize: compact ? 11 : 12, fontWeight:600,
+          display:'inline-flex', alignItems:'center', gap:8,
+          padding: compact ? '6px 10px 6px 6px' : '7px 12px 7px 7px',
+          borderRadius:10,
+          // Filtering ON is a state worth noticing — the totals on screen are
+          // not the full picture — so it fills amber. Off, it stays a quiet
+          // neutral control like the rest of the toolbar.
+          background: excluded.size ? '#fbbf24' : 'var(--bg2)',
+          border:'1.5px solid '+(excluded.size ? 'rgba(0,0,0,.22)' : 'var(--b2)'),
+          color: excluded.size ? '#111' : 'var(--t2)',
+          fontSize: compact ? 11.5 : 12.5, fontWeight:700,
           cursor:'pointer',
           maxWidth:'100%',
           overflow:'hidden',
         }}>
-        <Filter size={compact ? 11 : 12} style={{flexShrink:0}}/>
+        <span style={{
+          width: compact ? 22 : 25, height: compact ? 22 : 25, borderRadius:7,
+          flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center',
+          background: excluded.size ? 'rgba(0,0,0,.13)' : 'var(--bg3)',
+          border:'1px solid '+(excluded.size ? 'rgba(0,0,0,.18)' : 'var(--b1)'),
+        }}>
+          <Filter size={compact ? 12 : 13}/>
+        </span>
         <span style={{
           overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
           minWidth:0,
         }}>
           {isMobile ? summary : `${label}: ${summary}`}
         </span>
-        <ChevronDown size={compact ? 11 : 13}
-          style={{transform: open ? 'rotate(180deg)' : 'none', transition:'transform .12s', flexShrink:0}}/>
+        <ChevronDown size={compact ? 12 : 14}
+          style={{transform: open ? 'rotate(180deg)' : 'none', transition:'transform .12s',
+                  flexShrink:0, opacity:.75}}/>
       </button>
 
       {open && !isMobile && (
