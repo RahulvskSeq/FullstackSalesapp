@@ -2152,6 +2152,10 @@ export const api = {
   },
   salesMonths:       ()         => fetch(`${BASE}/sales/months`,{headers:authHeaders()}).then(handle),
   salesByCategory:   (q={})     => fetch(`${BASE}/sales/by-category?${new URLSearchParams(q)}`,{headers:authHeaders()}).then(handle),
+  // Sales grouped by the ERP transaction category (the collection sold).
+  salesByBrand:      (q={})     => fetch(`${BASE}/sales/by-brand?${new URLSearchParams(q)}`,{headers:authHeaders()}).then(handle),
+  // Dealers + salesmen behind one transaction category. {month, brand, salesman?}
+  salesBrandDetail:  (q={})     => fetch(`${BASE}/sales/brand-detail?${new URLSearchParams(q)}`,{headers:authHeaders()}).then(handle),
   salesByDealer:     (q={})     => fetch(`${BASE}/sales/by-dealer?${new URLSearchParams(q)}`,{headers:authHeaders()}).then(handle),
   // Per-dealer, per-month excluded-category qty (drives all-months category filtering).
   salesByDealerMonths:(exclude=[]) => fetch(`${BASE}/sales/by-dealer-months?exclude=${encodeURIComponent((exclude||[]).join(','))}`,{headers:authHeaders()}).then(handle),
@@ -2168,6 +2172,35 @@ export const api = {
   salesTargetsList:  (month)    => fetch(`${BASE}/sales/targets?month=${encodeURIComponent(month)}`,{headers:authHeaders()}).then(handle),
   salesTargetSet:    (body)     => fetch(`${BASE}/sales/targets`,{method:'POST',headers:authHeaders(),body:JSON.stringify(body)}).then(handle),
   salesTargetsBulk:  (items)    => fetch(`${BASE}/sales/targets/bulk`,{method:'POST',headers:authHeaders(),body:JSON.stringify({items})}).then(handle),
+
+  // ── Raw ERP product-transaction import + reporting ────────────────────
+  // Two-phase upload: omit `commit` to get a preview of what WOULD land.
+  ptxMasterUpload: (file, commit=false, onProgress) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return postForm(`${BASE}/producttx/master/upload${commit?'?commit=1':''}`, fd, onProgress);
+  },
+  // syncSales=true does both halves in one call: import the invoice lines
+  // and roll them straight into the month's sales. In preview mode it also
+  // returns the projected before/after, computed without writing.
+  ptxUpload: (file, commit=false, onProgress, syncSales=false) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    const qs = new URLSearchParams({ ...(commit?{commit:'1'}:{}), ...(syncSales?{syncSales:'1'}:{}) }).toString();
+    return postForm(`${BASE}/producttx/upload${qs?'?'+qs:''}`, fd, onProgress);
+  },
+  ptxMasterStats: ()      => fetch(`${BASE}/producttx/master/stats`,{headers:authHeaders()}).then(handle),
+  ptxFacets:      ()      => fetch(`${BASE}/producttx/facets`,{headers:authHeaders()}).then(handle),
+  ptxReport:      (q={})  => fetch(`${BASE}/producttx/report?${new URLSearchParams(q)}`,{headers:authHeaders()}).then(handle),
+  ptxLines:       (q={})  => fetch(`${BASE}/producttx/lines?${new URLSearchParams(q)}`,{headers:authHeaders()}).then(handle),
+  // Roll imported invoice lines up into Sale rows (what Overview / MTD read).
+  // Omit `commit` to see exactly what would change, per month.
+  ptxSyncSales:   (commit=false, months='') => fetch(
+    `${BASE}/producttx/sync-sales?${new URLSearchParams({ ...(commit?{commit:'1'}:{}), ...(months?{months}:{}) })}`,
+    {method:'POST',headers:authHeaders()}).then(handle),
+  ptxBatches:     ()      => fetch(`${BASE}/producttx/batches`,{headers:authHeaders()}).then(handle),
+  ptxDeleteBatch: (id)    => fetch(`${BASE}/producttx/batch/${id}`,{method:'DELETE',headers:authHeaders()}).then(handle),
+  ptxDeleteAll:   ()      => fetch(`${BASE}/producttx/all`,{method:'DELETE',headers:authHeaders()}).then(handle),
 
   // ── Online spreadsheets (Sheets section) ─────────────────────────────
   sheetsList:   ()            => fetch(`${BASE}/sheets`,{headers:authHeaders()}).then(handle),

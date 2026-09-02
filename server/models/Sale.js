@@ -22,10 +22,22 @@ const SaleSchema = new mongoose.Schema({
   category:      { type: String, required: true, trim: true, index: true },
   subCategory:   { type: String, required: true, trim: true, index: true },
 
+  // The ERP "Category" on the transaction line - the collection actually
+  // sold ("VN-TEX", "PASTELO"). Blank on manually keyed rows, which have no
+  // such concept. Adding it splits rows more finely but changes no total:
+  // every read of Sale groups and sums qty.
+  brand:         { type: String, default: '', trim: true, index: true },
+
   qty:           { type: Number, default: 0 },
 
   uploadedBy:    { type: String, default: '' },
   uploadBatchId: { type: String, index: true },                     // groups one upload together
+
+  // Where this row came from. 'manual' is the wide Monthly Entry upload;
+  // 'erp' is derived from imported ProductTxn invoice lines. Kept so an
+  // ERP re-sync can replace only its own rows and never silently clobber
+  // a month that was keyed in by hand.
+  source:        { type: String, default: 'manual', index: true },  // 'manual' | 'erp'
 }, { timestamps: true });
 
 // Each combination (dealer + sub-cat + month) is unique per upload batch.

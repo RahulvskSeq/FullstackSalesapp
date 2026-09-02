@@ -841,6 +841,90 @@ router.get('/by-category', protect, async (req, res) => {
   res.json({ rows, grandTotal });
 });
 
+// GET /api/sales/brand-detail?brand=VN-TEX  →  who actually bought it.
+// Returns the dealers behind one transaction category, each with the
+// salesman who owns them, plus a per-salesman roll-up. Fetched on demand
+// when a collection is expanded, rather than loading it for all 41 up front.
+// Salesman is stored as the user id ("rakesh"), so it is resolved to the
+// display name here — the client should not have to know that.
+router.get('/brand-detail', protect, async (req, res) => {
+  const brand = String(req.query.brand || '').trim();
+  if (!brand) return res.status(400).json({ error: 'brand required' });
+
+  const filter = { ...(await monthFilter(req)), brand };
+  const rows = await Sale.aggregate([
+    { $match: filter },
+    { $group: {
+        _id: { dealer: '$dealerName', salesman: '$salesman' },
+        qty: { $sum: '$qty' },
+        categories: { $addToSet: '$category' },
+    } },
+    { $project: { _id: 0, dealer: '$_id.dealer', salesman: '$_id.salesman', qty: 1, categories: 1 } },
+    { $sort: { qty: -1 } },
+    { $limit: 500 },
+  ]);
+
+  // id -> display name
+  const User = (await import('../models/User.js')).default;
+  const users = await User.find({}, 'id name').lean();
+  const nameById = new Map(users.map(u => [u.id, u.name]));
+  const label = id => nameById.get(id) || id || '—';
+
+  const dealers = rows.map(r => ({ ...r, salesmanName: label(r.salesman) }));
+
+  const bySalesman = new Map();
+  for (const r of dealers) {
+    const k = r.salesmanName;
+    const e = bySalesman.get(k) || { salesman: k, qty: 0, dealers: 0 };
+    e.qty += r.qty; e.dealers += 1;
+    bySalesman.set(k, e);
+  }
+
+  res.json({
+    ok: true, brand,
+    dealers,
+    salesmen: [...bySalesman.values()].sort((a, b) => b.qty - a.qty),
+    total: dealers.reduce((a, r) => a + r.qty, 0),
+  });
+});
+
+// GET /api/sales/by-brand  →  sales grouped by the ERP transaction category
+// ("VN-TEX", "PASTELO"). Only rows imported from a product-transaction
+// export carry a brand; manually keyed rows report under "(not specified)".
+// Honours the same month/salesman scoping as every other sales endpoint.
+router.get('/by-brand', protect, async (req, res) => {
+  const filter = await monthFilter(req);
+  const rows = await Sale.aggregate([
+    { $match: filter },
+    { $group: {
+        _id: { brand: '$brand', category: '$category' },
+        qty: { $sum: '$qty' },
+        dealers: { $addToSet: '$dealerName' },
+    } },
+    { $project: {
+        _id: 0, brand: '$_id.brand', category: '$_id.category',
+        qty: 1, dealers: { $size: '$dealers' },
+    } },
+    { $sort: { qty: -1 } },
+  ]);
+  // Collapse to one entry per brand, keeping the category split underneath.
+  const byBrand = new Map();
+  for (const r of rows) {
+    const key = r.brand || '';
+    const e = byBrand.get(key) || { brand: key, qty: 0, categories: [], dealers: 0 };
+    e.qty += r.qty;
+    e.dealers = Math.max(e.dealers, r.dealers);
+    e.categories.push({ category: r.category, qty: r.qty });
+    byBrand.set(key, e);
+  }
+  const out = [...byBrand.values()].sort((a, b) => b.qty - a.qty);
+  res.json({
+    rows: out,
+    grandTotal: out.reduce((a, r) => a + r.qty, 0),
+    unbranded: byBrand.get('')?.qty || 0,
+  });
+});
+
 // GET /api/sales/by-dealer  →  [{ dealer, byCategory:{cat:{sub:qty}}, total }]
 router.get('/by-dealer', protect, async (req, res) => {
   const filter = await monthFilter(req);

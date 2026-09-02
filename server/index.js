@@ -163,6 +163,7 @@ import categoryRoutes    from './routes/categories.js';
 import salesRoutes       from './routes/sales.js';
 import appUpdateRoutes  from './routes/appupdate.js';
 import sheetRoutes       from './routes/sheets.js';
+import productTxRoutes  from './routes/producttx.js';
 import { seedDefaultCategories } from './routes/categories.js';
 
 dotenv.config();
@@ -192,6 +193,7 @@ app.use('/api/crm',         crmRoutes);
 app.use('/api/categories',  categoryRoutes);
 app.use('/api/sales',       salesRoutes);
 app.use('/api/sheets',      sheetRoutes);
+app.use('/api/producttx',   productTxRoutes);  // raw ERP product-transaction import + report
 app.use('/api/app',         appUpdateRoutes);   // in-app APK update channel
 
 app.get('/api/health', (_, res) => res.json({ ok:true, time:new Date(), version:'1.0.0' }));

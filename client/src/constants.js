@@ -60,6 +60,7 @@ export const NAV_PAGES = [
   { id:'leaves',      label:'Leaves' },
   { id:'tickets',     label:'Support' },
   { id:'reports',     label:'Reports' },
+  { id:'producttx',   label:'Product Transactions' },
   { id:'sheets',      label:'Sheets' },
   { id:'admin',       label:'Admin Panel' },
 ];
