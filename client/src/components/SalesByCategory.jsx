@@ -255,7 +255,10 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
     const writes = [[category, value]];
     if (cat === 'LAMINATE' && value > 0) {
       for (const [c, fn] of Object.entries(TARGET_FROM_LAMINATE)) {
-        if (categories.includes(c)) writes.push([c, fn(value)]);
+        // Guard on the MASTER list, not the filtered one. `categories`
+        // drops whatever the user has excluded — LINER usually — so the
+        // Liner target was silently skipped rather than written.
+        if (mtdCategories.includes(c)) writes.push([c, fn(value)]);
       }
     }
 
