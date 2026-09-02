@@ -1514,7 +1514,6 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
   // INACTIVE|REACTIVE — after the stale sheet values were cleared, INACTIVE no
   // longer exists in that field, so the chip was counting REACTIVE (a Potential
   // label a rep chooses) and labelling it "inactive".
-  const overdueFollowups=notes.filter(n=>n.type==='followup'&&!n.completed&&new Date(n.dueDate)<new Date()).length;
 
   const top5=[...myD].filter(x=>x.achieved>0).sort((a,b)=>b.achieved-a.achieved).slice(0,5);
   const lowAll=myD.filter(x=>{
@@ -1711,7 +1710,6 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
             the Account Activity cards further down the page — same numbers,
             same calculated tier, two places to keep in step. Trending up,
             declining and dormant stay because nothing else shows them. */}
-        {overdueFollowups>0&&<div className="insight-chip" onClick={()=>onNavigate('followups')} style={{'--c':'#6366f1','--fg':readableOn('#6366f1'),background:'rgba(99,102,241,0.1)',color:'var(--acc)',cursor:'pointer'}}><Bell size={13}/> {overdueFollowups} overdue follow-ups</div>}
       </div>
 
       <div className="stat-grid">
