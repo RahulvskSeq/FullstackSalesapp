@@ -1290,6 +1290,7 @@ import MapView from './MapView';
 import CategoryDrillChart from './CategoryDrillChart';
 import SalesByCategory from './SalesByCategory';
 import CategorySalesPanel from './CategorySalesPanel';
+import SalesByBrand from './SalesByBrand';
 import CategoryFilter from './CategoryFilter';
 import { useGlobalCategoryFilter } from '../hooks/useGlobalCategoryFilter';
 import { api } from '../api';
@@ -1796,6 +1797,14 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
           onSeeAll={() => onNavigate && onNavigate('salesCat')}
         />
       </div>
+
+      {/* Sales by the ERP transaction category. Renders nothing unless the
+          month was synced from a product-transaction import, so months that
+          were keyed in by hand look exactly as they did before. */}
+      <SalesByBrand
+        monthLabel={MO[selectedMonthIdx]}
+        salesman={currentUser?.role === 'salesman' ? currentUser.id : ''}
+      />
 
       {/* Dealer quick search */}
       <div className="card" style={{marginBottom:16,padding:'12px 16px'}}>
