@@ -774,7 +774,7 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
           </div>
 
           {/* ── MTD Sales Summary — Region × Salesman × Category ───────── */}
-          <div className="card" style={{padding:0, marginTop:14, overflow:'hidden', borderLeft:'3px solid #6366f1'}}>
+          <div className="card mtd-card" style={{padding:0, marginTop:14, overflow:'hidden'}}>
             <div style={{padding:'10px 14px', borderBottom:'1px solid var(--b1)', display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
               <BarChart3 size={14} color="var(--acc)"/>
               <div style={{fontSize:13, fontWeight:700}}>MTD Sales Summary — {month || '—'}</div>
@@ -784,7 +784,7 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
               </div>
             </div>
             <div style={{overflowX:'auto', maxHeight:'70vh'}}>
-              <table>
+              <table className="mtd-table">
                 <thead>
                   {/* Row 1: Region | Salesman | <CategoryName spanning 2 cols> ... | Total spanning 2 cols | MTD % | Dealers | Outstanding */}
                   <tr style={{position:'sticky', top:0, background:'var(--bg2)', zIndex:2}}>
@@ -840,7 +840,7 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                             const a = r.perCategory[c] || 0;
                             return (
                               <React.Fragment key={'pair-'+r.smId+c}>
-                                <td style={{textAlign:'right', padding:'2px 4px', borderLeft:'1px solid var(--b1)'}}>
+                                <td className="cat-start" style={{textAlign:'right', padding:'2px 4px'}}>
                                   {isAdmin ? (
                                     <input
                                       // Keyed on the value: these are uncontrolled
@@ -890,8 +890,8 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                         </tr>
                       ))}
                       {/* Region subtotal row — paired Target | Ach per category */}
-                      <tr style={{background:'var(--bg1)'}}>
-                        <td colSpan={2} style={{position:'sticky', left:0, background:'var(--bg1)', fontWeight:800, fontSize:11, color:'var(--t2)'}}>
+                      <tr className="row-subtotal">
+                        <td colSpan={2} style={{position:'sticky', left:0, fontSize:11, color:'var(--t2)'}}>
                           {region} Total
                         </td>
                         {mtdCategories.map(c => {
@@ -912,8 +912,8 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                 </tbody>
                 {mtdSummary.length > 0 && (
                   <tfoot>
-                    <tr style={{background:'rgba(99,102,241,.10)'}}>
-                      <td colSpan={2} style={{position:'sticky', left:0, background:'rgba(99,102,241,.10)', fontWeight:800}}>
+                    <tr className="row-grand">
+                      <td colSpan={2} style={{position:'sticky', left:0}}>
                         Grand Total
                       </td>
                       {mtdCategories.map(c => {
