@@ -213,13 +213,44 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
     return () => { cancelled = true; };
   }, [month]);
 
+  // Typing a LAMINATE target fills the rest in from it. The other categories
+  // are planned as a ratio of laminate, so entering five numbers per salesman
+  // by hand is five chances to get one wrong.
+  //
+  // Categories not listed here — EDGE BANDING, OTHER, and anything else — are
+  // left ALONE rather than zeroed: they carry no target by default, and
+  // clobbering them would quietly wipe a figure someone set on purpose.
+  const TARGET_FROM_LAMINATE = {
+    'LINER':         lam => lam,                    // 100% of laminate
+    'LOUVRES':       lam => Math.round(lam * 0.30), // 30%
+    'POLYMER SHEET': lam => Math.round(lam * 0.10), // 10%
+    'ROLLS':         ()  => 20,                     // flat 20
+  };
+
   const setOneTarget = async (salesmanId, category, target) => {
+    const value = Number(target) || 0;
+    const cat   = String(category || '').trim().toUpperCase();
+
+    // Work out every cell this edit touches, then write them together so the
+    // table doesn't repaint once per category.
+    const writes = [[category, value]];
+    if (cat === 'LAMINATE' && value > 0) {
+      for (const [c, fn] of Object.entries(TARGET_FROM_LAMINATE)) {
+        if (categories.includes(c)) writes.push([c, fn(value)]);
+      }
+    }
+
     const next = new Map(catTargets);
-    next.set(targetsKey(salesmanId, category), Number(target) || 0);
+    writes.forEach(([c, v]) => next.set(targetsKey(salesmanId, c), v));
     setCatTargets(next);
+
     if (!isAdmin) return;
     try {
-      await api.salesTargetSet({ salesmanId, category, month, target: Number(target) || 0 });
+      await Promise.all(writes.map(([c, v]) =>
+        api.salesTargetSet({ salesmanId, category: c, month, target: v })));
+      if (writes.length > 1) {
+        notify.success(`Laminate ${value} → ${writes.slice(1).map(([c,v])=>`${c} ${v}`).join(' · ')}`);
+      }
     } catch(e) { notify.error(`Save target: ${e.message}`); }
   };
 
@@ -683,7 +714,8 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
               <BarChart3 size={14} color="var(--acc)"/>
               <div style={{fontSize:13, fontWeight:700}}>MTD Sales Summary — {month || '—'}</div>
               <div style={{fontSize:11, color:'var(--t3)'}}>
-                · Region / Salesman × Category · Targets pulled from Monthly Entry · Outstanding from Outstanding section
+                · Region / Salesman × Category · Outstanding from Outstanding section
+                {isAdmin && <span style={{color:'var(--acc)'}}> · type a LAMINATE target and the rest fill in: Liner 100%, Louvres 30%, Polymer 10%, Rolls 20</span>}
               </div>
             </div>
             <div style={{overflowX:'auto', maxHeight:'70vh'}}>
@@ -735,6 +767,10 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                                 <td style={{textAlign:'right', padding:'2px 4px', borderLeft:'1px solid var(--b1)'}}>
                                   {isAdmin ? (
                                     <input
+                                      // Keyed on the value: these are uncontrolled
+                                      // inputs, so without a remount a derived
+                                      // target would save but never show up.
+                                      key={'t-'+r.smId+c+t}
                                       type="number"
                                       defaultValue={t || ''}
                                       placeholder="—"
