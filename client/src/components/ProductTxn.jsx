@@ -323,6 +323,7 @@ export default function ProductTxn({ currentUser }) {
   const [category, setCategory] = useState([]);
   const [subCategory, setSubCategory] = useState([]);
   const [salesman, setSalesman] = useState([]);
+  const [dealer, setDealer] = useState([]);
   const [groupBy, setGroupBy] = useState('brand');
   const [groupBy2, setGroupBy2] = useState('');
   const [data, setData] = useState(null);
@@ -346,8 +347,9 @@ export default function ProductTxn({ currentUser }) {
     if (category.length) q.category = category.join(',');
     if (subCategory.length) q.subCategory = subCategory.join(',');
     if (salesman.length) q.salesman = salesman.join(',');
+    if (dealer.length) q.dealer = dealer.join(',');
     return q;
-  }, [from, to, brand, category, subCategory, salesman]);
+  }, [from, to, brand, category, subCategory, salesman, dealer]);
 
   // Changing two filters quickly fires two overlapping requests. Without a
   // guard the slower (older) response can land last and paint stale numbers
@@ -378,13 +380,36 @@ export default function ProductTxn({ currentUser }) {
   };
 
   const resetFilters = () => {
-    setBrand([]); setCategory([]); setSubCategory([]); setSalesman([]);
+    setBrand([]); setCategory([]); setSubCategory([]); setSalesman([]); setDealer([]);
     setFrom(facets?.dateFrom || ''); setTo(facets?.dateTo || '');
   };
 
   const dims = data?.dims || [groupBy];
   const dimLabel = id => GROUPS.find(g => g.id === id)?.label || id;
-  const activeFilters = brand.length + category.length + subCategory.length + salesman.length;
+
+  // Which grouping dimensions can be clicked to narrow the report, and where
+  // each one sensibly leads next. Day/month/city/product are readable
+  // groupings but poor places to stand, so they are not drill targets.
+  const SETTERS = { brand: setBrand, category: setCategory, subCategory: setSubCategory, salesman: setSalesman, dealer: setDealer };
+  const VALUES  = { brand, category, subCategory, salesman, dealer };
+  const DRILL_NEXT = { brand: 'dealer', category: 'subCategory', subCategory: 'dealer', salesman: 'dealer', dealer: 'product' };
+
+  /** Click a row to select that value and open up what sits underneath it. */
+  const drillInto = (dim, value) => {
+    const set = SETTERS[dim];
+    if (!set || !value) return;
+    set(prev => (prev.includes(value) ? prev : [...prev, value]));
+    const next = DRILL_NEXT[dim];
+    // Step to the next level, skipping anything already pinned by a filter.
+    if (next && next !== groupBy2) setGroupBy(next);
+    if (groupBy2 === next) setGroupBy2('');
+  };
+
+  const selections = Object.entries(VALUES)
+    .flatMap(([dim, vals]) => vals.map(v => ({ dim, value: v })));
+  const activeFilters = selections.length;
+
+  const removeSelection = (dim, value) => SETTERS[dim](prev => prev.filter(x => x !== value));
 
   const exportCsv = () => {
     if (!data?.rows?.length) return;
@@ -406,6 +431,10 @@ export default function ProductTxn({ currentUser }) {
 
   return (
     <div>
+      <style>{`
+        .ptx-row:hover{background:var(--bg3) !important}
+        .ptx-row td[title^="Show only"]:hover{color:var(--acc) !important;text-decoration-color:var(--acc) !important}
+      `}</style>
       <div className="page-head" style={{ marginBottom: 18, display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
         <div style={{ flex: '1 1 auto', minWidth: 240 }}>
           <div className="page-eyebrow" style={{ fontSize: 11, color: 'var(--acc)', textTransform: 'uppercase', letterSpacing: '.15em', marginBottom: 4 }}>
@@ -512,6 +541,37 @@ export default function ProductTxn({ currentUser }) {
                 </div>
               </div>
 
+              {/* ── What is currently selected, and how to undo it ── */}
+              {selections.length > 0 && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap',
+                  marginBottom: 12, padding: '9px 12px', borderRadius: 9,
+                  background: 'var(--accL)', border: '1px solid rgba(99,102,241,.3)',
+                }}>
+                  <span style={{ fontSize: 10, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.1em' }}>
+                    Showing
+                  </span>
+                  {selections.map(({ dim, value }) => (
+                    <button key={dim + value} onClick={() => removeSelection(dim, value)}
+                      title={`Remove this ${dimLabel(dim)} filter`}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+                        background: 'var(--acc)', border: '1px solid var(--acc)', color: '#fff',
+                        borderRadius: 6, padding: '4px 9px', fontSize: 12, fontWeight: 600,
+                      }}>
+                      <span style={{ opacity: .75, fontWeight: 500, fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.05em' }}>
+                        {dimLabel(dim)}
+                      </span>
+                      {value}
+                      <X size={12} style={{ opacity: .85 }} />
+                    </button>
+                  ))}
+                  <button className="btn" style={{ padding: '3px 9px', fontSize: 11, marginLeft: 'auto' }} onClick={resetFilters}>
+                    Clear all
+                  </button>
+                </div>
+              )}
+
               {/* ── Totals ── */}
               {data?.totals && (
                 <StatRow items={[
@@ -574,6 +634,10 @@ export default function ProductTxn({ currentUser }) {
                     </div>
                   )}
                   {!loading && !!data?.rows?.length && (
+                    <>
+                    <div style={{ fontSize: 11.5, color: 'var(--t3)', marginBottom: 8 }}>
+                      Click any <b style={{ color: 'var(--t2)' }}>{dimLabel(dims[0])}</b> to see the sales inside it.
+                    </div>
                     <div style={{ overflowX: 'auto', maxHeight: '62vh', overflowY: 'auto' }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, fontVariantNumeric: 'tabular-nums' }}>
                         <thead style={{ position: 'sticky', top: 0, background: 'var(--bg1)', zIndex: 1 }}>
@@ -597,14 +661,25 @@ export default function ProductTxn({ currentUser }) {
                           {data.rows.map((r, i) => {
                             const share = data.totals.qty ? (r.qty / data.totals.qty) * 100 : 0;
                             return (
-                              <tr key={i} style={{ background: i % 2 ? 'var(--bg2)' : 'transparent' }}>
-                                {dims.map(d => (
-                                  <td key={d} style={{
-                                    padding: '8px 12px', fontWeight: d === dims[0] ? 600 : 400,
-                                    color: r.key[d] ? 'var(--t1)' : 'var(--t3)',
-                                    maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                                  }} title={r.key[d] || ''}>{r.key[d] || '(none)'}</td>
-                                ))}
+                              <tr key={i} className="ptx-row" style={{ background: i % 2 ? 'var(--bg2)' : 'transparent' }}>
+                                {dims.map(d => {
+                                  const val = r.key[d];
+                                  const can = !!SETTERS[d] && !!val && !VALUES[d].includes(val);
+                                  return (
+                                    <td key={d}
+                                      onClick={can ? () => drillInto(d, val) : undefined}
+                                      title={can ? `Show only ${val} — ${dimLabel(d)}` : (val || '')}
+                                      style={{
+                                        padding: '8px 12px', fontWeight: d === dims[0] ? 600 : 400,
+                                        color: val ? 'var(--t1)' : 'var(--t3)',
+                                        maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                        cursor: can ? 'pointer' : 'default',
+                                        textDecoration: can ? 'underline' : 'none',
+                                        textDecorationColor: 'var(--b2)',
+                                        textUnderlineOffset: 3,
+                                      }}>{val || '(none)'}</td>
+                                  );
+                                })}
                                 <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700 }}>
                                   {qtyF(r.qty)}
                                   <span style={{ color: 'var(--t3)', fontWeight: 400, fontSize: 11, marginLeft: 6 }}>
@@ -629,6 +704,7 @@ export default function ProductTxn({ currentUser }) {
                         </tfoot>
                       </table>
                     </div>
+                    </>
                   )}
                 </div>
               )}
