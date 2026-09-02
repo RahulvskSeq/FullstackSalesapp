@@ -143,10 +143,22 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
       .then(cs => setMasterCategories((cs||[]).map(c => c.name).filter(Boolean).sort()))
       .catch(() => setMasterCategories([]));
   }, []);
-  const mtdCategories = useMemo(
-    () => (masterCategories.length ? masterCategories : allCategories),
-    [masterCategories, allCategories],
-  );
+  const mtdCategories = useMemo(() => {
+    const base = masterCategories.length ? masterCategories : allCategories;
+    // Order by this month's volume, biggest first — the same order the
+    // category filter lists them in, so the two read as one thing. Categories
+    // with no sales yet fall to the end alphabetically rather than being
+    // scattered through the row by an alphabetical sort.
+    const qty = new Map();
+    for (const r of (byCat.rows || [])) {
+      qty.set(r.category, (qty.get(r.category) || 0) + (r.qty || 0));
+    }
+    return [...base].sort((a, b) => {
+      const qa = qty.get(a) || 0, qb = qty.get(b) || 0;
+      if (qa !== qb) return qb - qa;
+      return a.localeCompare(b);
+    });
+  }, [masterCategories, allCategories, byCat]);
 
   // Category list AFTER applying the user's exclusions (used as pivot columns).
   const categories = useMemo(
