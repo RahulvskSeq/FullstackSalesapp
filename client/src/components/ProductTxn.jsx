@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Package, Upload, RefreshCw, AlertTriangle, CheckCircle2, Layers, FileSpreadsheet, X } from 'lucide-react';
 import { api, getApiBase } from '../api';
-import { notify } from './Toast';
+import { notify, confirmDialog } from './Toast';
 
 /**
  * ProductTxn — raw ERP product-transaction reporting.
@@ -81,7 +81,7 @@ function ChipFilter({ label, options, selected, onChange, maxHeight = 118 }) {
 /*  Import panel                                                       */
 /* ------------------------------------------------------------------ */
 
-function ImportPanel({ onImported }) {
+function ImportPanel({ onImported, txnTotal }) {
   const [masterStats, setMasterStats] = useState(null);
   const [preview, setPreview] = useState(null);   // { kind, file, data }
   const [busy, setBusy] = useState('');
@@ -92,6 +92,35 @@ function ImportPanel({ onImported }) {
   }, []);
   useEffect(loadStats, [loadStats]);
 
+  /**
+   * Wipe every imported transaction, so a fresh export can be loaded from a
+   * clean slate. The product master is deliberately left alone: it is the
+   * mapping table, it is slow to re-upload, and clearing it would strand the
+   * next import with nothing to resolve against.
+   */
+  const clearAll = async () => {
+    const ok = await confirmDialog({
+      title: 'Erase all product transactions?',
+      message:
+        `This deletes all ${(txnTotal || 0).toLocaleString('en-IN')} imported transaction lines. ` +
+        'The product master is kept, so you can upload a new export straight away. ' +
+        'This cannot be undone from here — re-import the Excel to get them back.',
+      confirmText: 'Erase transactions',
+      danger: true,
+    });
+    if (!ok) return;
+    setBusy('clear');
+    api.ptxDeleteAll()
+      .then(r => {
+        setPreview(null);
+        onImported?.();                       // refresh counts BEFORE anything that could throw
+        loadStats();
+        notify.success(`Erased ${(r.deleted || 0).toLocaleString('en-IN')} transaction lines`);
+      })
+      .catch(err => notify.error(err.message))
+      .finally(() => setBusy(''));
+  };
+
   const pick = (kind) => (e) => {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -100,7 +129,7 @@ function ImportPanel({ onImported }) {
     const call = kind === 'master' ? api.ptxMasterUpload : api.ptxUpload;
     call(file, false, p => setPct(p))
       .then(data => setPreview({ kind, file, data }))
-      .catch(err => notify('error', err.message))
+      .catch(err => notify.error(err.message))
       .finally(() => { setBusy(''); setPct(0); });
   };
 
@@ -111,12 +140,12 @@ function ImportPanel({ onImported }) {
     const call = kind === 'master' ? api.ptxMasterUpload : api.ptxUpload;
     call(file, true, p => setPct(p))
       .then(data => {
-        notify('success', kind === 'master'
+        setPreview(null); loadStats(); onImported?.();
+        notify.success(kind === 'master'
           ? `Product master loaded — ${data.totalInDb.toLocaleString('en-IN')} products`
           : `Imported ${data.written.toLocaleString('en-IN')} lines (${data.dateFrom} to ${data.dateTo})`);
-        setPreview(null); loadStats(); onImported?.();
       })
-      .catch(err => notify('error', err.message))
+      .catch(err => notify.error(err.message))
       .finally(() => { setBusy(''); setPct(0); });
   };
 
@@ -166,8 +195,34 @@ function ImportPanel({ onImported }) {
           step="2" kind="txn" title="Product Transaction"
           desc="The invoice lines. Re-uploading an overlapping date range is safe — lines are matched on voucher + product, so nothing double-counts."
           disabled={!masterStats?.total}
+          hint={txnTotal > 0 ? (
+            <div style={{ fontSize: 11.5, color: 'var(--t3)', marginBottom: 10 }}>
+              {txnTotal.toLocaleString('en-IN')} lines currently imported.
+            </div>
+          ) : null}
         />
       </div>
+
+      {/* Start-over escape hatch. Overlapping re-uploads are the normal path;
+          this is for replacing the data outright with a different export. */}
+      {txnTotal > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+          marginBottom: 16, padding: '10px 14px', borderRadius: 9,
+          background: 'rgba(248,113,113,.07)', border: '1px solid rgba(248,113,113,.22)',
+        }}>
+          <div style={{ flex: '1 1 300px', fontSize: 12, color: 'var(--t3)', lineHeight: 1.5 }}>
+            <b style={{ color: 'var(--t2)' }}>Starting over?</b> Erase every imported transaction line and
+            upload a fresh export. The product master is kept, so you can re-import immediately.
+            You only need this to <i>replace</i> the data — a normal re-upload already updates
+            matching lines instead of duplicating them.
+          </div>
+          <button className="btnd" onClick={clearAll} disabled={!!busy}
+            style={{ padding: '7px 13px', fontSize: 12.5, whiteSpace: 'nowrap' }}>
+            {busy === 'clear' ? 'Erasing…' : `Erase all ${txnTotal.toLocaleString('en-IN')} lines`}
+          </button>
+        </div>
+      )}
 
       {d && (
         <div className="card" style={{ borderColor: 'var(--acc)' }}>
@@ -364,7 +419,7 @@ export default function ProductTxn({ currentUser }) {
     const gb = [groupBy, groupBy2].filter(Boolean).join(',');
     api.ptxReport({ ...query, groupBy: gb })
       .then(d => { if (seq === reqSeq.current) setData(d); })
-      .catch(err => { if (seq === reqSeq.current) notify('error', err.message); })
+      .catch(err => { if (seq === reqSeq.current) notify.error(err.message); })
       .finally(() => { if (seq === reqSeq.current) setLoading(false); });
   }, [query, groupBy, groupBy2, facets]);
 
@@ -375,7 +430,7 @@ export default function ProductTxn({ currentUser }) {
     setLoading(true);
     api.ptxLines({ ...query, limit: 500 })
       .then(d => { if (seq === reqSeq.current) setLines(d); })
-      .catch(err => { if (seq === reqSeq.current) notify('error', err.message); })
+      .catch(err => { if (seq === reqSeq.current) notify.error(err.message); })
       .finally(() => { if (seq === reqSeq.current) setLoading(false); });
   };
 
@@ -462,7 +517,7 @@ export default function ProductTxn({ currentUser }) {
         )}
       </div>
 
-      {tab === 'import' && isAdmin && <ImportPanel onImported={loadFacets} />}
+      {tab === 'import' && isAdmin && <ImportPanel onImported={loadFacets} txnTotal={facets?.total || 0} />}
 
       {tab === 'report' && (
         <>
@@ -674,8 +729,10 @@ export default function ProductTxn({ currentUser }) {
                                         color: val ? 'var(--t1)' : 'var(--t3)',
                                         maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                                         cursor: can ? 'pointer' : 'default',
-                                        textDecoration: can ? 'underline' : 'none',
-                                        textDecorationColor: 'var(--b2)',
+                                        // One shorthand only: mixing `textDecoration` with
+                                        // `textDecorationColor` makes React warn and can drop
+                                        // the colour on re-render.
+                                        textDecoration: can ? 'underline var(--b2)' : 'none',
                                         textUnderlineOffset: 3,
                                       }}>{val || '(none)'}</td>
                                   );
