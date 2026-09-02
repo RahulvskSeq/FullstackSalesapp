@@ -2178,10 +2178,14 @@ export const api = {
     fd.append('file', file);
     return postForm(`${BASE}/producttx/master/upload${commit?'?commit=1':''}`, fd, onProgress);
   },
-  ptxUpload: (file, commit=false, onProgress) => {
+  // syncSales=true does both halves in one call: import the invoice lines
+  // and roll them straight into the month's sales. In preview mode it also
+  // returns the projected before/after, computed without writing.
+  ptxUpload: (file, commit=false, onProgress, syncSales=false) => {
     const fd = new FormData();
     fd.append('file', file);
-    return postForm(`${BASE}/producttx/upload${commit?'?commit=1':''}`, fd, onProgress);
+    const qs = new URLSearchParams({ ...(commit?{commit:'1'}:{}), ...(syncSales?{syncSales:'1'}:{}) }).toString();
+    return postForm(`${BASE}/producttx/upload${qs?'?'+qs:''}`, fd, onProgress);
   },
   ptxMasterStats: ()      => fetch(`${BASE}/producttx/master/stats`,{headers:authHeaders()}).then(handle),
   ptxFacets:      ()      => fetch(`${BASE}/producttx/facets`,{headers:authHeaders()}).then(handle),

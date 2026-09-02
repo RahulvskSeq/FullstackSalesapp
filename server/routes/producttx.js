@@ -343,6 +343,13 @@ router.post('/upload', protect, adminOnly, upload.single('file'), async (req, re
       taxonomySource: sheetHasTaxonomy ? 'sheet' : 'master',
     };
 
+    // What this upload would do to monthly sales, computed WITHOUT writing.
+    // The sync rebuilds a month from every line in it, so the projection is
+    // (existing lines for that month, minus any this upload replaces by key)
+    // plus this upload's lines.
+    const wantSync = String(req.query.syncSales || '') === '1';
+    if (wantSync) summary.salesImpact = await projectSalesImpact(docs);
+
     if (!commit) return res.json({ ok: true, preview: true, ...summary });
 
     let written = 0;
@@ -358,6 +365,14 @@ router.post('/upload', protect, adminOnly, upload.single('file'), async (req, re
     }
     summary.written = written;
     summary.totalInDb = await ProductTxn.countDocuments();
+
+    // One-step path: roll the freshly imported lines into Sale immediately,
+    // so a daily upload updates the dashboards without a second action.
+    if (wantSync) {
+      const touched = [...new Set(docs.map(d => d.month).filter(Boolean))].sort();
+      const synced = await applySalesSync(touched, req.user?.id || '');
+      summary.sales = synced;
+    }
     res.json({ ok: true, preview: false, ...summary });
   } catch (e) {
     console.error('[producttx/upload]', e);
@@ -581,6 +596,99 @@ async function buildSalesSync(monthList) {
 }
 
 /**
+ * Apply the sales sync for a set of months. Shared by the standalone
+ * /sync-sales route and the one-step upload, so both behave identically.
+ */
+async function applySalesSync(monthList, byUser) {
+  const months = await buildSalesSync(monthList);
+  const batchId = newBatchId();
+  let deleted = 0, inserted = 0;
+  for (const m of months) {
+    const del = await Sale.deleteMany({ month: m.month });
+    deleted += del.deletedCount || 0;
+    if (m.rows.length) {
+      const ins = await Sale.insertMany(m.rows.map(r => ({
+        dealerName: r.dealerName,
+        dealerId: r.dealerId || undefined,
+        salesman: r.salesmanId || '',
+        month: m.month,
+        category: r.category,
+        subCategory: r.subCategory,
+        brand: r.brand || '',
+        qty: r.qty,
+        uploadedBy: byUser,
+        uploadBatchId: batchId,
+        source: 'erp',
+      })), { ordered: false });
+      inserted += ins.length;
+    }
+  }
+  return { batchId, deleted, inserted, months: months.map(({ rows, ...m }) => m) };
+}
+
+/**
+ * Project what a pending upload would do to monthly sales, without writing
+ * anything. Mirrors the sync exactly: a month is rebuilt from every line it
+ * contains, so the projection overlays the incoming lines onto the stored
+ * ones by their unique key before rolling up.
+ */
+async function projectSalesImpact(docs) {
+  const monthList = [...new Set(docs.map(d => d.month).filter(Boolean))].sort();
+  const out = [];
+  for (const month of monthList) {
+    const existing = await ProductTxn.find({ month })
+      .select('voucherNo pdId lineNo qty category subCategory dealerName resolved').lean();
+
+    // Key on the same triple the import upserts on, so a re-upload of the
+    // same line replaces rather than adds.
+    const merged = new Map();
+    for (const e of existing) merged.set(`${e.voucherNo}|${e.pdId}|${e.lineNo}`, e);
+    for (const d of docs) {
+      if (d.month !== month) continue;
+      merged.set(`${d.voucherNo}|${d.pdId}|${d.lineNo}`, d);
+    }
+
+    let newQty = 0, droppedLines = 0, droppedQty = 0;
+    const byCat = new Map();
+    const keys = new Set();
+    for (const r of merged.values()) {
+      if (!r.resolved || !r.dealerName) { droppedLines++; droppedQty += r.qty || 0; continue; }
+      newQty += r.qty || 0;
+      const k = `${r.category}||${r.subCategory}`;
+      byCat.set(k, (byCat.get(k) || 0) + (r.qty || 0));
+      keys.add(`${r.dealerName}||${r.category}||${r.subCategory}`);
+    }
+
+    const [cur] = await Sale.aggregate([
+      { $match: { month } },
+      { $group: { _id: null, qty: { $sum: '$qty' }, rows: { $sum: 1 } } },
+    ]);
+    const curByCat = await Sale.aggregate([
+      { $match: { month } },
+      { $group: { _id: { c: '$category', s: '$subCategory' }, qty: { $sum: '$qty' } } },
+    ]);
+    const curMap = new Map(curByCat.map(r => [`${r._id.c}||${r._id.s}`, r.qty]));
+    const cats = [...new Set([...byCat.keys(), ...curMap.keys()])].sort().map(k => {
+      const [category, subCategory] = k.split('||');
+      const before = curMap.get(k) || 0, after = byCat.get(k) || 0;
+      return { category, subCategory, before, after, delta: after - before };
+    });
+
+    const curQty = cur?.qty || 0;
+    out.push({
+      month,
+      currentQty: curQty, currentRows: cur?.rows || 0,
+      newQty, newRows: keys.size,
+      delta: newQty - curQty,
+      droppedLines, droppedQty,
+      warnLowers: newQty < curQty,
+      categories: cats,
+    });
+  }
+  return out;
+}
+
+/**
  * POST /api/producttx/sync-sales?commit=1&months=2026-09
  * Without commit, reports exactly what would change. Never partial: each
  * month is replaced as a whole or not at all.
@@ -598,35 +706,8 @@ router.post('/sync-sales', protect, adminOnly, async (req, res) => {
       return res.json({ ok: true, preview: true, months: months.map(({ rows, ...m }) => m) });
     }
 
-    const batchId = newBatchId();
-    let deleted = 0, inserted = 0;
-    for (const m of months) {
-      // Replace the whole month: drop what is there, write the recomputed
-      // set. Doing it per month keeps an unrelated month untouched.
-      const del = await Sale.deleteMany({ month: m.month });
-      deleted += del.deletedCount || 0;
-      if (m.rows.length) {
-        const docs = m.rows.map(r => ({
-          dealerName: r.dealerName,
-          dealerId: r.dealerId || undefined,
-          salesman: r.salesmanId || '',
-          month: m.month,
-          category: r.category,
-          subCategory: r.subCategory,
-          brand: r.brand || '',
-          qty: r.qty,
-          uploadedBy: req.user?.id || '',
-          uploadBatchId: batchId,
-          source: 'erp',
-        }));
-        const ins = await Sale.insertMany(docs, { ordered: false });
-        inserted += ins.length;
-      }
-    }
-    res.json({
-      ok: true, preview: false, batchId, deleted, inserted,
-      months: months.map(({ rows, ...m }) => m),
-    });
+    const applied = await applySalesSync(monthList, req.user?.id || '');
+    res.json({ ok: true, preview: false, ...applied });
   } catch (e) {
     console.error('[producttx/sync-sales]', e);
     res.status(500).json({ error: e.message });

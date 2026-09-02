@@ -633,6 +633,7 @@ import { num, pct, spct, pclr, monthTarget } from '../utils';
 import { api } from '../api';
 import { Avatar, StatusBadge } from './UI';
 import { confirmDialog, notify } from './Toast';
+import ErpDailyUpload from './ErpDailyUpload';
 
 // Potential Status only — the performance tier is calculated, not entered.
 const STATUSES = ['NONE','STAR','KEY ACCOUNT','ACHIEVER','REACTIVE'];
@@ -1240,6 +1241,9 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
           </div>
         )}
       </div>
+
+      {/* ── Raw ERP sheet: import invoice lines AND update sales in one step ── */}
+      {isAdmin && <ErpDailyUpload onDone={() => onSaved && onSaved()} />}
 
       {/* ── ONE Bulk Excel: download pre-filled, edit, upload back ────────── */}
       {isAdmin && (
