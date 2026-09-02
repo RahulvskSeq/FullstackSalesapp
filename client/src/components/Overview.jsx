@@ -1514,11 +1514,6 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
   // INACTIVE|REACTIVE — after the stale sheet values were cleared, INACTIVE no
   // longer exists in that field, so the chip was counting REACTIVE (a Potential
   // label a rep chooses) and labelling it "inactive".
-  const inactiveByStatus   = dealers.filter(x=>(x.perfStatus||'').toUpperCase()==='INACTIVE');
-  const recentlyInactiveTier = dealers.filter(x=>(x.perfStatus||'').toUpperCase()==='RECENTLY INACTIVE');
-  // Reads the calculated tier, not the rep's Potential label — 'dead' is a
-  // statement about ordering history, which only the tier knows.
-  const deadByStatus=dealers.filter(x=>(x.perfStatus||'').toUpperCase()==='DEAD');
   const overdueFollowups=notes.filter(n=>n.type==='followup'&&!n.completed&&new Date(n.dueDate)<new Date()).length;
 
   const top5=[...myD].filter(x=>x.achieved>0).sort((a,b)=>b.achieved-a.achieved).slice(0,5);
@@ -1712,9 +1707,10 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
         <div className="insight-chip" onClick={()=>setInsightPopup({label:'TRENDING UP',color:'var(--grn)',icon:'📈',sub:'sales up >30% vs previous month',list:risingList})} style={{'--c':'#34d399','--fg':readableOn('#34d399'),background:'rgba(52,211,153,0.1)',color:'var(--grn)',cursor:'pointer'}}><TrendingUp size={13}/> {risingList.length} dealers trending up</div>
         <div className="insight-chip" onClick={()=>setInsightPopup({label:'DECLINING SHARPLY',color:'var(--red)',icon:'📉',sub:'sales down >20% vs previous month',list:decliningList})} style={{'--c':'#f87171','--fg':readableOn('#f87171'),background:'rgba(248,113,113,0.1)',color:'var(--red)',cursor:'pointer'}}><ArrowDownRight size={13}/> {decliningList.length} declining sharply</div>
         {dormantList.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'DORMANT 3+ MONTHS',color:'var(--yel)',icon:'💤',sub:'zero sales last 3 months but had history',list:dormantList})} style={{'--c':'#fbbf24','--fg':readableOn('#fbbf24'),background:'rgba(251,191,36,0.1)',color:'var(--yel)',cursor:'pointer'}}><Clock size={13}/> {dormantList.length} dormant 3+ months</div>}
-        {recentlyInactiveTier.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'RECENTLY INACTIVE',color:'#fb923c',icon:'⏸',sub:'no order this month, but ordered last month',list:recentlyInactiveTier})} style={{'--c':'#fb923c','--fg':readableOn('#fb923c'),background:'rgba(251,146,60,0.1)',color:'#fb923c',cursor:'pointer'}}><Clock size={13}/> {recentlyInactiveTier.length} recently inactive</div>}
-        {inactiveByStatus.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'INACTIVE',color:'var(--yel)',icon:'⚠️',sub:'no order for two months',list:inactiveByStatus})} style={{'--c':'#fbbf24','--fg':readableOn('#fbbf24'),background:'rgba(251,191,36,0.1)',color:'var(--yel)',cursor:'pointer'}}><AlertTriangle size={13}/> {inactiveByStatus.length} inactive</div>}
-        {deadByStatus.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'DEAD CUSTOMERS',color:'var(--red)',icon:'✕',sub:'marked as Dead',list:deadByStatus})} style={{'--c':'#f87171','--fg':readableOn('#f87171'),background:'rgba(248,113,113,0.1)',color:'var(--red)',cursor:'pointer'}}><X size={13}/> {deadByStatus.length} dead customers</div>}
+        {/* Recently inactive / inactive / dead chips were here. They repeated
+            the Account Activity cards further down the page — same numbers,
+            same calculated tier, two places to keep in step. Trending up,
+            declining and dormant stay because nothing else shows them. */}
         {overdueFollowups>0&&<div className="insight-chip" onClick={()=>onNavigate('followups')} style={{'--c':'#6366f1','--fg':readableOn('#6366f1'),background:'rgba(99,102,241,0.1)',color:'var(--acc)',cursor:'pointer'}}><Bell size={13}/> {overdueFollowups} overdue follow-ups</div>}
       </div>
 
