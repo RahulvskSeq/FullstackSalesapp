@@ -2185,6 +2185,11 @@ export const api = {
   ptxFacets:      ()      => fetch(`${BASE}/producttx/facets`,{headers:authHeaders()}).then(handle),
   ptxReport:      (q={})  => fetch(`${BASE}/producttx/report?${new URLSearchParams(q)}`,{headers:authHeaders()}).then(handle),
   ptxLines:       (q={})  => fetch(`${BASE}/producttx/lines?${new URLSearchParams(q)}`,{headers:authHeaders()}).then(handle),
+  // Roll imported invoice lines up into Sale rows (what Overview / MTD read).
+  // Omit `commit` to see exactly what would change, per month.
+  ptxSyncSales:   (commit=false, months='') => fetch(
+    `${BASE}/producttx/sync-sales?${new URLSearchParams({ ...(commit?{commit:'1'}:{}), ...(months?{months}:{}) })}`,
+    {method:'POST',headers:authHeaders()}).then(handle),
   ptxBatches:     ()      => fetch(`${BASE}/producttx/batches`,{headers:authHeaders()}).then(handle),
   ptxDeleteBatch: (id)    => fetch(`${BASE}/producttx/batch/${id}`,{method:'DELETE',headers:authHeaders()}).then(handle),
   ptxDeleteAll:   ()      => fetch(`${BASE}/producttx/all`,{method:'DELETE',headers:authHeaders()}).then(handle),

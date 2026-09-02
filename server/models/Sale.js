@@ -26,6 +26,12 @@ const SaleSchema = new mongoose.Schema({
 
   uploadedBy:    { type: String, default: '' },
   uploadBatchId: { type: String, index: true },                     // groups one upload together
+
+  // Where this row came from. 'manual' is the wide Monthly Entry upload;
+  // 'erp' is derived from imported ProductTxn invoice lines. Kept so an
+  // ERP re-sync can replace only its own rows and never silently clobber
+  // a month that was keyed in by hand.
+  source:        { type: String, default: 'manual', index: true },  // 'manual' | 'erp'
 }, { timestamps: true });
 
 // Each combination (dealer + sub-cat + month) is unique per upload batch.

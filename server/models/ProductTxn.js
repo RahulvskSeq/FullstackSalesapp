@@ -56,7 +56,14 @@ const ProductTxnSchema = new mongoose.Schema({
 
   // ── salesman ──
   salesPersonRaw: { type: String, trim: true },
-  salesman:       { type: String, trim: true, index: true }, // '' when not matched
+  salesman:       { type: String, trim: true, index: true }, // display name; '' when not matched
+  // Sale.salesman / Dealer.salesman store the user *id* ("rakesh"), not the
+  // display name. Kept separately so the sales sync writes rows that the
+  // rest of the app can filter on.
+  salesmanId:     { type: String, trim: true, index: true },
+  // 'sheet' when the export carried Category Type / Product Type itself,
+  // 'master' when the taxonomy came from a ProductMaster lookup.
+  taxonomyFrom:   { type: String, trim: true, default: '' },
 
   uploadedBy:    { type: String, default: '' },
   uploadBatchId: { type: String, index: true },

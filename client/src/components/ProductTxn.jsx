@@ -86,6 +86,7 @@ function ImportPanel({ onImported, txnTotal }) {
   const [preview, setPreview] = useState(null);   // { kind, file, data }
   const [busy, setBusy] = useState('');
   const [pct, setPct] = useState(0);
+  const [sync, setSync] = useState(null);   // sales-sync preview
 
   const loadStats = useCallback(() => {
     api.ptxMasterStats().then(setMasterStats).catch(() => {});
@@ -116,6 +117,31 @@ function ImportPanel({ onImported, txnTotal }) {
         onImported?.();                       // refresh counts BEFORE anything that could throw
         loadStats();
         notify.success(`Erased ${(r.deleted || 0).toLocaleString('en-IN')} transaction lines`);
+      })
+      .catch(err => notify.error(err.message))
+      .finally(() => setBusy(''));
+  };
+
+  /**
+   * Roll the imported invoice lines up into Sale rows — the collection that
+   * Overview, the MTD summary and Monthly Entry all read. Previewed first,
+   * because it rewrites the numbers the whole dashboard runs on.
+   */
+  const previewSync = () => {
+    setBusy('sync');
+    api.ptxSyncSales(false)
+      .then(setSync)
+      .catch(err => notify.error(err.message))
+      .finally(() => setBusy(''));
+  };
+
+  const commitSync = () => {
+    setBusy('sync');
+    api.ptxSyncSales(true)
+      .then(r => {
+        setSync(null);
+        onImported?.();
+        notify.success(`Monthly sales updated — ${r.inserted.toLocaleString('en-IN')} rows across ${r.months.length} month(s)`);
       })
       .catch(err => notify.error(err.message))
       .finally(() => setBusy(''));
@@ -202,6 +228,121 @@ function ImportPanel({ onImported, txnTotal }) {
           ) : null}
         />
       </div>
+
+      {/* Step 3 — push the imported lines into the Sale collection that the
+          rest of the app reads. Kept as a separate, explicitly confirmed
+          step: it rewrites the numbers behind Overview, MTD and targets. */}
+      {txnTotal > 0 && (
+        <div className="card" style={{ marginBottom: 16, borderColor: 'rgba(52,211,153,.35)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 6, flexWrap: 'wrap' }}>
+            <span style={{
+              width: 22, height: 22, borderRadius: '50%', background: 'var(--grn)', color: '#04231a',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700,
+            }}>3</span>
+            <b style={{ fontSize: 14 }}>Update monthly sales</b>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+              {!sync && (
+                <button className="btnp" onClick={previewSync} disabled={!!busy}>
+                  {busy === 'sync' ? 'Checking…' : 'Check what would change'}
+                </button>
+              )}
+              {sync && (
+                <>
+                  <button className="btn" onClick={() => setSync(null)}>Cancel</button>
+                  <button className="btnp" onClick={commitSync} disabled={!!busy}>
+                    {busy === 'sync' ? 'Updating…' : 'Apply to monthly sales'}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--t3)', lineHeight: 1.5 }}>
+            Rolls the imported invoice lines up per month and writes them as the month's sales —
+            the same shape Monthly Entry produces, so Overview, the MTD summary and targets all pick
+            them up. Each month is rebuilt in full from every line imported for it, so uploading one
+            more day and re-running gives the right running total instead of counting a day twice.
+          </div>
+
+          {sync && (
+            <div style={{ marginTop: 14 }}>
+              {sync.months.map(m => (
+                <div key={m.month} style={{
+                  marginBottom: 12, padding: '10px 12px', borderRadius: 9,
+                  background: 'var(--bg2)',
+                  border: '1px solid ' + (m.warnLowers ? 'rgba(248,113,113,.45)' : 'var(--b1)'),
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
+                    <b style={{ fontSize: 14 }}>{m.month}</b>
+                    <span style={{ fontSize: 12.5, color: 'var(--t3)' }}>
+                      {qtyF(m.currentQty)} <span style={{ opacity: .6 }}>({m.currentRows} rows)</span>
+                      {'  →  '}
+                      <b style={{ color: 'var(--t1)' }}>{qtyF(m.newQty)}</b>
+                      <span style={{ opacity: .6 }}> ({m.newRows} rows)</span>
+                    </span>
+                    <span style={{
+                      fontSize: 12.5, fontWeight: 700,
+                      color: m.delta === 0 ? 'var(--t3)' : m.delta > 0 ? 'var(--grn)' : 'var(--red)',
+                    }}>
+                      {m.delta === 0 ? 'no change' : (m.delta > 0 ? '+' : '') + qtyF(m.delta)}
+                    </span>
+                    {m.bySource?.length > 0 && (
+                      <span className="chip">
+                        now: {m.bySource.map(b => `${b.source} ${qtyF(b.qty)}`).join(', ')}
+                      </span>
+                    )}
+                  </div>
+
+                  {m.warnLowers && (
+                    <Warn>
+                      This would <b>reduce</b> {m.month} from {qtyF(m.currentQty)} to {qtyF(m.newQty)}.
+                      That normally means the imported lines cover only part of the month. Import the
+                      rest of the month's transactions before applying, or this month will under-report.
+                    </Warn>
+                  )}
+                  {m.droppedLines > 0 && (
+                    <Warn>
+                      {m.droppedLines} line(s) totalling {qtyF(m.droppedQty)} units are excluded — the
+                      product has no category, or the dealer did not match. Fix those first if the
+                      month needs to be complete.
+                    </Warn>
+                  )}
+
+                  <div style={{ overflowX: 'auto', marginTop: 8 }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>
+                      <thead>
+                        <tr>{['Category', 'Sub-Category', 'Now', 'After', 'Change'].map((h, i) => (
+                          <th key={h} style={{
+                            textAlign: i >= 2 ? 'right' : 'left', padding: '5px 9px', color: 'var(--t3)',
+                            fontSize: 10, textTransform: 'uppercase', letterSpacing: '.07em',
+                            borderBottom: '1px solid var(--b1)', whiteSpace: 'nowrap',
+                          }}>{h}</th>
+                        ))}</tr>
+                      </thead>
+                      <tbody>
+                        {m.categories.map((c, i) => (
+                          <tr key={i} style={{ background: c.delta !== 0 ? 'rgba(251,191,36,.07)' : 'transparent' }}>
+                            <td style={{ padding: '5px 9px' }}>{c.category}</td>
+                            <td style={{ padding: '5px 9px', color: 'var(--t3)' }}>{c.subCategory || '—'}</td>
+                            <td style={{ padding: '5px 9px', textAlign: 'right' }}>{qtyF(c.before)}</td>
+                            <td style={{ padding: '5px 9px', textAlign: 'right', fontWeight: 600 }}>{qtyF(c.after)}</td>
+                            <td style={{
+                              padding: '5px 9px', textAlign: 'right', fontWeight: 700,
+                              color: c.delta === 0 ? 'var(--t3)' : c.delta > 0 ? 'var(--grn)' : 'var(--red)',
+                            }}>{c.delta === 0 ? '—' : (c.delta > 0 ? '+' : '') + qtyF(c.delta)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
+              <div style={{ fontSize: 11.5, color: 'var(--t3)' }}>
+                Applying replaces each listed month's sales entirely. Months not listed are untouched.
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Start-over escape hatch. Overlapping re-uploads are the normal path;
           this is for replacing the data outright with a different export. */}

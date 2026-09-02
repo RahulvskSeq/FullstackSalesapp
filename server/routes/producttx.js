@@ -5,10 +5,12 @@ import crypto from 'crypto';
 import ProductMaster from '../models/ProductMaster.js';
 import ProductTxn from '../models/ProductTxn.js';
 import Dealer from '../models/Dealer.js';
+import Sale from '../models/Sale.js';
 import User from '../models/User.js';
 import { protect, adminOnly, superAdminOnly } from '../middleware/auth.js';
 import {
   normCategory, normSubCategory, parseErpDate, nameKey, matchSalesman, str as S,
+  dealerKey, matchDealer,
 } from '../lib/productTaxonomy.js';
 
 const router = express.Router();
@@ -169,8 +171,17 @@ router.post('/upload', protect, adminOnly, upload.single('file'), async (req, re
     if (!rows.length) return res.status(400).json({ error: 'Sheet is empty' });
     requireCols(rows, ['Voucher No', 'Date', 'Qty', 'PID'], 'Product Transaction');
 
-    if (!(await ProductMaster.countDocuments())) {
-      return res.status(400).json({ error: 'Upload the Product Master first - there is nothing to map products against.' });
+    // The export can now carry "Category Type" / "Product Type" itself, in
+    // which case the master is not needed at all. Only insist on a master
+    // when the sheet has no taxonomy of its own to fall back on.
+    const sheetHasTaxonomy =
+      Object.keys(rows[0] || {}).includes('Category Type') &&
+      Object.keys(rows[0] || {}).includes('Product Type');
+    if (!sheetHasTaxonomy && !(await ProductMaster.countDocuments())) {
+      return res.status(400).json({
+        error: 'This sheet has no "Category Type" / "Product Type" columns, and no Product Master is loaded. '
+             + 'Either export the transaction report with those two columns, or upload the Product Master first.',
+      });
     }
 
     // lookup tables
@@ -184,16 +195,24 @@ router.post('/upload', protect, adminOnly, upload.single('file'), async (req, re
     }
 
     const dealers = await Dealer.find({}).select('name salesman').lean();
-    const byDealer = new Map();
-    for (const d of dealers) { const k = nameKey(d.name); if (k && !byDealer.has(k)) byDealer.set(k, d); }
+    const dealerIndex = new Map(), dealerList = [];
+    for (const d of dealers) {
+      const k = dealerKey(d.name);
+      if (!k) continue;
+      if (!dealerIndex.has(k)) dealerIndex.set(k, d);
+      dealerList.push([k, d]);
+    }
+    const dealerMemo = new Map();
 
-    const users = await User.find({}).select('name role').lean();
+    const users = await User.find({}).select('id name role').lean();
+    const userIdByName = new Map(users.map(u => [u.name, u.id]));
 
     const batchId = newBatchId();
     const docs = [];
     const lineSeq = new Map();
     const unresolvedProducts = new Map();
     const unmatchedDealers = new Map();
+    const fuzzyDealers = new Map();
     const unmatchedSalesmen = new Map();
     const days = new Set();
     let skipped = 0;
@@ -216,16 +235,34 @@ router.post('/upload', protect, adminOnly, upload.single('file'), async (req, re
       // Product: ID join first (codes are not unique in the master).
       const productCode = S(r['Product Code']);
       const m = byPid.get(productId) || byPdid.get(pdId) || byCode.get(productCode) || null;
-      const category = m?.category || '';
+
+      // The sheet's own Category Type / Product Type win when present: they
+      // describe the line as invoiced, and they skip the master entirely.
+      const rawCatType = S(r['Category Type']);
+      const rawProdType = S(r['Product Type']);
+      const category    = normCategory(rawCatType)    || m?.category    || '';
+      const subCategory = normSubCategory(rawProdType) || m?.subCategory || '';
+      const taxonomyFrom = rawCatType ? 'sheet' : (m?.category ? 'master' : '');
       if (!category) {
         const k = `${S(r['Category'])} / ${S(r['Product'])} / ${productCode}`;
         unresolvedProducts.set(k, (unresolvedProducts.get(k) || 0) + 1);
       }
 
-      // Dealer.
+      // Dealer. Special characters and spacing differ between the two
+      // systems, so matching is done on a stripped identity key, with a
+      // fuzzy fallback that refuses near-ties.
       const companyName = S(r['Company Name']) || S(r['Party Name']);
-      const d = byDealer.get(nameKey(companyName));
-      if (!d && companyName) unmatchedDealers.set(companyName, (unmatchedDealers.get(companyName) || 0) + 1);
+      const dm = matchDealer(companyName, dealerIndex, dealerList, dealerMemo);
+      const d = dm.dealer;
+      if (!d && companyName) {
+        const note = dm.suggestion
+          ? `${companyName}   [closest: ${dm.suggestion} @ ${(dm.score * 100).toFixed(0)}%]`
+          : companyName;
+        unmatchedDealers.set(note, (unmatchedDealers.get(note) || 0) + 1);
+      } else if (d && dm.reason === 'fuzzy') {
+        fuzzyDealers.set(`${companyName}  ->  ${d.name}  (${(dm.score * 100).toFixed(0)}%)`,
+          (fuzzyDealers.get(`${companyName}  ->  ${d.name}  (${(dm.score * 100).toFixed(0)}%)`) || 0) + 1);
+      }
 
       // Salesman - prefer the sheet, fall back to the dealer's owner.
       const salesPersonRaw = S(r['Sales Person']);
@@ -247,9 +284,11 @@ router.post('/upload', protect, adminOnly, upload.single('file'), async (req, re
         // VNR"), which is useless as a filter value - so the sheet wins.
         brand: S(r['Category']) || m?.brand || '',
         masterBrand: m?.brand || '',
-        categoryType: m?.categoryType || '',
-        productType: m?.productType || '',
-        category, subCategory: m?.subCategory || '',
+        categoryType: rawCatType || m?.categoryType || '',
+        productType: rawProdType || m?.productType || '',
+        // Use the values derived above, which already prefer the sheet's own
+        // Category Type / Product Type over the master lookup.
+        category, subCategory,
         resolved: !!category,
         qty: num(r['Qty']), price: num(r['Price']),
         amount: num(r['Amount']), netTotal: num(r['Net Total']),
@@ -258,6 +297,11 @@ router.post('/upload', protect, adminOnly, upload.single('file'), async (req, re
         dealerId: d?._id || null, dealerName: d?.name || '',
         city: S(r['City']), state: S(r['State']),
         salesPersonRaw, salesman,
+        // Sale.salesman and Dealer.salesman hold the user *id* ("rakesh"),
+        // not the display name. Carry it so the sales sync writes rows the
+        // rest of the app can actually filter on.
+        salesmanId: d?.salesman || userIdByName.get(salesman) || '',
+        taxonomyFrom,
         uploadedBy: req.user?.id || '',
         uploadBatchId: batchId,
       });
@@ -295,6 +339,8 @@ router.post('/upload', protect, adminOnly, upload.single('file'), async (req, re
       unresolvedProducts: top(unresolvedProducts),
       unmatchedDealers: top(unmatchedDealers),
       unmatchedSalesmen: top(unmatchedSalesmen),
+      fuzzyDealers: top(fuzzyDealers),
+      taxonomySource: sheetHasTaxonomy ? 'sheet' : 'master',
     };
 
     if (!commit) return res.json({ ok: true, preview: true, ...summary });
@@ -434,6 +480,152 @@ router.get('/facets', protect, async (req, res) => {
       dateFrom: range[0]?.min || '', dateTo: range[0]?.max || '',
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* ----------------------------------------------------------------
+   SYNC INTO Sale  (what Monthly Entry / Overview / MTD read)
+   ---------------------------------------------------------------- */
+
+/**
+ * Recompute Sale rows for a set of months from the imported invoice lines.
+ *
+ * Sale is (dealer x sub-category x month). ProductTxn is invoice lines with
+ * real dates. Rolling the lines up per month reproduces exactly the shape
+ * Monthly Entry writes, so the dashboards need no changes.
+ *
+ * The recompute is wholesale per month, never incremental: the month's ERP
+ * rows are rebuilt from every ProductTxn line in that month. Uploading one
+ * more day and re-syncing therefore yields the correct running total rather
+ * than adding a day twice.
+ *
+ * Returns { months: [...] } describing, per month, what the sync would do.
+ */
+async function buildSalesSync(monthList) {
+  const out = [];
+  for (const month of monthList) {
+    // Roll the invoice lines up to Sale's grain.
+    const rolled = await ProductTxn.aggregate([
+      { $match: { month, resolved: true, dealerName: { $ne: '' } } },
+      { $group: {
+          _id: { dealerName: '$dealerName', category: '$category', subCategory: '$subCategory' },
+          qty: { $sum: '$qty' },
+          dealerId: { $first: '$dealerId' },
+          salesmanId: { $first: '$salesmanId' },
+      } },
+    ]);
+
+    // What the month looks like today, and how it is currently sourced.
+    const [cur] = await Sale.aggregate([
+      { $match: { month } },
+      { $group: { _id: null, qty: { $sum: '$qty' }, rows: { $sum: 1 } } },
+    ]);
+    const bySource = await Sale.aggregate([
+      { $match: { month } },
+      { $group: { _id: '$source', qty: { $sum: '$qty' }, rows: { $sum: 1 } } },
+    ]);
+
+    // Lines that cannot become Sale rows, so the delta is explainable.
+    const [dropped] = await ProductTxn.aggregate([
+      { $match: { month, $or: [{ resolved: false }, { dealerName: '' }] } },
+      { $group: { _id: null, qty: { $sum: '$qty' }, lines: { $sum: 1 } } },
+    ]);
+
+    const newQty = rolled.reduce((a, r) => a + r.qty, 0);
+    const curQty = cur?.qty || 0;
+
+    const byCat = new Map();
+    for (const r of rolled) {
+      const k = `${r._id.category}||${r._id.subCategory}`;
+      byCat.set(k, (byCat.get(k) || 0) + r.qty);
+    }
+    const curByCat = await Sale.aggregate([
+      { $match: { month } },
+      { $group: { _id: { c: '$category', s: '$subCategory' }, qty: { $sum: '$qty' } } },
+    ]);
+    const curCatMap = new Map(curByCat.map(r => [`${r._id.c}||${r._id.s}`, r.qty]));
+    const cats = [...new Set([...byCat.keys(), ...curCatMap.keys()])].sort().map(k => {
+      const [category, subCategory] = k.split('||');
+      const before = curCatMap.get(k) || 0, after = byCat.get(k) || 0;
+      return { category, subCategory, before, after, delta: after - before };
+    });
+
+    out.push({
+      month,
+      newRows: rolled.length,
+      newQty,
+      currentRows: cur?.rows || 0,
+      currentQty: curQty,
+      delta: newQty - curQty,
+      bySource: bySource.map(b => ({ source: b._id || 'manual', qty: b.qty, rows: b.rows })),
+      droppedLines: dropped?.lines || 0,
+      droppedQty: dropped?.qty || 0,
+      categories: cats,
+      // A recompute that lowers a month is the dangerous case: it usually
+      // means the imported lines cover only part of that month.
+      warnLowers: newQty < curQty,
+      rows: rolled.map(r => ({
+        dealerName: r._id.dealerName,
+        category: r._id.category,
+        subCategory: r._id.subCategory,
+        qty: r.qty,
+        dealerId: r.dealerId,
+        salesmanId: r.salesmanId,
+      })),
+    });
+  }
+  return out;
+}
+
+/**
+ * POST /api/producttx/sync-sales?commit=1&months=2026-09
+ * Without commit, reports exactly what would change. Never partial: each
+ * month is replaced as a whole or not at all.
+ */
+router.post('/sync-sales', protect, adminOnly, async (req, res) => {
+  try {
+    const commit = String(req.query.commit || '') === '1';
+    let monthList = String(req.query.months || '').split(',').map(x => x.trim()).filter(Boolean);
+    if (!monthList.length) monthList = (await ProductTxn.distinct('month')).filter(Boolean).sort();
+    if (!monthList.length) return res.status(400).json({ error: 'No imported transactions to sync.' });
+
+    const months = await buildSalesSync(monthList);
+
+    if (!commit) {
+      return res.json({ ok: true, preview: true, months: months.map(({ rows, ...m }) => m) });
+    }
+
+    const batchId = newBatchId();
+    let deleted = 0, inserted = 0;
+    for (const m of months) {
+      // Replace the whole month: drop what is there, write the recomputed
+      // set. Doing it per month keeps an unrelated month untouched.
+      const del = await Sale.deleteMany({ month: m.month });
+      deleted += del.deletedCount || 0;
+      if (m.rows.length) {
+        const docs = m.rows.map(r => ({
+          dealerName: r.dealerName,
+          dealerId: r.dealerId || undefined,
+          salesman: r.salesmanId || '',
+          month: m.month,
+          category: r.category,
+          subCategory: r.subCategory,
+          qty: r.qty,
+          uploadedBy: req.user?.id || '',
+          uploadBatchId: batchId,
+          source: 'erp',
+        }));
+        const ins = await Sale.insertMany(docs, { ordered: false });
+        inserted += ins.length;
+      }
+    }
+    res.json({
+      ok: true, preview: false, batchId, deleted, inserted,
+      months: months.map(({ rows, ...m }) => m),
+    });
+  } catch (e) {
+    console.error('[producttx/sync-sales]', e);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 /* ----------------------------------------------------------------

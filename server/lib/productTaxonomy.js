@@ -110,3 +110,106 @@ export function matchSalesman(raw, users) {
 }
 
 export { S as str, U as upper };
+
+/* ------------------------------------------------------------------
+   Dealer-name matching
+
+   The ERP and the app hold the same companies under cosmetically
+   different names: "M/S. SHREE RAM PLY & BOARDS" vs "SHREE RAM PLY
+   AND BOARDS". Matching therefore strips everything that is not a
+   letter or a digit, and drops legal-form words that carry no
+   identity, before comparing.
+   ------------------------------------------------------------------ */
+
+/** Words that say nothing about which company this is. */
+const NOISE = new Set([
+  'PVT', 'PRIVATE', 'LTD', 'LIMITED', 'LLP', 'INC', 'CORP',
+  'AND', 'THE', 'MS', 'M', 'S', 'CO',
+]);
+
+/**
+ * Aggressive identity key: upper-cased, legal-form words removed, then
+ * every non-alphanumeric character (spaces included) stripped out.
+ * "M/s. Shree-Ram Ply & Boards Pvt Ltd" -> "SHREERAMPLYBOARDS"
+ */
+export function dealerKey(s) {
+  const words = String(s ?? '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter(w => w && !NOISE.has(w));
+  return words.join('');
+}
+
+/** Levenshtein distance, capped for speed on long strings. */
+function lev(a, b) {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(
+        prev[j] + 1,
+        cur[j - 1] + 1,
+        prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+    }
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+/** 0..1 similarity between two identity keys. */
+export function similarity(a, b) {
+  if (!a || !b) return 0;
+  const n = Math.max(a.length, b.length);
+  return n === 0 ? 1 : 1 - lev(a, b) / n;
+}
+
+/**
+ * Match one ERP party name against the app's dealers.
+ *
+ * Returns { dealer, score, reason, runnerUp }. A match is only returned
+ * when it is unambiguous: either the identity keys are identical, or the
+ * best candidate clears MIN_SCORE *and* beats the next-best by MARGIN.
+ * A near-tie is reported instead of guessed — attaching a sale to the
+ * wrong dealer is far worse than leaving it parked.
+ *
+ * `index` is a Map of dealerKey -> dealer, `list` the [key, dealer] pairs.
+ */
+export const MIN_SCORE = 0.90;
+export const MARGIN = 0.04;
+
+export function matchDealer(rawName, index, list, memo) {
+  const key = dealerKey(rawName);
+  if (!key) return { dealer: null, score: 0, reason: 'empty' };
+  if (memo?.has(key)) return memo.get(key);
+
+  let out;
+  const exact = index.get(key);
+  if (exact) {
+    out = { dealer: exact, score: 1, reason: 'exact' };
+  } else {
+    let best = null, bestScore = 0, second = 0, runnerUp = null;
+    for (const [k, d] of list) {
+      // Length prefilter: a 90% match cannot differ in length by more than 10%.
+      if (Math.abs(k.length - key.length) > Math.ceil(key.length * 0.15)) continue;
+      const s = similarity(key, k);
+      if (s > bestScore) { second = bestScore; runnerUp = best; best = d; bestScore = s; }
+      else if (s > second) { second = s; runnerUp = d; }
+    }
+    if (best && bestScore >= MIN_SCORE && (bestScore - second) >= MARGIN) {
+      out = { dealer: best, score: bestScore, reason: 'fuzzy' };
+    } else {
+      out = {
+        dealer: null, score: bestScore, reason: bestScore >= MIN_SCORE ? 'ambiguous' : 'no-match',
+        suggestion: best?.name || '', runnerUp: runnerUp?.name || '',
+      };
+    }
+  }
+  memo?.set(key, out);
+  return out;
+}
