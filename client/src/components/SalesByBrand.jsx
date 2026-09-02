@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Tag, ChevronDown, ChevronRight } from 'lucide-react';
+import { Tag, ChevronDown, ChevronRight, Search, X } from 'lucide-react';
 import { api } from '../api';
 
 /**
@@ -35,6 +35,11 @@ export default function SalesByBrand({ monthLabel, salesman }) {
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(null);
   const [showAll, setShowAll] = useState(false);
+  const [q, setQ] = useState('');
+  // Dealer/salesman detail for the open collection, fetched on demand so
+  // expanding one does not mean loading all 41.
+  const [detail, setDetail] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   useEffect(() => {
     if (!month) return;
@@ -47,12 +52,30 @@ export default function SalesByBrand({ monthLabel, salesman }) {
       .finally(() => setLoading(false));
   }, [month, salesman]);
 
-  const rows = useMemo(() => (data?.rows || []).filter(r => r.brand), [data]);
-  const total = useMemo(() => rows.reduce((a, r) => a + r.qty, 0), [rows]);
-  const shown = showAll ? rows : rows.slice(0, 12);
+  useEffect(() => {
+    if (!expanded || !month) { setDetail(null); return; }
+    setDetailLoading(true);
+    const p = { month, brand: expanded };
+    if (salesman) p.salesman = salesman;
+    api.salesBrandDetail(p)
+      .then(d => setDetail(d))
+      .catch(() => setDetail(null))
+      .finally(() => setDetailLoading(false));
+  }, [expanded, month, salesman]);
+
+  const allRows = useMemo(() => (data?.rows || []).filter(r => r.brand), [data]);
+  const rows = useMemo(() => {
+    const needle = q.trim().toUpperCase();
+    if (!needle) return allRows;
+    return allRows.filter(r => r.brand.toUpperCase().includes(needle));
+  }, [allRows, q]);
+  const total = useMemo(() => allRows.reduce((a, r) => a + r.qty, 0), [allRows]);
+  // While searching, show every hit — hiding matches behind "show all" would
+  // defeat the point of searching.
+  const shown = (showAll || q.trim()) ? rows : rows.slice(0, 12);
 
   // Nothing to show unless this month came from a transaction import.
-  if (!loading && !rows.length) return null;
+  if (!loading && !allRows.length) return null;
 
   return (
     <div className="card" style={{ marginBottom: 16, padding: 14 }}>
@@ -62,11 +85,38 @@ export default function SalesByBrand({ monthLabel, salesman }) {
         <span style={{ fontSize: 11.5, color: 'var(--t3)' }}>
           the collection sold, straight from the ERP
         </span>
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'baseline', gap: 6 }}>
-          <span style={{ fontSize: 11, color: 'var(--t3)' }}>Total</span>
-          <b style={{ fontSize: 15, fontVariantNumeric: 'tabular-nums' }}>{total.toLocaleString('en-IN')}</b>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ position: 'relative' }}>
+            <Search size={12} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--t3)' }} />
+            <input
+              value={q}
+              onChange={e => setQ(e.target.value)}
+              placeholder="Search collection…"
+              className="sel"
+              style={{ paddingLeft: 26, paddingRight: q ? 24 : 10, fontSize: 12, width: 180, cursor: 'text' }}
+            />
+            {q && (
+              <button onClick={() => setQ('')} title="Clear"
+                style={{ position: 'absolute', right: 5, top: '50%', transform: 'translateY(-50%)',
+                         background: 'none', border: 'none', color: 'var(--t3)', cursor: 'pointer', padding: 2 }}>
+                <X size={12} />
+              </button>
+            )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+            <span style={{ fontSize: 11, color: 'var(--t3)' }}>Total</span>
+            <b style={{ fontSize: 15, fontVariantNumeric: 'tabular-nums' }}>{total.toLocaleString('en-IN')}</b>
+          </div>
         </div>
       </div>
+
+      {q.trim() && (
+        <div style={{ fontSize: 11.5, color: 'var(--t3)', marginBottom: 8 }}>
+          {rows.length
+            ? <>{rows.length} of {allRows.length} collections match <b style={{ color: 'var(--t2)' }}>"{q.trim()}"</b> · {rows.reduce((a, r) => a + r.qty, 0).toLocaleString('en-IN')} units</>
+            : <>No collection matches <b style={{ color: 'var(--t2)' }}>"{q.trim()}"</b>.</>}
+        </div>
+      )}
 
       {loading && <div style={{ padding: 16, textAlign: 'center', color: 'var(--t3)', fontSize: 12.5 }}>Loading…</div>}
 
@@ -110,7 +160,8 @@ export default function SalesByBrand({ monthLabel, salesman }) {
                   </div>
 
                   {open && (
-                    <div style={{ marginTop: 8, paddingTop: 7, borderTop: '1px solid var(--b1)' }}>
+                    <div style={{ marginTop: 8, paddingTop: 7, borderTop: '1px solid var(--b1)' }}
+                      onClick={e => e.stopPropagation()}>
                       {[...r.categories].sort((a, b) => b.qty - a.qty).map(c => (
                         <div key={c.category} style={{
                           display: 'flex', justifyContent: 'space-between', gap: 8,
@@ -122,6 +173,53 @@ export default function SalesByBrand({ monthLabel, salesman }) {
                           <b style={{ fontVariantNumeric: 'tabular-nums' }}>{c.qty.toLocaleString('en-IN')}</b>
                         </div>
                       ))}
+
+                      {detailLoading && (
+                        <div style={{ fontSize: 11, color: 'var(--t3)', padding: '8px 0' }}>Loading dealers…</div>
+                      )}
+
+                      {!detailLoading && detail?.brand === r.brand && (
+                        <>
+                          {detail.salesmen?.length > 0 && (
+                            <div style={{ marginTop: 9, paddingTop: 7, borderTop: '1px dashed var(--b1)' }}>
+                              <div style={{ fontSize: 9.5, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.09em', marginBottom: 5 }}>
+                                Salesmen
+                              </div>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                                {detail.salesmen.map(sm => (
+                                  <span key={sm.salesman} className="chip" style={{ fontSize: 10.5 }}>
+                                    {sm.salesman} <b style={{ color: 'var(--t1)' }}>{sm.qty.toLocaleString('en-IN')}</b>
+                                    <span style={{ opacity: .7 }}> · {sm.dealers}d</span>
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {detail.dealers?.length > 0 && (
+                            <div style={{ marginTop: 9, paddingTop: 7, borderTop: '1px dashed var(--b1)' }}>
+                              <div style={{ fontSize: 9.5, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.09em', marginBottom: 5 }}>
+                                Dealers ({detail.dealers.length})
+                              </div>
+                              <div style={{ maxHeight: 168, overflowY: 'auto' }}>
+                                {detail.dealers.map((dd, i) => (
+                                  <div key={i} style={{
+                                    display: 'flex', alignItems: 'baseline', gap: 6, fontSize: 11.5,
+                                    padding: '3px 0', borderBottom: '1px solid var(--b1)',
+                                  }}>
+                                    <span style={{ flex: 1, minWidth: 0, color: 'var(--t1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                      title={dd.dealer}>{dd.dealer}</span>
+                                    <span style={{ color: 'var(--t3)', fontSize: 10.5, whiteSpace: 'nowrap' }}>{dd.salesmanName}</span>
+                                    <b style={{ fontVariantNumeric: 'tabular-nums', minWidth: 34, textAlign: 'right' }}>
+                                      {dd.qty.toLocaleString('en-IN')}
+                                    </b>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
@@ -129,9 +227,9 @@ export default function SalesByBrand({ monthLabel, salesman }) {
             })}
           </div>
 
-          {rows.length > 12 && (
+          {!q.trim() && allRows.length > 12 && (
             <button className="btn" style={{ marginTop: 10, fontSize: 12 }} onClick={() => setShowAll(v => !v)}>
-              {showAll ? 'Show top 12' : `Show all ${rows.length} collections`}
+              {showAll ? 'Show top 12' : `Show all ${allRows.length} collections`}
             </button>
           )}
 

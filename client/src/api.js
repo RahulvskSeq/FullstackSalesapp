@@ -2154,6 +2154,8 @@ export const api = {
   salesByCategory:   (q={})     => fetch(`${BASE}/sales/by-category?${new URLSearchParams(q)}`,{headers:authHeaders()}).then(handle),
   // Sales grouped by the ERP transaction category (the collection sold).
   salesByBrand:      (q={})     => fetch(`${BASE}/sales/by-brand?${new URLSearchParams(q)}`,{headers:authHeaders()}).then(handle),
+  // Dealers + salesmen behind one transaction category. {month, brand, salesman?}
+  salesBrandDetail:  (q={})     => fetch(`${BASE}/sales/brand-detail?${new URLSearchParams(q)}`,{headers:authHeaders()}).then(handle),
   salesByDealer:     (q={})     => fetch(`${BASE}/sales/by-dealer?${new URLSearchParams(q)}`,{headers:authHeaders()}).then(handle),
   // Per-dealer, per-month excluded-category qty (drives all-months category filtering).
   salesByDealerMonths:(exclude=[]) => fetch(`${BASE}/sales/by-dealer-months?exclude=${encodeURIComponent((exclude||[]).join(','))}`,{headers:authHeaders()}).then(handle),
