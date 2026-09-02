@@ -340,6 +340,11 @@ export default function Styles({theme}){
     /* Solid filled pill (see utils.fillChip) — the tinted version washed out
        on light themes. Squared-off radius to match the rest of the UI. */
     .insight-chip{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:14px;font-size:12px;font-weight:500;border:1px solid currentColor;opacity:.9}
+    /* The three movement cards that replaced the old chip row. Lift on hover
+       so they read as clickable — each opens the dealer list behind it. */
+    .insight-card{transition:transform .15s, box-shadow .15s, filter .15s}
+    .insight-card:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.28);filter:brightness(1.06)}
+    .insight-card:active{transform:translateY(0)}
     .skel{background:linear-gradient(90deg,var(--bg2) 0%,var(--bg3) 50%,var(--bg2) 100%);background-size:200% 100%;animation:shimmer 1.4s ease-in-out infinite;border-radius:6px;display:block}
 
     /* ── Material palette shape rules ──────────────────────────────────

@@ -1701,16 +1701,56 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
         )}
       </div>
 
-      {/* Insight chips — all based on real data calculations */}
-      <div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:18}}>
-        <div className="insight-chip" onClick={()=>setInsightPopup({label:'TRENDING UP',color:'var(--grn)',icon:'📈',sub:'sales up >30% vs previous month',list:risingList})} style={{'--c':'#34d399','--fg':readableOn('#34d399'),background:'rgba(52,211,153,0.1)',color:'var(--grn)',cursor:'pointer'}}><TrendingUp size={13}/> {risingList.length} dealers trending up</div>
-        <div className="insight-chip" onClick={()=>setInsightPopup({label:'DECLINING SHARPLY',color:'var(--red)',icon:'📉',sub:'sales down >20% vs previous month',list:decliningList})} style={{'--c':'#f87171','--fg':readableOn('#f87171'),background:'rgba(248,113,113,0.1)',color:'var(--red)',cursor:'pointer'}}><ArrowDownRight size={13}/> {decliningList.length} declining sharply</div>
-        {dormantList.length>0&&<div className="insight-chip" onClick={()=>setInsightPopup({label:'DORMANT 3+ MONTHS',color:'var(--yel)',icon:'💤',sub:'zero sales last 3 months but had history',list:dormantList})} style={{'--c':'#fbbf24','--fg':readableOn('#fbbf24'),background:'rgba(251,191,36,0.1)',color:'var(--yel)',cursor:'pointer'}}><Clock size={13}/> {dormantList.length} dormant 3+ months</div>}
-        {/* Recently inactive / inactive / dead chips were here. They repeated
-            the Account Activity cards further down the page — same numbers,
-            same calculated tier, two places to keep in step. Trending up,
-            declining and dormant stay because nothing else shows them. */}
-      </div>
+      {/* Movement — the three things on this page that say something the rest
+          of it doesn't. Small chips buried them among a dozen others; now that
+          the duplicates are gone they get room: the number leads, the label
+          explains, and the rule sits underneath so nobody has to guess what
+          "declining" means. */}
+      {(()=>{
+        const CARDS = [
+          { key:'up',   n:risingList.length,    label:'dealers trending up',
+            rule:'sales up >30% vs last month', color:'#34d399', Icon:TrendingUp,
+            popup:{label:'TRENDING UP', color:'var(--grn)', icon:'📈',
+                   sub:'sales up >30% vs previous month', list:risingList} },
+          { key:'down', n:decliningList.length, label:'declining sharply',
+            rule:'sales down >20% vs last month', color:'#f87171', Icon:ArrowDownRight,
+            popup:{label:'DECLINING SHARPLY', color:'var(--red)', icon:'📉',
+                   sub:'sales down >20% vs previous month', list:decliningList} },
+          { key:'dorm', n:dormantList.length,   label:'dormant 3+ months',
+            rule:'no sales in 3 months, had history', color:'#fbbf24', Icon:Clock,
+            popup:{label:'DORMANT 3+ MONTHS', color:'var(--yel)', icon:'💤',
+                   sub:'zero sales last 3 months but had history', list:dormantList} },
+        ].filter(c=>c.n>0);
+        if(!CARDS.length) return null;
+        return (
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(210px,1fr))',
+            gap:10,marginBottom:18}}>
+            {CARDS.map(c=>(
+              <div key={c.key} className="insight-card"
+                onClick={()=>setInsightPopup(c.popup)}
+                style={{'--c':c.color,
+                  background:`linear-gradient(135deg, ${c.color}24, ${c.color}0d)`,
+                  border:`1px solid ${c.color}55`, borderLeft:`4px solid ${c.color}`,
+                  borderRadius:12, padding:'14px 16px', cursor:'pointer',
+                  display:'flex', alignItems:'center', gap:14, minWidth:0}}>
+                <div style={{width:38,height:38,borderRadius:10,flexShrink:0,
+                  background:`${c.color}26`, color:c.color,
+                  display:'flex',alignItems:'center',justifyContent:'center'}}>
+                  <c.Icon size={19}/>
+                </div>
+                <div style={{minWidth:0}}>
+                  <div style={{fontSize:26,fontWeight:800,lineHeight:1,color:c.color,
+                    letterSpacing:'-0.02em'}}>{c.n}</div>
+                  <div style={{fontSize:12.5,fontWeight:600,color:'var(--t1)',marginTop:3,
+                    overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.label}</div>
+                  <div style={{fontSize:10.5,color:'var(--t3)',marginTop:2,
+                    overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.rule}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
 
       <div className="stat-grid">
         <StatCard label="Total Dealers" value={myD.length} sub={`${active} active · ${inactive} inactive · ${dead} dead`} icon={Users}/>
