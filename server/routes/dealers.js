@@ -615,7 +615,32 @@ router.post('/delete-by-source', protect, superAdminOnly, async (req, res) => {
     const dryRun = req.body?.dryRun === true;
 
     // Find dealers to delete + the surviving canonical set
-    const toDelete = await Dealer.find({ source }).lean();
+    const candidates = await Dealer.find({ source }).lean();
+
+    // A dealer created by an upload is not necessarily a MISTAKE. This route
+    // exists to undo a bad import, so it must only remove rows that carry no
+    // real information. Anything with contact details or sales history is a
+    // genuine dealer that merely happened to arrive via an upload, and
+    // deleting it silently strands its sales as "dealer not matched".
+    //
+    // Pass { protectReal:false } to delete regardless (the original behaviour).
+    const protectReal = req.body?.protectReal !== false;
+    let Sale = null;
+    try { Sale = (await import('../models/Sale.js')).default; } catch {}
+
+    let toDelete = candidates, skipped = [];
+    if (protectReal && candidates.length) {
+      const withSales = new Set(
+        Sale ? (await Sale.distinct('dealerName', { dealerName: { $in: candidates.map(d => d.name) } })) : []
+      );
+      const keep = d =>
+        String(d.address || '').trim() ||
+        String(d.pincode || '').trim() ||
+        withSales.has(d.name);
+      skipped = candidates.filter(keep);
+      toDelete = candidates.filter(d => !keep(d));
+    }
+
     const survivors = await Dealer.find({ source: { $ne: source } }, { name:1, salesman:1, _id:1 }).lean();
     const survivorByLowerName = new Map();
     for (const s of survivors) {
@@ -623,9 +648,6 @@ router.post('/delete-by-source', protect, superAdminOnly, async (req, res) => {
     }
 
     let migrated = 0;
-    let Sale = null;
-    try { Sale = (await import('../models/Sale.js')).default; } catch {}
-
     if (!dryRun && Sale && toDelete.length) {
       for (const d of toDelete) {
         const canon = survivorByLowerName.get(String(d.name).toLowerCase().trim());
@@ -640,21 +662,27 @@ router.post('/delete-by-source', protect, superAdminOnly, async (req, res) => {
 
     let deleted = 0;
     if (!dryRun && toDelete.length) {
-      const result = await Dealer.deleteMany({ source });
+      // Delete by explicit id, NOT by { source } — the protected rows share
+      // that source and must survive.
+      const result = await Dealer.deleteMany({ _id: { $in: toDelete.map(d => d._id) } });
       deleted = result.deletedCount || 0;
     } else {
       deleted = toDelete.length;
     }
 
-    console.log(`[DELETE-BY-SOURCE] dryRun=${dryRun} source=${source} would-delete=${toDelete.length} migrated=${migrated} deleted=${deleted}`);
+    console.log(`[DELETE-BY-SOURCE] dryRun=${dryRun} source=${source} candidates=${candidates.length} protected=${skipped.length} would-delete=${toDelete.length} migrated=${migrated} deleted=${deleted}`);
     res.json({
       ok: true,
       dryRun,
       source,
+      protectReal,
       survivorCount: survivors.length,
-      candidatesFound: toDelete.length,
+      candidatesFound: candidates.length,
+      protectedCount: skipped.length,
+      toDeleteCount: toDelete.length,
       migrated,
       deleted,
+      protectedSample: skipped.slice(0, 15).map(d => d.name),
       sample: toDelete.slice(0, 15).map(d => ({ id:String(d._id), name:d.name, salesman:d.salesman })),
     });
   } catch (e) {
@@ -1321,6 +1349,24 @@ router.post('/sync-db', protect, adminOnly, async (req,res) => {
   }
 });
 
+// NOTE: must stay ABOVE router.get('/:id'), which would otherwise treat
+// "restore-missing" as a dealer id and fail casting it to an ObjectId.
+// GET /api/dealers/restore-missing?from=bkcheck  -> dry run, writes nothing
+router.get('/restore-missing', protect, superAdminOnly, async (req, res) => {
+  try {
+    const fromDb = String(req.query.from || 'bkcheck');
+    const { backupCount, liveCount, missing } = await findMissingDealers(fromDb);
+    res.json({
+      ok: true, dryRun: true, fromDb, backupCount, liveCount,
+      missingCount: missing.length,
+      names: missing.map(d => d.name).slice(0, 200),
+    });
+  } catch (e) {
+    console.error('[dealers/restore-missing GET]', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.get('/:id', protect, async (req,res) => {
   try {
     const d=await Dealer.findById(req.params.id).lean();
@@ -1408,6 +1454,65 @@ router.put('/:id', protect, async (req,res) => {
 router.delete('/:id', protect, adminOnly, async (req,res) => {
   try { await Dealer.findByIdAndDelete(req.params.id); res.json({ok:true}); }
   catch(e){res.status(500).json({error:e.message});}
+});
+
+/* ----------------------------------------------------------------
+   Restore dealers that exist in a local mongodump backup but are
+   missing from this database.
+
+   Added after 64 dealers disappeared between a backup and an import,
+   which stranded 45 units of sales as "dealer not matched". Deliberately
+   additive: it inserts ONLY rows missing by both _id and normalised name
+   key, so nothing existing is overwritten and no duplicate name is
+   reintroduced, and it preserves the original _id so existing references
+   still resolve. GET reports; POST writes.
+   ---------------------------------------------------------------- */
+
+/** Same identity key the product-transaction importer matches on. */
+function restoreKey(s) {
+  const NOISE = new Set(['PVT','PRIVATE','LTD','LIMITED','LLP','INC','CORP','AND','THE','MS','M','S','CO']);
+  return String(s ?? '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim()
+    .split(' ').filter(w => w && !NOISE.has(w)).join('');
+}
+
+async function findMissingDealers(fromDb) {
+  // The backup is restored into a local database on the same host.
+  const uri = `mongodb://127.0.0.1:27017/${encodeURIComponent(fromDb)}`;
+  const src = await mongoose.createConnection(uri).asPromise();
+  try {
+    const backup = await src.db.collection('dealers').find({}).toArray();
+    const live = await Dealer.find({}, { _id: 1, name: 1 }).lean();
+    const liveIds = new Set(live.map(d => String(d._id)));
+    const liveKeys = new Set(live.map(d => restoreKey(d.name)));
+    const missing = backup.filter(d =>
+      !liveIds.has(String(d._id)) && !liveKeys.has(restoreKey(d.name)));
+    return { backupCount: backup.length, liveCount: live.length, missing };
+  } finally {
+    await src.close();
+  }
+}
+
+// POST /api/dealers/restore-missing?from=bkcheck  -> insert the missing rows
+router.post('/restore-missing', protect, superAdminOnly, async (req, res) => {
+  try {
+    const fromDb = String(req.query.from || 'bkcheck');
+    const { backupCount, liveCount, missing } = await findMissingDealers(fromDb);
+    if (!missing.length) {
+      return res.json({ ok: true, inserted: 0, backupCount, liveCount, message: 'Nothing missing.' });
+    }
+    const r = await Dealer.collection.insertMany(missing, { ordered: false });
+    res.json({
+      ok: true,
+      inserted: r.insertedCount,
+      backupCount,
+      liveBefore: liveCount,
+      liveAfter: await Dealer.countDocuments(),
+      names: missing.map(d => d.name).slice(0, 200),
+    });
+  } catch (e) {
+    console.error('[dealers/restore-missing POST]', e);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 export default router;
