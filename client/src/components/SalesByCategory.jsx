@@ -16,7 +16,10 @@ import { useGlobalCategoryFilter } from '../hooks/useGlobalCategoryFilter';
 
 const fmt = n => (n == null ? '—' : Number(n).toLocaleString('en-IN'));
 
-const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[], onOpenDealer } = {}) => {
+// `onlyMtd` renders JUST the MTD Sales Summary card — used on Overview, where
+// the tabs, KPIs and pivots would be noise. The data behind it is already
+// scoped server-side, so a salesman opening Overview sees only their own row.
+const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[], onOpenDealer, onlyMtd=false } = {}) => {
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
 
   // Build a name → dealerId index so clicking a dealer row in the pivot opens
@@ -514,6 +517,205 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
     );
   };
 
+  // The MTD summary card, built once and rendered either inside the full
+  // Category-wise Sales page or on its own via `onlyMtd`.
+  // ── MTD Sales Summary — Region × Salesman × Category ─────────────────
+  const mtdCard = (
+        <div className="card mtd-card" style={{padding:0, marginTop:14, overflow:'hidden'}}>
+          <div style={{padding:'12px 16px', borderBottom:'1px solid var(--b2)',
+            background:'var(--bg2)',
+            display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
+            <BarChart3 size={14} color="var(--acc)"/>
+            <div style={{fontSize:13, fontWeight:700}}>MTD Sales Summary — {month || '—'}</div>
+            <div style={{fontSize:11, color:'var(--t3)'}}>
+              · Region / Salesman × Category · Outstanding from Outstanding section
+              {isAdmin && <span style={{color:'var(--acc)'}}> · type a LAMINATE target and the rest fill in: Liner 100%, Louvres 30%, Polymer 10%, Rolls 20</span>}
+            </div>
+          </div>
+          <div style={{overflowX:'auto', maxHeight:'70vh'}}>
+            <table className="mtd-table">
+              <thead>
+                {/* Row 1: Region | Salesman | <CategoryName spanning 2 cols> ... | Total spanning 2 cols | MTD % | Dealers | Outstanding */}
+                <tr style={{position:'sticky', top:0, background:'var(--bg2)', zIndex:2}}>
+                  <th rowSpan={2} style={{textAlign:'left', position:'sticky', left:0, background:'var(--bg2)', zIndex:3, minWidth:120}}>Region</th>
+                  <th rowSpan={2} style={{textAlign:'left', minWidth:140}}>Salesman</th>
+                  {mtdCategories.map((c, i) => {
+                    // A category with nothing sold and nothing planned is
+                    // still shown — you may want to set a target on it — but
+                    // it recedes rather than competing with the live ones.
+                    const dead = !(byCat.rows||[]).some(r => r.category === c && r.qty > 0);
+                    return (
+                      <th key={'h-'+c} colSpan={2}
+                        className={'cat-start' + (i % 2 ? ' cat-alt' : '')}
+                        style={{textAlign:'center', fontSize:11,
+                          color: dead ? 'var(--t3)' : 'var(--t1)', fontWeight: dead ? 500 : 800,
+                          opacity: dead ? .55 : 1}}>{c}</th>
+                    );
+                  })}
+                  <th colSpan={2} className="col-total col-total-start"
+                    style={{textAlign:'center', fontWeight:800, color:'var(--acc)'}}>Total</th>
+                  {/* MTD %, Billed Dealers and Outstanding were here. This
+                      table is for setting and reading targets; Outstanding
+                      has its own section, and the percentages read 1-2%
+                      while targets are still being filled in. */}
+                </tr>
+                {/* Row 2: T | A pair under each category, T | A under Total */}
+                <tr style={{position:'sticky', top:32, background:'var(--bg2)', zIndex:2}}>
+                  {mtdCategories.map(c => (
+                    <React.Fragment key={'sub-'+c}>
+                      <th style={{textAlign:'right', fontSize:9, color:'var(--acc)', borderLeft:'1px solid var(--b1)', minWidth:55}}>Target</th>
+                      <th style={{textAlign:'right', fontSize:9, color:'var(--grn)', minWidth:55}}>Ach</th>
+                    </React.Fragment>
+                  ))}
+                  <th style={{textAlign:'right', fontSize:10, color:'var(--acc)', fontWeight:800, borderLeft:'1px solid var(--b1)'}}>Target</th>
+                  <th style={{textAlign:'right', fontSize:10, color:'var(--grn)', fontWeight:800}}>Ach</th>
+                </tr>
+              </thead>
+              <tbody>
+                {mtdByRegion.map(({ region, rows, subtotal }) => (
+                  <React.Fragment key={region}>
+                    {rows.map((r, i) => (
+                      <tr key={r.smId}>
+                        {i === 0 && (
+                          <td rowSpan={rows.length}
+                            style={{position:'sticky', left:0, background:'var(--bg2)', fontWeight:700, color:'var(--t1)', verticalAlign:'top'}}>
+                            {region}
+                          </td>
+                        )}
+                        <td style={{fontWeight:600}}>{r.smName}</td>
+                        {/* Per-category cells: Target | Ach SIDE-BY-SIDE.
+                            Target is editable inline for admins; saved to /api/sales/targets on blur. */}
+                        {mtdCategories.map((c, ci) => {
+                          const t = r.perCatTarget?.[c] || 0;
+                          const a = r.perCategory[c] || 0;
+                          return (
+                            <React.Fragment key={'pair-'+r.smId+c}>
+                              <td className={'cat-start' + (ci % 2 ? ' cat-alt' : '')} style={{textAlign:'right', padding:'2px 4px'}}>
+                                {isAdmin ? (
+                                  <input
+                                    // Keyed on the value: these are uncontrolled
+                                    // inputs, so without a remount a derived
+                                    // target would save but never show up.
+                                    key={'t-'+r.smId+c+t}
+                                    type="number"
+                                    defaultValue={t || ''}
+                                    placeholder="—"
+                                    onBlur={e => {
+                                      const newVal = Number(e.target.value) || 0;
+                                      if (newVal !== t) setOneTarget(r.smId, c, newVal);
+                                    }}
+                                    onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
+                                    style={{
+                                      width:60, textAlign:'right',
+                                      background:'transparent',
+                                      border: t > 0 ? '1px solid var(--b2)' : '1px dashed var(--b2)',
+                                      borderRadius:4, padding:'2px 4px',
+                                      fontSize:11, color: t > 0 ? 'var(--acc)' : 'var(--t3)',
+                                    }}/>
+                                ) : (
+                                  <span style={{color: t ? 'var(--acc)' : 'var(--t3)', fontWeight:600}}>{t ? fmtL(t) : '—'}</span>
+                                )}
+                              </td>
+                              <td className={ci % 2 ? 'cat-alt' : ''} style={{textAlign:'right',
+                                color: a ? achTone(a,t).color : 'var(--t3)',
+                                fontWeight: a ? achTone(a,t).weight : 400}}>
+                                {a ? fmtL(a) : '—'}
+                              </td>
+                            </React.Fragment>
+                          );
+                        })}
+                        {/* Total Target | Total Ach */}
+                        <td className="col-total col-total-start" style={{textAlign:'right', fontWeight:700, color:'var(--acc)'}}>{fmtL(r.target)}</td>
+                        <td className="col-total" style={{textAlign:'right'}}>
+                          <div style={{display:'inline-flex', alignItems:'center', gap:6}}>
+                            <span style={{fontWeight:800, color: achTone(r.totalAch, r.target).color}}>{fmtL(r.totalAch)}</span>
+                            {r.target > 0 && (
+                              <span style={{
+                                fontSize:9.5, fontWeight:800, padding:'1px 5px', borderRadius:99,
+                                color: achTone(r.totalAch, r.target).color,
+                                background: achTone(r.totalAch, r.target).color + '1f',
+                              }}>
+                                {Math.round((r.totalAch / r.target) * 100)}%
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {/* Region subtotal row — paired Target | Ach per category */}
+                    <tr className="row-subtotal">
+                      <td colSpan={2} style={{position:'sticky', left:0, fontSize:11, color:'var(--t2)'}}>
+                        {region} Total
+                      </td>
+                      {mtdCategories.map(c => {
+                        const t = subtotal.perCatTarget?.[c] || 0;
+                        const a = subtotal.perCategory[c] || 0;
+                        return (
+                          <React.Fragment key={'srt-'+region+c}>
+                            <td style={{textAlign:'right', fontWeight:700, color: t?'var(--acc)':'var(--t3)', borderLeft:'1px solid var(--b1)'}}>{t?fmtL(t):'—'}</td>
+                            <td style={{textAlign:'right', fontWeight:700, color: a?'#34d399':'var(--t3)'}}>{a?fmtL(a):'—'}</td>
+                          </React.Fragment>
+                        );
+                      })}
+                      <td style={{textAlign:'right', fontWeight:800, color:'var(--acc)', borderLeft:'1px solid var(--b1)', background:'rgba(99,102,241,.06)'}}>{fmtL(subtotal.target)}</td>
+                      <td style={{textAlign:'right', fontWeight:800, color:'var(--grn)', background:'rgba(52,211,153,.06)'}}>{fmtL(subtotal.totalAch)}</td>
+                    </tr>
+                  </React.Fragment>
+                ))}
+              </tbody>
+              {mtdSummary.length > 0 && (
+                <tfoot>
+                  <tr className="row-grand">
+                    <td colSpan={2} style={{position:'sticky', left:0}}>
+                      Grand Total
+                    </td>
+                    {mtdCategories.map(c => {
+                      const t = mtdGrand.perCatTarget?.[c] || 0;
+                      const a = mtdGrand.perCategory[c] || 0;
+                      return (
+                        <React.Fragment key={'gt-'+c}>
+                          <td style={{textAlign:'right', fontWeight:800, color: t?'var(--acc)':'var(--t3)', borderLeft:'1px solid var(--b1)'}}>{t?fmtL(t):'—'}</td>
+                          <td style={{textAlign:'right', fontWeight:800, color: a?'#34d399':'var(--t3)'}}>{a?fmtL(a):'—'}</td>
+                        </React.Fragment>
+                      );
+                    })}
+                    <td style={{textAlign:'right', fontWeight:800, color:'var(--acc)', borderLeft:'1px solid var(--b1)', background:'rgba(99,102,241,.12)'}}>{fmtL(mtdGrand.target)}</td>
+                    <td style={{textAlign:'right', fontWeight:800, color:'var(--grn)', background:'rgba(52,211,153,.12)'}}>{fmtL(mtdGrand.totalAch)}</td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+            {mtdSummary.length === 0 && (
+              <div style={{padding:24, textAlign:'center', color:'var(--t3)', fontSize:12}}>
+                No salesman data yet for {month}.
+              </div>
+            )}
+          </div>
+        </div>
+  );
+
+  // Embedded: month picker + the summary table, nothing else.
+  if (onlyMtd) {
+    return (
+      <div className="fade" style={{display:'grid', gap:10}}>
+        <div style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
+          <BarChart3 size={15} color="var(--acc)"/>
+          <div style={{fontSize:14, fontWeight:700}}>MTD Sales Summary</div>
+          <div className="spacer"/>
+          <Calendar size={13} color="var(--t3)"/>
+          <select value={month} onChange={e=>setMonth(e.target.value)} className="inp" style={{minWidth:130, fontSize:12}}>
+            {months.length === 0 && <option value="">(no data yet)</option>}
+            {months.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+          <button className="btn" onClick={load} disabled={loading} style={{padding:'6px 9px'}}>
+            <RefreshCw size={13} className={loading?'spin':''}/>
+          </button>
+        </div>
+        {mtdCard}
+      </div>
+    );
+  }
+
   return (
     <div className="fade" style={{display:'grid',gap:14}}>
 
@@ -773,178 +975,7 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
             </table>
           </div>
 
-          {/* ── MTD Sales Summary — Region × Salesman × Category ───────── */}
-          <div className="card mtd-card" style={{padding:0, marginTop:14, overflow:'hidden'}}>
-            <div style={{padding:'12px 16px', borderBottom:'1px solid var(--b2)',
-              background:'var(--bg2)',
-              display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
-              <BarChart3 size={14} color="var(--acc)"/>
-              <div style={{fontSize:13, fontWeight:700}}>MTD Sales Summary — {month || '—'}</div>
-              <div style={{fontSize:11, color:'var(--t3)'}}>
-                · Region / Salesman × Category · Outstanding from Outstanding section
-                {isAdmin && <span style={{color:'var(--acc)'}}> · type a LAMINATE target and the rest fill in: Liner 100%, Louvres 30%, Polymer 10%, Rolls 20</span>}
-              </div>
-            </div>
-            <div style={{overflowX:'auto', maxHeight:'70vh'}}>
-              <table className="mtd-table">
-                <thead>
-                  {/* Row 1: Region | Salesman | <CategoryName spanning 2 cols> ... | Total spanning 2 cols | MTD % | Dealers | Outstanding */}
-                  <tr style={{position:'sticky', top:0, background:'var(--bg2)', zIndex:2}}>
-                    <th rowSpan={2} style={{textAlign:'left', position:'sticky', left:0, background:'var(--bg2)', zIndex:3, minWidth:120}}>Region</th>
-                    <th rowSpan={2} style={{textAlign:'left', minWidth:140}}>Salesman</th>
-                    {mtdCategories.map((c, i) => {
-                      // A category with nothing sold and nothing planned is
-                      // still shown — you may want to set a target on it — but
-                      // it recedes rather than competing with the live ones.
-                      const dead = !(byCat.rows||[]).some(r => r.category === c && r.qty > 0);
-                      return (
-                        <th key={'h-'+c} colSpan={2}
-                          className={'cat-start' + (i % 2 ? ' cat-alt' : '')}
-                          style={{textAlign:'center', fontSize:11,
-                            color: dead ? 'var(--t3)' : 'var(--t1)', fontWeight: dead ? 500 : 800,
-                            opacity: dead ? .55 : 1}}>{c}</th>
-                      );
-                    })}
-                    <th colSpan={2} className="col-total col-total-start"
-                      style={{textAlign:'center', fontWeight:800, color:'var(--acc)'}}>Total</th>
-                    {/* MTD %, Billed Dealers and Outstanding were here. This
-                        table is for setting and reading targets; Outstanding
-                        has its own section, and the percentages read 1-2%
-                        while targets are still being filled in. */}
-                  </tr>
-                  {/* Row 2: T | A pair under each category, T | A under Total */}
-                  <tr style={{position:'sticky', top:32, background:'var(--bg2)', zIndex:2}}>
-                    {mtdCategories.map(c => (
-                      <React.Fragment key={'sub-'+c}>
-                        <th style={{textAlign:'right', fontSize:9, color:'var(--acc)', borderLeft:'1px solid var(--b1)', minWidth:55}}>Target</th>
-                        <th style={{textAlign:'right', fontSize:9, color:'var(--grn)', minWidth:55}}>Ach</th>
-                      </React.Fragment>
-                    ))}
-                    <th style={{textAlign:'right', fontSize:10, color:'var(--acc)', fontWeight:800, borderLeft:'1px solid var(--b1)'}}>Target</th>
-                    <th style={{textAlign:'right', fontSize:10, color:'var(--grn)', fontWeight:800}}>Ach</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {mtdByRegion.map(({ region, rows, subtotal }) => (
-                    <React.Fragment key={region}>
-                      {rows.map((r, i) => (
-                        <tr key={r.smId}>
-                          {i === 0 && (
-                            <td rowSpan={rows.length}
-                              style={{position:'sticky', left:0, background:'var(--bg2)', fontWeight:700, color:'var(--t1)', verticalAlign:'top'}}>
-                              {region}
-                            </td>
-                          )}
-                          <td style={{fontWeight:600}}>{r.smName}</td>
-                          {/* Per-category cells: Target | Ach SIDE-BY-SIDE.
-                              Target is editable inline for admins; saved to /api/sales/targets on blur. */}
-                          {mtdCategories.map((c, ci) => {
-                            const t = r.perCatTarget?.[c] || 0;
-                            const a = r.perCategory[c] || 0;
-                            return (
-                              <React.Fragment key={'pair-'+r.smId+c}>
-                                <td className={'cat-start' + (ci % 2 ? ' cat-alt' : '')} style={{textAlign:'right', padding:'2px 4px'}}>
-                                  {isAdmin ? (
-                                    <input
-                                      // Keyed on the value: these are uncontrolled
-                                      // inputs, so without a remount a derived
-                                      // target would save but never show up.
-                                      key={'t-'+r.smId+c+t}
-                                      type="number"
-                                      defaultValue={t || ''}
-                                      placeholder="—"
-                                      onBlur={e => {
-                                        const newVal = Number(e.target.value) || 0;
-                                        if (newVal !== t) setOneTarget(r.smId, c, newVal);
-                                      }}
-                                      onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
-                                      style={{
-                                        width:60, textAlign:'right',
-                                        background:'transparent',
-                                        border: t > 0 ? '1px solid var(--b2)' : '1px dashed var(--b2)',
-                                        borderRadius:4, padding:'2px 4px',
-                                        fontSize:11, color: t > 0 ? 'var(--acc)' : 'var(--t3)',
-                                      }}/>
-                                  ) : (
-                                    <span style={{color: t ? 'var(--acc)' : 'var(--t3)', fontWeight:600}}>{t ? fmtL(t) : '—'}</span>
-                                  )}
-                                </td>
-                                <td className={ci % 2 ? 'cat-alt' : ''} style={{textAlign:'right',
-                                  color: a ? achTone(a,t).color : 'var(--t3)',
-                                  fontWeight: a ? achTone(a,t).weight : 400}}>
-                                  {a ? fmtL(a) : '—'}
-                                </td>
-                              </React.Fragment>
-                            );
-                          })}
-                          {/* Total Target | Total Ach */}
-                          <td className="col-total col-total-start" style={{textAlign:'right', fontWeight:700, color:'var(--acc)'}}>{fmtL(r.target)}</td>
-                          <td className="col-total" style={{textAlign:'right'}}>
-                            <div style={{display:'inline-flex', alignItems:'center', gap:6}}>
-                              <span style={{fontWeight:800, color: achTone(r.totalAch, r.target).color}}>{fmtL(r.totalAch)}</span>
-                              {r.target > 0 && (
-                                <span style={{
-                                  fontSize:9.5, fontWeight:800, padding:'1px 5px', borderRadius:99,
-                                  color: achTone(r.totalAch, r.target).color,
-                                  background: achTone(r.totalAch, r.target).color + '1f',
-                                }}>
-                                  {Math.round((r.totalAch / r.target) * 100)}%
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                      {/* Region subtotal row — paired Target | Ach per category */}
-                      <tr className="row-subtotal">
-                        <td colSpan={2} style={{position:'sticky', left:0, fontSize:11, color:'var(--t2)'}}>
-                          {region} Total
-                        </td>
-                        {mtdCategories.map(c => {
-                          const t = subtotal.perCatTarget?.[c] || 0;
-                          const a = subtotal.perCategory[c] || 0;
-                          return (
-                            <React.Fragment key={'srt-'+region+c}>
-                              <td style={{textAlign:'right', fontWeight:700, color: t?'var(--acc)':'var(--t3)', borderLeft:'1px solid var(--b1)'}}>{t?fmtL(t):'—'}</td>
-                              <td style={{textAlign:'right', fontWeight:700, color: a?'#34d399':'var(--t3)'}}>{a?fmtL(a):'—'}</td>
-                            </React.Fragment>
-                          );
-                        })}
-                        <td style={{textAlign:'right', fontWeight:800, color:'var(--acc)', borderLeft:'1px solid var(--b1)', background:'rgba(99,102,241,.06)'}}>{fmtL(subtotal.target)}</td>
-                        <td style={{textAlign:'right', fontWeight:800, color:'var(--grn)', background:'rgba(52,211,153,.06)'}}>{fmtL(subtotal.totalAch)}</td>
-                      </tr>
-                    </React.Fragment>
-                  ))}
-                </tbody>
-                {mtdSummary.length > 0 && (
-                  <tfoot>
-                    <tr className="row-grand">
-                      <td colSpan={2} style={{position:'sticky', left:0}}>
-                        Grand Total
-                      </td>
-                      {mtdCategories.map(c => {
-                        const t = mtdGrand.perCatTarget?.[c] || 0;
-                        const a = mtdGrand.perCategory[c] || 0;
-                        return (
-                          <React.Fragment key={'gt-'+c}>
-                            <td style={{textAlign:'right', fontWeight:800, color: t?'var(--acc)':'var(--t3)', borderLeft:'1px solid var(--b1)'}}>{t?fmtL(t):'—'}</td>
-                            <td style={{textAlign:'right', fontWeight:800, color: a?'#34d399':'var(--t3)'}}>{a?fmtL(a):'—'}</td>
-                          </React.Fragment>
-                        );
-                      })}
-                      <td style={{textAlign:'right', fontWeight:800, color:'var(--acc)', borderLeft:'1px solid var(--b1)', background:'rgba(99,102,241,.12)'}}>{fmtL(mtdGrand.target)}</td>
-                      <td style={{textAlign:'right', fontWeight:800, color:'var(--grn)', background:'rgba(52,211,153,.12)'}}>{fmtL(mtdGrand.totalAch)}</td>
-                    </tr>
-                  </tfoot>
-                )}
-              </table>
-              {mtdSummary.length === 0 && (
-                <div style={{padding:24, textAlign:'center', color:'var(--t3)', fontSize:12}}>
-                  No salesman data yet for {month}.
-                </div>
-              )}
-            </div>
-          </div>
+          {mtdCard}
         </>
       )}
     </div>

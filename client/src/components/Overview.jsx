@@ -1288,6 +1288,7 @@ import { useMonth } from '../context';
 import { StatusBadge, Avatar, MiniBars, StatCard, MultiSelect } from './UI';
 import MapView from './MapView';
 import CategoryDrillChart from './CategoryDrillChart';
+import SalesByCategory from './SalesByCategory';
 import CategorySalesPanel from './CategorySalesPanel';
 import CategoryFilter from './CategoryFilter';
 import { useGlobalCategoryFilter } from '../hooks/useGlobalCategoryFilter';
@@ -1945,6 +1946,19 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
 
 
       {/* Map View */}
+      {/* MTD Sales Summary — the same table as Category-wise Sales, embedded.
+          Its data is scoped server-side, so a salesman sees only their own
+          row here while an admin sees every region. */}
+      <div style={{marginBottom:16}}>
+        <SalesByCategory
+          currentUser={currentUser}
+          users={users}
+          dealers={dealers}
+          onOpenDealer={onOpenDealer}
+          onlyMtd
+        />
+      </div>
+
       <MapView dealers={dealers} selectedMonthIdx={selectedMonthIdx}/>
 
       {/* Category drill chart */}
