@@ -770,9 +770,10 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                       <th key={'h-'+c} colSpan={2} style={{textAlign:'center', borderLeft:'1px solid var(--b1)', fontSize:11}}>{c}</th>
                     ))}
                     <th colSpan={2} style={{textAlign:'center', background:'rgba(99,102,241,.06)', borderLeft:'1px solid var(--b1)'}}>Total</th>
-                    <th rowSpan={2} style={{textAlign:'right', background:'rgba(251,191,36,.05)'}}>MTD %</th>
-                    <th rowSpan={2} style={{textAlign:'right'}}>Billed Dealers</th>
-                    <th rowSpan={2} style={{textAlign:'right'}}>Outstanding ₹</th>
+                    {/* MTD %, Billed Dealers and Outstanding were here. This
+                        table is for setting and reading targets; Outstanding
+                        has its own section, and the percentages read 1-2%
+                        while targets are still being filled in. */}
                   </tr>
                   {/* Row 2: T | A pair under each category, T | A under Total */}
                   <tr style={{position:'sticky', top:32, background:'var(--bg2)', zIndex:2}}>
@@ -840,13 +841,6 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                           {/* Total Target | Total Ach */}
                           <td style={{textAlign:'right', fontWeight:700, color:'var(--acc)', borderLeft:'1px solid var(--b1)', background:'rgba(99,102,241,.04)'}}>{fmtL(r.target)}</td>
                           <td style={{textAlign:'right', fontWeight:700, color:'var(--grn)', background:'rgba(52,211,153,.04)'}}>{fmtL(r.totalAch)}</td>
-                          <td style={{textAlign:'right', fontWeight:700, color: pctColor(r.achievementPct)}}>
-                            {r.achievementPct == null ? '—' : r.achievementPct + '%'}
-                          </td>
-                          <td style={{textAlign:'right'}}>{r.billedDealerCount || '—'}</td>
-                          <td style={{textAlign:'right', color: r.outstanding > 0 ? '#f87171' : 'var(--t3)'}}>
-                            {r.outstanding > 0 ? fmtL2(r.outstanding) : '—'}
-                          </td>
                         </tr>
                       ))}
                       {/* Region subtotal row — paired Target | Ach per category */}
@@ -866,13 +860,6 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                         })}
                         <td style={{textAlign:'right', fontWeight:800, color:'var(--acc)', borderLeft:'1px solid var(--b1)', background:'rgba(99,102,241,.06)'}}>{fmtL(subtotal.target)}</td>
                         <td style={{textAlign:'right', fontWeight:800, color:'var(--grn)', background:'rgba(52,211,153,.06)'}}>{fmtL(subtotal.totalAch)}</td>
-                        <td style={{textAlign:'right', fontWeight:800, color: pctColor(subtotal.achievementPct)}}>
-                          {subtotal.achievementPct == null ? '—' : subtotal.achievementPct + '%'}
-                        </td>
-                        <td style={{textAlign:'right', fontWeight:700}}>{subtotal.billedDealerCount || '—'}</td>
-                        <td style={{textAlign:'right', fontWeight:700, color: subtotal.outstanding > 0 ? '#f87171' : 'var(--t3)'}}>
-                          {subtotal.outstanding > 0 ? fmtL2(subtotal.outstanding) : '—'}
-                        </td>
                       </tr>
                     </React.Fragment>
                   ))}
@@ -895,13 +882,6 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                       })}
                       <td style={{textAlign:'right', fontWeight:800, color:'var(--acc)', borderLeft:'1px solid var(--b1)', background:'rgba(99,102,241,.12)'}}>{fmtL(mtdGrand.target)}</td>
                       <td style={{textAlign:'right', fontWeight:800, color:'var(--grn)', background:'rgba(52,211,153,.12)'}}>{fmtL(mtdGrand.totalAch)}</td>
-                      <td style={{textAlign:'right', fontWeight:800, color: pctColor(mtdGrand.achievementPct)}}>
-                        {mtdGrand.achievementPct == null ? '—' : mtdGrand.achievementPct + '%'}
-                      </td>
-                      <td style={{textAlign:'right', fontWeight:800}}>{mtdGrand.billedDealerCount || '—'}</td>
-                      <td style={{textAlign:'right', fontWeight:800, color: mtdGrand.outstanding > 0 ? '#f87171' : 'var(--t3)'}}>
-                        {mtdGrand.outstanding > 0 ? fmtL2(mtdGrand.outstanding) : '—'}
-                      </td>
                     </tr>
                   </tfoot>
                 )}
