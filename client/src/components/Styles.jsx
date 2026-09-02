@@ -362,7 +362,7 @@ export default function Styles({theme}){
       font-size:10px;font-weight:800;
       letter-spacing:.08em;text-transform:uppercase;
       padding:9px 10px;white-space:nowrap;
-      border-bottom:2px solid var(--acc);
+      border-bottom:1px solid var(--b2);
     }
     /* Two header rows, both sticky. The second must be offset by the first's
        height or it scrolls underneath it. */
@@ -389,18 +389,18 @@ export default function Styles({theme}){
 
     /* Each category is a target|ach PAIR; alternate pairs are tinted so the
        two halves read as one column instead of eighteen loose ones. */
-    .mtd-table .cat-start{border-left:1px solid var(--b2)}
+    .mtd-table .cat-start{border-left:1px solid var(--b1)}
     .mtd-table .cat-alt{background:rgba(127,127,127,.05)}
 
     /* The answer column — banded down the whole table like the reference. */
     .mtd-table .col-total{background:var(--accL)!important}
-    .mtd-table .col-total-start{border-left:2px solid var(--acc)}
+    .mtd-table .col-total-start{border-left:1px solid var(--b2)}
 
     /* Subtotal and grand total: bands the eye can land on. */
     .mtd-table .row-subtotal td{background:var(--bg3);font-weight:800;
-      border-top:1px solid var(--b2);border-bottom:1px solid var(--b2)}
+      border-top:1px solid var(--b1);border-bottom:1px solid var(--b1)}
     .mtd-table .row-grand td{background:var(--accL);font-weight:800;
-      border-top:2px solid var(--acc);font-size:13.5px}
+      border-top:1px solid var(--b2);font-size:13.5px}
 
     /* Target inputs stay quiet until touched, so a screen of empty cells
        doesn't read as a screen of form fields. */
