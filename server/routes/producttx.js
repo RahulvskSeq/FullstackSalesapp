@@ -507,7 +507,10 @@ async function buildSalesSync(monthList) {
     const rolled = await ProductTxn.aggregate([
       { $match: { month, resolved: true, dealerName: { $ne: '' } } },
       { $group: {
-          _id: { dealerName: '$dealerName', category: '$category', subCategory: '$subCategory' },
+          _id: {
+            dealerName: '$dealerName', category: '$category',
+            subCategory: '$subCategory', brand: '$brand',
+          },
           qty: { $sum: '$qty' },
           dealerId: { $first: '$dealerId' },
           salesmanId: { $first: '$salesmanId' },
@@ -567,6 +570,7 @@ async function buildSalesSync(monthList) {
         dealerName: r._id.dealerName,
         category: r._id.category,
         subCategory: r._id.subCategory,
+        brand: r._id.brand || '',
         qty: r.qty,
         dealerId: r.dealerId,
         salesmanId: r.salesmanId,
@@ -609,6 +613,7 @@ router.post('/sync-sales', protect, adminOnly, async (req, res) => {
           month: m.month,
           category: r.category,
           subCategory: r.subCategory,
+          brand: r.brand || '',
           qty: r.qty,
           uploadedBy: req.user?.id || '',
           uploadBatchId: batchId,
