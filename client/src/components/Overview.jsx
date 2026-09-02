@@ -1730,15 +1730,26 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
               // whichever gives contrast on that swatch. All three fills are
               // light, so all three get dark text in either mode.
               const fg = readableOn(c.color);
+              // Border and icon tile are drawn in the TEXT colour at low alpha,
+              // not a fixed black or white. On a light fill that reads as a
+              // soft dark edge; were a fill ever dark, the same code gives a
+              // light one instead of disappearing into the background.
+              const ink   = fg === '#fff' ? '255,255,255' : '0,0,0';
+              const edge  = `rgba(${ink},0.22)`;
+              const tile  = `rgba(${ink},0.13)`;
               return (
                 <div key={c.key} className="insight-card"
                   onClick={()=>setInsightPopup(c.popup)}
                   style={{'--c':c.color,
                     background:c.color, color:fg,
-                    border:`1px solid ${c.color}`,
+                    border:`1.5px solid ${edge}`,
                     borderRadius:12, padding:'10px 16px', cursor:'pointer',
                     display:'inline-flex', alignItems:'center', gap:12, flex:'0 0 auto'}}>
-                  <c.Icon size={20} style={{flexShrink:0, opacity:.85}}/>
+                  <div style={{width:36,height:36,borderRadius:10,flexShrink:0,
+                    background:tile, border:`1px solid ${edge}`,
+                    display:'flex',alignItems:'center',justifyContent:'center'}}>
+                    <c.Icon size={19}/>
+                  </div>
                   <div style={{display:'flex', flexDirection:'column', gap:2, minWidth:0}}>
                     <div style={{display:'flex', alignItems:'baseline', gap:7, whiteSpace:'nowrap'}}>
                       <span style={{fontSize:22,fontWeight:800,lineHeight:1,letterSpacing:'-0.02em'}}>{c.n}</span>
