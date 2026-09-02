@@ -343,73 +343,78 @@ export default function Styles({theme}){
     /* The three movement cards that replaced the old chip row. Lift on hover
        so they read as clickable — each opens the dealer list behind it. */
     /* ── MTD Sales Summary ────────────────────────────────────────────
-       A wide, dense planning grid: 9 categories x (target|ach) plus totals.
-       Everything here is about letting the eye find a row and a column in a
-       table too big to take in at once. */
-    .mtd-card{border:1px solid var(--b2);box-shadow:0 2px 10px rgba(0,0,0,.10)}
+       A wide planning grid: 9 categories x (target|ach) plus totals. Styled
+       around a banded header, a highlighted answer column and soft striping —
+       the pattern that makes a table this wide scannable.
 
-    /* Both header rows stay put while scrolling — with two rows the second
-       has to be offset by the first's height or it hides underneath. */
-    .mtd-table thead tr:first-child th{position:sticky;top:0;z-index:6}
-    .mtd-table thead tr:last-child  th{position:sticky;top:30px;z-index:5}
+       Everything derives from --acc, so it follows whichever of the 30
+       palettes is active instead of pinning one hue. */
+    .mtd-card{
+      border:1px solid var(--b2);
+      border-radius:14px;
+      box-shadow:0 4px 20px rgba(0,0,0,.10);
+    }
+
+    /* Header: a solid band, not faint grey text on the page background. */
     .mtd-table thead th{
-      background:var(--bg2);border-bottom:1px solid var(--b2);
-      padding:6px 10px;white-space:nowrap;
+      background:var(--accL);
+      color:var(--t1);
+      font-size:10px;font-weight:800;
+      letter-spacing:.08em;text-transform:uppercase;
+      padding:9px 10px;white-space:nowrap;
+      border-bottom:2px solid var(--acc);
     }
-    /* Region + Salesman stay visible when scrolled sideways past nine
-       categories — without them a row of numbers belongs to nobody. */
+    /* Two header rows, both sticky. The second must be offset by the first's
+       height or it scrolls underneath it. */
+    .mtd-table thead tr:first-child th{position:sticky;top:0;z-index:6}
+    .mtd-table thead tr:last-child  th{position:sticky;top:34px;z-index:5}
+
+    /* Region + Salesman stay put when scrolling sideways past nine
+       categories — a row of numbers that belongs to nobody is useless.
+       A sticky cell needs its own opaque background or the columns scroll
+       straight through it. */
     .mtd-table tbody td:first-child,
-    .mtd-table tfoot  td:first-child{
-      position:sticky;left:0;z-index:2;
-      /* A sticky cell needs its own opaque background, or the columns it
-         scrolls over show straight through it. */
-      background:var(--bg1);
-    }
+    .mtd-table tfoot  td:first-child{position:sticky;left:0;z-index:2;background:var(--bg1)}
     .mtd-table tbody tr:hover td:first-child{background:var(--bg2)}
 
-    /* Digits must line up. Proportional figures make 5000 and 167 sit at
-       different widths, which is what stops a column of numbers scanning. */
+    .mtd-table td{padding:7px 10px;border-bottom:1px solid var(--b1)}
+    /* Digits must line up: proportional figures give 5000 and 167 different
+       widths, which is what stops a numeric column scanning. */
     .mtd-table td,.mtd-table th{font-variant-numeric:tabular-nums}
 
-    /* Band alternate categories. With nine of them side by side, a target and
-       its achievement need to read as one unit — colour does that faster than
-       a rule alone. */
-    .mtd-table .cat-alt{background:rgba(127,127,127,.045)}
-
-    /* The Total pair is the answer column: tinted, and fenced off. */
-    .mtd-table .col-total{background:var(--accL)}
-    .mtd-table .col-total-start{border-left:2px solid var(--acc)}
-
-    /* Zebra rows, under the banding so both survive. */
-    .mtd-table tbody tr:nth-child(even) td{background-image:linear-gradient(rgba(127,127,127,.03),rgba(127,127,127,.03))}
-
+    /* Soft striping in the accent hue rather than flat grey. */
+    .mtd-table tbody tr:nth-child(even) td{background:var(--bg2)}
     .mtd-table tbody tr{transition:background .12s}
     .mtd-table tbody tr:hover td{background:var(--accL)}
-    .mtd-table td{padding:5px 10px;border-bottom:1px solid var(--b1)}
 
-    /* Each category is a target|ach PAIR — a rule before every pair keeps the
-       two halves reading as one column rather than eighteen loose ones. */
+    /* Each category is a target|ach PAIR; alternate pairs are tinted so the
+       two halves read as one column instead of eighteen loose ones. */
     .mtd-table .cat-start{border-left:1px solid var(--b2)}
+    .mtd-table .cat-alt{background:rgba(127,127,127,.05)}
 
-    /* Region subtotal and grand total: bands, so the eye can land on them. */
-    .mtd-table .row-subtotal td{background:var(--bg2);font-weight:800;
+    /* The answer column — banded down the whole table like the reference. */
+    .mtd-table .col-total{background:var(--accL)!important}
+    .mtd-table .col-total-start{border-left:2px solid var(--acc)}
+
+    /* Subtotal and grand total: bands the eye can land on. */
+    .mtd-table .row-subtotal td{background:var(--bg3);font-weight:800;
       border-top:1px solid var(--b2);border-bottom:1px solid var(--b2)}
     .mtd-table .row-grand td{background:var(--accL);font-weight:800;
-      border-top:2px solid var(--acc)}
+      border-top:2px solid var(--acc);font-size:13.5px}
 
-    /* Inline target inputs: quiet until touched, so a screen of empty cells
+    /* Target inputs stay quiet until touched, so a screen of empty cells
        doesn't read as a screen of form fields. */
     .mtd-table input[type=number]{transition:border-color .12s,background .12s}
-    .mtd-table input[type=number]:hover{background:var(--bg2)}
+    .mtd-table input[type=number]:hover{background:var(--bg3)}
     .mtd-table input[type=number]:focus{
       border-color:var(--acc)!important;background:var(--bg1);
       box-shadow:0 0 0 2px var(--accL);outline:none;
     }
-    /* Chrome puts spinners on every number field; at this density they steal
-       most of the cell. */
+    /* Chrome's number spinners take most of the cell at this density. */
     .mtd-table input[type=number]::-webkit-outer-spin-button,
     .mtd-table input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
     .mtd-table input[type=number]{-moz-appearance:textfield}
+
 
     .insight-card{transition:transform .15s, box-shadow .15s, filter .15s}
     .insight-card:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.28);filter:brightness(1.06)}

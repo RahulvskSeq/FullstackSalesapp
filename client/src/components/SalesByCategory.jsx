@@ -775,7 +775,9 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
 
           {/* ── MTD Sales Summary — Region × Salesman × Category ───────── */}
           <div className="card mtd-card" style={{padding:0, marginTop:14, overflow:'hidden'}}>
-            <div style={{padding:'10px 14px', borderBottom:'1px solid var(--b1)', display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
+            <div style={{padding:'12px 16px', borderBottom:'1px solid var(--b2)',
+              background:'var(--bg2)',
+              display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
               <BarChart3 size={14} color="var(--acc)"/>
               <div style={{fontSize:13, fontWeight:700}}>MTD Sales Summary — {month || '—'}</div>
               <div style={{fontSize:11, color:'var(--t3)'}}>
