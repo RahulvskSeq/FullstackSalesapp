@@ -15381,7 +15381,7 @@
 // }
 
 import React, { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
-import { LayoutDashboard, Users, TrendingUp, Settings, LogOut, Bell, GitCompare, Menu, RefreshCw, Map, AlertTriangle, Upload, Edit3, Calendar, LogIn, ChevronDown, ShieldCheck, Shield, Palette, Check, Briefcase, Camera, ClipboardList, UserCheck, Plane, FileSpreadsheet, LifeBuoy, CheckSquare, BarChart3, Table } from 'lucide-react';
+import { LayoutDashboard, Users, TrendingUp, Settings, LogOut, Bell, GitCompare, Menu, RefreshCw, Map, AlertTriangle, Upload, Edit3, Calendar, LogIn, ChevronDown, ShieldCheck, Shield, Palette, Check, Briefcase, Camera, ClipboardList, UserCheck, Plane, FileSpreadsheet, LifeBuoy, CheckSquare, BarChart3, Table, Package } from 'lucide-react';
 import { DEFAULT_USERS, MO as MO_DEFAULT, CURRENT_MONTH_IDX as CURRENT_MONTH_IDX_DEFAULT, CURRENT_MONTH_LABEL as CURRENT_MONTH_LABEL_DEFAULT, CURRENT_MONTH_SHORT as CURRENT_MONTH_SHORT_DEFAULT } from './constants';
 import { pct, spct, pclr, uid, isoNow, storage, parseCSV, fetchCSV, parseOutstandingCSV } from './utils';
 import { api, dbDealerToApp, dbOutstandingToApp, saveToken, getToken } from './api';
@@ -15418,6 +15418,7 @@ import ManageMonths     from './components/ManageMonths';
 import ApiUrlSettings   from './components/ApiUrlSettings';
 import SalesUpload      from './components/SalesUpload';
 import SalesByCategory  from './components/SalesByCategory';
+import ProductTxn       from './components/ProductTxn';
 import { useAllMonthsCategoryFilteredDealers, moToYM } from './hooks/useAllMonthsCategoryFilter';
 
 // ── Cookie helpers ────────────────────────────────────────
@@ -16317,6 +16318,7 @@ export default function App(){
     {id:'tickets', label:'Support', icon:LifeBuoy},
     {id:'reports', label:'Reports', icon:FileSpreadsheet, staff:true},
     {id:'sheets',  label:'Sheets', icon:Table},
+    {id:'producttx', label:'Product Transactions', icon:Package},
     {id:'admin',   label:'Admin Panel', icon:Settings, feature:'manageCategories', staff:true},
   ];
   const navItems = navItemsRaw
@@ -16821,6 +16823,7 @@ export default function App(){
                   {screen==='leaves'     && <LeavesPage     users={users} currentUser={currentUser}/>}
                   {screen==='reports' && isStaff && <Reports dealers={dealers} users={users} currentUser={currentUser} monthConfig={monthConfig} outstandingData={outstandingData}/>}
                   {screen==='sheets' && <Suspense fallback={<div style={{padding:40,textAlign:'center',color:'var(--t3)'}}>Loading spreadsheet…</div>}><Sheets currentUser={currentUser} users={users}/></Suspense>}
+                  {screen==='producttx' && <ProductTxn currentUser={currentUser}/>}
                   {screen==='tasks'   && <TasksPage   users={users} currentUser={currentUser}/>}
                   {screen==='tickets' && <TicketsPage users={users} currentUser={currentUser}/>}
                   {screen==='admin'&&isStaff&&<AdminPanel dealers={dealersGloballyFiltered} users={users} setUsers={setUsers} setShowUM={setShowUM} onSync={syncSheets} syncing={syncing} lastSync={lastSync} syncErrs={syncErrs} onNavigate={navigate} onOpenDealer={setEditingId} monthConfig={monthConfig} saveMonthConfig={saveMonthConfig} currentUser={currentUser} onLoginAs={(token, user, impersonatedBy)=>{

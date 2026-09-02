@@ -2169,6 +2169,26 @@ export const api = {
   salesTargetSet:    (body)     => fetch(`${BASE}/sales/targets`,{method:'POST',headers:authHeaders(),body:JSON.stringify(body)}).then(handle),
   salesTargetsBulk:  (items)    => fetch(`${BASE}/sales/targets/bulk`,{method:'POST',headers:authHeaders(),body:JSON.stringify({items})}).then(handle),
 
+  // ── Raw ERP product-transaction import + reporting ────────────────────
+  // Two-phase upload: omit `commit` to get a preview of what WOULD land.
+  ptxMasterUpload: (file, commit=false, onProgress) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return postForm(`${BASE}/producttx/master/upload${commit?'?commit=1':''}`, fd, onProgress);
+  },
+  ptxUpload: (file, commit=false, onProgress) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return postForm(`${BASE}/producttx/upload${commit?'?commit=1':''}`, fd, onProgress);
+  },
+  ptxMasterStats: ()      => fetch(`${BASE}/producttx/master/stats`,{headers:authHeaders()}).then(handle),
+  ptxFacets:      ()      => fetch(`${BASE}/producttx/facets`,{headers:authHeaders()}).then(handle),
+  ptxReport:      (q={})  => fetch(`${BASE}/producttx/report?${new URLSearchParams(q)}`,{headers:authHeaders()}).then(handle),
+  ptxLines:       (q={})  => fetch(`${BASE}/producttx/lines?${new URLSearchParams(q)}`,{headers:authHeaders()}).then(handle),
+  ptxBatches:     ()      => fetch(`${BASE}/producttx/batches`,{headers:authHeaders()}).then(handle),
+  ptxDeleteBatch: (id)    => fetch(`${BASE}/producttx/batch/${id}`,{method:'DELETE',headers:authHeaders()}).then(handle),
+  ptxDeleteAll:   ()      => fetch(`${BASE}/producttx/all`,{method:'DELETE',headers:authHeaders()}).then(handle),
+
   // ── Online spreadsheets (Sheets section) ─────────────────────────────
   sheetsList:   ()            => fetch(`${BASE}/sheets`,{headers:authHeaders()}).then(handle),
   sheetGet:     (id)          => fetch(`${BASE}/sheets/${id}`,{headers:authHeaders()}).then(handle),
