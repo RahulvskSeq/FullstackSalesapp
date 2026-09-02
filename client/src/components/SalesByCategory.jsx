@@ -330,8 +330,12 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
       const e = out.get(sm);
       const dealerTotal = row.total || 0;
       if (dealerTotal > 0) e.dealersWithSales.add(row.dealer);
+      // Deliberately NOT filtered by the category chips. This table is the
+      // planning view — it shows every category so targets can be set against
+      // all of them, and its achievement figures have to match those columns.
+      // The chips still scope the Overall / By Dealer / By Salesman pivots
+      // above, which is where excluding a category from totals belongs.
       for (const [cat, subs] of Object.entries(row.byCategory || {})) {
-        if (excluded.has(cat)) continue;
         const qty = Object.values(subs).reduce((s,v) => s + (v||0), 0);
         e.perCategory[cat] = (e.perCategory[cat] || 0) + qty;
       }
@@ -354,7 +358,10 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
       // truth for "salesman × category" volume targets.
       const perCatTarget = {};
       let totalPerCatTarget = 0;
-      for (const c of categories) {
+      // Master list, not the filtered one — otherwise a target set against a
+      // category someone later excludes vanishes from the row AND drops out of
+      // the Total, making the plan look smaller than it is.
+      for (const c of mtdCategories) {
         const t = catTargets.get(`${e.smId}|${c}`) || 0;
         if (t > 0) { perCatTarget[c] = t; totalPerCatTarget += t; }
       }
@@ -372,7 +379,7 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
     }).filter(e => e.smName !== '_none' && e.smName !== '_unknown')
       .sort((a,b) => (a.region || '').localeCompare(b.region || '') || (b.totalAch - a.totalAch));
     return rows;
-  }, [dealers, users, byDealer, excluded, outstandingData, catTargets, categories]);
+  }, [dealers, users, byDealer, outstandingData, catTargets, mtdCategories]);
 
   // Group MTD rows by region for sub-totals
   const mtdByRegion = useMemo(() => {
