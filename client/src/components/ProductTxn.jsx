@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Package, Upload, RefreshCw, AlertTriangle, CheckCircle2, Layers, FileSpreadsheet, X } from 'lucide-react';
-import { api } from '../api';
+import { api, getApiBase } from '../api';
 import { notify } from './Toast';
 
 /**
@@ -445,6 +445,17 @@ export default function ProductTxn({ currentUser }) {
                 {isAdmin
                   ? 'Open the Import tab and upload the Product Master, then a Product Transaction export.'
                   : 'Ask an admin to import the ERP product-transaction export.'}
+              </div>
+              {/* Imports live in whichever database this client is pointed at.
+                  Naming the server here turns "why is it empty?" into an
+                  answer instead of a hunt. */}
+              <div style={{ fontSize: 11.5, color: 'var(--t3)', marginTop: 14, opacity: .8 }}>
+                Reading from <code style={{
+                  background: 'var(--bg2)', border: '1px solid var(--b1)', borderRadius: 4,
+                  padding: '2px 6px', color: 'var(--t2)',
+                }}>{getApiBase()}</code>
+                <br />
+                An import only appears on the server it was uploaded to.
               </div>
             </div>
           ) : (
