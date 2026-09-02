@@ -272,11 +272,13 @@ const CategoryFilter = ({
           padding: compact ? '6px 10px 6px 6px' : '7px 12px 7px 7px',
           borderRadius:10,
           // Filtering ON is a state worth noticing — the totals on screen are
-          // not the full picture — so it fills amber. Off, it stays a quiet
-          // neutral control like the rest of the toolbar.
-          background: excluded.size ? '#fbbf24' : 'var(--bg2)',
-          border:'1.5px solid '+(excluded.size ? 'rgba(0,0,0,.22)' : 'var(--b2)'),
-          color: excluded.size ? '#111' : 'var(--t2)',
+          // not the full picture — so it fills the app's own indigo accent.
+          // Amber was doing two jobs here: it also colours the "dormant" card
+          // sitting right next to this button, so the two read as related when
+          // they are not. Off, it stays a quiet neutral control.
+          background: excluded.size ? 'var(--acc)' : 'var(--bg2)',
+          border:'1.5px solid '+(excluded.size ? 'rgba(255,255,255,.28)' : 'var(--b2)'),
+          color: excluded.size ? '#fff' : 'var(--t2)',
           fontSize: compact ? 11.5 : 12.5, fontWeight:700,
           cursor:'pointer',
           maxWidth:'100%',
@@ -285,8 +287,8 @@ const CategoryFilter = ({
         <span style={{
           width: compact ? 22 : 25, height: compact ? 22 : 25, borderRadius:7,
           flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center',
-          background: excluded.size ? 'rgba(0,0,0,.13)' : 'var(--bg3)',
-          border:'1px solid '+(excluded.size ? 'rgba(0,0,0,.18)' : 'var(--b1)'),
+          background: excluded.size ? 'rgba(255,255,255,.18)' : 'var(--bg3)',
+          border:'1px solid '+(excluded.size ? 'rgba(255,255,255,.26)' : 'var(--b1)'),
         }}>
           <Filter size={compact ? 12 : 13}/>
         </span>
