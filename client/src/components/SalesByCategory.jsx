@@ -129,6 +129,25 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
     return [...set].sort();
   }, [byCat, byDealer, bySalesman]);
 
+  // Every category that EXISTS, from the master list — not just the ones with
+  // sales this month, and not filtered by the user's include/exclude chips.
+  //
+  // The MTD summary is a planning table: you set targets there, so a category
+  // has to be visible whether or not it sold anything yet. It also has to
+  // ignore the category filter — LINER is commonly excluded from totals, and
+  // the laminate rule writes a Liner target, which was landing in a column
+  // nobody could see.
+  const [masterCategories, setMasterCategories] = useState([]);
+  useEffect(() => {
+    api.categoriesList()
+      .then(cs => setMasterCategories((cs||[]).map(c => c.name).filter(Boolean).sort()))
+      .catch(() => setMasterCategories([]));
+  }, []);
+  const mtdCategories = useMemo(
+    () => (masterCategories.length ? masterCategories : allCategories),
+    [masterCategories, allCategories],
+  );
+
   // Category list AFTER applying the user's exclusions (used as pivot columns).
   const categories = useMemo(
     () => allCategories.filter(c => !excluded.has(c)),
@@ -725,7 +744,7 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                   <tr style={{position:'sticky', top:0, background:'var(--bg2)', zIndex:2}}>
                     <th rowSpan={2} style={{textAlign:'left', position:'sticky', left:0, background:'var(--bg2)', zIndex:3, minWidth:120}}>Region</th>
                     <th rowSpan={2} style={{textAlign:'left', minWidth:140}}>Salesman</th>
-                    {categories.map(c => (
+                    {mtdCategories.map(c => (
                       <th key={'h-'+c} colSpan={2} style={{textAlign:'center', borderLeft:'1px solid var(--b1)', fontSize:11}}>{c}</th>
                     ))}
                     <th colSpan={2} style={{textAlign:'center', background:'rgba(99,102,241,.06)', borderLeft:'1px solid var(--b1)'}}>Total</th>
@@ -735,7 +754,7 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                   </tr>
                   {/* Row 2: T | A pair under each category, T | A under Total */}
                   <tr style={{position:'sticky', top:32, background:'var(--bg2)', zIndex:2}}>
-                    {categories.map(c => (
+                    {mtdCategories.map(c => (
                       <React.Fragment key={'sub-'+c}>
                         <th style={{textAlign:'right', fontSize:9, color:'var(--acc)', borderLeft:'1px solid var(--b1)', minWidth:55}}>Target</th>
                         <th style={{textAlign:'right', fontSize:9, color:'var(--grn)', minWidth:55}}>Ach</th>
@@ -759,7 +778,7 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                           <td style={{fontWeight:600}}>{r.smName}</td>
                           {/* Per-category cells: Target | Ach SIDE-BY-SIDE.
                               Target is editable inline for admins; saved to /api/sales/targets on blur. */}
-                          {categories.map(c => {
+                          {mtdCategories.map(c => {
                             const t = r.perCatTarget?.[c] || 0;
                             const a = r.perCategory[c] || 0;
                             return (
@@ -813,7 +832,7 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                         <td colSpan={2} style={{position:'sticky', left:0, background:'var(--bg1)', fontWeight:800, fontSize:11, color:'var(--t2)'}}>
                           {region} Total
                         </td>
-                        {categories.map(c => {
+                        {mtdCategories.map(c => {
                           const t = subtotal.perCatTarget?.[c] || 0;
                           const a = subtotal.perCategory[c] || 0;
                           return (
@@ -842,7 +861,7 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                       <td colSpan={2} style={{position:'sticky', left:0, background:'rgba(99,102,241,.10)', fontWeight:800}}>
                         Grand Total
                       </td>
-                      {categories.map(c => {
+                      {mtdCategories.map(c => {
                         const t = mtdGrand.perCatTarget?.[c] || 0;
                         const a = mtdGrand.perCategory[c] || 0;
                         return (
