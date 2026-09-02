@@ -1727,20 +1727,28 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
             {CARDS.map(c=>{
               // Solid fill, so the text colour has to follow the background
               // rather than the theme — readableOn picks black or white for
-              // whichever gives contrast on that swatch.
+              // whichever gives contrast on that swatch. All three fills are
+              // light, so all three get dark text in either mode.
               const fg = readableOn(c.color);
               return (
                 <div key={c.key} className="insight-card"
                   onClick={()=>setInsightPopup(c.popup)}
-                  title={c.rule}
                   style={{'--c':c.color,
                     background:c.color, color:fg,
                     border:`1px solid ${c.color}`,
-                    borderRadius:10, padding:'9px 14px', cursor:'pointer',
-                    display:'inline-flex', alignItems:'center', gap:10, flex:'0 0 auto'}}>
-                  <c.Icon size={17} style={{flexShrink:0, opacity:.9}}/>
-                  <span style={{fontSize:21,fontWeight:800,lineHeight:1,letterSpacing:'-0.02em'}}>{c.n}</span>
-                  <span style={{fontSize:12.5,fontWeight:600,whiteSpace:'nowrap',opacity:.92}}>{c.label}</span>
+                    borderRadius:12, padding:'10px 16px', cursor:'pointer',
+                    display:'inline-flex', alignItems:'center', gap:12, flex:'0 0 auto'}}>
+                  <c.Icon size={20} style={{flexShrink:0, opacity:.85}}/>
+                  <div style={{display:'flex', flexDirection:'column', gap:2, minWidth:0}}>
+                    <div style={{display:'flex', alignItems:'baseline', gap:7, whiteSpace:'nowrap'}}>
+                      <span style={{fontSize:22,fontWeight:800,lineHeight:1,letterSpacing:'-0.02em'}}>{c.n}</span>
+                      <span style={{fontSize:13,fontWeight:700}}>{c.label}</span>
+                    </div>
+                    {/* The rule, kept on the card rather than hidden in a
+                        tooltip — "dormant" means nothing without it, and a
+                        tooltip is invisible on a phone. */}
+                    <span style={{fontSize:10.5,fontWeight:500,opacity:.7,whiteSpace:'nowrap'}}>{c.rule}</span>
+                  </div>
                 </div>
               );
             })}
