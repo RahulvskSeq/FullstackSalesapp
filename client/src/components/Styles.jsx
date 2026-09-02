@@ -367,6 +367,22 @@ export default function Styles({theme}){
     }
     .mtd-table tbody tr:hover td:first-child{background:var(--bg2)}
 
+    /* Digits must line up. Proportional figures make 5000 and 167 sit at
+       different widths, which is what stops a column of numbers scanning. */
+    .mtd-table td,.mtd-table th{font-variant-numeric:tabular-nums}
+
+    /* Band alternate categories. With nine of them side by side, a target and
+       its achievement need to read as one unit — colour does that faster than
+       a rule alone. */
+    .mtd-table .cat-alt{background:rgba(127,127,127,.045)}
+
+    /* The Total pair is the answer column: tinted, and fenced off. */
+    .mtd-table .col-total{background:var(--accL)}
+    .mtd-table .col-total-start{border-left:2px solid var(--acc)}
+
+    /* Zebra rows, under the banding so both survive. */
+    .mtd-table tbody tr:nth-child(even) td{background-image:linear-gradient(rgba(127,127,127,.03),rgba(127,127,127,.03))}
+
     .mtd-table tbody tr{transition:background .12s}
     .mtd-table tbody tr:hover td{background:var(--accL)}
     .mtd-table td{padding:5px 10px;border-bottom:1px solid var(--b1)}

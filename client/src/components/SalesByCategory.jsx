@@ -790,20 +790,21 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                   <tr style={{position:'sticky', top:0, background:'var(--bg2)', zIndex:2}}>
                     <th rowSpan={2} style={{textAlign:'left', position:'sticky', left:0, background:'var(--bg2)', zIndex:3, minWidth:120}}>Region</th>
                     <th rowSpan={2} style={{textAlign:'left', minWidth:140}}>Salesman</th>
-                    {mtdCategories.map(c => {
+                    {mtdCategories.map((c, i) => {
                       // A category with nothing sold and nothing planned is
                       // still shown — you may want to set a target on it — but
                       // it recedes rather than competing with the live ones.
                       const dead = !(byCat.rows||[]).some(r => r.category === c && r.qty > 0);
                       return (
                         <th key={'h-'+c} colSpan={2}
-                          style={{textAlign:'center', borderLeft:'1px solid var(--b1)', fontSize:11,
+                          className={'cat-start' + (i % 2 ? ' cat-alt' : '')}
+                          style={{textAlign:'center', fontSize:11,
                             color: dead ? 'var(--t3)' : 'var(--t1)', fontWeight: dead ? 500 : 800,
                             opacity: dead ? .55 : 1}}>{c}</th>
                       );
                     })}
-                    <th colSpan={2} style={{textAlign:'center', background:'rgba(99,102,241,.10)',
-                      borderLeft:'2px solid var(--b2)', fontWeight:800, color:'var(--acc)'}}>Total</th>
+                    <th colSpan={2} className="col-total col-total-start"
+                      style={{textAlign:'center', fontWeight:800, color:'var(--acc)'}}>Total</th>
                     {/* MTD %, Billed Dealers and Outstanding were here. This
                         table is for setting and reading targets; Outstanding
                         has its own section, and the percentages read 1-2%
@@ -835,12 +836,12 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                           <td style={{fontWeight:600}}>{r.smName}</td>
                           {/* Per-category cells: Target | Ach SIDE-BY-SIDE.
                               Target is editable inline for admins; saved to /api/sales/targets on blur. */}
-                          {mtdCategories.map(c => {
+                          {mtdCategories.map((c, ci) => {
                             const t = r.perCatTarget?.[c] || 0;
                             const a = r.perCategory[c] || 0;
                             return (
                               <React.Fragment key={'pair-'+r.smId+c}>
-                                <td className="cat-start" style={{textAlign:'right', padding:'2px 4px'}}>
+                                <td className={'cat-start' + (ci % 2 ? ' cat-alt' : '')} style={{textAlign:'right', padding:'2px 4px'}}>
                                   {isAdmin ? (
                                     <input
                                       // Keyed on the value: these are uncontrolled
@@ -866,7 +867,7 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                                     <span style={{color: t ? 'var(--acc)' : 'var(--t3)', fontWeight:600}}>{t ? fmtL(t) : '—'}</span>
                                   )}
                                 </td>
-                                <td style={{textAlign:'right',
+                                <td className={ci % 2 ? 'cat-alt' : ''} style={{textAlign:'right',
                                   color: a ? achTone(a,t).color : 'var(--t3)',
                                   fontWeight: a ? achTone(a,t).weight : 400}}>
                                   {a ? fmtL(a) : '—'}
@@ -875,17 +876,20 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                             );
                           })}
                           {/* Total Target | Total Ach */}
-                          <td style={{textAlign:'right', fontWeight:700, color:'var(--acc)', borderLeft:'2px solid var(--b2)', background:'rgba(99,102,241,.06)'}}>{fmtL(r.target)}</td>
-                          <td style={{textAlign:'right', background:'rgba(99,102,241,.03)', minWidth:78}}>
-                            <div style={{display:'flex', alignItems:'baseline', justifyContent:'flex-end', gap:5}}>
+                          <td className="col-total col-total-start" style={{textAlign:'right', fontWeight:700, color:'var(--acc)'}}>{fmtL(r.target)}</td>
+                          <td className="col-total" style={{textAlign:'right'}}>
+                            <div style={{display:'inline-flex', alignItems:'center', gap:6}}>
                               <span style={{fontWeight:800, color: achTone(r.totalAch, r.target).color}}>{fmtL(r.totalAch)}</span>
                               {r.target > 0 && (
-                                <span style={{fontSize:10, color:'var(--t3)'}}>
+                                <span style={{
+                                  fontSize:9.5, fontWeight:800, padding:'1px 5px', borderRadius:99,
+                                  color: achTone(r.totalAch, r.target).color,
+                                  background: achTone(r.totalAch, r.target).color + '1f',
+                                }}>
                                   {Math.round((r.totalAch / r.target) * 100)}%
                                 </span>
                               )}
                             </div>
-                            <Progress ach={r.totalAch} target={r.target}/>
                           </td>
                         </tr>
                       ))}
