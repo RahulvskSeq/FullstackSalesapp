@@ -2185,11 +2185,16 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
                   <table>
                     <thead>
                       <tr>
-                        <th>#</th><th>Dealer Name</th><th>Salesman</th><th>Zone</th><th>Dealer Type</th><th>City</th><th>State</th><th>Performance</th><th>Potential</th>
+                        {/* Salesman, Dealer Type and City are dropped here: the
+                            popup is already scoped to one tier, and every column
+                            costs horizontal room the month figures need more.
+                            Trend and Fcst move to the end, after the months they
+                            are derived from. */}
+                        <th>#</th><th>Dealer Name</th><th>Zone</th><th>State</th><th>Performance</th><th>Potential</th>
                         <th style={{textAlign:'right'}}>Tgt</th><th style={{textAlign:'right'}}>Ach</th><th style={{textAlign:'right'}}>%</th>
-                        <th style={{textAlign:'right'}}>6m Avg</th><th>Trend</th><th style={{textAlign:'right'}}>Fcst</th>
+                        <th style={{textAlign:'right'}}>6m Avg</th>
                         {[...MO].map((_,di)=>{const i=MO.length-1-di;return<th key={i} style={{textAlign:'right',background:i===selectedMonthIdx?'rgba(99,102,241,.08)':'var(--bg1)'}}>{MO[i]}</th>;})}
-                        <th>Bars</th>
+                        <th>Bars</th><th>Trend</th><th style={{textAlign:'right'}}>Fcst</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2199,16 +2204,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
                           <tr key={x.id} onClick={()=>{onOpenDealer(x.id);closePopup();}} style={{cursor:'pointer'}}>
                             <td style={{color:'var(--t3)',fontSize:11}}>{idx+1}</td>
                             <td style={{fontWeight:600,color:'var(--t1)',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis'}}>{x.name}</td>
-                            <td>{sm?<div style={{display:'flex',alignItems:'center',gap:6}}><Avatar user={sm} size={18}/><span style={{fontSize:11}}>{sm.name}</span></div>:<span style={{color:'var(--t3)'}}>—</span>}</td>
                             <td style={{fontSize:11,color:'var(--t3)'}}>{x.zone||'—'}</td>
-                            <td onClick={e=>e.stopPropagation()}>
-                              <select className="inp" value={x.dealerType||'None'}
-                                onChange={e=>onUpdateDealerType(x.id, e.target.value)}
-                                style={{fontSize:11, padding:'3px 6px', width:'auto', maxWidth:130}}>
-                                {DEALER_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
-                              </select>
-                            </td>
-                            <td style={{fontSize:11}}>{x.city||'—'}</td>
                             <td style={{fontSize:11}}>{x.state||'—'}</td>
                             <td><StatusBadge status={x.perfStatus}/></td>
                             <td>{x.status&&x.status!=='NONE'?<StatusBadge status={x.status}/>:<span style={{fontSize:11,color:'var(--t3)'}}>—</span>}</td>
@@ -2216,10 +2212,10 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
                             <td style={{textAlign:'right',fontWeight:700,color:popup.color}}>{x.achieved}</td>
                             <td style={{textAlign:'right',fontWeight:700,color:pclr(p)}}>{spct(x.target,x.achieved)}</td>
                             <td style={{textAlign:'right',color:'var(--t3)'}}>{x.avg6m||'—'}</td>
-                            <td><span style={{fontSize:11,color:tp>0?'#34d399':tp<0?'#f87171':'var(--t3)',display:'inline-flex',alignItems:'center',gap:2}}>{tp>0?<ArrowUpRight size={11}/>:tp<0?<ArrowDownRight size={11}/>:'—'}{tp?Math.abs(tp)+'%':''}</span></td>
-                            <td style={{textAlign:'right',color:'var(--acc)',fontWeight:600}}>{fc||'—'}</td>
                             {[...x.months].map((_,di)=>{const i=x.months.length-1-di;const v=x.months[i];return<td key={i} style={{textAlign:'right',fontSize:12,color:i===selectedMonthIdx?'var(--acc)':v>0?'var(--t2)':'var(--t3)',fontWeight:i===selectedMonthIdx?700:400,background:i===selectedMonthIdx?'rgba(99,102,241,.05)':'transparent'}}>{v||'—'}</td>;})}
                             <td><MiniBars months={x.months} highlightIdx={selectedMonthIdx}/></td>
+                            <td><span style={{fontSize:11,color:tp>0?'#34d399':tp<0?'#f87171':'var(--t3)',display:'inline-flex',alignItems:'center',gap:2}}>{tp>0?<ArrowUpRight size={11}/>:tp<0?<ArrowDownRight size={11}/>:'—'}{tp?Math.abs(tp)+'%':''}</span></td>
+                            <td style={{textAlign:'right',color:'var(--acc)',fontWeight:600}}>{fc||'—'}</td>
                           </tr>
                         );
                       })}

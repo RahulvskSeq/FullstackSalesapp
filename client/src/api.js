@@ -2277,3 +2277,4 @@ export const dbOutstandingToApp = (records=[]) => {
     };
   }).sort((a,b)=>b.latestOutstanding-a.latestOutstanding);
 };
+

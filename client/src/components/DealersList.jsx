@@ -1345,7 +1345,12 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
       ...d,
       achieved:     d.months?.[selectedMonthIdx]||0,
       target:       d.monthTargets?.[selectedMonthIdx]||0,
-      status:       d.monthStatus?.[selectedMonthIdx]  || d.status      || 'ACTIVE',
+      // Potential Status is a DEALER-level label. It used to fall back to the
+      // per-month status, which still holds legacy performance words from the
+      // sheet — that is why ACTIVE and DEAD appeared under Potential. Anything
+      // outside the five valid values reads as NONE.
+      status:       ACCOUNT_STATUSES.includes(String(d.status||'').trim().toUpperCase())
+                      ? String(d.status).trim().toUpperCase() : 'NONE',
       zone:         d.monthZone?.[selectedMonthIdx]    || d.zone         || '',
       category:     d.monthCat?.[selectedMonthIdx]     || d.category     || '',
       categoryType: d.monthCatType?.[selectedMonthIdx] || d.categoryType || '',

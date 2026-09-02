@@ -7,6 +7,7 @@ import Dealer from '../models/Dealer.js';
 import SalesTarget from '../models/SalesTarget.js';
 import { protect, adminOnly, superAdminOnly, requireFeature } from '../middleware/auth.js';
 import { todayStr } from '../lib/commitments.js';
+import { normalizeAccountStatus } from '../lib/accountStatus.js';
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
@@ -509,7 +510,10 @@ router.post('/upload', protect, superAdminOnly, upload.single('file'), async (re
       if (i - dataStartIdx < 3) {
         console.log(`[SALES UPLOAD] row ${i}: dealerName="${dealerName}" address="${masterFields.address ?? '(skipped)'}" pincode="${masterFields.pincode ?? '(skipped)'}"`);
       }
-      if (hasCell('status'))      masterFields.status      = String(get(row,'status')||'').trim() || 'ACTIVE';
+      // Potential Status only. The sheet's Status column carries words like
+      // ACTIVE / DEAD, which are calculated answers now — writing them onto the
+      // dealer refilled the field we cleared (884 dealers, twice).
+      if (hasCell('status'))      masterFields.status      = normalizeAccountStatus(get(row,'status'));
       if (hasCell('target')      && numCell('target')      !== null) masterFields.target      = numCell('target');
       if (hasCell('creditDays')  && numCell('creditDays')  !== null) masterFields.creditDays  = numCell('creditDays');
       if (hasCell('creditLimit') && numCell('creditLimit') !== null) masterFields.creditLimit = numCell('creditLimit');
