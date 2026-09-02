@@ -1723,31 +1723,27 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
         ].filter(c=>c.n>0);
         if(!CARDS.length) return null;
         return (
-          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(210px,1fr))',
-            gap:10,marginBottom:18}}>
-            {CARDS.map(c=>(
-              <div key={c.key} className="insight-card"
-                onClick={()=>setInsightPopup(c.popup)}
-                style={{'--c':c.color,
-                  background:`linear-gradient(135deg, ${c.color}24, ${c.color}0d)`,
-                  border:`1px solid ${c.color}55`, borderLeft:`4px solid ${c.color}`,
-                  borderRadius:12, padding:'14px 16px', cursor:'pointer',
-                  display:'flex', alignItems:'center', gap:14, minWidth:0}}>
-                <div style={{width:38,height:38,borderRadius:10,flexShrink:0,
-                  background:`${c.color}26`, color:c.color,
-                  display:'flex',alignItems:'center',justifyContent:'center'}}>
-                  <c.Icon size={19}/>
+          <div style={{display:'flex',flexWrap:'wrap',gap:10,marginBottom:18}}>
+            {CARDS.map(c=>{
+              // Solid fill, so the text colour has to follow the background
+              // rather than the theme — readableOn picks black or white for
+              // whichever gives contrast on that swatch.
+              const fg = readableOn(c.color);
+              return (
+                <div key={c.key} className="insight-card"
+                  onClick={()=>setInsightPopup(c.popup)}
+                  title={c.rule}
+                  style={{'--c':c.color,
+                    background:c.color, color:fg,
+                    border:`1px solid ${c.color}`,
+                    borderRadius:10, padding:'9px 14px', cursor:'pointer',
+                    display:'inline-flex', alignItems:'center', gap:10, flex:'0 0 auto'}}>
+                  <c.Icon size={17} style={{flexShrink:0, opacity:.9}}/>
+                  <span style={{fontSize:21,fontWeight:800,lineHeight:1,letterSpacing:'-0.02em'}}>{c.n}</span>
+                  <span style={{fontSize:12.5,fontWeight:600,whiteSpace:'nowrap',opacity:.92}}>{c.label}</span>
                 </div>
-                <div style={{minWidth:0}}>
-                  <div style={{fontSize:26,fontWeight:800,lineHeight:1,color:c.color,
-                    letterSpacing:'-0.02em'}}>{c.n}</div>
-                  <div style={{fontSize:12.5,fontWeight:600,color:'var(--t1)',marginTop:3,
-                    overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.label}</div>
-                  <div style={{fontSize:10.5,color:'var(--t3)',marginTop:2,
-                    overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.rule}</div>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         );
       })()}
