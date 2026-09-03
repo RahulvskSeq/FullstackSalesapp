@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Tag, ChevronDown, ChevronRight, Search, X, Check } from 'lucide-react';
 import { api } from '../api';
+import CatalogueModal from './CatalogueModal';
 
 /**
  * SalesByBrand — "Sales by Catalogue".
@@ -44,6 +45,9 @@ export default function SalesByBrand({ monthLabel, salesman }) {
   const [q, setQ] = useState('');
   const [selected, setSelected] = useState([]);   // empty = show the top few
   const [showAll, setShowAll] = useState(false);
+  const [showParent, setShowParent] = useState(false);
+  // Full drill-down for one catalogue, opened from a card.
+  const [modalBrand, setModalBrand] = useState(null);
   const listRef = React.useRef(null);
   // The catalogue list is a dropdown, not a permanent column: it only opens
   // while you are actually picking, so it does not eat the panel's height.
@@ -59,11 +63,12 @@ export default function SalesByBrand({ monthLabel, salesman }) {
     setLoading(true);
     const p = { month };
     if (salesman) p.salesman = salesman;
+    if (showParent) p.showParent = '1';
     api.salesByBrand(p)
       .then(setData)
       .catch(() => setData(null))
       .finally(() => setLoading(false));
-  }, [month, salesman]);
+  }, [month, salesman, showParent]);
 
   useEffect(() => {
     if (!expanded || !month) { setDetail(null); return; }
@@ -239,6 +244,15 @@ export default function SalesByBrand({ monthLabel, salesman }) {
         </div>
       </div>
 
+      {modalBrand && (
+        <CatalogueModal
+          brand={modalBrand}
+          month={month}
+          monthLabel={monthLabel}
+          onClose={() => setModalBrand(null)}
+        />
+      )}
+
       {loading && <div style={{ padding: 16, textAlign: 'center', color: 'var(--t3)', fontSize: 12.5 }}>Loading…</div>}
 
       {!loading && (
@@ -282,14 +296,31 @@ export default function SalesByBrand({ monthLabel, salesman }) {
               )}
             </div>
 
+            {/* Hidden catalogues are stated, never silently dropped: a report
+                that quietly omits sales is worse than one that shows clutter. */}
+            {(data?.hiddenParent?.length > 0 || showParent) && (
+              <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                {showParent
+                  ? <span>Showing parent catalogues too.</span>
+                  : <span>
+                      Child catalogues only ·{' '}
+                      <b style={{ color: 'var(--t2)' }}>{data.hiddenParent.length}</b> parent catalogue
+                      {data.hiddenParent.length === 1 ? '' : 's'} hidden ({n(data.hiddenParentQty)} units)
+                    </span>}
+                <button className="btn" style={{ padding: '2px 8px', fontSize: 10.5 }} onClick={() => setShowParent(v => !v)}>
+                  {showParent ? 'Child only' : 'Show parent too'}
+                </button>
+              </div>
+            )}
+
             <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fill, minmax(215px, 1fr))' }}>
               {shown.map(r => {
                 const share = grandTotal ? (r.qty / grandTotal) * 100 : 0;
                 const open = expanded === r.brand;
                 return (
                   <div key={r.brand}
-                    onClick={() => setExpanded(open ? null : r.brand)}
-                    title="Show the dealers behind it"
+                    onClick={() => setModalBrand(r.brand)}
+                    title="Open full details — products, dealers, salesmen, days"
                     style={{
                       padding: '9px 11px', borderRadius: 9, cursor: 'pointer',
                       background: 'var(--bg2)',

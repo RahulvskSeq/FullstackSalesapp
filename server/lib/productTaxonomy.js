@@ -213,3 +213,27 @@ export function matchDealer(rawName, index, list, memo) {
   memo?.set(key, out);
   return out;
 }
+
+/**
+ * Who owned this dealer on a given date.
+ *
+ * `salesmanHistory` records the date each salesman took over. The owner on a
+ * date is the latest entry whose `from` is on or before it. With no history
+ * the dealer has never been reassigned, so the current salesman applies to
+ * every date.
+ *
+ * This is what lets a mid-month handover split correctly: lines invoiced
+ * before the change stay with the outgoing salesman, lines after go to the
+ * incoming one, without either month being rewritten wholesale.
+ */
+export function salesmanOnDate(dealer, dateStr) {
+  if (!dealer) return '';
+  const hist = Array.isArray(dealer.salesmanHistory) ? dealer.salesmanHistory : [];
+  if (!hist.length || !dateStr) return dealer.salesman || '';
+  let owner = '';
+  for (const h of [...hist].sort((a, b) => String(a.from).localeCompare(String(b.from)))) {
+    if (String(h.from) <= String(dateStr)) owner = h.salesman;
+    else break;
+  }
+  return owner || dealer.salesman || '';
+}

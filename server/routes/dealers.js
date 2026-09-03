@@ -26,6 +26,19 @@ const monthEntrySchema = new mongoose.Schema({
 const dealerSchema = new mongoose.Schema({
   name:         { type:String, required:true },
   salesman:     { type:String, required:true },
+
+  // NOTE: this file registers the Dealer model from its own schema, and
+  // models/Dealer.js declares a second copy. `mongoose.models.Dealer` keeps
+  // whichever loaded first, so a field added to only one of them is silently
+  // dropped on write. Keep the two in step.
+  //
+  // Each entry records the date a salesman TOOK OVER, so an invoice line can
+  // be credited to whoever owned the dealer on the day it was invoiced.
+  salesmanHistory: [{
+    _id: false,
+    salesman: { type:String, default:'' },
+    from:     { type:String, default:'' },   // 'YYYY-MM-DD', inclusive
+  }],
   city:         { type:String, default:'' },
   state:        { type:String, default:'' },
   zone:         { type:String, default:'' },
@@ -1412,6 +1425,16 @@ router.put('/:id', protect, async (req,res) => {
         if(e.salesman) return;
         setObj[`monthlyData.${label}.salesman`] = ex.salesman;
       });
+
+      // Record WHEN the handover happened, so invoice lines can be credited
+      // by their own date rather than by whole months. Month stamping above
+      // still covers the Monthly Entry path; this covers the ERP path, where
+      // a dealer reassigned mid-month must split at the day, not the month.
+      const hist = Array.isArray(ex.salesmanHistory) ? [...ex.salesmanHistory] : [];
+      // First reassignment: seed the outgoing owner so earlier dates resolve.
+      if(!hist.length) hist.push({ salesman: ex.salesman, from: '0000-00-00' });
+      hist.push({ salesman: setObj.salesman, from: todayStr() });
+      setObj.salesmanHistory = hist;
     }
     // Day-level capture. Monthly Entry writes a month's running TOTAL, so the
     // day's actual business is the difference from what was there before —

@@ -1274,22 +1274,17 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
               }}>
               <Download size={13}/> {catTplBusy ? 'Building…' : `Download Template (${filtered.length} dealers)`}
             </button>
-            <button onClick={handleCatUploadClick} disabled={catBusy}
-              title={`Upload your filled Excel for ${month}`}
-              style={{
-                display:'flex', alignItems:'center', gap:6,
-                background:'#22c55e', color:'#0c0c1e',
-                border:'1px solid #15803d',
-                padding:'8px 14px', borderRadius:6, fontSize:12, fontWeight:700,
-                cursor: catBusy ? 'not-allowed' : 'pointer', opacity: catBusy ? 0.6 : 1,
-              }}>
-              {catBusy && !catTplBusy
-                ? <><div style={{width:11,height:11,border:'2px solid currentColor',borderTopColor:'transparent',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>
-                    {upProg
-                      ? (upProg.phase === 'processing' ? 'Processing…' : `Uploading ${upProg.pct}%`)
-                      : 'Uploading…'}</>
-                : <><Upload size={13}/> Upload Filled Excel</>}
-            </button>
+            {/* "Upload Filled Excel" was removed deliberately.
+                The template pre-fills City/State/Zone from monthlyData.<month>
+                when that month exists, and those per-month values are NOT kept
+                in step with later corrections to the dealer record. Downloading
+                and re-uploading unchanged therefore writes stale values back
+                over a correction — e.g. a dealer fixed to Bangalore/Karnataka
+                reverts to the "(Blank)"/"-" its Sep-26 entry still held.
+                Sales now come from the raw ERP sheet above, so this path is no
+                longer needed. The server route is untouched, so restoring the
+                button is a one-line change if the manual path is ever wanted
+                back — fix the prefill first. */}
 
             {/* Byte-level upload progress. Once the file is fully sent the bar
                 holds at 100% and the label switches to "processing", because

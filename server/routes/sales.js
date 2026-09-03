@@ -888,6 +888,48 @@ router.get('/brand-detail', protect, async (req, res) => {
   });
 });
 
+/**
+ * Classify each catalogue by the master's Parent Product column.
+ *
+ *   ProductId === Parent Product  ->  parent row
+ *   ProductId !== Parent Product  ->  child row
+ *
+ * A catalogue is a CHILD catalogue only when it has NO parent rows at all.
+ * "At least one child row" is too loose: FABRIC(0.8MM) has 48 parent rows and
+ * a single child, EURO 197 and one — those are parent catalogues with a stray
+ * variant, and letting them through defeats the point of the filter.
+ * Overview shows child catalogues only; parents stay in the data and are
+ * merely hidden from the panel.
+ *
+ * Returns { child:Set, parent:Set }. With no master loaded nothing can be
+ * classified, so both are empty and the panel filters nothing: a report must
+ * never hide sales just because the catalogue is unknown to it.
+ */
+let _catKindCache = { at: 0, child: new Set(), parent: new Set() };
+async function catalogueKinds() {
+  if (Date.now() - _catKindCache.at < 60_000) return _catKindCache;
+  const ProductMaster = (await import('../models/ProductMaster.js')).default;
+  if (!(await ProductMaster.countDocuments())) {
+    _catKindCache = { at: Date.now(), child: new Set(), parent: new Set() };
+    return _catKindCache;
+  }
+  const rows = await ProductMaster.aggregate([
+    { $match: { brand: { $nin: ['', null] } } },
+    { $group: {
+        _id: '$brand',
+        parents:  { $sum: { $cond: ['$isParent', 1, 0] } },
+        children: { $sum: { $cond: ['$isParent', 0, 1] } },
+    } },
+  ]);
+  const child = new Set(), parent = new Set();
+  for (const r of rows) {
+    if (r.parents === 0 && r.children > 0) child.add(r._id);
+    else parent.add(r._id);
+  }
+  _catKindCache = { at: Date.now(), child, parent };
+  return _catKindCache;
+}
+
 // GET /api/sales/by-brand  →  sales grouped by the ERP transaction category
 // ("VN-TEX", "PASTELO"). Only rows imported from a product-transaction
 // export carry a brand; manually keyed rows report under "(not specified)".
@@ -917,11 +959,24 @@ router.get('/by-brand', protect, async (req, res) => {
     e.categories.push({ category: r.category, qty: r.qty });
     byBrand.set(key, e);
   }
-  const out = [...byBrand.values()].sort((a, b) => b.qty - a.qty);
+  let out = [...byBrand.values()].sort((a, b) => b.qty - a.qty);
+
+  // Overview shows CHILD catalogues. Parent ones are set aside rather than
+  // dropped: the caller is told what was hidden and can ask for it back.
+  const kinds = await catalogueKinds();
+  const active = kinds.child.size > 0 || kinds.parent.size > 0;
+  const hidden = active ? out.filter(r => r.brand && !kinds.child.has(r.brand)) : [];
+  if (String(req.query.showParent || '') !== '1' && hidden.length) {
+    out = out.filter(r => r.brand && kinds.child.has(r.brand));
+  }
+
   res.json({
     rows: out,
     grandTotal: out.reduce((a, r) => a + r.qty, 0),
     unbranded: byBrand.get('')?.qty || 0,
+    hiddenParent: hidden.map(r => ({ brand: r.brand, qty: r.qty })),
+    hiddenParentQty: hidden.reduce((a, r) => a + r.qty, 0),
+    catalogueFilterActive: active,
   });
 });
 

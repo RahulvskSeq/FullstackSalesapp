@@ -2156,6 +2156,9 @@ export const api = {
   salesByBrand:      (q={})     => fetch(`${BASE}/sales/by-brand?${new URLSearchParams(q)}`,{headers:authHeaders()}).then(handle),
   // Dealers + salesmen behind one transaction category. {month, brand, salesman?}
   salesBrandDetail:  (q={})     => fetch(`${BASE}/sales/brand-detail?${new URLSearchParams(q)}`,{headers:authHeaders()}).then(handle),
+  // Everything behind one catalogue: products (with names), dealers,
+  // salesmen, category split and the daily breakdown. {brand, month}
+  ptxCatalogueDetail:(q={})     => fetch(`${BASE}/producttx/catalogue-detail?${new URLSearchParams(q)}`,{headers:authHeaders()}).then(handle),
   salesByDealer:     (q={})     => fetch(`${BASE}/sales/by-dealer?${new URLSearchParams(q)}`,{headers:authHeaders()}).then(handle),
   // Per-dealer, per-month excluded-category qty (drives all-months category filtering).
   salesByDealerMonths:(exclude=[]) => fetch(`${BASE}/sales/by-dealer-months?exclude=${encodeURIComponent((exclude||[]).join(','))}`,{headers:authHeaders()}).then(handle),

@@ -10,7 +10,7 @@ import User from '../models/User.js';
 import { protect, adminOnly, superAdminOnly } from '../middleware/auth.js';
 import {
   normCategory, normSubCategory, parseErpDate, nameKey, matchSalesman, str as S,
-  dealerKey, matchDealer,
+  dealerKey, matchDealer, salesmanOnDate,
 } from '../lib/productTaxonomy.js';
 
 const router = express.Router();
@@ -86,9 +86,14 @@ router.post('/master/upload', protect, adminOnly, upload.single('file'), async (
       if (!category) noType++;
       else catCount.set(category, (catCount.get(category) || 0) + 1);
 
+      const parentProduct = S(r['Parent Product']);
       docs.push({
         productId,
         pdId: S(r['Pd-Id']),
+        parentProduct,
+        // A blank Parent Product cannot be shown to be a child, so it counts
+        // as a parent: never hide something we cannot positively classify.
+        isParent: !parentProduct || parentProduct === productId,
         name: S(r['Product Name']),
         code: S(r['Product Code']),
         brand: S(r['Category']),
@@ -194,7 +199,7 @@ router.post('/upload', protect, adminOnly, upload.single('file'), async (req, re
       if (m.code && !byCode.has(m.code)) byCode.set(m.code, m);
     }
 
-    const dealers = await Dealer.find({}).select('name salesman').lean();
+    const dealers = await Dealer.find({}).select('name salesman salesmanHistory').lean();
     const dealerIndex = new Map(), dealerList = [];
     for (const d of dealers) {
       const k = dealerKey(d.name);
@@ -314,7 +319,10 @@ router.post('/upload', protect, adminOnly, upload.single('file'), async (req, re
         // Sale.salesman and Dealer.salesman hold the user *id* ("rakesh"),
         // not the display name. Carry it so the sales sync writes rows the
         // rest of the app can actually filter on.
-        salesmanId: d?.salesman || userIdByName.get(salesman) || '',
+        // Credit the line to whoever owned the dealer ON THE INVOICE DATE, not
+        // to the current owner — otherwise reassigning a dealer silently moves
+        // every past sale with it.
+        salesmanId: (d ? salesmanOnDate(d, dateStr) : '') || userIdByName.get(salesman) || '',
         taxonomyFrom,
         uploadedBy: req.user?.id || '',
         uploadBatchId: batchId,
@@ -554,6 +562,82 @@ router.get('/lines', protect, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+/**
+ * GET /api/producttx/catalogue-detail?brand=VN-TEX&month=2026-09
+ *
+ * Everything behind one catalogue card: the products actually invoiced (with
+ * names and codes), the dealers who bought them, the salesmen, and the daily
+ * split. Sale rows only carry category and sub-category, so the product names
+ * can only come from the invoice lines — this reads ProductTxn.
+ *
+ * Honours the same salesman scoping as every other endpoint here.
+ */
+router.get('/catalogue-detail', protect, async (req, res) => {
+  try {
+    const brand = S(req.query.brand);
+    if (!brand) return res.status(400).json({ error: 'brand required' });
+
+    const match = { ...(await scopeFor(req)), brand };
+    if (S(req.query.month)) match.month = S(req.query.month);
+    if (S(req.query.from) || S(req.query.to)) {
+      match.dateStr = {};
+      if (S(req.query.from)) match.dateStr.$gte = S(req.query.from);
+      if (S(req.query.to)) match.dateStr.$lte = S(req.query.to);
+    }
+
+    const g = (id, extra = {}) => ([
+      { $match: match },
+      { $group: { _id: id, qty: { $sum: '$qty' }, amount: { $sum: '$amount' }, lines: { $sum: 1 }, ...extra } },
+      { $sort: { qty: -1 } },
+      { $limit: 500 },
+    ]);
+
+    const [products, dealers, salesmen, days, cats, totals] = await Promise.all([
+      ProductTxn.aggregate(g(
+        { name: '$productName', code: '$productCode', category: '$category', subCategory: '$subCategory' },
+        { buyers: { $addToSet: '$dealerName' } },
+      )),
+      ProductTxn.aggregate(g({ dealer: '$dealerName', salesman: '$salesman' })),
+      ProductTxn.aggregate(g({ salesman: '$salesman' }, { buyers: { $addToSet: '$dealerName' } })),
+      ProductTxn.aggregate([
+        { $match: match },
+        { $group: { _id: '$dateStr', qty: { $sum: '$qty' }, amount: { $sum: '$amount' } } },
+        { $sort: { _id: 1 } },
+      ]),
+      ProductTxn.aggregate(g({ category: '$category', subCategory: '$subCategory' })),
+      ProductTxn.aggregate([
+        { $match: match },
+        { $group: {
+            _id: null, qty: { $sum: '$qty' }, amount: { $sum: '$amount' }, lines: { $sum: 1 },
+            vouchers: { $addToSet: '$voucherNo' }, buyers: { $addToSet: '$dealerName' },
+        } },
+        { $project: { _id: 0, qty: 1, amount: 1, lines: 1,
+                      vouchers: { $size: '$vouchers' },
+                      dealers: { $size: { $setDifference: ['$buyers', ['']] } } } },
+      ]),
+    ]);
+
+    res.json({
+      ok: true, brand,
+      totals: totals[0] || { qty: 0, amount: 0, lines: 0, vouchers: 0, dealers: 0 },
+      products: products.map(p => ({
+        name: p._id.name, code: p._id.code,
+        category: p._id.category, subCategory: p._id.subCategory,
+        qty: p.qty, amount: p.amount, lines: p.lines,
+        dealers: (p.buyers || []).filter(Boolean).length,
+      })),
+      dealers: dealers.map(d => ({ dealer: d._id.dealer, salesman: d._id.salesman, qty: d.qty, amount: d.amount, lines: d.lines })),
+      salesmen: salesmen.map(s => ({ salesman: s._id.salesman, qty: s.qty, amount: s.amount,
+                                     dealers: (s.buyers || []).filter(Boolean).length })),
+      categories: cats.map(c => ({ category: c._id.category, subCategory: c._id.subCategory, qty: c.qty, amount: c.amount })),
+      days: days.map(d => ({ date: d._id, qty: d.qty, amount: d.amount })),
+    });
+  } catch (e) {
+    console.error('[producttx/catalogue-detail]', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 /** GET /api/producttx/facets - values available for the filter controls. */
 router.get('/facets', protect, async (req, res) => {
   try {
@@ -604,13 +688,17 @@ async function buildSalesSync(monthList) {
     const rolled = await ProductTxn.aggregate([
       { $match: { month, resolved: true, dealerName: { $ne: '' } } },
       { $group: {
+          // salesmanId is part of the KEY, not a $first pick. A dealer
+          // reassigned mid-month has lines under both owners; grouping on it
+          // splits the month between them instead of handing the whole month
+          // to whichever line the database happened to return first.
           _id: {
             dealerName: '$dealerName', category: '$category',
             subCategory: '$subCategory', brand: '$brand',
+            salesmanId: '$salesmanId',
           },
           qty: { $sum: '$qty' },
           dealerId: { $first: '$dealerId' },
-          salesmanId: { $first: '$salesmanId' },
       } },
     ]);
 
@@ -670,7 +758,7 @@ async function buildSalesSync(monthList) {
         brand: r._id.brand || '',
         qty: r.qty,
         dealerId: r.dealerId,
-        salesmanId: r.salesmanId,
+        salesmanId: r._id.salesmanId || '',
       })),
     });
   }

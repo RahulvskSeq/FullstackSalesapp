@@ -65,6 +65,22 @@ const monthEntrySchema = new mongoose.Schema({
 const dealerSchema = new mongoose.Schema({
   name:         { type:String, required:true },
   salesman:     { type:String, required:true },
+
+  // When the dealer changed hands. Each entry records the date a salesman
+  // TOOK OVER, so a sale can be attributed to whoever owned the dealer on
+  // the day it was invoiced — rather than to the current owner, which would
+  // silently rewrite history, or to one owner per month, which cannot split
+  // a mid-month handover.
+  //
+  // Empty means "never reassigned": `salesman` applies to every date. On the
+  // first reassignment the outgoing owner is seeded with from:'0000-00-00'
+  // so every earlier date still resolves.
+  salesmanHistory: [{
+    _id: false,
+    salesman: { type:String, default:'' },
+    from:     { type:String, default:'' },   // 'YYYY-MM-DD', inclusive
+  }],
+
   // Global info (updated each upload, used as fallback)
   city:         { type:String, default:'' },
   state:        { type:String, default:'' },

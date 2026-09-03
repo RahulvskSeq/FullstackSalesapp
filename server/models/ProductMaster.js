@@ -22,6 +22,14 @@ const ProductMasterSchema = new mongoose.Schema({
   productId:    { type: String, required: true, unique: true, index: true }, // ERP ProductId
   pdId:         { type: String, index: true },                               // ERP Pd-Id (size/variant row)
 
+  // ERP "Parent Product". When it equals ProductId the row IS the parent —
+  // the real catalogue entry. When it differs, the row is the same product
+  // re-listed under another name (PASTELO -> PLATTER (PASTELO), RAJENDRA,
+  // SRI RAM; AJMER -> QR CODES, AURA, ESSENCE). Sales are booked against
+  // parents, so the child listings are noise on a sales report.
+  parentProduct: { type: String, default: '', index: true },
+  isParent:      { type: Boolean, default: false, index: true },
+
   name:         { type: String, trim: true },
   code:         { type: String, trim: true, index: true },
 
