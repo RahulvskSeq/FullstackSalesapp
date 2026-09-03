@@ -45,6 +45,10 @@ export default function SalesByBrand({ monthLabel, salesman }) {
   const [selected, setSelected] = useState([]);   // empty = show the top few
   const [showAll, setShowAll] = useState(false);
   const listRef = React.useRef(null);
+  // The catalogue list is a dropdown, not a permanent column: it only opens
+  // while you are actually picking, so it does not eat the panel's height.
+  const [open, setOpen] = useState(false);
+  const railRef = React.useRef(null);
   // Dealer/salesman detail for the open catalogue, fetched on demand so
   // expanding one does not mean loading all of them.
   const [detail, setDetail] = useState(null);
@@ -71,6 +75,15 @@ export default function SalesByBrand({ monthLabel, salesman }) {
       .catch(() => setDetail(null))
       .finally(() => setDetailLoading(false));
   }, [expanded, month, salesman]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = e => { if (railRef.current && !railRef.current.contains(e.target)) setOpen(false); };
+    const onKey = e => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [open]);
 
   // Filtering leaves the list scrolled where it was, which can park the
   // matches out of sight. Jump back to the top whenever the search changes.
@@ -106,12 +119,12 @@ export default function SalesByBrand({ monthLabel, salesman }) {
   return (
     <div className="card" style={{ marginBottom: 16, padding: 14 }}>
       <style>{`
-        .cat-rail{width:236px;flex:0 0 236px}
+        .cat-rail{width:228px;flex:0 0 228px}
         .cat-row:hover{background:var(--bg3)}
         @media (max-width:900px){
           .cat-wrap{flex-direction:column}
           .cat-rail{width:auto;flex:1 1 auto}
-          .cat-list{max-height:210px}
+          .cat-list{max-height:240px}
         }
       `}</style>
 
@@ -140,19 +153,20 @@ export default function SalesByBrand({ monthLabel, salesman }) {
       {!loading && (
         <div className="cat-wrap" style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
 
-          {/* ── left rail: searchable multi-select ── */}
-          <div className="cat-rail">
-            <div style={{ position: 'relative', marginBottom: 7 }}>
+          {/* ── left rail: search box; the list drops down over the content ── */}
+          <div className="cat-rail" ref={railRef} style={{ position: 'relative' }}>
+            <div style={{ position: 'relative' }}>
               <Search size={12} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--t3)' }} />
               <input
                 value={q}
-                onChange={e => setQ(e.target.value)}
+                onChange={e => { setQ(e.target.value); setOpen(true); }}
+                onFocus={() => setOpen(true)}
                 placeholder="Search catalogue…"
                 className="sel"
                 style={{ paddingLeft: 26, paddingRight: q ? 24 : 10, fontSize: 12, width: '100%', cursor: 'text' }}
               />
               {q && (
-                <button onClick={() => setQ('')} title="Clear search"
+                <button onClick={() => { setQ(''); setOpen(false); }} title="Clear search"
                   style={{ position: 'absolute', right: 5, top: '50%', transform: 'translateY(-50%)',
                            background: 'none', border: 'none', color: 'var(--t3)', cursor: 'pointer', padding: 2 }}>
                   <X size={12} />
@@ -160,68 +174,86 @@ export default function SalesByBrand({ monthLabel, salesman }) {
               )}
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-              <span style={{ fontSize: 10, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.09em' }}>
-                {listed.length} of {allRows.length}
-              </span>
-              <div style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
-                <button className="btn" style={{ padding: '2px 7px', fontSize: 10.5 }}
-                  onClick={() => setSelected([...new Set([...selected, ...listed.map(r => r.brand)])])}>
-                  Select shown
-                </button>
-                {selected.length > 0 && (
-                  <button className="btn" style={{ padding: '2px 7px', fontSize: 10.5 }} onClick={() => setSelected([])}>
-                    Clear
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="cat-list" ref={listRef} style={{
-              maxHeight: 340, overflowY: 'auto',
-              border: '1px solid var(--b1)', borderRadius: 8, background: 'var(--bg2)',
-            }}>
-              {listed.length === 0 && (
-                <div style={{ padding: '12px 10px', fontSize: 11.5, color: 'var(--t3)' }}>
-                  Nothing matches “{q.trim()}”.
-                </div>
-              )}
-              {listed.map(r => {
-                const on = selected.includes(r.brand);
-                return (
-                  <div key={r.brand} className="cat-row"
-                    onClick={() => toggle(r.brand)}
-                    title={r.brand}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
-                      padding: '5px 9px', borderBottom: '1px solid var(--b1)',
-                      background: on ? 'var(--accL)' : 'transparent',
-                    }}>
-                    <span style={{
-                      width: 13, height: 13, flexShrink: 0, borderRadius: 3,
-                      border: '1px solid ' + (on ? 'var(--acc)' : 'var(--b2)'),
-                      background: on ? 'var(--acc)' : 'transparent',
-                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                      {on && <Check size={9} style={{ color: '#fff' }} />}
-                    </span>
-                    <span style={{
-                      flex: 1, minWidth: 0, fontSize: 11.5,
-                      fontWeight: on ? 600 : 400, color: on ? 'var(--t1)' : 'var(--t2)',
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}>{r.brand}</span>
-                    <b style={{ fontSize: 11.5, fontVariantNumeric: 'tabular-nums', color: 'var(--t2)' }}>
-                      {n(r.qty)}
-                    </b>
+            {/* Only rendered while picking, and absolutely positioned so it
+                floats over the results instead of stretching the panel. */}
+            {open && (
+              <div style={{
+                position: 'absolute', zIndex: 30, top: '100%', left: 0, right: 0, marginTop: 5,
+                border: '1px solid var(--b2)', borderRadius: 9, background: 'var(--bg1)',
+                boxShadow: 'var(--shadowHover, 0 10px 30px rgba(0,0,0,.35))', overflow: 'hidden',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 9px', borderBottom: '1px solid var(--b1)' }}>
+                  <span style={{ fontSize: 10, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.09em' }}>
+                    {listed.length} of {allRows.length}
+                  </span>
+                  <div style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
+                    <button className="btn" style={{ padding: '2px 7px', fontSize: 10.5 }}
+                      onClick={() => setSelected([...new Set([...selected, ...listed.map(r => r.brand)])])}>
+                      Select shown
+                    </button>
+                    <button className="btn" style={{ padding: '2px 7px', fontSize: 10.5 }} onClick={() => setOpen(false)}>
+                      Done
+                    </button>
                   </div>
-                );
-              })}
-            </div>
+                </div>
 
+                <div className="cat-list" ref={listRef} style={{ maxHeight: 300, overflowY: 'auto' }}>
+                  {listed.length === 0 && (
+                    <div style={{ padding: '12px 10px', fontSize: 11.5, color: 'var(--t3)' }}>
+                      Nothing matches “{q.trim()}”.
+                    </div>
+                  )}
+                  {listed.map(r => {
+                    const on = selected.includes(r.brand);
+                    return (
+                      <div key={r.brand} className="cat-row"
+                        onClick={() => toggle(r.brand)}
+                        title={r.brand}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+                          padding: '5px 9px', borderBottom: '1px solid var(--b1)',
+                          background: on ? 'var(--accL)' : 'transparent',
+                        }}>
+                        <span style={{
+                          width: 13, height: 13, flexShrink: 0, borderRadius: 3,
+                          border: '1px solid ' + (on ? 'var(--acc)' : 'var(--b2)'),
+                          background: on ? 'var(--acc)' : 'transparent',
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        }}>
+                          {on && <Check size={9} style={{ color: '#fff' }} />}
+                        </span>
+                        <span style={{
+                          flex: 1, minWidth: 0, fontSize: 11.5,
+                          fontWeight: on ? 600 : 400, color: on ? 'var(--t1)' : 'var(--t2)',
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>{r.brand}</span>
+                        <b style={{ fontSize: 11.5, fontVariantNumeric: 'tabular-nums', color: 'var(--t2)' }}>
+                          {n(r.qty)}
+                        </b>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* What is picked stays visible once the list is closed. */}
             {selected.length > 0 && (
-              <div style={{ marginTop: 7, fontSize: 10.5, color: 'var(--t3)', lineHeight: 1.5 }}>
-                Showing {selected.length} catalogue{selected.length === 1 ? '' : 's'} ·{' '}
-                {((shownTotal / (grandTotal || 1)) * 100).toFixed(1)}% of the month
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 7 }}>
+                {selected.map(b => (
+                  <button key={b} onClick={() => toggle(b)} title="Remove"
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer',
+                      background: 'var(--acc)', border: '1px solid var(--acc)', color: '#fff',
+                      borderRadius: 6, padding: '3px 8px', fontSize: 11, fontWeight: 600, maxWidth: '100%',
+                    }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b}</span>
+                    <X size={11} style={{ opacity: .85, flexShrink: 0 }} />
+                  </button>
+                ))}
+                <button className="btn" style={{ padding: '3px 8px', fontSize: 11 }} onClick={() => setSelected([])}>
+                  Clear all
+                </button>
               </div>
             )}
           </div>
