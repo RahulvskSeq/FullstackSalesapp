@@ -2198,6 +2198,9 @@ export const api = {
   ptxSyncSales:   (commit=false, months='') => fetch(
     `${BASE}/producttx/sync-sales?${new URLSearchParams({ ...(commit?{commit:'1'}:{}), ...(months?{months}:{}) })}`,
     {method:'POST',headers:authHeaders()}).then(handle),
+  // Create dealers for parties the import could not match, from the sheet's
+  // own party details. {dealers:[{name, city, state, pincode, address, ...}]}
+  ptxCreateDealers: (dealers) => fetch(`${BASE}/producttx/create-dealers`,{method:'POST',headers:authHeaders(),body:JSON.stringify({dealers})}).then(handle),
   ptxBatches:     ()      => fetch(`${BASE}/producttx/batches`,{headers:authHeaders()}).then(handle),
   ptxDeleteBatch: (id)    => fetch(`${BASE}/producttx/batch/${id}`,{method:'DELETE',headers:authHeaders()}).then(handle),
   ptxDeleteAll:   ()      => fetch(`${BASE}/producttx/all`,{method:'DELETE',headers:authHeaders()}).then(handle),

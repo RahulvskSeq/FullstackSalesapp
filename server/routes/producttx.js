@@ -255,10 +255,24 @@ router.post('/upload', protect, adminOnly, upload.single('file'), async (req, re
       const dm = matchDealer(companyName, dealerIndex, dealerList, dealerMemo);
       const d = dm.dealer;
       if (!d && companyName) {
-        const note = dm.suggestion
-          ? `${companyName}   [closest: ${dm.suggestion} @ ${(dm.score * 100).toFixed(0)}%]`
-          : companyName;
-        unmatchedDealers.set(note, (unmatchedDealers.get(note) || 0) + 1);
+        // Keep the party's full details, not just its name: everything needed
+        // to create the dealer is on this row, so the user should not have to
+        // re-key it from the sheet.
+        const u = unmatchedDealers.get(companyName) || {
+          name: companyName,
+          city: S(r['City']) || S(r['Buyer City']),
+          state: S(r['State']) || S(r['Buyer State']),
+          pincode: S(r['Buyer Pin Code']),
+          address: S(r['Buyer Address']),
+          mobile: S(r['Mobile No.']) || S(r['Buyer Contact']),
+          gst: S(r['Buyer Gstno']),
+          salesPersonRaw: S(r['Sales Person']),
+          closest: dm.suggestion || '',
+          score: Math.round((dm.score || 0) * 100),
+          lines: 0, qty: 0,
+        };
+        u.lines += 1; u.qty += num(r['Qty']);
+        unmatchedDealers.set(companyName, u);
       } else if (d && dm.reason === 'fuzzy') {
         fuzzyDealers.set(`${companyName}  ->  ${d.name}  (${(dm.score * 100).toFixed(0)}%)`,
           (fuzzyDealers.get(`${companyName}  ->  ${d.name}  (${(dm.score * 100).toFixed(0)}%)`) || 0) + 1);
@@ -337,7 +351,9 @@ router.post('/upload', protect, adminOnly, upload.single('file'), async (req, re
         .map(([k, v]) => { const [c, s] = k.split('||'); return { category: c, subCategory: s, ...v }; })
         .sort((a, b) => b.qty - a.qty),
       unresolvedProducts: top(unresolvedProducts),
-      unmatchedDealers: top(unmatchedDealers),
+      unmatchedDealers: [...unmatchedDealers.values()]
+        .sort((a, b) => b.qty - a.qty)
+        .slice(0, 200),
       unmatchedSalesmen: top(unmatchedSalesmen),
       fuzzyDealers: top(fuzzyDealers),
       taxonomySource: sheetHasTaxonomy ? 'sheet' : 'master',
@@ -377,6 +393,72 @@ router.post('/upload', protect, adminOnly, upload.single('file'), async (req, re
   } catch (e) {
     console.error('[producttx/upload]', e);
     res.status(400).json({ error: e.message });
+  }
+});
+
+/**
+ * POST /api/producttx/create-dealers
+ * Body: { dealers: [{ name, city, state, pincode, address, mobile, gst,
+ *                     salesPersonRaw }] }
+ *
+ * Creates dealers for parties the import could not match. Everything comes
+ * from the transaction sheet itself, so nothing is re-keyed by hand.
+ *
+ * Re-checks each name against the live list before inserting: the preview
+ * may be minutes old, and creating a duplicate of an existing dealer is
+ * exactly the problem this whole feature exists to avoid.
+ */
+router.post('/create-dealers', protect, adminOnly, async (req, res) => {
+  try {
+    const wanted = Array.isArray(req.body?.dealers) ? req.body.dealers : [];
+    if (!wanted.length) return res.status(400).json({ error: 'No dealers supplied' });
+
+    const existing = await Dealer.find({}).select('name salesman').lean();
+    const index = new Map(), list = [];
+    for (const d of existing) {
+      const k = dealerKey(d.name);
+      if (!k) continue;
+      if (!index.has(k)) index.set(k, d);
+      list.push([k, d]);
+    }
+    const users = await User.find({}).select('id name role').lean();
+    const memo = new Map();
+
+    const created = [], skipped = [];
+    for (const w of wanted) {
+      const name = S(w.name);
+      if (!name) continue;
+
+      // Guard against a stale preview.
+      const hit = matchDealer(name, index, list, memo);
+      if (hit.dealer) { skipped.push({ name, reason: `already exists as "${hit.dealer.name}"` }); continue; }
+
+      // Salesman is required by the schema. Fall back to 'none', which is an
+      // existing convention in this data, rather than refusing the row.
+      const matched = matchSalesman(S(w.salesPersonRaw), users);
+      const salesman = users.find(u => u.name === matched)?.id || 'none';
+
+      const doc = await Dealer.create({
+        name,
+        salesman,
+        city: S(w.city),
+        state: S(w.state),
+        pincode: S(w.pincode),
+        address: S(w.address),
+        status: 'ACTIVE',
+        source: 'ptx-import',
+      });
+      created.push({ name: doc.name, salesman: doc.salesman, city: doc.city });
+
+      // Keep the index current so two spellings in one batch cannot both insert.
+      const k = dealerKey(doc.name);
+      if (k) { index.set(k, doc); list.push([k, doc]); memo.clear(); }
+    }
+
+    res.json({ ok: true, created: created.length, skipped: skipped.length, createdList: created, skippedList: skipped });
+  } catch (e) {
+    console.error('[producttx/create-dealers]', e);
+    res.status(500).json({ error: e.message });
   }
 });
 

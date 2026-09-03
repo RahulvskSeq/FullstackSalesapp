@@ -17,21 +17,45 @@ import { notify } from './Toast';
  */
 
 const qtyF = n => (Math.round((n || 0) * 100) / 100).toLocaleString('en-IN');
+const n = v => (v || 0).toLocaleString('en-IN');
 
 export default function ErpDailyUpload({ onDone }) {
   const [preview, setPreview] = useState(null);   // { file, data }
   const [busy, setBusy] = useState(false);
   const [pct, setPct] = useState(0);
+  const [creating, setCreating] = useState(false);
+  const [created, setCreated] = useState(null);
 
   const pick = (e) => {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
-    setBusy(true); setPct(0); setPreview(null);
+    setBusy(true); setPct(0); setPreview(null); setCreated(null);
     api.ptxUpload(file, false, p => setPct(p), true)
       .then(data => setPreview({ file, data }))
       .catch(err => notify.error(err.message))
       .finally(() => { setBusy(false); setPct(0); });
+  };
+
+  /**
+   * Create the parties the import could not match, from the details already
+   * on the sheet. Afterwards the file is re-previewed so the counts reflect
+   * reality rather than the stale preview that prompted the click.
+   */
+  const createMissing = () => {
+    const list = preview?.data?.unmatchedDealers || [];
+    if (!list.length) return;
+    setCreating(true);
+    api.ptxCreateDealers(list)
+      .then(r => {
+        setCreated(r);
+        notify.success(`Created ${r.created} dealer${r.created === 1 ? '' : 's'}`);
+        // Re-run the preview against the new dealer list.
+        return api.ptxUpload(preview.file, false, () => {}, true)
+          .then(data => setPreview(p => ({ ...p, data })));
+      })
+      .catch(err => notify.error(err.message))
+      .finally(() => setCreating(false));
   };
 
   const confirm = () => {
@@ -170,9 +194,78 @@ export default function ErpDailyUpload({ onDone }) {
             </div>
           ))}
 
-          {(d.unresolvedProducts?.length > 0 || d.unmatchedDealers?.length > 0) && (
-            <div style={{ fontSize: 11, color: 'var(--t3)' }}>
-              Anything unmatched is listed in full on the Product Transactions page.
+          {/* Name the parties that did not match, with everything needed to
+              create them, rather than sending the user elsewhere to find out. */}
+          {d.unmatchedDealers?.length > 0 && (
+            <div style={{
+              marginTop: 4, padding: '10px 12px', borderRadius: 9,
+              background: 'rgba(251,191,36,.08)', border: '1px solid rgba(251,191,36,.3)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+                <AlertTriangle size={13} style={{ color: 'var(--yel)' }} />
+                <b style={{ fontSize: 12.5 }}>
+                  {d.unmatchedDealers.length} dealer{d.unmatchedDealers.length === 1 ? '' : 's'} not in the app
+                </b>
+                <span style={{ fontSize: 11.5, color: 'var(--t3)' }}>
+                  their {n(d.unmatchedDealers.reduce((a, x) => a + x.qty, 0))} units are excluded until they exist
+                </span>
+                <button className="btnp" style={{ marginLeft: 'auto', padding: '5px 11px', fontSize: 12 }}
+                  onClick={createMissing} disabled={creating || busy}>
+                  {creating ? 'Creating…' : `Create ${d.unmatchedDealers.length} dealer${d.unmatchedDealers.length === 1 ? '' : 's'}`}
+                </button>
+              </div>
+
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, fontVariantNumeric: 'tabular-nums' }}>
+                  <thead>
+                    <tr>{['Party', 'City', 'State', 'PIN', 'Salesman', 'Closest existing', 'Units'].map((h, i) => (
+                      <th key={h} style={{
+                        textAlign: i === 6 ? 'right' : 'left', padding: '4px 8px', color: 'var(--t3)',
+                        fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '.07em',
+                        borderBottom: '1px solid var(--b1)', whiteSpace: 'nowrap',
+                      }}>{h}</th>
+                    ))}</tr>
+                  </thead>
+                  <tbody>
+                    {d.unmatchedDealers.map((u, i) => (
+                      <tr key={i}>
+                        <td style={{ padding: '4px 8px', color: 'var(--t1)', fontWeight: 600, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                          title={u.address || u.name}>{u.name}</td>
+                        <td style={{ padding: '4px 8px', color: 'var(--t2)' }}>{u.city || '—'}</td>
+                        <td style={{ padding: '4px 8px', color: 'var(--t2)' }}>{u.state || '—'}</td>
+                        <td style={{ padding: '4px 8px', color: 'var(--t2)' }}>{u.pincode || '—'}</td>
+                        <td style={{ padding: '4px 8px', color: 'var(--t3)', maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                          title={u.salesPersonRaw}>{u.salesPersonRaw || '—'}</td>
+                        <td style={{ padding: '4px 8px', color: 'var(--t3)', maxWidth: 190, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                          title={u.closest}>
+                          {u.closest ? `${u.closest} (${u.score}%)` : 'no similar name'}
+                        </td>
+                        <td style={{ padding: '4px 8px', textAlign: 'right', fontWeight: 700 }}>{qtyF(u.qty)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div style={{ fontSize: 10.5, color: 'var(--t3)', marginTop: 7, lineHeight: 1.5 }}>
+                Check “closest existing” first — a high percentage usually means the party is
+                already in the app under a slightly different name, and creating it would make a
+                duplicate. Created dealers take their city, state, PIN and address from this sheet.
+              </div>
+
+              {created && (
+                <div style={{ fontSize: 11.5, color: 'var(--grn)', marginTop: 7, fontWeight: 600 }}>
+                  Created {created.created}
+                  {created.skipped > 0 && `, skipped ${created.skipped} that already existed`}.
+                </div>
+              )}
+            </div>
+          )}
+
+          {d.unresolvedProducts?.length > 0 && (
+            <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 8 }}>
+              {d.unresolvedProducts.length} product(s) have no category — listed in full on the
+              Product Transactions page.
             </div>
           )}
         </div>
