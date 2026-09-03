@@ -114,68 +114,29 @@ export default function SalesByBrand({ monthLabel, salesman }) {
 
   const toggle = b => setSelected(p => p.includes(b) ? p.filter(x => x !== b) : [...p, b]);
 
-  if (!loading && !allRows.length) return null;
-
-  return (
-    <div className="card" style={{ marginBottom: 16, padding: 14 }}>
-      <style>{`
-        .cat-rail{width:228px;flex:0 0 228px}
-        .cat-row:hover{background:var(--bg3)}
-        @media (max-width:900px){
-          .cat-wrap{flex-direction:column}
-          .cat-rail{width:auto;flex:1 1 auto}
-          .cat-list{max-height:240px}
-        }
-      `}</style>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-        <Tag size={15} style={{ color: 'var(--acc)' }} />
-        <b style={{ fontSize: 14 }}>Sales by Catalogue{monthLabel ? ` — ${monthLabel}` : ''}</b>
-        <span style={{ fontSize: 11.5, color: 'var(--t3)' }}>
-          the catalogue sold, straight from the ERP
-        </span>
-        {/* The header total is always the MONTH, never the subset on screen —
-            a capped or filtered view must not read as the whole month.
-            What is currently visible is stated above the cards instead. */}
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'baseline', gap: 6 }}>
-          {selected.length > 0 && (
-            <span style={{ fontSize: 11, color: 'var(--acc)', fontWeight: 600 }}>
-              {selected.length} selected · {n(shownTotal)}
-            </span>
-          )}
-          <span style={{ fontSize: 11, color: 'var(--t3)' }}>Total</span>
-          <b style={{ fontSize: 15, fontVariantNumeric: 'tabular-nums' }}>{n(grandTotal)}</b>
-        </div>
+  // Rendered in the header rather than as a side column: with the list
+  // collapsed into a dropdown, a dedicated rail was 228px of empty space
+  // squeezing the cards it was meant to filter.
+  const CatalogueFilter = () => (
+    <div ref={railRef} className="cat-filter" style={{ position: 'relative' }}>
+      <div style={{ position: 'relative' }}>
+        <Search size={12} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--t3)' }} />
+        <input
+          value={q}
+          onChange={e => { setQ(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          placeholder="Search catalogue…"
+          className="sel"
+          style={{ paddingLeft: 26, paddingRight: q ? 24 : 10, fontSize: 12, width: '100%', cursor: 'text' }}
+        />
+        {q && (
+          <button onClick={() => { setQ(''); setOpen(false); }} title="Clear search"
+            style={{ position: 'absolute', right: 5, top: '50%', transform: 'translateY(-50%)',
+                     background: 'none', border: 'none', color: 'var(--t3)', cursor: 'pointer', padding: 2 }}>
+            <X size={12} />
+          </button>
+        )}
       </div>
-
-      {loading && <div style={{ padding: 16, textAlign: 'center', color: 'var(--t3)', fontSize: 12.5 }}>Loading…</div>}
-
-      {!loading && (
-        <div className="cat-wrap" style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
-
-          {/* ── left rail: search box; the list drops down over the content ── */}
-          <div className="cat-rail" ref={railRef} style={{ position: 'relative' }}>
-            <div style={{ position: 'relative' }}>
-              <Search size={12} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--t3)' }} />
-              <input
-                value={q}
-                onChange={e => { setQ(e.target.value); setOpen(true); }}
-                onFocus={() => setOpen(true)}
-                placeholder="Search catalogue…"
-                className="sel"
-                style={{ paddingLeft: 26, paddingRight: q ? 24 : 10, fontSize: 12, width: '100%', cursor: 'text' }}
-              />
-              {q && (
-                <button onClick={() => { setQ(''); setOpen(false); }} title="Clear search"
-                  style={{ position: 'absolute', right: 5, top: '50%', transform: 'translateY(-50%)',
-                           background: 'none', border: 'none', color: 'var(--t3)', cursor: 'pointer', padding: 2 }}>
-                  <X size={12} />
-                </button>
-              )}
-            </div>
-
-            {/* Only rendered while picking, and absolutely positioned so it
-                floats over the results instead of stretching the panel. */}
             {open && (
               <div style={{
                 position: 'absolute', zIndex: 30, top: '100%', left: 0, right: 0, marginTop: 5,
@@ -236,27 +197,52 @@ export default function SalesByBrand({ monthLabel, salesman }) {
                 </div>
               </div>
             )}
+    </div>
+  );
 
-            {/* What is picked stays visible once the list is closed. */}
-            {selected.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 7 }}>
-                {selected.map(b => (
-                  <button key={b} onClick={() => toggle(b)} title="Remove"
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer',
-                      background: 'var(--acc)', border: '1px solid var(--acc)', color: '#fff',
-                      borderRadius: 6, padding: '3px 8px', fontSize: 11, fontWeight: 600, maxWidth: '100%',
-                    }}>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b}</span>
-                    <X size={11} style={{ opacity: .85, flexShrink: 0 }} />
-                  </button>
-                ))}
-                <button className="btn" style={{ padding: '3px 8px', fontSize: 11 }} onClick={() => setSelected([])}>
-                  Clear all
-                </button>
-              </div>
-            )}
+  if (!loading && !allRows.length) return null;
+
+  return (
+    <div className="card" style={{ marginBottom: 16, padding: 14 }}>
+      <style>{`
+        .cat-row:hover{background:var(--bg3)}
+        .cat-filter{width:208px}
+        /* On a phone the header wraps, so let the search use the full row
+           rather than sit as a stub beside the total. */
+        @media (max-width:560px){
+          .cat-headright{width:100%;margin-left:0}
+          .cat-filter{width:100%;flex:1 1 100%;order:9}
+          .cat-list{max-height:240px}
+        }
+      `}</style>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+        <Tag size={15} style={{ color: 'var(--acc)' }} />
+        <b style={{ fontSize: 14 }}>Sales by Catalogue{monthLabel ? ` — ${monthLabel}` : ''}</b>
+        <span style={{ fontSize: 11.5, color: 'var(--t3)' }}>
+          the catalogue sold, straight from the ERP
+        </span>
+        {/* The header total is always the MONTH, never the subset on screen —
+            a capped or filtered view must not read as the whole month.
+            What is currently visible is stated above the cards instead. */}
+        <div className="cat-headright" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          {selected.length > 0 && (
+            <span style={{ fontSize: 11, color: 'var(--acc)', fontWeight: 600 }}>
+              {selected.length} selected · {n(shownTotal)}
+            </span>
+          )}
+          <CatalogueFilter />
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+            <span style={{ fontSize: 11, color: 'var(--t3)' }}>Total</span>
+            <b style={{ fontSize: 15, fontVariantNumeric: 'tabular-nums' }}>{n(grandTotal)}</b>
           </div>
+        </div>
+      </div>
+
+      {loading && <div style={{ padding: 16, textAlign: 'center', color: 'var(--t3)', fontSize: 12.5 }}>Loading…</div>}
+
+      {!loading && (
+        <div style={{ minWidth: 0 }}>
 
           {/* ── right: whatever is currently in scope ── */}
           <div style={{ flex: '1 1 320px', minWidth: 0 }}>
@@ -273,6 +259,25 @@ export default function SalesByBrand({ monthLabel, salesman }) {
               {!selected.length && !q.trim() && allRows.length > TOP_N && (
                 <button className="btn" style={{ padding: '2px 8px', fontSize: 11 }} onClick={() => setShowAll(v => !v)}>
                   {showAll ? `Show top ${TOP_N}` : `Show all ${allRows.length}`}
+                </button>
+              )}
+
+              {/* What is picked stays visible with the list closed, so a
+                  filtered view always says what it is filtered to. */}
+              {selected.map(b => (
+                <button key={b} onClick={() => toggle(b)} title="Remove"
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer',
+                    background: 'var(--acc)', border: '1px solid var(--acc)', color: '#fff',
+                    borderRadius: 6, padding: '3px 8px', fontSize: 11, fontWeight: 600, maxWidth: 200,
+                  }}>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b}</span>
+                  <X size={11} style={{ opacity: .85, flexShrink: 0 }} />
+                </button>
+              ))}
+              {selected.length > 0 && (
+                <button className="btn" style={{ padding: '3px 8px', fontSize: 11 }} onClick={() => setSelected([])}>
+                  Clear all
                 </button>
               )}
             </div>
