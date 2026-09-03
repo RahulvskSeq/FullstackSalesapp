@@ -42,7 +42,9 @@ export default function SalesByBrand({ monthLabel, salesman }) {
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(null);
   const [q, setQ] = useState('');
-  const [selected, setSelected] = useState([]);   // empty = show everything
+  const [selected, setSelected] = useState([]);   // empty = show the top few
+  const [showAll, setShowAll] = useState(false);
+  const listRef = React.useRef(null);
   // Dealer/salesman detail for the open catalogue, fetched on demand so
   // expanding one does not mean loading all of them.
   const [detail, setDetail] = useState(null);
@@ -70,6 +72,10 @@ export default function SalesByBrand({ monthLabel, salesman }) {
       .finally(() => setDetailLoading(false));
   }, [expanded, month, salesman]);
 
+  // Filtering leaves the list scrolled where it was, which can park the
+  // matches out of sight. Jump back to the top whenever the search changes.
+  useEffect(() => { if (listRef.current) listRef.current.scrollTop = 0; }, [q]);
+
   const allRows = useMemo(() => (data?.rows || []).filter(r => r.brand), [data]);
 
   // The search box filters the LIST of catalogues to choose from, not the
@@ -80,9 +86,15 @@ export default function SalesByBrand({ monthLabel, salesman }) {
     return allRows.filter(r => r.brand.toUpperCase().includes(needle));
   }, [allRows, q]);
 
-  const shown = useMemo(
-    () => (selected.length ? allRows.filter(r => selected.includes(r.brand)) : allRows),
-    [allRows, selected]);
+  const TOP_N = 12;
+  // Precedence: an explicit tick wins; then a live search, so typing a name
+  // brings its card straight up; otherwise just the top few, because fifty
+  // cards at once is a wall rather than a report.
+  const shown = useMemo(() => {
+    if (selected.length) return allRows.filter(r => selected.includes(r.brand));
+    if (q.trim()) return listed;
+    return showAll ? allRows : allRows.slice(0, TOP_N);
+  }, [allRows, selected, q, listed, showAll]);
 
   const grandTotal = useMemo(() => allRows.reduce((a, r) => a + r.qty, 0), [allRows]);
   const shownTotal = useMemo(() => shown.reduce((a, r) => a + r.qty, 0), [shown]);
@@ -109,14 +121,17 @@ export default function SalesByBrand({ monthLabel, salesman }) {
         <span style={{ fontSize: 11.5, color: 'var(--t3)' }}>
           the catalogue sold, straight from the ERP
         </span>
+        {/* The header total is always the MONTH, never the subset on screen —
+            a capped or filtered view must not read as the whole month.
+            What is currently visible is stated above the cards instead. */}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'baseline', gap: 6 }}>
-          <span style={{ fontSize: 11, color: 'var(--t3)' }}>
-            {selected.length ? `${selected.length} selected` : 'Total'}
-          </span>
-          <b style={{ fontSize: 15, fontVariantNumeric: 'tabular-nums' }}>{n(shownTotal)}</b>
           {selected.length > 0 && (
-            <span style={{ fontSize: 11, color: 'var(--t3)' }}>of {n(grandTotal)}</span>
+            <span style={{ fontSize: 11, color: 'var(--acc)', fontWeight: 600 }}>
+              {selected.length} selected · {n(shownTotal)}
+            </span>
           )}
+          <span style={{ fontSize: 11, color: 'var(--t3)' }}>Total</span>
+          <b style={{ fontSize: 15, fontVariantNumeric: 'tabular-nums' }}>{n(grandTotal)}</b>
         </div>
       </div>
 
@@ -162,7 +177,7 @@ export default function SalesByBrand({ monthLabel, salesman }) {
               </div>
             </div>
 
-            <div className="cat-list" style={{
+            <div className="cat-list" ref={listRef} style={{
               maxHeight: 340, overflowY: 'auto',
               border: '1px solid var(--b1)', borderRadius: 8, background: 'var(--bg2)',
             }}>
@@ -211,8 +226,25 @@ export default function SalesByBrand({ monthLabel, salesman }) {
             )}
           </div>
 
-          {/* ── right: the selected catalogues ── */}
+          {/* ── right: whatever is currently in scope ── */}
           <div style={{ flex: '1 1 320px', minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 11.5, color: 'var(--t3)' }}>
+                {selected.length
+                  ? <>Showing <b style={{ color: 'var(--t2)' }}>{selected.length}</b> selected · {n(shownTotal)} units</>
+                  : q.trim()
+                    ? (shown.length
+                        ? <>Showing <b style={{ color: 'var(--t2)' }}>{shown.length}</b> matching “{q.trim()}” · {n(shownTotal)} units</>
+                        : <>Nothing matches “{q.trim()}”.</>)
+                    : <>Showing top <b style={{ color: 'var(--t2)' }}>{shown.length}</b> of {allRows.length} · {n(shownTotal)} of {n(grandTotal)} units</>}
+              </span>
+              {!selected.length && !q.trim() && allRows.length > TOP_N && (
+                <button className="btn" style={{ padding: '2px 8px', fontSize: 11 }} onClick={() => setShowAll(v => !v)}>
+                  {showAll ? `Show top ${TOP_N}` : `Show all ${allRows.length}`}
+                </button>
+              )}
+            </div>
+
             <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fill, minmax(215px, 1fr))' }}>
               {shown.map(r => {
                 const share = grandTotal ? (r.qty / grandTotal) * 100 : 0;
