@@ -25,6 +25,7 @@ export const PERF_STATUSES = [
   'DEAD',              // nothing in three months
 ];
 
+
 // Type 2 — chosen by the salesman. 'NONE' means unlabelled.
 export const ACCOUNT_STATUSES = ['NONE', 'STAR', 'KEY ACCOUNT', 'ACHIEVER', 'REACTIVE'];
 

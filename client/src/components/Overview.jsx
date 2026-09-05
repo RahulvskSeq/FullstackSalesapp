@@ -1308,6 +1308,8 @@ function _moLabelToYM(lbl) {
 }
 
 const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdateDealer})=>{
+  // Potential Status is the salesman's own label, so it is editable wherever
+  // it is shown rather than only on the pages that happened to have a picker.
   const onUpdateDealerType=async(dealerId,newType)=>{
     onUpdateDealer&&onUpdateDealer(dealerId,{dealerType:newType});
     try{ await api.updateDealer(dealerId,{dealerType:newType}); }catch(e){ console.warn('[dealerType]',e?.message); }
@@ -1827,7 +1829,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontSize:13,fontWeight:600,color:'var(--t1)',marginBottom:2}}>{d.name}</div>
                       <div style={{display:'flex',gap:8,alignItems:'center',fontSize:11,color:'var(--t3)'}}>
-                        <StatusBadge status={d.perfStatus}/>{d.status&&d.status!=='NONE'&&<StatusBadge status={d.status}/>}
+                        <StatusBadge status={d.perfStatus} emptyLabel="NEW DEALER"/>{d.status&&d.status!=='NONE'&&<StatusBadge status={d.status}/>}
                         {d.zone&&<span>· {d.zone}</span>}
                         {(d.city||d.state)&&<span>· {[d.city,d.state].filter(Boolean).join(', ')}</span>}
                         {d.category&&<span>· {d.category}</span>}
@@ -1948,7 +1950,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
             title="Account Activity" note="(calculated from sales · click to view)"
             keys={activityKeys} map={perfMap}/>
           <Section icon={<Star size={14} color="#34d399"/>}
-            title="Potential Status" note="(set by the salesman · click to view)"
+            title="Selected User" note="(set by the salesman · click to view)"
             keys={potentialKeys} map={potMap}/>
         </>);
       })()}
@@ -2173,7 +2175,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
                 <th>Dealer Type</th>
                 <th>City / State</th>
                 <th>Performance</th>
-                <th>Potential</th>
+                <th>Selected User</th>
                 <th style={{textAlign:'right'}}>Tgt</th>
                 <th style={{textAlign:'right'}}>Ach</th>
                 <th style={{textAlign:'right'}}>%</th>
@@ -2213,7 +2215,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
                         </select>
                       </td>
                       <td style={{fontSize:11,color:'var(--t2)'}}>{[x.city,x.state].filter(Boolean).join(', ')||'—'}</td>
-                      <td><StatusBadge status={x.perfStatus}/></td>
+                      <td><StatusBadge status={x.perfStatus} emptyLabel="NEW DEALER"/></td>
                       <td>{x.status&&x.status!=='NONE'?<StatusBadge status={x.status}/>:<span style={{fontSize:11,color:'var(--t3)'}}>—</span>}</td>
                       <td style={{textAlign:'right'}}>{x.target||'—'}</td>
                       <td style={{textAlign:'right',fontWeight:600,color:x.achieved>0?'var(--t1)':'var(--t3)'}}>{x.achieved||'—'}</td>
@@ -2262,7 +2264,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
                             costs horizontal room the month figures need more.
                             Trend and Fcst move to the end, after the months they
                             are derived from. */}
-                        <th>#</th><th>Dealer Name</th><th>Zone</th><th>State</th><th>Performance</th><th>Potential</th>
+                        <th>#</th><th>Dealer Name</th><th>Zone</th><th>State</th><th>Performance</th><th>Selected User</th>
                         <th style={{textAlign:'right'}}>Tgt</th><th style={{textAlign:'right'}}>Ach</th><th style={{textAlign:'right'}}>%</th>
                         <th style={{textAlign:'right'}}>6m Avg</th>
                         {[...MO].map((_,di)=>{const i=MO.length-1-di;return<th key={i} style={{textAlign:'right',background:i===selectedMonthIdx?'rgba(99,102,241,.08)':'var(--bg1)'}}>{MO[i]}</th>;})}
@@ -2278,7 +2280,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
                             <td style={{fontWeight:600,color:'var(--t1)',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis'}}>{x.name}</td>
                             <td style={{fontSize:11,color:'var(--t3)'}}>{x.zone||'—'}</td>
                             <td style={{fontSize:11}}>{x.state||'—'}</td>
-                            <td><StatusBadge status={x.perfStatus}/></td>
+                            <td><StatusBadge status={x.perfStatus} emptyLabel="NEW DEALER"/></td>
                             <td>{x.status&&x.status!=='NONE'?<StatusBadge status={x.status}/>:<span style={{fontSize:11,color:'var(--t3)'}}>—</span>}</td>
                             <td style={{textAlign:'right'}}>{x.target||'—'}</td>
                             <td style={{textAlign:'right',fontWeight:700,color:popup.color}}>{x.achieved}</td>

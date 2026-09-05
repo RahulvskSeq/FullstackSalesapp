@@ -1053,7 +1053,7 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
     const includeSalesman = isAdmin;
     const headers = [
       ...(includeSalesman ? ['Salesman'] : []),
-      'Dealer Name', 'City', 'State', 'Zone', 'Potential Status',
+      'Dealer Name', 'City', 'State', 'Zone', 'Selected User',
       'Target', 'Achieved',
       'Category Type', 'Sub Category',
       'Credit Days', 'Credit Limit',
@@ -1261,7 +1261,7 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
           </div>
           <div style={{fontSize:11, color:'var(--t3)', marginBottom:10, lineHeight:1.5}}>
             ONE Excel does everything — pre-filled with current dealer info (City, State, Zone, Status, Target, Credit) plus a column for every Product Type from your taxonomy.
-            Fill the product-type quantity cells, save, and upload. Updates dealer info + per-month numbers + category-wise sales in one shot.
+            Every dealer column round-trips — edit Dealer Name, Salesman, Dealer Type, City, State, Zone, Status, Address, Pincode, Target, Credit and the quantity cells, then upload. The four "(auto)" columns at the far right are for reference only; the app recalculates those itself.
             View results under <b>Sales by Category</b>. Manage product types under <b>Admin Panel → Categories</b>.
           </div>
           <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
@@ -1274,17 +1274,23 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
               }}>
               <Download size={13}/> {catTplBusy ? 'Building…' : `Download Template (${filtered.length} dealers)`}
             </button>
-            {/* "Upload Filled Excel" was removed deliberately.
-                The template pre-fills City/State/Zone from monthlyData.<month>
-                when that month exists, and those per-month values are NOT kept
-                in step with later corrections to the dealer record. Downloading
-                and re-uploading unchanged therefore writes stale values back
-                over a correction — e.g. a dealer fixed to Bangalore/Karnataka
-                reverts to the "(Blank)"/"-" its Sep-26 entry still held.
-                Sales now come from the raw ERP sheet above, so this path is no
-                longer needed. The server route is untouched, so restoring the
-                button is a one-line change if the manual path is ever wanted
-                back — fix the prefill first. */}
+            {/* Restored once the prefill was fixed. The template used to fill
+                City/State/Zone from monthlyData.<month>, which is a snapshot
+                and drifts from the dealer record, so re-uploading an unedited
+                sheet wrote stale values back over a correction. The master
+                record is now the source for those columns and a no-edit
+                round-trip changes nothing. */}
+            <button onClick={handleCatUploadClick} disabled={catBusy}
+              style={{
+                display:'flex', alignItems:'center', gap:6,
+                background:'#16a34a', color:'#fff', border:'none',
+                padding:'8px 14px', borderRadius:6, fontSize:12, fontWeight:700,
+                cursor: catBusy ? 'not-allowed' : 'pointer', opacity: catBusy ? 0.6 : 1,
+              }}>
+              {catBusy
+                ? <><div style={{width:11,height:11,border:'2px solid currentColor',borderTopColor:'transparent',borderRadius:'50%',animation:'spin .7s linear infinite'}}/> Uploading…</>
+                : <><Upload size={13}/> Upload Filled Excel</>}
+            </button>
 
             {/* Byte-level upload progress. Once the file is fully sent the bar
                 holds at 100% and the label switches to "processing", because
@@ -1422,7 +1428,7 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
                 <th style={{textAlign:'right',color:'var(--grn)',background:'rgba(52,211,153,.06)'}}>Achieved</th>
                 <th style={{textAlign:'right'}}>Ach%</th>
                 <th>Performance</th>
-                <th>Potential Status</th>
+                <th>Selected User</th>
               </tr>
             </thead>
             <tbody>
@@ -1471,9 +1477,7 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
 
                     {/* Performance — calculated, read-only */}
                     <td style={{padding:'4px 8px'}}>
-                      {dealer.perfStatus
-                        ? <StatusBadge status={dealer.perfStatus}/>
-                        : <span style={{fontSize:11,color:'var(--t3)'}}>—</span>}
+                      <StatusBadge status={dealer.perfStatus} emptyLabel="NEW DEALER"/>
                     </td>
 
                     {/* Potential Status — editable */}

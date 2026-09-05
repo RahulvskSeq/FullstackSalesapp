@@ -1509,11 +1509,28 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
       const picked = [...exportCats];
       const partial = picked.length > 0 && picked.length < allSaleCats.length;
       let included = null, catMonths = new Set();
+      // perCat[category] = { '<dealer lower>': { 'YYYY-MM': qty } }
+      const perCat = {};
       if(partial){
         const exclude = allSaleCats.filter(c=>!exportCats.has(c));
         const r = await api.salesByDealerMonths(exclude);
         included  = r?.includedByDealerMonth || {};
         catMonths = new Set(r?.monthsWithCategoryData || []);
+
+        // Ticking two categories used to merge them into a single figure, which
+        // is no use as a report — you could not see which category the number
+        // came from. Ask once per category (excluding every other) so each gets
+        // its own column. One request each, and only when more than one is
+        // ticked.
+        if(picked.length > 1){
+          const each = await Promise.all(picked.map(c =>
+            api.salesByDealerMonths(allSaleCats.filter(x=>x!==c))
+               .then(rr => rr?.includedByDealerMonth || {})
+               .catch(() => ({}))));
+          picked.forEach((c,i)=>{ perCat[c] = each[i]; });
+        } else if(picked.length === 1){
+          perCat[picked[0]] = included;
+        }
       }
       const MONS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
       const ymOf = (label) => {
@@ -1529,24 +1546,64 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
       };
 
       const scope = partial ? ' ('+picked.join(' + ')+')' : '';
-      const h=['Dealer Name','Salesman','Zone','Dealer Type','City','State','PIN','Address',
-        'Performance Status','Potential Status','Target','Achieved','Ach %','Trend %','6M Avg',
-        ...MO.map(m=>m+scope),'Cr Days','Cr Limit'];
-      const rows=filtered.map(x=>[
-        x.name,
+
+      // Dealer ID first so an exported sheet can be matched back to a record,
+      // and the app-calculated fields flagged so they render read-only.
+      const idCols   = ['Dealer ID','Dealer Name','Salesman','Zone','Dealer Type','City','State','PIN','Address'];
+      const statCols = ['Performance','Perf Qty','Perf Month','Selected User'];
+      const numsCols = ['Target','Achieved','Ach %','Trend %','6M Avg'];
+      const monCols  = MO.map(m=>m+scope);
+      const credCols = ['Cr Days','Cr Limit'];
+      // One column per ticked category, each dealer's total across the months
+      // that actually carry a category breakdown. Only when more than one is
+      // ticked — with a single category the month columns already say it.
+      const catCols  = picked.length > 1 ? picked.map(c=>c+' total') : [];
+      const catTotal = (d,c) => {
+        const rowsFor = perCat[c] || {};
+        const byMonth = rowsFor[String(d.name||'').toLowerCase().trim()] || {};
+        return MO.reduce((a,_,i)=>{
+          const ym = ymOf(MO[i]);
+          return a + (ym && catMonths.has(ym) ? (byMonth[ym] || 0) : 0);
+        }, 0);
+      };
+      const h = [...idCols, ...statCols, ...numsCols, ...monCols, ...catCols, ...credCols];
+
+      const rows = filtered.map(x=>[
+        x.id||'', x.name||'',
         users[x.salesman]?.name||x.salesman||'',
         x.zone||'', x.dealerType||'None', x.city||'', x.state||'', x.pincode||'', x.address||'',
-        x.perfStatus||'', x.status||'',
-        x.target||0, x.achieved||0, spct(x.target,x.achieved), trendPct(x.months)+'%', x.avg6m||0,
-        ...MO.map((_,i)=>monthVal(x,i)),
-        x.creditDays||0, x.creditLimit||0,
+        x.perfStatus||'NEW DEALER', Number(x.perfQty||0), x.perfMonth||'', x.status||'',
+        Number(x.target||0), Number(x.achieved||0), spct(x.target,x.achieved), trendPct(x.months)+'%', Number(x.avg6m||0),
+        ...MO.map((_,i)=>Number(monthVal(x,i))||0),
+        ...catCols.map((_,i)=>Number(catTotal(x,picked[i]))||0),
+        Number(x.creditDays||0), Number(x.creditLimit||0),
       ]);
-      const csv=[h,...rows].map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
-      const tag = partial ? '_'+picked.join('-').replace(/[^A-Za-z0-9-]/g,'') : '';
-      const a=document.createElement('a');
-      a.href='data:text/csv;charset=utf-8,﻿'+encodeURIComponent(csv);
-      a.download='dealers'+tag+'_'+new Date().toISOString().slice(0,10)+'.csv';
+
+      const at = n => h.indexOf(n)+1;
+      const payload = {
+        sheetName:'Dealers',
+        filename:'dealers'+(partial?'_'+picked.join('-').replace(/[^A-Za-z0-9-]/g,''):'')+'_'+new Date().toISOString().slice(0,10),
+        headers:h, rows,
+        groups:[
+          { label:'Dealer',      span:idCols.length,   tone:'dealer' },
+          { label:'Status',      span:statCols.length, tone:'calc'   },
+          { label:'Performance', span:numsCols.length, tone:'total'  },
+          { label:'Monthly'+scope, span:monCols.length, tone:'a'     },
+          ...(catCols.length ? [{ label:'By category', span:catCols.length, tone:'b' }] : []),
+          { label:'Credit',      span:credCols.length, tone:'total'   },
+        ],
+        // Everything the app works out for itself — shown, not typed.
+        readonly:['Dealer ID','Performance','Perf Qty','Perf Month','Ach %','Trend %','6M Avg'].map(at),
+        numCols:[...numsCols.filter(c=>!/%/.test(c)), ...monCols, ...catCols, ...credCols, 'Perf Qty'].map(at),
+        widths:h.map(c=> c==='Dealer Name'?34 : c==='Address'?38 : c==='Salesman'?16 : c==='City'?15 : undefined),
+        freezeCols:2,
+      };
+      const blob = await api.dealersExportXlsx(payload);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = payload.filename+'.xlsx';
       a.click();
+      URL.revokeObjectURL(url);
       setExportOpen(false);
     } catch(e){
       notify.error('Export failed: ' + (e?.message || 'could not load category data'));
@@ -1594,7 +1651,7 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
           <Search size={14} style={{position:'absolute',left:10,top:'50%',transform:'translateY(-50%)',color:'var(--t3)'}}/>
           <input className="inp" style={{width:200,paddingLeft:32}} placeholder="Search name/city/state..." value={filters.q} onChange={e=>setFilters({...filters,q:e.target.value})}/>
         </div>
-        <MultiSelect options={allStatuses} selected={filters.status} onChange={v=>setFilters({...filters,status:v})} placeholder="Potential Status (All)"
+        <MultiSelect options={allStatuses} selected={filters.status} onChange={v=>setFilters({...filters,status:v})} placeholder="Selected User (All)"
           renderOption={s=><StatusBadge status={s}/>}/>
         <MultiSelect options={PERF_STATUSES} selected={filters.perf} onChange={v=>setFilters({...filters,perf:v})} placeholder="Performance Status (All)"
           renderOption={s=><StatusBadge status={s}/>}/>
@@ -1632,7 +1689,8 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
               <button className="btn" onClick={()=>setExportOpen(false)} style={{padding:'4px 8px'}}><X size={14}/></button>
             </div>
             <div style={{fontSize:12,color:'var(--t3)',marginBottom:14}}>
-              Tick categories to export only their quantities in the month columns.
+              Tick categories to scope the month columns to just those quantities.
+              Tick more than one and each also gets its own total column.
               Leave everything ticked (or nothing) to export each dealer's full total.
             </div>
 
@@ -1675,7 +1733,7 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
               <button className="btn" onClick={()=>setExportOpen(false)}>Cancel</button>
               <button className="btnp" onClick={runExport} disabled={exportBusy}
                 style={{display:'inline-flex',alignItems:'center',gap:6}}>
-                <Download size={13}/>{exportBusy?'Preparing…':'Download CSV'}
+                <Download size={13}/>{exportBusy?'Preparing…':'Download Excel'}
               </button>
             </div>
           </div>
@@ -1688,7 +1746,7 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
           <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10,flexWrap:'wrap'}}>
             <span style={{fontSize:11,color:'var(--t3)'}}>Group by</span>
             <div style={{display:'flex',border:'1px solid var(--b2)',borderRadius:6,overflow:'hidden'}}>
-              {[['status','Potential Status'],['perfStatus','Performance Status']].map(([v,label])=>(
+              {[['status','Selected User'],['perfStatus','Performance Status']].map(([v,label])=>(
                 <button key={v} onClick={()=>setKanbanBy(v)}
                   style={{background:kanbanBy===v?'var(--acc)':'transparent',color:kanbanBy===v?'#fff':'var(--t3)',
                     border:'none',padding:'5px 12px',cursor:'pointer',fontSize:11,fontWeight:600}}>
@@ -1740,7 +1798,7 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
                   {sh('city','City')}{sh('state','State')}
                   {sh('pincode','PIN')}<th style={{minWidth:180}}>Address</th>
                   {sh('perfStatus','Performance Status')}
-                  {sh('status','Potential Status')}
+                  {sh('status','Selected User')}
                   {sh('target','Tgt')}{sh('achieved','Ach')}<th>%</th><th>Trend</th>
                   {sh('avg6m','6m Avg')}
                   {[...MO].map((_,di)=>{const i=MO.length-1-di;return<th key={i} style={{background:i===selectedMonthIdx?'rgba(99,102,241,.08)':'var(--bg1)'}}>{MO[i]}</th>;})}
@@ -1774,9 +1832,7 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
                       <td title={x.perfMonth
                           ? `${x.perfQty} units in ${x.perfMonth} (tier categories only)`
                           : 'Not calculated yet — run "Recalculate performance status" in Monthly Entry'}>
-                        {x.perfStatus
-                          ? <StatusBadge status={x.perfStatus}/>
-                          : <span style={{fontSize:11,color:'var(--t3)'}}>—</span>}
+                        <StatusBadge status={x.perfStatus} emptyLabel="NEW DEALER"/>
                       </td>
                       {/* Type 2 — the salesman's own label, independent of the tier. */}
                       <td onClick={e=>e.stopPropagation()}>

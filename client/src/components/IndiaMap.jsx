@@ -2260,7 +2260,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
                             <td style={{padding:'8px 10px', fontWeight:600, color:T.t1, maxWidth:220, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{d.name}</td>
                             <td style={{padding:'8px 10px', color:T.t2, whiteSpace:'nowrap'}}>{d.city||'—'}</td>
                             <td style={{padding:'8px 10px', color:T.t2, whiteSpace:'nowrap'}}>{users?.[d.salesman]?.name||d.salesman||'—'}</td>
-                            <td style={{padding:'8px 10px'}}>{d.perfStatus && <StatusBadge status={d.perfStatus}/>}{d.status && d.status!=='NONE' && <StatusBadge status={d.status}/>}</td>
+                            <td style={{padding:'8px 10px'}}><StatusBadge status={d.perfStatus} emptyLabel="NEW DEALER"/>{d.status && d.status!=='NONE' && <StatusBadge status={d.status}/>}</td>
                             <td style={{padding:'8px 10px', textAlign:'right', fontWeight:700, color: ach>0?T.acc:T.t3, whiteSpace:'nowrap'}}>{ach>0?fmtIN(ach):'—'}</td>
                           </tr>
                         );
@@ -2519,7 +2519,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
                               )}
                             </td>
                             <td style={{padding:'5px 8px'}}>
-                              {d.perfStatus && <StatusBadge status={d.perfStatus}/>}{d.status && d.status!=='NONE' && <StatusBadge status={d.status}/>}
+                              <StatusBadge status={d.perfStatus} emptyLabel="NEW DEALER"/>{d.status && d.status!=='NONE' && <StatusBadge status={d.status}/>}
                             </td>
                             <td style={{padding:'5px 8px', textAlign:'right', fontWeight:700, color:T.acc, whiteSpace:'nowrap'}}>{fmtIN(ach)}</td>
                             <td style={{padding:'5px 8px', textAlign:'right', fontSize:10, color:pclr(dp), whiteSpace:'nowrap'}}>{spct(tgt, ach)}</td>
@@ -2766,7 +2766,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
                           {[d.city, d.state].filter(Boolean).join(', ') || '—'} · {users?.[d.salesman]?.name || d.salesman || 'Unassigned'}
                         </div>
                       </div>
-                      {d.perfStatus && <StatusBadge status={d.perfStatus}/>}{d.status && d.status!=='NONE' && <StatusBadge status={d.status}/>}
+                      <StatusBadge status={d.perfStatus} emptyLabel="NEW DEALER"/>{d.status && d.status!=='NONE' && <StatusBadge status={d.status}/>}
                       <div style={{minWidth:72, textAlign:'right', fontSize:13, fontWeight:700, color: ach>0?T.acc:T.t3}}>{ach>0?fmtIN(ach):'—'}</div>
                     </div>
                   );

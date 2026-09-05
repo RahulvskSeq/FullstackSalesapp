@@ -191,13 +191,41 @@ router.post('/upload', protect, adminOnly, upload.single('file'), async (req, re
 
     // lookup tables
     const masters = await ProductMaster.find({})
-      .select('productId pdId code brand categoryType productType category subCategory').lean();
-    const byPid = new Map(), byPdid = new Map(), byCode = new Map();
+      .select('productId pdId code name brand parentProduct isParent categoryType productType category subCategory').lean();
+    const byPid = new Map(), byPdid = new Map(), byCode = new Map(), byName = new Map();
     for (const m of masters) {
       if (m.productId) byPid.set(m.productId, m);
       if (m.pdId) byPdid.set(m.pdId, m);
       if (m.code && !byCode.has(m.code)) byCode.set(m.code, m);
+      // A private-label listing is found by the name printed on the invoice.
+      const nm = S(m.name);
+      if (nm) { if (!byName.has(nm)) byName.set(nm, []); byName.get(nm).push(m); }
     }
+
+    /**
+     * Which catalogue did this line actually sell FROM?
+     *
+     * The ERP invoice references the PARENT product's id and prints the
+     * PARENT's category, but names the line by the dealer's private label —
+     * "KAR 95" rather than "VN 9037 ZF VNSTX". That label is itself a child
+     * row in the master, carrying its own category (KARA HOME DECOR) and a
+     * parentProduct pointing back at the parent.
+     *
+     * So when the printed name resolves to a child of THIS line's product,
+     * the sale belongs to the child's catalogue, not the parent's. Anything
+     * ambiguous — no match, several matches, or a child whose own category is
+     * a comma-joined list — falls back to the sheet, because a wrong
+     * catalogue is worse than a coarse one.
+     */
+    const childCatalogueFor = (printedName, parentPid) => {
+      const rows = byName.get(S(printedName));
+      if (!rows || !rows.length) return '';
+      const pick = rows.find(r => r.parentProduct && r.parentProduct === parentPid)
+                || (rows.length === 1 ? rows[0] : null);
+      if (!pick || pick.isParent) return '';
+      const b = S(pick.brand);
+      return (!b || b.includes(',')) ? '' : b;
+    };
 
     const dealers = await Dealer.find({}).select('name salesman salesmanHistory').lean();
     const dealerIndex = new Map(), dealerList = [];
@@ -297,11 +325,13 @@ router.post('/upload', protect, adminOnly, upload.single('file'), async (req, re
         productId, pdId,
         productName: S(r['Product']), productCode,
         txnBrand: S(r['Category']),
-        // The transaction sheet names ONE collection for the line actually
-        // sold. The master's "Category" is a comma-joined list of every
-        // collection the product belongs to ("MONTX,SAI LAKSHMI VENEERS,URO
-        // VNR"), which is useless as a filter value - so the sheet wins.
-        brand: S(r['Category']) || m?.brand || '',
+        // The sheet's Category is the PARENT catalogue. If the printed name
+        // resolves to a child listing of this same product, credit the child's
+        // catalogue instead — that is the catalogue the dealer actually bought
+        // from. Falls back to the sheet whenever that cannot be established.
+        brand: childCatalogueFor(S(r['Product']), productId)
+             || S(r['Category']) || m?.brand || '',
+        parentBrand: S(r['Category']) || '',
         masterBrand: m?.brand || '',
         categoryType: rawCatType || m?.categoryType || '',
         productType: rawProdType || m?.productType || '',
@@ -593,10 +623,29 @@ router.get('/catalogue-detail', protect, async (req, res) => {
     ]);
 
     const [products, dealers, salesmen, days, cats, totals] = await Promise.all([
-      ProductTxn.aggregate(g(
-        { name: '$productName', code: '$productCode', category: '$category', subCategory: '$subCategory' },
-        { buyers: { $addToSet: '$dealerName' } },
-      )),
+      // Group products by productId, NOT by the name on the invoice.
+      // The ERP names each line by the DEALER'S private-label name, so one
+      // product reaches several dealers under several names — "KAR 95" and
+      // "DST 695" are both (9037 ZF) = VN 9037 ZF VNSTX. Grouping by name
+      // splits one product into several rows and inflates the product count.
+      // The canonical name comes from the master; the invoice labels are kept
+      // as aliases so a salesman can still find the name they know.
+      ProductTxn.aggregate([
+        { $match: match },
+        { $group: {
+            _id: '$productId',
+            qty: { $sum: '$qty' }, amount: { $sum: '$amount' }, lines: { $sum: 1 },
+            buyers: { $addToSet: '$dealerName' },
+            aliases: { $addToSet: '$productName' },
+            code: { $first: '$productCode' },
+            category: { $first: '$category' },
+            subCategory: { $first: '$subCategory' },
+        } },
+        { $lookup: { from: 'productmasters', localField: '_id',
+                     foreignField: 'productId', as: 'm' } },
+        { $sort: { qty: -1 } },
+        { $limit: 500 },
+      ]),
       ProductTxn.aggregate(g({ dealer: '$dealerName', salesman: '$salesman' })),
       ProductTxn.aggregate(g({ salesman: '$salesman' }, { buyers: { $addToSet: '$dealerName' } })),
       ProductTxn.aggregate([
@@ -620,12 +669,19 @@ router.get('/catalogue-detail', protect, async (req, res) => {
     res.json({
       ok: true, brand,
       totals: totals[0] || { qty: 0, amount: 0, lines: 0, vouchers: 0, dealers: 0 },
-      products: products.map(p => ({
-        name: p._id.name, code: p._id.code,
-        category: p._id.category, subCategory: p._id.subCategory,
-        qty: p.qty, amount: p.amount, lines: p.lines,
-        dealers: (p.buyers || []).filter(Boolean).length,
-      })),
+      products: products.map(p => {
+        const m = (p.m || [])[0];
+        const canonical = m?.name || (p.aliases || [])[0] || '';
+        // Only surface aliases that differ from the canonical name.
+        const aliases = (p.aliases || []).filter(a => a && a !== canonical);
+        return {
+          name: canonical, code: m?.code || p.code,
+          category: p.category, subCategory: p.subCategory,
+          qty: p.qty, amount: p.amount, lines: p.lines,
+          dealers: (p.buyers || []).filter(Boolean).length,
+          aliases,
+        };
+      }),
       dealers: dealers.map(d => ({ dealer: d._id.dealer, salesman: d._id.salesman, qty: d.qty, amount: d.amount, lines: d.lines })),
       salesmen: salesmen.map(s => ({ salesman: s._id.salesman, qty: s.qty, amount: s.amount,
                                      dealers: (s.buyers || []).filter(Boolean).length })),
@@ -769,10 +825,18 @@ async function buildSalesSync(monthList) {
  * Apply the sales sync for a set of months. Shared by the standalone
  * /sync-sales route and the one-step upload, so both behave identically.
  */
+// '2026-09' → 'Sep-26', the key dealer.monthlyData is stored under.
+const ymToMonthLabel = (ym) => {
+  const m = /^(\d{4})-(\d{2})$/.exec(String(ym || ''));
+  if (!m) return '';
+  const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return MON[+m[2] - 1] + '-' + m[1].slice(2);
+};
+
 async function applySalesSync(monthList, byUser) {
   const months = await buildSalesSync(monthList);
   const batchId = newBatchId();
-  let deleted = 0, inserted = 0;
+  let deleted = 0, inserted = 0, achievedWritten = 0;
   for (const m of months) {
     const del = await Sale.deleteMany({ month: m.month });
     deleted += del.deletedCount || 0;
@@ -792,8 +856,39 @@ async function applySalesSync(monthList, byUser) {
       })), { ordered: false });
       inserted += ins.length;
     }
+
+    // Mirror the month total onto the dealer record.
+    //
+    // Sale rows are the truth, but the Monthly Entry grid and the download
+    // template both read dealer.monthlyData[label].achieved, and nothing was
+    // writing it — so a month imported from the ERP showed 45 units against
+    // 3,843 actually sold. Roll the rebuilt rows up per dealer and store the
+    // total under the same label the app reads.
+    //
+    // Only dealers that HAVE rows this month are written. A dealer with an
+    // achieved typed by hand in Monthly Entry and no ERP lines keeps it —
+    // zeroing those would silently destroy manual entry.
+    const label = ymToMonthLabel(m.month);
+    if (label) {
+      const totals = await Sale.aggregate([
+        { $match: { month: m.month } },
+        { $group: { _id: '$dealerName', qty: { $sum: '$qty' } } },
+      ]);
+      for (let i = 0; i < totals.length; i += 400) {
+        const ops = totals.slice(i, i + 400)
+          .filter(t => t._id)
+          .map(t => ({
+            updateOne: {
+              filter: { name: t._id },
+              update: { $set: { ['monthlyData.' + label + '.achieved']: t.qty } },
+            },
+          }));
+        if (ops.length) await Dealer.bulkWrite(ops, { ordered: false });
+      }
+      achievedWritten += totals.length;
+    }
   }
-  return { batchId, deleted, inserted, months: months.map(({ rows, ...m }) => m) };
+  return { batchId, deleted, inserted, achievedWritten, months: months.map(({ rows, ...m }) => m) };
 }
 
 /**

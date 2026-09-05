@@ -7,7 +7,12 @@ import Dealer from '../models/Dealer.js';
 import SalesTarget from '../models/SalesTarget.js';
 import { protect, adminOnly, superAdminOnly, requireFeature } from '../middleware/auth.js';
 import { todayStr } from '../lib/commitments.js';
-import { normalizeAccountStatus } from '../lib/accountStatus.js';
+import ExcelJS from 'exceljs';
+import { normalizeAccountStatus, ACCOUNT_STATUSES } from '../lib/accountStatus.js';
+
+// Mirrors DEALER_TYPES in client/src/constants.js — the only values the
+// Dealer Type dropdown offers, and so the only ones the sheet may set.
+const DEALER_TYPES = ['None', 'Regular Dealer', 'Premium Dealer', 'OEM/SEMI OEM', 'ENTERPRISE'];
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
@@ -95,199 +100,258 @@ router.get('/template', protect, async (req, res) => {
   }
 
   // === Dealer-master fields (always come first) ===
-  // NOTE: legacy "Category Type" + "Sub Category" columns were removed —
-  // those single-value dealer fields are replaced by the proper multi-category
-  // taxonomy where one dealer sells across many sub-categories.
   //
-  // The FIRST column is "Dealer ID" — a hidden-ish stable handle that the
-  // upload uses as the canonical identifier. As long as this cell is left
-  // alone, the user can edit Dealer Name, Salesman, City, etc. and the
-  // upload will UPDATE the same dealer in place (no more duplicates from
-  // renaming or reassigning). New rows leave Dealer ID blank — the parser
-  // falls back to (name|salesman) lookup-or-create for those.
+  // The FIRST column is "Dealer ID" — a stable handle the upload uses as the
+  // canonical identifier. As long as that cell is left alone the user can edit
+  // Dealer Name, Salesman, City, etc. and the upload UPDATES the same dealer in
+  // place. New rows leave Dealer ID blank — the parser falls back to
+  // (name|salesman) lookup-or-create for those.
   const DEALER_HEADERS = [
     'Dealer ID',
-    'Dealer Name', 'Salesman', 'City', 'State', 'Zone', 'Status',
+    'Dealer Name', 'Salesman', 'Dealer Type', 'City', 'State', 'Zone',
+    // The app's two status fields, side by side and named as the UI names them:
+    // Selected User is the one a person picks, Performance is the tier the app
+    // works out for itself — carried here to read against it, and ignored on
+    // the way back in like the rest of the (auto) columns.
+    'Selected User', 'Performance (auto)',
     'Address', 'Pincode',
     'Target', 'Achieved', 'Credit Days', 'Credit Limit',
   ];
-  const N_DEALER = DEALER_HEADERS.length;   // 13
+  const N_DEALER = DEALER_HEADERS.length;   // 15
 
-  const wb = XLSX.utils.book_new();
+  // Trailing read-only block, derived by the app (see lib/accountStatus.js).
+  // Re-uploading these would fight the recompute, so the parser ignores every
+  // header ending in "(auto)". They ride along so a downloaded sheet is a
+  // complete picture of the dealer rather than a partial one.
+  const CALC_HEADERS = ['Perf Qty (auto)', 'Perf Month (auto)', 'Avg 6M (auto)'];
 
-  // === Instructions sheet ===
-  const inst = [
-    ['Unified Sales Upload Template — Instructions'],
-    [''],
-    ['ONE Excel — updates everything: dealer info + per-month numbers + category-wise sales.'],
-    [''],
-    ['Sheet "Sales Data":'],
-    ['  Row 1 = Section headers ("Dealer Info" / each Category / "Total")'],
-    ['  Row 2 = Field names (Dealer Name, Salesman, City, …, 0.92 LAM, 1 MM, …, Grand Total)'],
-    ['  Row 3+ = ONE row per dealer.'],
-    [''],
-    ['Column A = Dealer ID — HIDDEN. DO NOT EDIT or DELETE these values.'],
-    ['  This is how the system finds the existing dealer when you change Name, Salesman or any other field.'],
-    ['  Leave blank only when ADDING a brand-new dealer at the bottom.'],
-    ['Columns B–J = dealer info (Dealer Name, Salesman, City, State, Zone, Status, Target, Credit Days, Credit Limit).'],
-    ['Columns K+  = quantity sold per sub-category (Product Type). Leave blank or 0 if none.'],
-    ['Grand Total column auto-calculates from the sub-category cells.'],
-    [''],
-    ['On upload:'],
-    ['  1. If Dealer ID is filled, the dealer is UPDATED in place — including any Name or Salesman change.'],
-    ['  2. Dealer master fields (City, State, Zone, Status, Target, Credit) are updated.'],
-    ['  3. Per-month numbers (Target, Achieved=Grand Total, Status, Zone, City, State, Credit) are written to monthly data for the picked month.'],
-    ['  4. Category-wise sale rows are created from the sub-category cells.'],
-    [''],
-    ['Re-uploading the same month replaces that month\'s category sales cleanly.'],
-    ['New categories/sub-categories added in Admin Panel → Categories show up next time you download this template.'],
-  ];
-  const instWS = XLSX.utils.aoa_to_sheet(inst);
-  instWS['!cols'] = [{ wch: 110 }];
-  XLSX.utils.book_append_sheet(wb, instWS, 'Instructions');
+  const HEADERS = [...DEALER_HEADERS, ...subCols.map(c => c.sub), 'Grand Total', ...CALC_HEADERS];
+  const GT_COL  = N_DEALER + subCols.length + 1;          // 1-based Grand Total
+  // Columns a person must not type into: Dealer ID, anything "(auto)", Grand Total.
+  const READONLY = new Set([1, GT_COL, ...HEADERS.map((h, i) => /\(auto\)$/i.test(h) ? i + 1 : 0).filter(Boolean)]);
 
-  // === Sales Data sheet — two header rows ===
-  // Row 1 (sections):  "Dealer Info" (merged A..K)  | <Category names spread across sub-cat cols> | "Total" (merged on Grand Total col)
-  // Row 2 (fields):    Dealer Name | Salesman | ... | 0.92 LAM | 1 MM | ... | Grand Total
-  const header1 = [
-    'Dealer Info', ...Array(N_DEALER - 1).fill(''),
-    ...subCols.map(c => c.category),
-    'Total',
-  ];
-  const header2 = [
-    ...DEALER_HEADERS,
-    ...subCols.map(c => c.sub),
-    'Grand Total',
-  ];
+  /* ── palette ─────────────────────────────────────────────────────────
+     Section bands in row 1, a lighter tint of the same hue in row 2, so a
+     35-column sheet reads as four blocks instead of one wall of headings. */
+  const C = {
+    dealer:  '1F3A5F', dealerLite:  'DCE4EE',
+    catA:    '2A6F97', catALite:    'DAE8F0',
+    catB:    '468FAF', catBLite:    'E3EFF4',
+    total:   'B45309', totalLite:   'FBE8D3',
+    calc:    '5B6472', calcLite:    'E4E7EB',
+    readonly:'F1F2F4', zebra:       'FAFBFC', line: 'C9D1DA',
+  };
+  const wb2 = new ExcelJS.Workbook();
+  wb2.creator = 'Sales Tracker Pro';
+  wb2.created = new Date();
 
-  const aoa = [header1, header2];
+  /* ── Instructions ─────────────────────────────────────────────────── */
+  const ins = wb2.addWorksheet('Instructions', { properties: { defaultRowHeight: 16 } });
+  ins.columns = [{ width: 118 }];
+  const H1 = t => { const r = ins.addRow([t]); r.font = { bold: true, size: 14, color: { argb: 'FF' + C.dealer } }; r.height = 24; };
+  const H2 = t => { const r = ins.addRow([t]); r.font = { bold: true, size: 11, color: { argb: 'FF' + C.catA } }; };
+  const P  = t => { const r = ins.addRow([t]); r.alignment = { wrapText: true, vertical: 'top' }; };
+  H1('Sales Upload Template' + (monthLabel ? ' — ' + monthLabel : ''));
+  P('One sheet updates everything: dealer details, the month’s numbers, and category-wise sales.');
+  P('');
+  H2('How to use it');
+  P('1.  Open the "Sales Data" sheet. Row 1 groups the columns, row 2 names them, row 3 onwards is one row per dealer.');
+  P('2.  Change any cell in a white column. Add brand-new dealers on the empty rows at the bottom.');
+  P('3.  Save the file, then click "Upload Filled Excel" back in Monthly Entry.');
+  P('');
+  H2('Grey columns are read-only');
+  P('Dealer ID, Grand Total, and every column ending in "(auto)" are calculated by the app. They are shown so you can read them, but anything you type into them is ignored on upload.');
+  P('Dealer ID especially: that is how a dealer is recognised when you rename or reassign it. Leave it blank only when adding a new dealer.');
+  P('');
+  H2('Columns you can change');
+  P('Dealer Name, Salesman, Dealer Type, City, State, Zone, Selected User, Address, Pincode, Target, Achieved, Credit Days, Credit Limit — and a quantity cell for every Product Type.');
+  P('');
+  H2('Values that must match');
+  P('Dealer Type   —  ' + DEALER_TYPES.join('  /  ') + '.  Anything else is skipped and reported back.');
+  P('Selected User —  ' + ACCOUNT_STATUSES.join('  /  ') + '.  Any other word leaves that dealer unchanged rather than resetting it (older records still hold words like ACTIVE or DEAD here).');
+  P('Both columns have a drop-down, so you can pick instead of typing.');
+  P('');
+  H2('Good to know');
+  P('Grand Total adds up the quantity cells for you.');
+  P('Re-uploading the same month replaces that month’s category sales cleanly — it does not double them.');
+  P('New categories or product types added under Admin Panel → Categories appear the next time you download this template.');
 
-  // Optional prefill rows
+  /* ── Sales Data ───────────────────────────────────────────────────── */
+  const ws = wb2.addWorksheet('Sales Data', {
+    views: [{ state: 'frozen', xSplit: 2, ySplit: 2 }],   // headers + Dealer Name stay put
+  });
+
+  // Row 1 — section bands. Each category spans its own sub-category columns.
+  const row1 = new Array(HEADERS.length).fill('');
+  row1[0] = 'Dealer Info';
+  row1[N_DEALER + subCols.length] = 'Total';
+  if (CALC_HEADERS.length) row1[GT_COL] = 'Calculated';
+  subCols.forEach((c, i) => { if (i === 0 || c.category !== subCols[i - 1].category) row1[N_DEALER + i] = c.category; });
+  ws.addRow(row1);
+  ws.addRow(HEADERS);
+
+  // Data
   let prefillCount = 0;
   if (prefill) {
     const filt = {};
     if (filterSm) filt.salesman = filterSm;
     const dealers = await Dealer.find(filt).sort({ name: 1 }).lean();
 
-    // Build a lookup of existing Sale rows for THIS month so each
-    // (dealer × sub-category) cell can be pre-filled with the previously
-    // saved quantity. Then the user can edit any cell in Excel and re-upload
-    // as the new truth.
-    const monthYM = normMonth(monthLabel);          // "Jun-26" → "2026-06"
+    // Existing Sale rows for THIS month, so each (dealer × sub-category) cell
+    // pre-fills with the saved quantity and the user edits from the real number.
+    const monthYM = normMonth(monthLabel);
     const saleByDealerSub = new Map();
+    const saleByDealer    = new Map();
     if (monthYM) {
-      const sales = await Sale.find({ month: monthYM }, { dealerName:1, subCategory:1, qty:1 }).lean();
+      const sales = await Sale.find({ month: monthYM }, { dealerName: 1, subCategory: 1, qty: 1 }).lean();
       for (const s of sales) {
-        const key = (String(s.dealerName||'').toLowerCase().trim()) + '||' + (String(s.subCategory||'').toLowerCase().trim());
-        // Sum in case (theoretically) two rows exist for the same combo
+        const dk  = String(s.dealerName || '').toLowerCase().trim();
+        const key = dk + '||' + String(s.subCategory || '').toLowerCase().trim();
         saleByDealerSub.set(key, (saleByDealerSub.get(key) || 0) + (s.qty || 0));
+        saleByDealer.set(dk, (saleByDealer.get(dk) || 0) + (s.qty || 0));
       }
     }
 
     for (const d of dealers) {
       const md = (d.monthlyData && d.monthlyData[monthLabel]) || {};
-      const nameKey = String(d.name||'').toLowerCase().trim();
-      // Pre-fill each sub-category cell from the existing Sale rows.
+      const nameKey = String(d.name || '').toLowerCase().trim();
       const subCells = subCols.map(c => {
-        const k = nameKey + '||' + String(c.sub).toLowerCase().trim();
-        const q = saleByDealerSub.get(k);
-        return q ? Number(q) : '';
+        const q = saleByDealerSub.get(nameKey + '||' + String(c.sub).toLowerCase().trim());
+        return q ? Number(q) : null;
       });
-      aoa.push([
-        String(d._id || ''),                // Dealer ID — DO NOT EDIT
+      ws.addRow([
+        String(d._id || ''),                // Dealer ID — read-only handle
         d.name || '',
         d.salesman || '',
-        md.city || d.city || '',
-        md.state || d.state || '',
-        md.zone  || d.zone  || '',
-        md.status|| d.status|| 'ACTIVE',
+        d.dealerType || 'None',
+        // Master fields come from the dealer record, not monthlyData: that is a
+        // per-month snapshot which drifts, and re-uploading it wrote stale
+        // values back over corrections.
+        d.city  || md.city  || '',
+        d.state || md.state || '',
+        d.zone  || md.zone  || '',
+        d.status || md.status || '',
+        d.perfStatus || 'NEW DEALER',
         d.address || '',
         d.pincode || '',
-        Number(md.target || d.target || 0),
-        // Achieved: pre-fill from the dealer's stored monthlyData for this
-        // month so the export reflects whatever the user entered inline in
-        // Monthly Entry even when there's no category-level breakdown.
-        Number(md.achieved || 0),
-        Number(md.creditDays  || d.creditDays  || 0),
-        Number(md.creditLimit || d.creditLimit || 0),
+        Number(md.target || d.target || 0),           // target really is per-month
+        // From the Sale rows, same source as the quantity cells beside it, so
+        // Achieved always agrees with Grand Total. monthlyData is only a
+        // fallback for a month typed by hand with no category breakdown.
+        Number(saleByDealer.get(nameKey) || md.achieved || 0),
+        Number(d.creditDays  || md.creditDays  || 0),
+        Number(d.creditLimit || md.creditLimit || 0),
         ...subCells,
-        '', // grand total (formula injected below)
+        null,                                          // Grand Total — formula below
+        Number(d.perfQty || 0),
+        d.perfMonth || '',
+        Number(d.avg6m || 0),
       ]);
       prefillCount++;
     }
   }
+  // Room to type new dealers
+  for (let i = 0; i < 8; i++) ws.addRow(new Array(HEADERS.length).fill(null));
 
-  // At least 5 blank rows even when prefill is on, so adding new dealers is easy
-  for (let i = 0; i < 5; i++) {
-    aoa.push([...Array(N_DEALER).fill(''), ...subCols.map(() => ''), '']);
-  }
-
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-
-  // Add a SUM formula in the Grand Total column for every row that has data
-  // (row index in sheet is 1-based and we start data at row 3)
-  if (subCols.length > 0) {
-    const firstSubCol = N_DEALER;                       // 0-based
-    const lastSubCol  = N_DEALER + subCols.length - 1;  // 0-based
-    const gtCol       = N_DEALER + subCols.length;      // 0-based
-    const firstColLetter = XLSX.utils.encode_col(firstSubCol);
-    const lastColLetter  = XLSX.utils.encode_col(lastSubCol);
-    for (let r = 2; r < aoa.length; r++) {              // 0-based row, skip 2 header rows
-      const cellRef  = XLSX.utils.encode_cell({ r, c: gtCol });
-      const excelRow = r + 1;                            // 1-based for SUM formula
-      ws[cellRef] = { t: 'n', f: `SUM(${firstColLetter}${excelRow}:${lastColLetter}${excelRow})` };
+  const lastRow  = ws.rowCount;
+  const firstSub = XLSX.utils.encode_col(N_DEALER);
+  const lastSub  = XLSX.utils.encode_col(N_DEALER + subCols.length - 1);
+  if (subCols.length) {
+    for (let r = 3; r <= lastRow; r++) {
+      ws.getCell(r, GT_COL).value = { formula: `SUM(${firstSub}${r}:${lastSub}${r})` };
     }
   }
 
-  // Column widths
-  ws['!cols'] = [
-    { wch: 8, hidden: true },  // Dealer ID — hidden so users don't fiddle with it
-    { wch: 36 },  // Dealer Name
-    { wch: 22 },  // Salesman
-    { wch: 16 },  // City
-    { wch: 14 },  // State
-    { wch: 12 },  // Zone
-    { wch: 12 },  // Status
-    { wch: 40 },  // Address
-    { wch: 10 },  // Pincode
-    { wch: 10 },  // Target
-    { wch: 10 },  // Achieved
-    { wch: 10 },  // Credit Days
-    { wch: 12 },  // Credit Limit
-    ...subCols.map(() => ({ wch: 13 })),
-    { wch: 13 },  // Grand Total
-  ];
+  /* ── widths ───────────────────────────────────────────────────────── */
+  const WIDTH = {
+    'Dealer ID': 12, 'Dealer Name': 34, 'Salesman': 16, 'Dealer Type': 16,
+    'City': 16, 'State': 15, 'Zone': 12, 'Selected User': 15,
+    'Performance (auto)': 18, 'Address': 38, 'Pincode': 10, 'Target': 11,
+    'Achieved': 11, 'Credit Days': 12, 'Credit Limit': 13, 'Grand Total': 13,
+    'Perf Qty (auto)': 12, 'Perf Month (auto)': 14, 'Avg 6M (auto)': 11,
+  };
+  HEADERS.forEach((h, i) => { ws.getColumn(i + 1).width = WIDTH[h] ?? Math.max(11, Math.min(18, h.length + 3)); });
+  ws.getColumn(1).hidden = true;                    // Dealer ID out of the way
 
-  // Merges — section headers in Row 1
-  const merges = [];
-  // "Dealer Info" merged across cols 0..N_DEALER-1
-  if (N_DEALER > 1) merges.push({ s:{ r:0, c:0 }, e:{ r:0, c:N_DEALER - 1 } });
+  /* ── header styling ───────────────────────────────────────────────── */
+  const bandOf = (i) => {                            // i is 0-based column index
+    if (i < N_DEALER)              return [C.dealer, C.dealerLite];
+    if (i < N_DEALER + subCols.length) {
+      let n = 0;
+      for (let k = 1; k <= i - N_DEALER; k++) if (subCols[k].category !== subCols[k - 1].category) n++;
+      return n % 2 ? [C.catB, C.catBLite] : [C.catA, C.catALite];
+    }
+    if (i === N_DEALER + subCols.length) return [C.total, C.totalLite];
+    return [C.calc, C.calcLite];
+  };
+  const r1 = ws.getRow(1), r2 = ws.getRow(2);
+  r1.height = 22; r2.height = 30;
+  HEADERS.forEach((h, i) => {
+    const [strong, lite] = bandOf(i);
+    const a = r1.getCell(i + 1), b = r2.getCell(i + 1);
+    a.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + strong } };
+    a.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
+    a.alignment = { horizontal: 'center', vertical: 'middle' };
+    b.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + lite } };
+    b.font = { bold: true, size: 10, color: { argb: 'FF1F2937' }, italic: READONLY.has(i + 1) };
+    b.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    const edge = { style: 'thin', color: { argb: 'FF' + C.line } };
+    a.border = { top: edge, left: edge, bottom: edge, right: edge };
+    b.border = { top: edge, left: edge, bottom: edge, right: edge };
+  });
 
-  // Categories merged across their sub-cat columns
+  // merge each band in row 1
+  const mergeRun = (from, to) => { if (to > from) ws.mergeCells(1, from + 1, 1, to + 1); };
+  mergeRun(0, N_DEALER - 1);
   let runStart = N_DEALER;
   for (let i = 1; i < subCols.length; i++) {
-    if (subCols[i].category !== subCols[i-1].category) {
-      const endCol = i - 1 + N_DEALER;
-      if (endCol > runStart) merges.push({ s:{ r:0, c:runStart }, e:{ r:0, c:endCol } });
-      runStart = i + N_DEALER;
+    if (subCols[i].category !== subCols[i - 1].category) { mergeRun(runStart, N_DEALER + i - 1); runStart = N_DEALER + i; }
+  }
+  if (subCols.length) mergeRun(runStart, N_DEALER + subCols.length - 1);
+  if (CALC_HEADERS.length) mergeRun(GT_COL, GT_COL + CALC_HEADERS.length - 1);
+
+  /* ── body styling ─────────────────────────────────────────────────── */
+  const numCols = new Set(HEADERS.map((h, i) =>
+    (/^(Target|Achieved|Credit Days|Credit Limit|Grand Total|Perf Qty \(auto\)|Avg 6M \(auto\))$/.test(h)
+      || (i >= N_DEALER && i < N_DEALER + subCols.length)) ? i + 1 : 0).filter(Boolean));
+  for (let r = 3; r <= lastRow; r++) {
+    const row = ws.getRow(r);
+    row.height = 16;
+    const zebra = r % 2 === 1;
+    for (let c = 1; c <= HEADERS.length; c++) {
+      const cell = row.getCell(c);
+      const ro = READONLY.has(c);
+      if (ro)          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + C.readonly } };
+      else if (zebra)  cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + C.zebra } };
+      if (ro) cell.font = { color: { argb: 'FF6B7280' }, italic: true, size: 10 };
+      else    cell.font = { size: 10 };
+      if (numCols.has(c)) { cell.numFmt = '#,##0'; cell.alignment = { horizontal: 'right' }; }
     }
+    row.getCell(2).font = { bold: true, size: 10 };                 // Dealer Name
+    row.getCell(HEADERS.indexOf('Pincode') + 1).numFmt = '@';       // keep leading zeros
   }
-  if (subCols.length > 0) {
-    const endCol = subCols.length - 1 + N_DEALER;
-    if (endCol > runStart) merges.push({ s:{ r:0, c:runStart }, e:{ r:0, c:endCol } });
-  }
-  ws['!merges'] = merges;
 
-  // Freeze the header rows + the Dealer ID + Dealer Name cols so it's easy to scroll
-  ws['!freeze'] = { xSplit: '2', ySplit: '2' };
+  /* ── filter + drop-downs ──────────────────────────────────────────── */
+  ws.autoFilter = { from: { row: 2, column: 2 }, to: { row: 2, column: HEADERS.length } };
+  const listFor = (header, values) => {
+    const c = XLSX.utils.encode_col(HEADERS.indexOf(header));
+    ws.dataValidations.add(`${c}3:${c}${lastRow}`, {
+      type: 'list', allowBlank: true, formulae: ['"' + values.join(',') + '"'],
+      showErrorMessage: true, errorStyle: 'warning',
+      errorTitle: 'Not a recognised value',
+      error: 'Pick one of: ' + values.join(', ') + '. Anything else is skipped on upload.',
+    });
+  };
+  // Excel list formulae are comma-separated, so a value containing a comma
+  // would split into two entries — none of ours do, but guard anyway.
+  listFor('Dealer Type',   DEALER_TYPES.filter(v => !v.includes(',')));
+  listFor('Selected User', ACCOUNT_STATUSES.filter(v => !v.includes(',')));
 
-  XLSX.utils.book_append_sheet(wb, ws, 'Sales Data');
-
-  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-  const tag = monthLabel ? `_${monthLabel.replace(/[^A-Za-z0-9-]/g,'')}` : '';
+  const buf = await wb2.xlsx.writeBuffer();
+  const tag = monthLabel ? `_${monthLabel.replace(/[^A-Za-z0-9-]/g, '')}` : '';
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="Sales_Upload_Template${tag}.xlsx"`);
-  res.send(buf);
+  res.send(Buffer.from(buf));
 });
 
 /* ----------------------------------------------------------------- *
@@ -371,12 +435,14 @@ router.post('/upload', protect, superAdminOnly, upload.single('file'), async (re
       if (/^dealer\s*id$/i.test(v))                                         role = 'dealerid';
       else if ((!hasDealerIdCol && idx === 0) || /^(company\s*name|dealer\s*name|dealer)$/i.test(v)) role = 'dealer';
       else if (/^(sales\s*person|salesman)$/i.test(v))                     role = 'salesman';
+      else if (/^dealer\s*type$/i.test(v))                                    role = 'dealerType';
       else if (/^city$/i.test(v))                                           role = 'city';
       else if (/^state$/i.test(v))                                          role = 'state';
       else if (/^zone$/i.test(v))                                           role = 'zone';
       else if (/^address$/i.test(v))                                        role = 'address';
       else if (/^pincode$|^pin\s*code$|^zip$/i.test(v))                     role = 'pincode';
-      else if (/^status$/i.test(v))                                         role = 'status';
+      // 'Status' is what older downloaded sheets call this column.
+      else if (/^status$|^selected\s*user$/i.test(v))                        role = 'status';
       else if (/^category\s*type$/i.test(v))                                role = 'ignore';   // legacy, dropped
       else if (/^sub\s*category$/i.test(v))                                 role = 'ignore';   // legacy, dropped
       else if (/^target$/i.test(v))                                         role = 'target';
@@ -384,6 +450,10 @@ router.post('/upload', protect, superAdminOnly, upload.single('file'), async (re
       else if (/^credit\s*days$/i.test(v))                                  role = 'creditDays';
       else if (/^credit\s*limit$/i.test(v))                                 role = 'creditLimit';
       else if (/grand\s*total|^total$|^achieved$/i.test(v))                 role = 'ignore';
+      // Everything the app derives for itself. Exported so the sheet is a
+      // complete picture, ignored here so an edited or stale cell can't
+      // overwrite what the recompute owns.
+      else if (/\(auto\)$/i.test(v))                                          role = 'ignore';
       else if (v && subToCat.has(lv))                                       role = 'subcat';
       else if (v)                                                           role = 'misc';
       return { idx, label: v, role };
@@ -445,8 +515,12 @@ router.post('/upload', protect, superAdminOnly, upload.single('file'), async (re
     }
 
     const docs = [];
-    const unknownSubs       = new Set();
-    const unmatchedDealers  = new Set();
+    const unknownSubs        = new Set();
+    const unmatchedDealers   = new Set();
+    // Values the sheet offered that the field would not accept. Reported back
+    // rather than swallowed, so a bad cell is visible instead of silent.
+    const unknownDealerTypes = new Set();
+    const unknownStatuses    = new Set();
     let dealersUpdated      = 0;
     let dealersCreated      = 0;
     let monthlyDataUpdated  = 0;
@@ -500,6 +574,14 @@ router.post('/upload', protect, superAdminOnly, upload.single('file'), async (re
         const n = Number(v);
         return Number.isFinite(n) ? n : null;
       };
+      if (hasCell('dealerType')) {
+        // Only the five values the dropdown offers. An unrecognised word is
+        // dropped rather than written, so a typo can't invent a new type.
+        const dt  = String(get(row,'dealerType')||'').trim();
+        const hit = DEALER_TYPES.find(t => t.toLowerCase() === dt.toLowerCase());
+        if (hit) masterFields.dealerType = hit;
+        else if (dt) unknownDealerTypes.add(dt);
+      }
       if (hasCell('city'))        masterFields.city        = String(get(row,'city')||'').trim();
       if (hasCell('state'))       masterFields.state       = String(get(row,'state')||'').trim();
       if (hasCell('zone'))        masterFields.zone        = String(get(row,'zone')||'').trim();
@@ -513,7 +595,17 @@ router.post('/upload', protect, superAdminOnly, upload.single('file'), async (re
       // Potential Status only. The sheet's Status column carries words like
       // ACTIVE / DEAD, which are calculated answers now — writing them onto the
       // dealer refilled the field we cleared (884 dealers, twice).
-      if (hasCell('status'))      masterFields.status      = normalizeAccountStatus(get(row,'status'));
+      if (hasCell('status')) {
+        // normalizeAccountStatus() maps anything it doesn't recognise to NONE.
+        // 886 dealers still carry legacy performance words (ACTIVE, DEAD,
+        // INACTIVE) in this field, so applying that blindly wiped them on a
+        // round-trip the user never edited. Write only a value the field
+        // actually accepts; leave anything else exactly as it was.
+        const rawStatus = String(get(row,'status')||'').trim();
+        const normed    = normalizeAccountStatus(rawStatus);
+        if (normed !== 'NONE' || /^none$/i.test(rawStatus)) masterFields.status = normed;
+        else unknownStatuses.add(rawStatus);
+      }
       if (hasCell('target')      && numCell('target')      !== null) masterFields.target      = numCell('target');
       if (hasCell('creditDays')  && numCell('creditDays')  !== null) masterFields.creditDays  = numCell('creditDays');
       if (hasCell('creditLimit') && numCell('creditLimit') !== null) masterFields.creditLimit = numCell('creditLimit');
@@ -608,7 +700,11 @@ router.post('/upload', protect, superAdminOnly, upload.single('file'), async (re
         // whole doesn't blow up.
         const updates = {};
         for (const [k, v] of Object.entries(masterFields)) {
-          if (dealerDoc[k] !== v) updates[k] = v;
+          // dealerType is absent on older records and renders as 'None'
+          // everywhere, so treat the two as the same value rather than
+          // writing 'None' to 571 dealers on every round-trip.
+          const cur = k === 'dealerType' ? (dealerDoc[k] || 'None') : dealerDoc[k];
+          if (cur !== v) updates[k] = v;
         }
 
         // Per-month write (only when monthLabel was provided)
@@ -749,6 +845,8 @@ router.post('/upload', protect, superAdminOnly, upload.single('file'), async (re
       unmatchedDealers: [...unmatchedDealers].slice(0, 20),
       unmatchedDealersCount: unmatchedDealers.size,
       unknownSubCategories: [...unknownSubs],
+      skippedDealerTypes:  [...unknownDealerTypes].slice(0, 20),
+      skippedStatuses:     [...unknownStatuses].slice(0, 20),
     });
   } catch (e) {
     console.error('[sales/upload]', e);
@@ -935,7 +1033,23 @@ async function catalogueKinds() {
 // export carry a brand; manually keyed rows report under "(not specified)".
 // Honours the same month/salesman scoping as every other sales endpoint.
 router.get('/by-brand', protect, async (req, res) => {
-  const filter = await monthFilter(req);
+  const base = await monthFilter(req);
+
+  // Optional category narrowing ("which catalogues sit inside LAMINATE?").
+  // The quantities then describe THAT category only, not the catalogue's
+  // whole book — which is the question being asked.
+  const wanted = String(req.query.category || '')
+    .split(',').map(x => x.trim()).filter(Boolean);
+  const filter = wanted.length ? { ...base, category: { $in: wanted } } : base;
+
+  // The chip list is built from the month unfiltered, so picking one category
+  // never removes the others from the picker.
+  const catTotals = await Sale.aggregate([
+    { $match: base },
+    { $group: { _id: '$category', qty: { $sum: '$qty' } } },
+    { $sort: { qty: -1 } },
+  ]);
+
   const rows = await Sale.aggregate([
     { $match: filter },
     { $group: {
@@ -974,6 +1088,8 @@ router.get('/by-brand', protect, async (req, res) => {
     rows: out,
     grandTotal: out.reduce((a, r) => a + r.qty, 0),
     unbranded: byBrand.get('')?.qty || 0,
+    categories: catTotals.filter(c => c._id).map(c => ({ category: c._id, qty: c.qty })),
+    categoryFilter: wanted,
     hiddenParent: hidden.map(r => ({ brand: r.brand, qty: r.qty })),
     hiddenParentQty: hidden.reduce((a, r) => a + r.qty, 0),
     catalogueFilterActive: active,

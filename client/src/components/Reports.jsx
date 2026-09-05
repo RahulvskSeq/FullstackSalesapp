@@ -910,7 +910,7 @@ export default function Reports({ dealers, users, currentUser, monthConfig, outs
     const columns = [
       { label:'Salesman', w:130 }, { label:'Dealer', w:200 }, { label:'City', w:110 },
       { label:'State', w:110 }, { label:'Zone', w:90 },
-      { label:'Performance Status', w:150 }, { label:'Potential Status', w:130 }, { label:'Category', w:120 },
+      { label:'Performance Status', w:150 }, { label:'Selected User', w:130 }, { label:'Category', w:120 },
     ];
     rangeMonths.forEach(m=>{ columns.push({label:m+' Tgt',w:90,align:'right'},{label:m+' Ach',w:90,align:'right'},{label:m+' %',w:70,align:'right'}); });
     columns.push({label:'Total Tgt',w:100,align:'right'},{label:'Total Ach',w:100,align:'right'},{label:'Total %',w:80,align:'right'});

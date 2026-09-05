@@ -46,6 +46,8 @@ export default function SalesByBrand({ monthLabel, salesman }) {
   const [selected, setSelected] = useState([]);   // empty = show the top few
   const [showAll, setShowAll] = useState(false);
   const [showParent, setShowParent] = useState(false);
+  // Narrow the catalogues to one or more app categories (LAMINATE, LINER…).
+  const [cats, setCats] = useState([]);
   // Full drill-down for one catalogue, opened from a card.
   const [modalBrand, setModalBrand] = useState(null);
   const listRef = React.useRef(null);
@@ -64,11 +66,12 @@ export default function SalesByBrand({ monthLabel, salesman }) {
     const p = { month };
     if (salesman) p.salesman = salesman;
     if (showParent) p.showParent = '1';
+    if (cats.length) p.category = cats.join(',');
     api.salesByBrand(p)
       .then(setData)
       .catch(() => setData(null))
       .finally(() => setLoading(false));
-  }, [month, salesman, showParent]);
+  }, [month, salesman, showParent, cats]);
 
   useEffect(() => {
     if (!expanded || !month) { setDetail(null); return; }
@@ -118,6 +121,8 @@ export default function SalesByBrand({ monthLabel, salesman }) {
   const shownTotal = useMemo(() => shown.reduce((a, r) => a + r.qty, 0), [shown]);
 
   const toggle = b => setSelected(p => p.includes(b) ? p.filter(x => x !== b) : [...p, b]);
+  const toggleCat = c => { setSelected([]); setCats(p => p.includes(c) ? p.filter(x => x !== c) : [...p, c]); };
+  const catList = data?.categories || [];
 
   // Rendered in the header rather than as a side column: with the list
   // collapsed into a dropdown, a dedicated rail was 228px of empty space
@@ -269,6 +274,7 @@ export default function SalesByBrand({ monthLabel, salesman }) {
                         ? <>Showing <b style={{ color: 'var(--t2)' }}>{shown.length}</b> matching “{q.trim()}” · {n(shownTotal)} units</>
                         : <>Nothing matches “{q.trim()}”.</>)
                     : <>Showing top <b style={{ color: 'var(--t2)' }}>{shown.length}</b> of {allRows.length} · {n(shownTotal)} of {n(grandTotal)} units</>}
+                {cats.length > 0 && <> · in <b style={{ color:'var(--acc)' }}>{cats.join(', ')}</b></>}
               </span>
               {!selected.length && !q.trim() && allRows.length > TOP_N && (
                 <button className="btn" style={{ padding: '2px 8px', fontSize: 11 }} onClick={() => setShowAll(v => !v)}>
@@ -295,6 +301,43 @@ export default function SalesByBrand({ monthLabel, salesman }) {
                 </button>
               )}
             </div>
+
+            {/* Category filter. Answers "which catalogues sit inside LAMINATE?" —
+                with one picked, every quantity on screen is that category's
+                share of the catalogue, not the catalogue's whole book. */}
+            {catList.length > 1 && (
+              <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap', marginBottom:10 }}>
+                <span style={{ fontSize:10, color:'var(--t3)', fontWeight:700, textTransform:'uppercase', letterSpacing:'.09em', marginRight:2 }}>
+                  Category
+                </span>
+                <button onClick={() => { setCats([]); setSelected([]); }}
+                  style={{
+                    cursor:'pointer', borderRadius:5, padding:'3px 9px', fontSize:11,
+                    fontWeight: cats.length ? 400 : 600,
+                    border:'1px solid ' + (cats.length ? 'var(--b2)' : 'var(--acc)'),
+                    background: cats.length ? 'var(--bg1)' : 'var(--acc)',
+                    color: cats.length ? 'var(--t2)' : '#fff',
+                  }}>All</button>
+                {catList.map(c => {
+                  const on = cats.includes(c.category);
+                  return (
+                    <button key={c.category} onClick={() => toggleCat(c.category)}
+                      title={`${c.category} — ${n(c.qty)} units this month`}
+                      style={{
+                        cursor:'pointer', borderRadius:5, padding:'3px 9px', fontSize:11,
+                        fontWeight: on ? 600 : 400,
+                        border:'1px solid ' + (on ? 'var(--acc)' : 'var(--b2)'),
+                        background: on ? 'var(--acc)' : 'var(--bg1)',
+                        color: on ? '#fff' : 'var(--t2)',
+                        display:'inline-flex', alignItems:'center', gap:6,
+                      }}>
+                      {c.category}
+                      <span style={{ opacity:.7, fontVariantNumeric:'tabular-nums' }}>{n(c.qty)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
             {/* Hidden catalogues are stated, never silently dropped: a report
                 that quietly omits sales is worse than one that shows clutter. */}

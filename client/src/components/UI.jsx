@@ -12,7 +12,7 @@
 // //   else if(t.includes('INACTIVE')){bg='rgba(251,191,36,0.12)';cl='#fbbf24';}
 // //   else if(t==='DEAD'){bg='rgba(248,113,113,0.12)';cl='#f87171';}
 // //   else{bg='rgba(255,255,255,.05)';cl='var(--t3)';}
-// //   return(<span style={{background:bg,color:cl,padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:600,display:'inline-flex',alignItems:'center',gap:4}}><span style={{width:6,height:6,borderRadius:'50%',background:cl}}/>{status||'—'}</span>);
+// //   return(<span style={{background:bg,color:cl,padding:'2px 8px',borderRadius:4,fontSize:11,fontWeight:600,display:'inline-flex',alignItems:'center',gap:4}}><span style={{width:6,height:6,borderRadius:'50%',background:cl}}/>{shown||'—'}</span>);
 // // };
 
 // // export const Avatar = ({user,size=28}) => {
@@ -612,6 +612,8 @@ const STATUS_COLORS = {
   'RECENTLY INACTIVE': '#f97316',   // orange
   'INACTIVE':          '#dc2626',   // red
   'DEAD':              '#7f1d1d',   // dark red
+  // Not graded yet — a party added since the last recompute
+  'NEW DEALER':        '#7c3aed',   // violet
   // Type 2 — chosen labels, deliberately off the Type 1 ramp
   'STAR':              '#db2777',   // pink
   'KEY ACCOUNT':       '#4f46e5',   // indigo
@@ -637,8 +639,13 @@ export const LogoMark = ({ size = 18, color = 'currentColor' }) => (
   </svg>
 );
 
-export const StatusBadge = ({status}) => {
-  const t=(status||'').toUpperCase();
+export const StatusBadge = ({status, emptyLabel}) => {
+  // A dealer created since the last recompute has no perfStatus yet. The
+  // Performance column passes emptyLabel='NEW DEALER' so it reads as what it
+  // is rather than as a blank dash; Selected User passes nothing and still
+  // shows the dash when unset.
+  const shown = status || emptyLabel || '';
+  const t=shown.toUpperCase();
   let cl = STATUS_COLORS[t];
   let bg;
   if(cl){

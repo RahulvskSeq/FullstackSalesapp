@@ -8790,6 +8790,29 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
     return out;
   }, [dealerCatHistory, dCatSel, dSubSel]);
 
+  // Per-month category split for the chart tooltip: "2026-06" -> [{cat, qty}].
+  // Filtered exactly like filteredByYM above, so the rows in the tooltip always
+  // add up to the bar being hovered rather than to some other total.
+  const breakdownByYM = useMemo(() => {
+    const out = new Map();
+    if (!dealerCatHistory) return out;
+    for (const m of (dealerCatHistory.months || [])) {
+      const rows = [];
+      for (const [c, subs] of Object.entries(m.byCategory || {})) {
+        if (dCatSel.size > 0 && !dCatSel.has(c)) continue;
+        let q = 0;
+        for (const [sub, v] of Object.entries(subs || {})) {
+          if (dSubSel.size > 0 && !dSubSel.has(sub)) continue;
+          q += (v || 0);
+        }
+        if (q) rows.push({ cat: c, qty: q });
+      }
+      rows.sort((a, b) => b.qty - a.qty);
+      out.set(m.month, rows);
+    }
+    return out;
+  }, [dealerCatHistory, dCatSel, dSubSel]);
+
   // Helper: "Jun-26" → "2026-06"
   const _ymOf = (lbl) => {
     if (!lbl) return '';
@@ -8844,8 +8867,53 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
   const chartData=monthsForView.map((v,i)=>({
     month:MO[i].slice(0,3),units:v,
     target:monthTarget(dealer, i) || null,
-    isSelected:i===selectedMonthIdx
+    isSelected:i===selectedMonthIdx,
+    label:MO[i],
+    // null = this month predates category tracking, so it cannot be split.
+    breakdown: breakdownByYM.get(_ymOf(MO[i])) || null,
   }));
+  // Hovering a bar shows what made up that month: the split by category,
+  // biggest first, with each one's share. The old tooltip only repeated the
+  // number already printed above the bar.
+  const CatTooltip = ({ active, payload }) => {
+    if (!active || !payload?.length) return null;
+    const d = payload[0]?.payload;
+    if (!d) return null;
+    const rows = d.breakdown, total = d.units || 0;
+    const num = n => Number(n || 0).toLocaleString('en-IN');
+    return (
+      <div style={{background:'var(--bg2)',border:'1px solid var(--b2)',borderRadius:8,
+                   padding:'8px 10px',minWidth:180,boxShadow:'0 6px 22px rgba(0,0,0,.28)'}}>
+        <div style={{display:'flex',alignItems:'baseline',gap:10,
+                     paddingBottom:5,borderBottom:'1px solid var(--b1)'}}>
+          <span style={{fontSize:12,fontWeight:700,color:'var(--t1)'}}>{d.label}</span>
+          <span style={{marginLeft:'auto',fontSize:13,fontWeight:700,color:'var(--acc)',
+                        fontVariantNumeric:'tabular-nums'}}>{num(total)}</span>
+        </div>
+        {d.target > 0 && (
+          <div style={{fontSize:10.5,color:'var(--t3)',marginTop:4}}>Target {num(d.target)}</div>
+        )}
+        <div style={{marginTop:5}}>
+          {rows === null
+            ? <div style={{fontSize:10.5,color:'var(--t3)'}}>No category breakdown for this month</div>
+            : rows.length === 0
+              ? <div style={{fontSize:10.5,color:'var(--t3)'}}>No sales</div>
+              : rows.map(r => (
+                  <div key={r.cat} style={{display:'flex',gap:10,fontSize:11,lineHeight:1.65}}>
+                    <span style={{color:'var(--t2)',maxWidth:150,overflow:'hidden',
+                                  textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.cat}</span>
+                    <span style={{marginLeft:'auto',fontWeight:700,color:'var(--t1)',
+                                  fontVariantNumeric:'tabular-nums'}}>{num(r.qty)}</span>
+                    <span style={{color:'var(--t3)',width:36,textAlign:'right',
+                                  fontVariantNumeric:'tabular-nums'}}>
+                      {total ? Math.round((r.qty / total) * 100) : 0}%
+                    </span>
+                  </div>
+                ))}
+        </div>
+      </div>
+    );
+  };
 
   const addOutFollowup = async () => {
     if(!fuDate) return;
@@ -8942,7 +9010,7 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
           <div style={{flex:1,minWidth:200}}>
             <div style={{fontSize:20,fontWeight:700,marginBottom:6}}>{dealer.name}</div>
             <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
-              <StatusBadge status={dealer.perfStatus}/>{dealer.status && dealer.status!=='NONE' && <StatusBadge status={dealer.status}/>}
+              <StatusBadge status={dealer.perfStatus} emptyLabel="NEW DEALER"/>{dealer.status && dealer.status!=='NONE' && <StatusBadge status={dealer.status}/>}
               {dealer.zone&&<span className="chip">{dealer.zone}</span>}
               {(dealer.city||dealer.state)&&<span className="chip" style={{display:'inline-flex',alignItems:'center',gap:4}}><MapPin size={10}/> {[dealer.city,dealer.state].filter(Boolean).join(', ')}{dealer.pincode?` — ${dealer.pincode}`:''}</span>}
               {dealer.address&&<span className="chip" title={dealer.address} style={{display:'inline-flex',alignItems:'center',gap:4,maxWidth:340,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{dealer.address}</span>}
@@ -9073,7 +9141,7 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--b1)"/>
                   <XAxis dataKey="month" tick={{fill:'var(--t3)',fontSize:11}}/>
                   <YAxis tick={{fill:'var(--t3)',fontSize:11}}/>
-                  <Tooltip contentStyle={{background:'var(--bg2)',border:'1px solid var(--b2)',borderRadius:8}} formatter={(value,name)=>[value,name==='units'?'Achieved':'Target']}/>
+                  <Tooltip content={<CatTooltip/>} cursor={{fill:'var(--b1)',opacity:.35}}/>
                   <Bar dataKey="units" radius={[3,3,0,0]} label={{position:'top',fill:'var(--t2)',fontSize:10,fontWeight:600}}>
                     {chartData.map((entry,index)=>(<Cell key={index} fill={entry.isSelected?'#fbbf24':'#6366f1'}/>))}
                   </Bar>
@@ -9161,7 +9229,7 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
                 {DEALER_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
               </select>
             </div>
-            <div className="field"><label>Potential Status</label>
+            <div className="field"><label>Selected User</label>
               <select className="sel inp" value={edit.status} onChange={e=>setEdit({...edit,status:e.target.value})}>
                 {['NONE','STAR','KEY ACCOUNT','ACHIEVER','REACTIVE'].map(s=><option key={s}>{s}</option>)}
               </select>

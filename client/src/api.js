@@ -2161,6 +2161,12 @@ export const api = {
   ptxCatalogueDetail:(q={})     => fetch(`${BASE}/producttx/catalogue-detail?${new URLSearchParams(q)}`,{headers:authHeaders()}).then(handle),
   salesByDealer:     (q={})     => fetch(`${BASE}/sales/by-dealer?${new URLSearchParams(q)}`,{headers:authHeaders()}).then(handle),
   // Per-dealer, per-month excluded-category qty (drives all-months category filtering).
+  // Returns a formatted .xlsx blob — the server owns the look, the caller
+  // owns the numbers, so an export always matches what is on screen.
+  dealersExportXlsx:(payload) => fetch(`${BASE}/dealers/export-xlsx`,{
+    method:'POST', headers:{...authHeaders(),'Content-Type':'application/json'},
+    body:JSON.stringify(payload),
+  }).then(async r=>{ if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error||'Export failed'); return r.blob(); }),
   salesByDealerMonths:(exclude=[]) => fetch(`${BASE}/sales/by-dealer-months?exclude=${encodeURIComponent((exclude||[]).join(','))}`,{headers:authHeaders()}).then(handle),
   salesBySalesman:   (q={})     => fetch(`${BASE}/sales/by-salesman?${new URLSearchParams(q)}`,{headers:authHeaders()}).then(handle),
   salesForDealer:    (name)     => fetch(`${BASE}/sales/dealer/${encodeURIComponent(name)}`,{headers:authHeaders()}).then(handle),

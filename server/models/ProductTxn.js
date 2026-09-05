@@ -31,6 +31,9 @@ const ProductTxnSchema = new mongoose.Schema({
   // ── taxonomy resolved via ProductMaster ──
   brand:        { type: String, trim: true, index: true },  // the sold collection, from the txn sheet
   masterBrand:  { type: String, trim: true },                // every collection the product sits in
+  // The parent catalogue the ERP printed on the line. Kept when `brand` was
+  // re-routed to a child listing, so the original attribution is recoverable.
+  parentBrand:  { type: String, trim: true },
   categoryType: { type: String, trim: true, index: true },
   productType:  { type: String, trim: true, index: true },
   category:     { type: String, trim: true, index: true }, // normalised to app Category

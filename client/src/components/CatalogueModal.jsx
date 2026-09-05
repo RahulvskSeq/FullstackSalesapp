@@ -47,7 +47,7 @@ export default function CatalogueModal({ brand, month, monthLabel, onClose }) {
     if (!data) return [];
     const needle = q.trim().toUpperCase();
     const hit = (...fields) => !needle || fields.some(f => String(f || '').toUpperCase().includes(needle));
-    if (tab === 'products')   return data.products.filter(r => hit(r.name, r.code, r.category, r.subCategory));
+    if (tab === 'products')   return data.products.filter(r => hit(r.name, r.code, r.category, r.subCategory, (r.aliases || []).join(' ')));
     if (tab === 'dealers')    return data.dealers.filter(r => hit(r.dealer, r.salesman));
     if (tab === 'salesmen')   return data.salesmen.filter(r => hit(r.salesman));
     if (tab === 'categories') return data.categories.filter(r => hit(r.category, r.subCategory));
@@ -158,7 +158,21 @@ export default function CatalogueModal({ brand, month, monthLabel, onClose }) {
                 {rows.map((r, i) => (
                   <tr key={i} style={{ background: i % 2 ? 'var(--bg2)' : 'transparent' }}>
                     {tab === 'products' && <>
-                      {td(r.name || '—', 0, { max: 260, bold: true, title: r.name })}
+                      <td style={{ padding: '6px 10px', maxWidth: 280 }}>
+                        <div style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                          title={r.name}>{r.name || '—'}</div>
+                        {/* The ERP names each invoice line by the dealer's own
+                            private label, so one product arrives under several
+                            names. They are listed here rather than split into
+                            separate rows. */}
+                        {r.aliases?.length > 0 && (
+                          <div style={{ fontSize: '.72rem', color: 'var(--t3)', marginTop: 1,
+                                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                            title={'Sold as: ' + r.aliases.join(', ')}>
+                            sold as {r.aliases.join(', ')}
+                          </div>
+                        )}
+                      </td>
                       {td(r.code || '—', 0, { dim: true })}
                       {td(r.category || '—', 0, { dim: true })}
                       {td(r.subCategory || '—', 0, { dim: true })}

@@ -1,4 +1,6 @@
 import express from 'express';
+import ExcelJS from 'exceljs';
+import { paintSheet } from '../lib/sheetStyle.js';
 import multer from 'multer';
 import XLSX from 'xlsx';
 import mongoose from 'mongoose';
@@ -51,6 +53,11 @@ const dealerSchema = new mongoose.Schema({
   perfQty:      { type:Number, default:0 },
   perfMonth:    { type:String, default:'' },
   dealerType:   { type:String, default:'None' },   // Regular/Premium/OEM/Enterprise
+  // Present in models/Dealer.js too. Whichever schema registers first wins,
+  // so a field missing from this copy is silently dropped on write — these
+  // two were, and the bulk upload only got through by passing strict:false.
+  address:      { type:String, default:'' },
+  pincode:      { type:String, default:'' },
   // Keep in step with models/Dealer.js — this file registers the 'Dealer'
   // model first, so a field missing here is silently stripped on write.
   tallyGuid:    { type:String, default:'', index:true },
@@ -1394,6 +1401,61 @@ router.get('/:id', protect, async (req,res) => {
     }
     res.json(fmt(d,req.query.mo?.split(',')||[]));
   }catch(e){res.status(500).json({error:e.message});}
+});
+
+/* ----------------------------------------------------------------- *
+ *  POST /api/dealers/export-xlsx                                     *
+ *                                                                    *
+ *  Turns the Dealers list into a formatted workbook. The client sends
+ *  the rows it is already showing rather than a filter to re-run here:
+ *  the export then matches the screen exactly — same search, same
+ *  sorting, same category scoping — and there is no second copy of
+ *  that logic to drift. This route only decides how it looks.
+ * ----------------------------------------------------------------- */
+router.post('/export-xlsx', protect, async (req,res) => {
+  try {
+    const b = req.body || {};
+    const headers = (Array.isArray(b.headers) ? b.headers : []).slice(0, 300).map(h => String(h ?? ''));
+    if (!headers.length) return res.status(400).json({ error: 'No columns' });
+
+    // Values are echoed back to the same user, but coerce anyway so a stray
+    // object or function can never reach the writer.
+    const cell = v => (v === null || v === undefined) ? null
+      : (typeof v === 'number' && Number.isFinite(v)) ? v
+      : String(v).slice(0, 2000);
+    const rows = (Array.isArray(b.rows) ? b.rows : []).slice(0, 20000)
+      .map(r => (Array.isArray(r) ? r : []).slice(0, headers.length).map(cell));
+
+    const readonly = new Set((Array.isArray(b.readonly) ? b.readonly : []).map(Number).filter(Boolean));
+    const numCols  = new Set((Array.isArray(b.numCols)  ? b.numCols  : []).map(Number).filter(Boolean));
+    let groups = (Array.isArray(b.groups) ? b.groups : [])
+      .map(g => ({ label: String(g?.label ?? ''), span: Math.max(1, Number(g?.span) || 1), tone: String(g?.tone || 'a') }));
+    const spanned = groups.reduce((a, g) => a + g.span, 0);
+    if (!groups.length || spanned !== headers.length) groups = [{ label: '', span: headers.length, tone: 'dealer' }];
+
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Sales Tracker Pro';
+    wb.created = new Date();
+    const ws = wb.addWorksheet(String(b.sheetName || 'Dealers').slice(0, 30));
+
+    const band = [];
+    for (const g of groups) { band.push(g.label); for (let i = 1; i < g.span; i++) band.push(''); }
+    ws.addRow(band);
+    ws.addRow(headers);
+    rows.forEach(r => ws.addRow(r));
+
+    headers.forEach((h, i) => {
+      const w = Number(b.widths?.[i]);
+      ws.getColumn(i + 1).width = Number.isFinite(w) && w > 0 ? Math.min(60, w) : Math.max(10, Math.min(38, h.length + 4));
+    });
+    paintSheet(ws, { groups, headers, readonly, numCols, freeze: { rows: 2, cols: Number(b.freezeCols) || 2 } });
+
+    const buf = await wb.xlsx.writeBuffer();
+    const name = String(b.filename || 'dealers').replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 80);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${name}.xlsx"`);
+    res.send(Buffer.from(buf));
+  } catch(e){ res.status(500).json({ error:e.message }); }
 });
 
 router.post('/', protect, async (req,res) => {
