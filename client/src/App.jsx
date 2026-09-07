@@ -16252,6 +16252,33 @@ export default function App(){
   // with the popup — so in-popup changes never leak back to the home filter.
   const editing=editingId?dealers.find(x=>x.id===editingId):null;
 
+  // Features an admin has switched off, app-wide. Separate from per-user
+  // permissions: this asks whether the feature is on at all.
+  //
+  // Declared ABOVE the login early-return below. Every hook has to run on
+  // every render, and anything after that return is skipped while the login
+  // screen shows — so signing in changed the hook count and React threw.
+  const [disabledFeatures, setDisabledFeatures] = React.useState([]);
+  React.useEffect(() => {
+    if (!currentUser) return;          // endpoint needs a session
+    let dead = false;
+    const load = () => api.featuresGet()
+      .then(r => { if (!dead) setDisabledFeatures(r?.disabled || []); })
+      .catch(() => {});
+    load();
+    // Another admin switching something off should reach this tab without a
+    // reload; focus is a cheap moment to re-check.
+    window.addEventListener('focus', load);
+    return () => { dead = true; window.removeEventListener('focus', load); };
+  }, [currentUser]);
+
+  // Someone sitting on a screen when it gets switched off — or arriving by a
+  // saved URL — lands back on Overview rather than on a dead page.
+  React.useEffect(() => {
+    if (screen && disabledFeatures.includes(screen)) setScreen('overview');
+  }, [disabledFeatures, screen]);
+
+
   if(!currentUser){
     return(<><Styles theme={theme}/><LoginPage users={users} onLogin={handleLogin} theme={theme} toggleTheme={toggleTheme}/><NotificationCenter/></>);
   }
@@ -16287,6 +16314,9 @@ export default function App(){
   const pagePerms = Array.isArray(currentUser?.permissions?.pages) ? currentUser.permissions.pages : [];
   const hasPagePerms = !isSuperAdmin && pagePerms.length > 0;
   const pageVisible = (item) => {
+    // Checked before the superadmin bypass — off means off for everyone.
+    // Admin Panel is never in the toggleable list, so the way back is safe.
+    if (item.id && disabledFeatures.includes(item.id)) return false;
     if (isSuperAdmin) return true;
     if (hasPagePerms) return pagePerms.includes(item.id);   // explicit grant wins
     // Default gates when no explicit page allowlist:

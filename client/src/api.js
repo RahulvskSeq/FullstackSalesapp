@@ -2167,6 +2167,13 @@ export const api = {
     method:'POST', headers:{...authHeaders(),'Content-Type':'application/json'},
     body:JSON.stringify(payload),
   }).then(async r=>{ if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error||'Export failed'); return r.blob(); }),
+  // Global feature switches. Every signed-in user reads them to build the
+  // menu; only an admin may write.
+  featuresGet: () => fetch(`${BASE}/settings/features`,{headers:authHeaders()}).then(handle),
+  featuresSet: (disabled) => fetch(`${BASE}/settings/features`,{
+    method:'PUT', headers:{...authHeaders(),'Content-Type':'application/json'},
+    body:JSON.stringify({disabled}),
+  }).then(handle),
   salesByDealerMonths:(exclude=[]) => fetch(`${BASE}/sales/by-dealer-months?exclude=${encodeURIComponent((exclude||[]).join(','))}`,{headers:authHeaders()}).then(handle),
   salesBySalesman:   (q={})     => fetch(`${BASE}/sales/by-salesman?${new URLSearchParams(q)}`,{headers:authHeaders()}).then(handle),
   salesForDealer:    (name)     => fetch(`${BASE}/sales/dealer/${encodeURIComponent(name)}`,{headers:authHeaders()}).then(handle),
@@ -2237,9 +2244,9 @@ export const dbDealerToApp = (d, MO=[]) => {
   const monthTargets= {};
   const monthStatus = {};
   const monthZone   = {};
+  const monthCity   = {};
   const monthCat    = {};
   const monthCatType= {};
-  const monthCity   = {};
   const monthState  = {};
   const monthSalesman = {};   // per-month owner (stamped on reassignment)
 

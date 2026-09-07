@@ -274,6 +274,98 @@ import { api } from '../api';
 import { notify, confirmDialog } from './Toast';
 import { SHEET_SYNC_ENABLED } from '../featureFlags';
 
+
+/**
+ * FeatureSwitches — turn parts of the app on and off for everyone.
+ *
+ * Not the same thing as a user's permissions: this decides whether a feature
+ * exists at all. Switching one off hides its menu entry for every user and
+ * makes the server refuse its endpoints, so an old tab or the mobile app
+ * can't keep using it.
+ */
+function FeatureSwitches() {
+  const [features, setFeatures] = useState([]);
+  const [off, setOff]          = useState(new Set());
+  const [saved, setSaved]      = useState(new Set());
+  const [busy, setBusy]        = useState(false);
+  const [err, setErr]          = useState('');
+
+  useEffect(() => {
+    api.featuresGet()
+      .then(r => {
+        setFeatures(r?.features || []);
+        const d = new Set(r?.disabled || []);
+        setOff(d); setSaved(new Set(d));
+      })
+      .catch(e => setErr(e?.message || 'Could not load feature switches'));
+  }, []);
+
+  const dirty = off.size !== saved.size || [...off].some(k => !saved.has(k));
+
+  const toggle = (id) => {
+    const next = new Set(off);
+    next.has(id) ? next.delete(id) : next.add(id);
+    setOff(next);
+  };
+
+  const save = async () => {
+    setBusy(true); setErr('');
+    try {
+      const r = await api.featuresSet([...off]);
+      const d = new Set(r?.disabled || []);
+      setOff(d); setSaved(new Set(d));
+    } catch (e) { setErr(e?.message || 'Save failed'); }
+    setBusy(false);
+  };
+
+  return (
+    <div style={{maxWidth:760}}>
+      <div style={{fontSize:12,color:'var(--t3)',marginBottom:14,lineHeight:1.6}}>
+        Switch a feature off and it disappears from the menu for <b>everyone</b>, including you,
+        and the server stops answering its requests. Switch it back on here at any time.
+        Admin Panel is deliberately not in this list, so you can always get back.
+      </div>
+
+      {err && (
+        <div style={{padding:'8px 12px',borderRadius:7,marginBottom:12,fontSize:12,
+          background:'rgba(248,113,113,0.10)',border:'1px solid #7f1d1d55',color:'#fca5a5'}}>{err}</div>
+      )}
+
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(230px,1fr))',gap:8,marginBottom:16}}>
+        {features.map(f => {
+          const isOff = off.has(f.id);
+          return (
+            <label key={f.id} style={{
+              display:'flex',alignItems:'center',gap:10,padding:'10px 12px',borderRadius:8,cursor:'pointer',
+              background: isOff ? 'rgba(248,113,113,0.07)' : 'var(--bg2)',
+              border:'1px solid '+(isOff ? 'rgba(248,113,113,0.35)' : 'var(--b1)')}}>
+              <input type="checkbox" checked={!isOff} onChange={()=>toggle(f.id)} style={{margin:0}}/>
+              <span style={{flex:1,fontSize:12.5,fontWeight:600,
+                color: isOff ? 'var(--t3)' : 'var(--t1)',
+                textDecoration: isOff ? 'line-through' : 'none'}}>{f.label}</span>
+              <span style={{fontSize:10,fontWeight:700,letterSpacing:'.06em',
+                color: isOff ? '#f87171' : '#34d399'}}>{isOff ? 'OFF' : 'ON'}</span>
+            </label>
+          );
+        })}
+      </div>
+
+      <div style={{display:'flex',alignItems:'center',gap:10}}>
+        <button className="btnp" onClick={save} disabled={!dirty || busy}
+          style={{opacity:(!dirty||busy)?0.5:1,cursor:(!dirty||busy)?'not-allowed':'pointer'}}>
+          {busy ? 'Saving…' : 'Save changes'}
+        </button>
+        {dirty && !busy && (
+          <button className="btn" onClick={()=>setOff(new Set(saved))}>Cancel</button>
+        )}
+        <span style={{fontSize:11,color:'var(--t3)',marginLeft:'auto'}}>
+          {saved.size === 0 ? 'Everything is on' : saved.size + ' feature' + (saved.size===1?'':'s') + ' switched off'}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,syncErrs,onNavigate,onOpenDealer,monthConfig,saveMonthConfig,currentUser,onLoginAs})=>{
   const {selectedMonthIdx, MO:ctxMO}=useMonth();
   const MO = monthConfig?.MO || ctxMO || MO_CONST;
@@ -472,6 +564,7 @@ const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,sync
         <button className={`tab ${tab==='months'?'active':''}`} onClick={()=>setTab('months')} style={{color:tab==='months'?'var(--acc)':'var(--t3)'}}>📅 Month Settings</button>
         <button className={`tab ${tab==='samples'?'active':''}`} onClick={()=>setTab('samples')} style={{color:tab==='samples'?'var(--acc)':'var(--t3)'}}>📦 Sample Master</button>
         <button className={`tab ${tab==='cats'?'active':''}`} onClick={()=>setTab('cats')} style={{color:tab==='cats'?'var(--acc)':'var(--t3)'}}>🏷️ Categories</button>
+        {isStaff && <button className={`tab ${tab==='features'?'active':''}`} onClick={()=>setTab('features')} style={{color:tab==='features'?'var(--acc)':'var(--t3)'}}>🎛️ Features</button>}
       </div>
       {tab==='summary'&&(
         <>
@@ -576,6 +669,7 @@ const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,sync
           <ManageCategories currentUser={currentUser}/>
         </div>
       )}
+      {tab==='features'&&isStaff&&<FeatureSwitches/>}
       {tab==='months'&&(
         <div className="fade">
           <div style={{fontSize:13,color:'var(--t3)',marginBottom:14}}>Control which months appear in the app. Changes apply instantly — no code editing needed.</div>

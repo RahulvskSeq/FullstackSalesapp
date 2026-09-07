@@ -14,6 +14,7 @@ import Task       from '../models/Task.js';
 import Ticket     from '../models/Ticket.js';
 import Counter    from '../models/Counter.js';
 import User       from '../models/User.js';
+import { featureEnabled } from '../lib/featureFlags.js';
 import { protect, adminOnly, superAdminOnly } from '../middleware/auth.js';
 
 // CSV / Excel bulk-upload — re-use the same memory storage pattern as the
@@ -21,6 +22,17 @@ import { protect, adminOnly, superAdminOnly } from '../middleware/auth.js';
 const upload = multer({ storage: multer.memoryStorage(), limits:{ fileSize:10*1024*1024 } });
 
 const router = express.Router();
+
+/* A feature switched off in Admin Panel must be off on the server too —
+ * hiding the menu entry still leaves these endpoints reachable from an old
+ * tab, a bookmark, or the mobile app. Mounted by prefix and BEFORE the routes
+ * themselves, so every verb and sub-path under each one is covered. */
+router.use('/attendance', featureEnabled('attendance'));
+router.use('/visits',     featureEnabled('visits'));
+router.use('/leads',      featureEnabled('leads'));
+router.use('/tasks',      featureEnabled('tasks'));
+router.use('/leaves',     featureEnabled('leaves'));
+router.use('/tickets',    featureEnabled('tickets'));
 
 // Helper: admin OR superadmin (same set we use elsewhere)
 const isStaff = (req) => req.user?.role === 'admin' || req.user?.role === 'superadmin' || req.user?.role === 'employee';

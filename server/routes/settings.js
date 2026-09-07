@@ -1,6 +1,7 @@
 import express from 'express';
 import Setting from '../models/Setting.js';
 import { protect, adminOnly } from '../middleware/auth.js';
+import { TOGGLEABLE, getDisabled, setDisabled } from '../lib/featureFlags.js';
 
 const router = express.Router();
 
@@ -28,6 +29,28 @@ router.post('/months', protect, adminOnly, async (req, res) => {
     { upsert:true, new:true }
   );
   res.json(s.value);
+});
+
+
+/* ------------------------------------------------------------------ *
+ *  Feature switches — which parts of the app are turned on.          *
+ *                                                                     *
+ *  Any signed-in user may READ them (the client needs the list to     *
+ *  build its menu); only an admin may change them.                    *
+ * ------------------------------------------------------------------ */
+router.get('/features', protect, async (req, res) => {
+  try {
+    res.json({ features: TOGGLEABLE, disabled: await getDisabled() });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.put('/features', protect, adminOnly, async (req, res) => {
+  try {
+    // Unknown ids are dropped rather than stored, so a typo can't switch off
+    // something that does not exist and quietly stay in the list forever.
+    const disabled = await setDisabled(req.body?.disabled);
+    res.json({ ok: true, disabled });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 export default router;
