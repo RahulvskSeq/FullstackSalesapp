@@ -1,7 +1,7 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
-import { protect, adminOnly, superAdminOnly } from '../middleware/auth.js';
+import { protect, adminOnly, superAdminOnly, requireFeature } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -249,7 +249,7 @@ router.put('/users/:id', protect, async (req, res) => {
 
 // ── POST /api/auth/users ───────────────────────────────────────────────────
 // Admin can create salesmen only. Superadmin can create any role.
-router.post('/users', protect, adminOnly, async (req, res) => {
+router.post('/users', protect, adminOnly, requireFeature('manageUsers'), async (req, res) => {
   const { id, name, pass, role, color, ini, permissions, email } = req.body;
   if(!id||!name||!pass) return res.status(400).json({ error:'id, name, pass required' });
   const exists = await User.findOne({ id });
@@ -308,7 +308,7 @@ router.post('/users', protect, adminOnly, async (req, res) => {
 // onward, and open work (follow-ups, tasks, leads) move to the new salesman.
 // Personal history (visits, attendance) stays with the old user.
 // WITHOUT fromMonth: legacy full move (resignation), everything transfers.
-router.post('/users/:id/reassign', protect, adminOnly, async (req, res) => {
+router.post('/users/:id/reassign', protect, adminOnly, requireFeature('manageUsers'), async (req, res) => {
   try {
     const fromId = req.params.id;
     const toId = String(req.body?.toId || '').trim();
@@ -384,7 +384,7 @@ router.post('/users/:id/reassign', protect, adminOnly, async (req, res) => {
 
 // ── DELETE /api/auth/users/:id ─────────────────────────────────────────────
 // Admin can delete salesmen only. Superadmin can delete anyone except themselves.
-router.delete('/users/:id', protect, adminOnly, async (req, res) => {
+router.delete('/users/:id', protect, adminOnly, requireFeature('manageUsers'), async (req, res) => {
   const target = await User.findOne({ id: req.params.id });
   if(!target) return res.status(404).json({ error:'User not found' });
   if(target.id === req.user.id) return res.status(400).json({ error:'Cannot delete yourself' });

@@ -1536,7 +1536,7 @@ router.put('/:id', protect, async (req,res) => {
   }catch(e){res.status(500).json({error:e.message});}
 });
 
-router.delete('/:id', protect, adminOnly, async (req,res) => {
+router.delete('/:id', protect, adminOnly, requireFeature('deleteDealers'), async (req,res) => {
   try { await Dealer.findByIdAndDelete(req.params.id); res.json({ok:true}); }
   catch(e){res.status(500).json({error:e.message});}
 });

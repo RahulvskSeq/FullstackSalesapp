@@ -626,6 +626,56 @@ export default function Styles({theme}){
     @media(max-width:380px){
       .crm-photo-thumb-lg{width:56px;height:56px}
     }
+
+    /* ── Narrow screens: nothing may push the page sideways ─────────────
+       A page that scrolls horizontally on a phone is the single worst
+       responsive failure — the layout looks broken and content hides off
+       the edge with no hint it is there. Two things cause it here.
+
+       1. Wide tables. Twelve screens render a table with no scroll
+          wrapper (Outstanding, Product Transactions, Sales by Category,
+          India Map, Manage Months, Compare, and others), so the table's
+          natural width becomes the page's width. Making the table itself
+          the scroll container fixes every one at once, including any
+          added later, without touching a single component.
+
+       2. Unbroken strings. Dealer names, addresses and emails have no
+          spaces to wrap at, so one long value widens everything.
+
+       Both are scoped to the phone breakpoint; desktop layout is
+       untouched. */
+    @media(max-width:768px){
+      /* The table becomes its own horizontal scroller. display:block is
+         what allows overflow on a table element at all — the trade is
+         that the table shrinks to content instead of filling the width,
+         which reads fine on a phone. Tables already inside a .scroll
+         wrapper are left alone so they keep normal layout. */
+      :not(.scroll) > table{
+        display:block;
+        max-width:100%;
+        overflow-x:auto;
+        -webkit-overflow-scrolling:touch;
+      }
+      /* Keep column headers from collapsing to one word per line once the
+         table is free to size itself. */
+      :not(.scroll) > table th{white-space:nowrap}
+
+      /* Long values wrap instead of stretching the row. */
+      td, th, .chip, .page-title{overflow-wrap:anywhere}
+
+      /* Modal action rows (Download / Share / Delete) wrap rather than
+         running off the edge. */
+      .modal .row{flex-wrap:wrap}
+    }
+
+    /* The permissions grid is deliberately wide — users down, one column
+       per permission. On a phone the rotated headings are what cost the
+       most room, so shorten them and let the grid scroll. */
+    @media(max-width:768px){
+      .perm-matrix{max-height:56vh}
+      .perm-matrix th > div{height:78px !important;font-size:9px}
+      .perm-matrix td:first-child, .perm-matrix th:first-child{min-width:130px !important}
+    }
     `}</style>
   );
 }

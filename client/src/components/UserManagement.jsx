@@ -158,9 +158,19 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
   // NOTE: Monthly Entry, Manage Months, and Upload Data are now hard-locked
   // to superadmin only and intentionally NOT in this list — there's no way
   // for an admin to delegate them.
-  const FEATURE_OPTIONS = [
-    { key: 'manageCategories', label: 'Manage Categories',   desc: 'Add/edit/delete categories + sub-categories in Admin Panel' },
-  ];
+  // Fetched from the server, which serves the same list its middleware
+  // enforces — a hardcoded copy here would silently fall behind every time a
+  // new guarded action is added.
+  const [actionGroups, setActionGroups] = useState([]);
+  const [allActionKeys, setAllActionKeys] = useState([]);
+  useEffect(() => {
+    api.actionPermissions()
+      .then(r => {
+        setActionGroups(r?.groups || []);
+        setAllActionKeys((r?.actions || []).map(a => a.key));
+      })
+      .catch(() => { setActionGroups([]); setAllActionKeys([]); });
+  }, []);
 
   const openPermissions = (uid) => {
     const cur = allUsers[uid]?.permissions || {};
@@ -1068,35 +1078,66 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
 
             {/* ── App-section feature toggles ─────────────────────── */}
             <div style={{fontSize:11, color:'var(--t3)', textTransform:'uppercase', letterSpacing:'.08em', marginBottom:8, marginTop:4}}>
-              App sections — grant access
+              Actions this user may perform
             </div>
-            <div style={{
-              display:'flex', flexDirection:'column', gap:6,
-              padding:10, background:'var(--bg2)', borderRadius:6, marginBottom:14,
-            }}>
-              {FEATURE_OPTIONS.map(opt => {
-                const on = permsFeatures.has(opt.key);
-                return (
-                  <label key={opt.key} style={{
-                    fontSize:12, display:'flex', alignItems:'flex-start', gap:8, cursor:'pointer',
-                    padding:'6px 8px', borderRadius:5,
-                    background: on ? 'rgba(99,102,241,0.10)' : 'transparent',
-                    border:'1px solid ' + (on ? 'rgba(99,102,241,0.40)' : 'transparent'),
-                  }}>
-                    <input type="checkbox" checked={on} onChange={()=>{
-                      const next = new Set(permsFeatures);
-                      on ? next.delete(opt.key) : next.add(opt.key);
-                      setPermsFeatures(next);
-                    }} style={{margin:'2px 0 0 0'}}/>
-                    <div style={{flex:1}}>
-                      <div style={{fontWeight:600, color: on ? '#a5b4fc' : 'var(--t2)'}}>{opt.label}</div>
-                      <div style={{fontSize:10, color:'var(--t3)', marginTop:1}}>{opt.desc}</div>
-                    </div>
-                  </label>
-                );
-              })}
+            <div style={{padding:10, background:'var(--bg2)', borderRadius:6, marginBottom:14}}>
+              <div style={{display:'flex', gap:8, marginBottom:8, flexWrap:'wrap', alignItems:'center'}}>
+                <button className="btn" style={{fontSize:11, padding:'3px 9px'}}
+                  onClick={()=>setPermsFeatures(new Set(allActionKeys))}>Select all</button>
+                <button className="btn" style={{fontSize:11, padding:'3px 9px'}}
+                  onClick={()=>setPermsFeatures(new Set())}>Clear</button>
+                <span style={{fontSize:11, color:'var(--t3)', marginLeft:'auto'}}>
+                  {permsFeatures.size ? permsFeatures.size + ' of ' + allActionKeys.length + ' allowed'
+                                      : 'none ticked = role default'}
+                </span>
+              </div>
+
+              {/* Ticking even one box switches this user from "role default" to
+                  "exactly these" — an admin who was doing everything would be
+                  cut down to the ticked ones. Worth saying out loud. */}
+              {permsFeatures.size > 0 && permsFeatures.size < allActionKeys.length && (
+                <div style={{fontSize:10.5, lineHeight:1.5, padding:'6px 9px', borderRadius:5, marginBottom:8,
+                  background:'rgba(251,191,36,0.10)', border:'1px solid rgba(251,191,36,0.35)', color:'#fbbf24'}}>
+                  This user will be allowed <b>only</b> the ticked actions — everything else is refused,
+                  even if their role would normally permit it.
+                </div>
+              )}
+
+              {actionGroups.map(g => (
+                <div key={g.group} style={{marginBottom:10}}>
+                  <div style={{fontSize:10, color:'var(--t3)', textTransform:'uppercase',
+                               letterSpacing:'.08em', fontWeight:700, marginBottom:4}}>{g.group}</div>
+                  <div style={{display:'flex', flexDirection:'column', gap:4}}>
+                    {g.items.map(opt => {
+                      const on = permsFeatures.has(opt.key);
+                      return (
+                        <label key={opt.key} style={{
+                          fontSize:12, display:'flex', alignItems:'flex-start', gap:8, cursor:'pointer',
+                          padding:'6px 8px', borderRadius:5,
+                          background: on ? 'rgba(99,102,241,0.10)' : 'transparent',
+                          border:'1px solid ' + (on ? 'rgba(99,102,241,0.40)' : 'transparent'),
+                        }}>
+                          <input type="checkbox" checked={on} onChange={()=>{
+                            const next = new Set(permsFeatures);
+                            on ? next.delete(opt.key) : next.add(opt.key);
+                            setPermsFeatures(next);
+                          }} style={{margin:'2px 0 0 0'}}/>
+                          <div style={{flex:1}}>
+                            <div style={{fontWeight:600, color: on ? '#a5b4fc' : 'var(--t2)'}}>{opt.label}</div>
+                            <div style={{fontSize:10, color:'var(--t3)', marginTop:1}}>{opt.desc}</div>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+              {actionGroups.length === 0 && (
+                <div style={{fontSize:11, color:'var(--t3)'}}>Loading actions…</div>
+              )}
               <div style={{fontSize:10, color:'var(--t3)', marginTop:4, fontStyle:'italic'}}>
-                Leave all unchecked → admins keep full access (legacy default); salesmen get no write features.
+                Nothing ticked → admins keep full access; salesmen get no write actions.
+                Superadmins are never restricted.
               </div>
             </div>
 

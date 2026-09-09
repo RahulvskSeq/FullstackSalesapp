@@ -1351,7 +1351,12 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
       // outside the five valid values reads as NONE.
       status:       ACCOUNT_STATUSES.includes(String(d.status||'').trim().toUpperCase())
                       ? String(d.status).trim().toUpperCase() : 'NONE',
-      zone:         d.monthZone?.[selectedMonthIdx]    || d.zone         || '',
+      // The dealer record wins over the per-month snapshot. Nothing keeps that
+      // snapshot in step — the editor writes zone on the dealer — so a dealer
+      // moved into ZONE 4 still read NONE here because the stored 'NONE' is
+      // truthy and short-circuited the fallback. Unlike salesman below, there
+      // is no historical-attribution reason to prefer the month value.
+      zone:         d.zone || d.monthZone?.[selectedMonthIdx] || '',
       category:     d.monthCat?.[selectedMonthIdx]     || d.category     || '',
       categoryType: d.monthCatType?.[selectedMonthIdx] || d.categoryType || '',
       // Whoever owned the dealer THAT month (stamped on reassignment) — so

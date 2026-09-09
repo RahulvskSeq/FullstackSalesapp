@@ -268,6 +268,7 @@ import { Avatar, KPI, StatCard } from './UI';
 import CategoryDrillChart from './CategoryDrillChart';
 import SampleMasterTab from './SampleMasterTab';
 import ManageCategories from './ManageCategories';
+import PermissionsMatrix from './PermissionsMatrix';
 import CategoryFilter from './CategoryFilter';
 import { useGlobalCategoryFilter } from '../hooks/useGlobalCategoryFilter';
 import { api } from '../api';
@@ -564,7 +565,7 @@ const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,sync
         <button className={`tab ${tab==='months'?'active':''}`} onClick={()=>setTab('months')} style={{color:tab==='months'?'var(--acc)':'var(--t3)'}}>📅 Month Settings</button>
         <button className={`tab ${tab==='samples'?'active':''}`} onClick={()=>setTab('samples')} style={{color:tab==='samples'?'var(--acc)':'var(--t3)'}}>📦 Sample Master</button>
         <button className={`tab ${tab==='cats'?'active':''}`} onClick={()=>setTab('cats')} style={{color:tab==='cats'?'var(--acc)':'var(--t3)'}}>🏷️ Categories</button>
-        {isStaff && <button className={`tab ${tab==='features'?'active':''}`} onClick={()=>setTab('features')} style={{color:tab==='features'?'var(--acc)':'var(--t3)'}}>🎛️ Features</button>}
+        {isStaff && <button className={`tab ${tab==='features'?'active':''}`} onClick={()=>setTab('features')} style={{color:tab==='features'?'var(--acc)':'var(--t3)'}}>🔐 Permissions</button>}
       </div>
       {tab==='summary'&&(
         <>
@@ -669,7 +670,19 @@ const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,sync
           <ManageCategories currentUser={currentUser}/>
         </div>
       )}
-      {tab==='features'&&isStaff&&<FeatureSwitches/>}
+      {tab==='features'&&isStaff&&(
+        <div style={{display:'flex', flexDirection:'column', gap:26}}>
+          {/* Layer 1 — is this switched on for the company at all? */}
+          <div>
+            <div style={{fontSize:14, fontWeight:700, marginBottom:4}}>Available features</div>
+            <FeatureSwitches/>
+          </div>
+          <div style={{height:1, background:'var(--b1)'}}/>
+          {/* Layers 2 and 3 — which screens each person sees, and what they
+              may do. Only meaningful for features left switched on above. */}
+          <PermissionsMatrix setUsers={setUsers} currentUser={currentUser}/>
+        </div>
+      )}
       {tab==='months'&&(
         <div className="fade">
           <div style={{fontSize:13,color:'var(--t3)',marginBottom:14}}>Control which months appear in the app. Changes apply instantly — no code editing needed.</div>

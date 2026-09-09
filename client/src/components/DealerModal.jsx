@@ -8559,6 +8559,7 @@ import { downloadDealerCard, shareDealerCard } from './dealerCard';
 import { notify, confirmDialog } from './Toast';
 import { VoiceTextarea } from './VoiceInput';
 import { Layers } from 'lucide-react';
+import { useZones } from '../hooks/useZones';
 
 // ── Visits tab for this dealer (read-only timeline) ──────────────────────
 function DealerVisitsTab({ dealer }){
@@ -8566,13 +8567,25 @@ function DealerVisitsTab({ dealer }){
   const [loading, setLoading] = useState(true);
   const [zoom, setZoom]     = useState('');
 
+  const [visitPhotos, setVisitPhotos] = React.useState({});
   React.useEffect(()=>{
     let cancelled = false;
     (async()=>{
       setLoading(true);
       try {
-        const data = await api.visitsList({ dealerName: dealer.name || '' });
-        if(!cancelled) setItems(data || []);
+        // Light first so the tab appears at once, then the photos for the
+        // rows it actually shows — a dealer with many visits used to drag
+        // megabytes of base64 before anything rendered.
+        const data = await api.visitsList({ dealerName: dealer.name || '', light: 1 });
+        if(cancelled) return;
+        setItems(data || []);
+        const ids = (data || []).slice(0, 60).map(v => v._id).filter(Boolean);
+        if (ids.length) {
+          try {
+            const map = await api.visitPhotos(ids);
+            if (!cancelled) setVisitPhotos(map || {});
+          } catch { /* thumbnails stay blank; the list still works */ }
+        }
       } catch(e){ notify.error('Visits: ' + e.message); }
       if(!cancelled) setLoading(false);
     })();
@@ -8599,8 +8612,9 @@ function DealerVisitsTab({ dealer }){
               display:'flex', alignItems:'flex-start', gap:10, padding:'10px 12px',
               background:'var(--bg2)', borderRadius:8, borderLeft:'3px solid var(--acc)',
             }}>
-              {v.photo
-                ? <img src={v.photo} alt="" onClick={()=>setZoom(v.photo)}
+              {(v.photo || visitPhotos[v._id]?.in)
+                ? <img src={v.photo || visitPhotos[v._id]?.in} alt=""
+                    onClick={()=>setZoom(v.photo || visitPhotos[v._id]?.in)}
                     style={{width:60, height:60, objectFit:'cover', borderRadius:6, cursor:'zoom-in', border:'1px solid var(--b2)', flexShrink:0}}/>
                 : <div style={{width:60, height:60, borderRadius:6, background:'var(--bg1)', display:'flex', alignItems:'center', justifyContent:'center', color:'var(--t3)', flexShrink:0}}>—</div>}
               <div style={{flex:1, minWidth:0}}>
@@ -8639,6 +8653,8 @@ function DealerVisitsTab({ dealer }){
 }
 
 const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAddNote,onUpdateNote,onDeleteNote,onLog,outstandingData=[],outFollowups=[],onFollowupSaved})=>{
+  // Zone list comes from the dealer records, not a hardcoded three.
+  const zoneOptions = useZones();
   const {selectedMonthIdx,MO:ctxMO}=useMonth();
   const MO=ctxMO||MO_CONST;
   const selMoLabel=MO[selectedMonthIdx].slice(0,3);
@@ -9221,7 +9237,7 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
             <div className="field"><label>Zone</label>
               <select className="sel inp" value={edit.zone} onChange={e=>setEdit({...edit,zone:e.target.value})}>
                 <option value="">None</option>
-                {['ZONE 1','ZONE 2','ZONE 3'].map(z=><option key={z}>{z}</option>)}
+                {zoneOptions.map(z=><option key={z}>{z}</option>)}
               </select>
             </div>
             <div className="field"><label>Dealer Type</label>

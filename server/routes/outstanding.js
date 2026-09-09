@@ -163,7 +163,7 @@ router.get('/', protect, async (req, res) => {
 // Data safety contract (unchanged from the old route): only the Outstanding
 // collection's amounts are touched. Follow-ups live elsewhere and are never
 // affected. Blank cells mean "no change"; write 0 explicitly to zero a month.
-router.post('/upload', protect, superAdminOnly, upload.single('file'), async (req,res) => {
+router.post('/upload', protect, superAdminOnly, requireFeature('manageOutstanding'), upload.single('file'), async (req,res) => {
   try {
     if(!req.file) return res.status(400).json({error:'file required'});
     const isPreview = req.query.preview === '1' || req.body?.preview === '1';
@@ -581,7 +581,7 @@ router.get('/history/:dealerName', protect, async (req,res) => {
 // removed again). Only the most recent ACTIVE batch touching its months can
 // be reverted — reverting under a newer upload would resurrect stale numbers.
 // The batch and its history rows are kept and the batch is marked REVERTED.
-router.post('/revert/:batchId', protect, superAdminOnly, async (req,res) => {
+router.post('/revert/:batchId', protect, superAdminOnly, requireFeature('manageOutstanding'), async (req,res) => {
   try {
     const b = await OutstandingBatch.findById(req.params.batchId);
     if(!b) return res.status(404).json({error:'Batch not found'});

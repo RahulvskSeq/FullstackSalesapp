@@ -7,7 +7,7 @@ import ProductTxn from '../models/ProductTxn.js';
 import Dealer from '../models/Dealer.js';
 import Sale from '../models/Sale.js';
 import User from '../models/User.js';
-import { protect, adminOnly, superAdminOnly } from '../middleware/auth.js';
+import { protect, adminOnly, superAdminOnly, requireFeature } from '../middleware/auth.js';
 import {
   normCategory, normSubCategory, parseErpDate, nameKey, matchSalesman, str as S,
   dealerKey, matchDealer, salesmanOnDate,
@@ -58,7 +58,7 @@ async function scopeFor(req) {
  * POST /api/producttx/master/upload
  * Two-phase: without ?commit=1 this only reports what WOULD happen.
  */
-router.post('/master/upload', protect, adminOnly, upload.single('file'), async (req, res) => {
+router.post('/master/upload', protect, adminOnly, requireFeature('uploadData'), upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     const commit = String(req.query.commit || '') === '1';
@@ -167,7 +167,7 @@ router.get('/master/stats', protect, async (_req, res) => {
  * and the user list. Anything that cannot be resolved is reported and
  * imported with a blank field - never guessed onto a wrong bucket.
  */
-router.post('/upload', protect, adminOnly, upload.single('file'), async (req, res) => {
+router.post('/upload', protect, adminOnly, requireFeature('uploadData'), upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     const commit = String(req.query.commit || '') === '1';
@@ -958,7 +958,7 @@ async function projectSalesImpact(docs) {
  * Without commit, reports exactly what would change. Never partial: each
  * month is replaced as a whole or not at all.
  */
-router.post('/sync-sales', protect, adminOnly, async (req, res) => {
+router.post('/sync-sales', protect, adminOnly, requireFeature('uploadData'), async (req, res) => {
   try {
     const commit = String(req.query.commit || '') === '1';
     let monthList = String(req.query.months || '').split(',').map(x => x.trim()).filter(Boolean);
@@ -1001,7 +1001,7 @@ router.get('/batches', protect, adminOnly, async (_req, res) => {
 });
 
 /** DELETE /api/producttx/batch/:id - remove one import. */
-router.delete('/batch/:id', protect, superAdminOnly, async (req, res) => {
+router.delete('/batch/:id', protect, superAdminOnly, requireFeature('wipeData'), async (req, res) => {
   try {
     const r = await ProductTxn.deleteMany({ uploadBatchId: req.params.id });
     res.json({ ok: true, deleted: r.deletedCount });
@@ -1009,7 +1009,7 @@ router.delete('/batch/:id', protect, superAdminOnly, async (req, res) => {
 });
 
 /** DELETE /api/producttx/all - clear every imported transaction (not the master). */
-router.delete('/all', protect, superAdminOnly, async (_req, res) => {
+router.delete('/all', protect, superAdminOnly, requireFeature('wipeData'), async (_req, res) => {
   try {
     const r = await ProductTxn.deleteMany({});
     res.json({ ok: true, deleted: r.deletedCount });

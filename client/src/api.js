@@ -2169,6 +2169,9 @@ export const api = {
   }).then(async r=>{ if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error||'Export failed'); return r.blob(); }),
   // Global feature switches. Every signed-in user reads them to build the
   // menu; only an admin may write.
+  // The catalogue of per-user action permissions, served by the same module
+  // the server enforces, so this screen can't drift from what is checked.
+  actionPermissions: () => fetch(`${BASE}/settings/action-permissions`,{headers:authHeaders()}).then(handle),
   featuresGet: () => fetch(`${BASE}/settings/features`,{headers:authHeaders()}).then(handle),
   featuresSet: (disabled) => fetch(`${BASE}/settings/features`,{
     method:'PUT', headers:{...authHeaders(),'Content-Type':'application/json'},

@@ -305,13 +305,41 @@ export function AttendancePage({ users, currentUser }){
   };
   useEffect(()=>{ load(); }, [filterUser]);
 
+  // Selfies, fetched after the list is on screen and in batches of 60 (the
+  // endpoint's cap). Rows render immediately with the existing placeholder and
+  // fill in as each batch lands, instead of the page waiting on 21 MB.
+  const [attPhotoMap, setAttPhotoMap] = useState({});
+  useEffect(() => {
+    const missing = items.map(x => x._id).filter(id => id && !(id in attPhotoMap));
+    if (!missing.length) return;
+    let dead = false;
+    (async () => {
+      for (let i = 0; i < missing.length; i += 60) {
+        if (dead) return;
+        const batch = missing.slice(i, i + 60);
+        try {
+          const map = await api.attPhotos(batch);
+          if (dead) return;
+          // Record a miss as '' too, so a record with no selfie is not asked
+          // for again on every render.
+          const merged = {};
+          for (const id of batch) merged[id] = map?.[id] || '';
+          setAttPhotoMap(p => ({ ...p, ...merged }));
+        } catch { return; }
+      }
+    })();
+    return () => { dead = true; };
+    // Deliberately keyed on items only — including attPhotoMap would restart
+    // the run every time a batch lands.
+  }, [items]);
+
   // Today's status for the CURRENT user
   const todays = items.filter(x => x.userId === currentUser.id && x.dateStr === todayStr())
     .sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt));
   const lastType = todays.length ? todays[todays.length-1].type : null;
   // The most recent check-IN today (for the "currently checked in" card).
   const lastIn = [...todays].reverse().find(t => t.type === 'in');
-  const lastInPhoto = lastIn?.photo || lastIn?.checkInPhoto || '';
+  const lastInPhoto = lastIn?.photo || lastIn?.checkInPhoto || attPhotoMap[lastIn?._id] || '';
   // One check-in + one check-out per day. Once both are done, attendance is
   // complete for the day and no more punches are allowed.
   const hasIn  = todays.some(t => t.type === 'in');
@@ -423,8 +451,9 @@ export function AttendancePage({ users, currentUser }){
               <img src={lastInPhoto} alt="in" onClick={()=>setZoom(lastInPhoto)}
                 style={{width:56, height:56, borderRadius:12, objectFit:'cover', border:'2px solid #22c55e', cursor:'pointer'}}/>
             )}
-            {(lastOut?.photo) && (
-              <img src={lastOut.photo} alt="out" onClick={()=>setZoom(lastOut.photo)}
+            {(lastOut?.photo || attPhotoMap[lastOut?._id]) && (
+              <img src={lastOut.photo || attPhotoMap[lastOut._id]} alt="out"
+                onClick={()=>setZoom(lastOut.photo || attPhotoMap[lastOut._id])}
                 style={{width:56, height:56, borderRadius:12, objectFit:'cover', border:'2px solid #ef4444', cursor:'pointer'}}/>
             )}
             <div style={{flex:1, minWidth:120}}>
@@ -535,8 +564,9 @@ export function AttendancePage({ users, currentUser }){
                       <div key={type} style={{flex:'1 1 220px', minWidth:190, display:'flex', gap:8, padding:8,
                         borderRadius:8, background:'var(--bg1)', borderLeft:'3px solid '+(rec ? color : 'var(--b2)'),
                         opacity: rec ? 1 : 0.55}}>
-                        {rec?.photo
-                          ? <img src={rec.photo} alt="" onClick={()=>setZoom(rec.photo)}
+                        {(rec?.photo || attPhotoMap[rec?._id])
+                          ? <img src={rec.photo || attPhotoMap[rec._id]} alt=""
+                              onClick={()=>setZoom(rec.photo || attPhotoMap[rec._id])}
                               style={{width:44, height:44, objectFit:'cover', borderRadius:6, cursor:'zoom-in', border:'1px solid var(--b2)', flexShrink:0}}/>
                           : <div style={{width:44, height:44, borderRadius:6, background:'var(--bg2)', display:'flex', alignItems:'center', justifyContent:'center', color:'var(--t3)', flexShrink:0}}><ImageIcon size={16}/></div>}
                         <div style={{flex:1, minWidth:0}}>
@@ -715,12 +745,44 @@ export function VisitsPage({ dealers, users, currentUser }){
       const q = isStaff && filterUser ? { userId: filterUser } : {};
       if(fromDate) q.from = fromDate;
       if(toDate)   q.to   = toDate;
-      const data = await api.visitsList(q);
+      // ?light=1 drops checkInPhoto / checkOutPhoto from every row. The list
+      // was pulling 500 visits WITH their photos — 85 MB and 83 seconds — to
+      // render five cards. Photos for the handful actually on screen are
+      // fetched below, on demand.
+      const data = await api.visitsList({ ...q, light: 1 });
       setItems(data || []);
     } catch(e){ notify.error('Load visits: ' + e.message); }
     setLoading(false);
   };
   useEffect(()=>{ load(); }, [filterUser, fromDate, toDate]);
+
+  // Photos for the visits actually rendered. Keyed by visit id and kept
+  // across re-renders, so paging from 5 to 20 fetches only the new fifteen.
+  const [visitPhotos, setVisitPhotos] = useState({});
+  const visibleVisitIds = useMemo(() => {
+    const needle = partyQuery.trim().toLowerCase();
+    const matched = needle ? items.filter(v => (v.dealerName||'').toLowerCase().includes(needle)) : items;
+    return matched.slice(0, visitLimit).map(v => v._id).filter(Boolean);
+  }, [items, partyQuery, visitLimit]);
+
+  useEffect(() => {
+    // The endpoint caps at 60 ids per call, which also keeps "All" from
+    // pulling every photo at once.
+    const missing = visibleVisitIds.filter(id => !(id in visitPhotos)).slice(0, 60);
+    if (!missing.length) return;
+    let dead = false;
+    api.visitPhotos(missing)
+      .then(map => {
+        if (dead) return;
+        // Record a miss as an empty entry too, so a visit genuinely without a
+        // photo is not requested again on every render.
+        const merged = {};
+        for (const id of missing) merged[id] = map?.[id] || { in:'', out:'' };
+        setVisitPhotos(p => ({ ...p, ...merged }));
+      })
+      .catch(() => {});
+    return () => { dead = true; };
+  }, [visibleVisitIds, visitPhotos]);
 
   // Date-range presets. Dates are built from the browser's LOCAL calendar so
   // they line up with Visit.dateStr, which is stamped in local time too.
@@ -1338,7 +1400,7 @@ export function VisitsPage({ dealers, users, currentUser }){
             <option value={20}>Last 20</option>
             <option value={100000}>All</option>
           </select>
-          <button onClick={()=>{
+          <button onClick={async ()=>{
             // ── Grouped-by-user Visit Report (.xlsx) ──────────────────────
             // Rows are grouped like this:
             //   ┌ Header row     : [<User Name>, <total dealers met>, ...blanks]
@@ -1353,7 +1415,17 @@ export function VisitsPage({ dealers, users, currentUser }){
             ];
             // Bucket visits by salesman id, preserving the current display order.
             const byUser = new Map();
-            for (const v of items) {
+            // The on-screen list loads without photos, so the export fetches
+            // its own full copy. Paying that cost on a click is the point — it
+            // used to be paid on every page load.
+            let full = items;
+            try {
+              const q2 = isStaff && filterUser ? { userId: filterUser } : {};
+              if (fromDate) q2.from = fromDate;
+              if (toDate)   q2.to   = toDate;
+              full = (await api.visitsList(q2)) || items;
+            } catch { /* fall back to what is on screen, minus images */ }
+            for (const v of full) {
               const uid = v.userId || v.salesman || '_none';
               if (!byUser.has(uid)) byUser.set(uid, { userName: v.userName || users?.[uid]?.name || uid, list: [] });
               byUser.get(uid).list.push(v);
@@ -1465,8 +1537,8 @@ export function VisitsPage({ dealers, users, currentUser }){
         ) : (
           <div style={{display:'flex', flexDirection:'column', gap:10}}>
             {shown.map(v => {
-              const ciPhoto = v.checkInPhoto  || v.photo || '';
-              const coPhoto = v.checkOutPhoto || '';
+              const ciPhoto = v.checkInPhoto  || v.photo || visitPhotos[v._id]?.in  || '';
+              const coPhoto = v.checkOutPhoto || visitPhotos[v._id]?.out || '';
               // Visit date. Prefer dateStr (stamped in local time at check-in)
               // so the card agrees with the date filter; fall back to the
               // check-in timestamp for any record saved before that field.

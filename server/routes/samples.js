@@ -2,7 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import XLSX from 'xlsx';
 import mongoose from 'mongoose';
-import { protect, adminOnly } from '../middleware/auth.js';
+import { protect, adminOnly, requireFeature } from '../middleware/auth.js';
 
 const router = express.Router();
 const upload = multer({ storage:multer.memoryStorage(), limits:{ fileSize:10*1024*1024 } });
@@ -256,7 +256,7 @@ router.get('/given/template', protect, adminOnly, async (req, res) => {
   }
 });
 
-router.post('/given/upload', protect, adminOnly, upload.single('file'), async (req, res) => {
+router.post('/given/upload', protect, adminOnly, requireFeature('manageSamples'), upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'file required' });
     const wb   = XLSX.read(req.file.buffer, { type: 'buffer' });
@@ -425,7 +425,7 @@ router.get('/master/template', protect, adminOnly, async (req, res) => {
 });
 
 // POST /api/samples/upload — upload sample master (admin only)
-router.post('/upload', protect, adminOnly, upload.single('file'), async (req, res) => {
+router.post('/upload', protect, adminOnly, requireFeature('manageSamples'), upload.single('file'), async (req, res) => {
   try {
     if(!req.file) return res.status(400).json({ error:'file required' });
     const wb   = XLSX.read(req.file.buffer, { type:'buffer' });
@@ -477,7 +477,7 @@ router.post('/upload', protect, adminOnly, upload.single('file'), async (req, re
 });
 
 // POST /api/samples — add single sample (admin only)
-router.post('/', protect, adminOnly, async (req, res) => {
+router.post('/', protect, adminOnly, requireFeature('manageSamples'), async (req, res) => {
   try {
     const { name, zone, category } = req.body;
     if(!name || !zone) return res.status(400).json({ error:'name and zone required' });
@@ -509,7 +509,7 @@ router.delete('/all', protect, async (req, res) => {
 // DELETE /api/samples/:id — delete sample master (admin only). Also cleans
 // up every SampleGiven record that pointed at it so no orphan chips remain
 // on the dealer view.
-router.delete('/:id', protect, adminOnly, async (req, res) => {
+router.delete('/:id', protect, adminOnly, requireFeature('manageSamples'), async (req, res) => {
   try {
     const id = req.params.id;
     const s = await Sample.findByIdAndDelete(id);

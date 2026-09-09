@@ -3,8 +3,9 @@ import { Plus, X, Save } from 'lucide-react';
 import { uid, num } from '../utils';
 import { useMonth } from '../context';
 import { api } from '../api';
+import { useZones } from '../hooks/useZones';
 
-const ZONES    = ['ZONE 1','ZONE 2','ZONE 3','ZONE 4','ZONE 5'];
+// Zones come from the dealer records themselves — see hooks/useZones.
 // Potential Status only. ACTIVE / INACTIVE / DEAD are calculated now and
 // must not be typed — see server/lib/accountStatus.js.
 const STATUSES = ['NONE','STAR','KEY ACCOUNT','ACHIEVER','REACTIVE'];
@@ -17,6 +18,7 @@ const Field = ({label,children,full}) => (
 );
 
 const AddDealerModal = ({users, currentUser, onAdd, onClose, MO:propMO}) => {
+  const zoneOptions = useZones();
   const { MO:ctxMO, currentMonthIdx } = useMonth();
   const MO = propMO || ctxMO;
   const currentMonth = MO[currentMonthIdx] || MO[MO.length-1];
@@ -122,7 +124,7 @@ const AddDealerModal = ({users, currentUser, onAdd, onClose, MO:propMO}) => {
           <Field label="Zone">
             <select className="inp" value={d.zone} onChange={e=>set('zone',e.target.value)}>
               <option value="">— Select Zone —</option>
-              {ZONES.map(z=><option key={z}>{z}</option>)}
+              {zoneOptions.map(z=><option key={z}>{z}</option>)}
             </select>
           </Field>
 

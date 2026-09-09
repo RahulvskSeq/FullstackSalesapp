@@ -15,7 +15,7 @@ import Ticket     from '../models/Ticket.js';
 import Counter    from '../models/Counter.js';
 import User       from '../models/User.js';
 import { featureEnabled } from '../lib/featureFlags.js';
-import { protect, adminOnly, superAdminOnly } from '../middleware/auth.js';
+import { protect, adminOnly, superAdminOnly, requireFeature } from '../middleware/auth.js';
 
 // CSV / Excel bulk-upload — re-use the same memory storage pattern as the
 // dealers upload route. 10MB cap.
@@ -368,7 +368,7 @@ router.post('/visits/:id/checkout', protect, async (req, res) => {
 // POST /api/crm/visits/:id/force-close — SUPERADMIN: correct a stuck visit.
 // Closes an in-progress visit that a salesman forgot to check out of, WITHOUT
 // requiring discussion notes, so the salesman is freed up to start fresh.
-router.post('/visits/:id/force-close', protect, superAdminOnly, async (req, res) => {
+router.post('/visits/:id/force-close', protect, superAdminOnly, requireFeature('manageVisits'), async (req, res) => {
   try {
     const v = await Visit.findById(req.params.id);
     if(!v) return res.status(404).json({ error:'Visit not found' });
@@ -483,7 +483,7 @@ router.get('/visits/:id', protect, async (req, res) => {
 
 // DELETE /api/crm/visits/:id — STAFF (admin/superadmin) ONLY. Salesmen
 // cannot delete their own history — keeps a tamper-resistant audit trail.
-router.delete('/visits/:id', protect, adminOnly, async (req, res) => {
+router.delete('/visits/:id', protect, adminOnly, requireFeature('manageVisits'), async (req, res) => {
   try {
     await Visit.findByIdAndDelete(req.params.id);
     res.json({ ok:true });
@@ -493,7 +493,7 @@ router.delete('/visits/:id', protect, adminOnly, async (req, res) => {
 // ───────────────────────────────── Leads ──────────────────────────────────
 
 // POST /api/crm/leads — admin creates a lead and (optionally) assigns it
-router.post('/leads', protect, adminOnly, async (req, res) => {
+router.post('/leads', protect, adminOnly, requireFeature('manageLeads'), async (req, res) => {
   try {
     const b = req.body || {};
     if(!b.name || !b.name.trim()) return res.status(400).json({ error:'name required' });
@@ -591,7 +591,7 @@ router.put('/leads/:id', protect, async (req, res) => {
 // `assignedTo` may be a salesman's USER ID ("pranav") OR their full name
 // ("Pranav") — case + whitespace insensitive. Unknown names are kept but
 // the lead is created unassigned.
-router.post('/leads/upload', protect, adminOnly, upload.single('file'), async (req, res) => {
+router.post('/leads/upload', protect, adminOnly, requireFeature('manageLeads'), upload.single('file'), async (req, res) => {
   try {
     if(!req.file) return res.status(400).json({ error:'No file uploaded' });
     const wb   = XLSX.read(req.file.buffer, { type:'buffer' });
@@ -676,7 +676,7 @@ router.post('/leads/upload', protect, adminOnly, upload.single('file'), async (r
 });
 
 // DELETE /api/crm/leads/:id — admin only
-router.delete('/leads/:id', protect, adminOnly, async (req, res) => {
+router.delete('/leads/:id', protect, adminOnly, requireFeature('manageLeads'), async (req, res) => {
   try {
     await Lead.findByIdAndDelete(req.params.id);
     res.json({ ok:true });

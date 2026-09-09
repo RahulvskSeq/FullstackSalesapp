@@ -1,6 +1,6 @@
 import express from 'express';
 import Category from '../models/Category.js';
-import { protect, adminOnly } from '../middleware/auth.js';
+import { protect, adminOnly, requireFeature } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -11,7 +11,7 @@ router.get('/', protect, async (req, res) => {
 });
 
 /* ---------- create top-level Category (admin) ---------- */
-router.post('/', protect, adminOnly, async (req, res) => {
+router.post('/', protect, adminOnly, requireFeature('manageCategories'), async (req, res) => {
   const name = String(req.body?.name || '').trim();
   if (!name) return res.status(400).json({ error: 'name required' });
   const exists = await Category.findOne({ name: new RegExp(`^${escapeRegex(name)}$`, 'i') });
@@ -27,7 +27,7 @@ router.post('/', protect, adminOnly, async (req, res) => {
 });
 
 /* ---------- rename Category ---------- */
-router.put('/:id', protect, adminOnly, async (req, res) => {
+router.put('/:id', protect, adminOnly, requireFeature('manageCategories'), async (req, res) => {
   const name = String(req.body?.name || '').trim();
   if (!name) return res.status(400).json({ error: 'name required' });
   const cat = await Category.findByIdAndUpdate(req.params.id, { name }, { new: true });
@@ -36,13 +36,13 @@ router.put('/:id', protect, adminOnly, async (req, res) => {
 });
 
 /* ---------- delete Category ---------- */
-router.delete('/:id', protect, adminOnly, async (req, res) => {
+router.delete('/:id', protect, adminOnly, requireFeature('manageCategories'), async (req, res) => {
   await Category.findByIdAndDelete(req.params.id);
   res.json({ ok: true });
 });
 
 /* ---------- add sub-category to a Category ---------- */
-router.post('/:id/sub', protect, adminOnly, async (req, res) => {
+router.post('/:id/sub', protect, adminOnly, requireFeature('manageCategories'), async (req, res) => {
   const name = String(req.body?.name || '').trim();
   if (!name) return res.status(400).json({ error: 'name required' });
   const cat = await Category.findById(req.params.id);
@@ -55,7 +55,7 @@ router.post('/:id/sub', protect, adminOnly, async (req, res) => {
 });
 
 /* ---------- rename sub-category ---------- */
-router.put('/:id/sub/:subId', protect, adminOnly, async (req, res) => {
+router.put('/:id/sub/:subId', protect, adminOnly, requireFeature('manageCategories'), async (req, res) => {
   const name = String(req.body?.name || '').trim();
   if (!name) return res.status(400).json({ error: 'name required' });
   const cat = await Category.findById(req.params.id);
@@ -68,7 +68,7 @@ router.put('/:id/sub/:subId', protect, adminOnly, async (req, res) => {
 });
 
 /* ---------- delete sub-category ---------- */
-router.delete('/:id/sub/:subId', protect, adminOnly, async (req, res) => {
+router.delete('/:id/sub/:subId', protect, adminOnly, requireFeature('manageCategories'), async (req, res) => {
   const cat = await Category.findById(req.params.id);
   if (!cat) return res.status(404).json({ error: 'not found' });
   const sub = cat.subCategories.id(req.params.subId);
