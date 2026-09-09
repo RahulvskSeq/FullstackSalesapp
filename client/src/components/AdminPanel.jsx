@@ -459,7 +459,26 @@ const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,sync
   // salesman who received a dealer mid-year gets credit only from the handover
   // month; the predecessor keeps the earlier months on their own card.
   const ownerOf=(d,i)=>d.monthSalesman?.[i]||d.salesman;
-  const compareData=sms.map(s=>{const sd=dealersForMonth.filter(d=>ownerOf(d,selectedMonthIdx)===s.id);return{name:s.name,Target:sd.reduce((a,x)=>a+x.target,0),Achieved:sd.reduce((a,x)=>a+x.achieved,0),smId:s.id,color:s.color};});
+
+  // Only the salesmen who have something in the month being viewed.
+  //
+  // A rep whose dealers were handed over shows an empty card for every later
+  // month — 0 dealers, 0 target, 0 achieved — which is noise in the grid and
+  // an empty column in the chart. Attribution is per-month (see ownerOf), so
+  // stepping back to a month they actually worked brings them straight back;
+  // nothing is deleted, it is only hidden where there is nothing to show.
+  //
+  // "Something" is deliberately generous: any dealer attributed that month, or
+  // any target, or any achieved. A rep with dealers who simply sold nothing
+  // still appears — that is a result worth seeing, not an absence.
+  const activeInMonth = (sm) => {
+    const sd = dealersForMonth.filter(d => ownerOf(d, selectedMonthIdx) === sm.id);
+    if (sd.length) return true;
+    return sd.reduce((a,x)=>a+x.target,0) > 0 || sd.reduce((a,x)=>a+x.achieved,0) > 0;
+  };
+  const smsActive = sms.filter(activeInMonth);
+  const smsHidden = sms.length - smsActive.length;
+  const compareData=smsActive.map(s=>{const sd=dealersForMonth.filter(d=>ownerOf(d,selectedMonthIdx)===s.id);return{name:s.name,Target:sd.reduce((a,x)=>a+x.target,0),Achieved:sd.reduce((a,x)=>a+x.achieved,0),smId:s.id,color:s.color};});
 
   return(
     <div className="fade">
@@ -587,8 +606,14 @@ const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,sync
               </BarChart>
             </ResponsiveContainer>
           </div>
+          {smsHidden > 0 && (
+            <div style={{fontSize:11.5, color:'var(--t3)', marginBottom:10}}>
+              {smsHidden} salesman{smsHidden===1?'':'en'} hidden — nothing recorded for {MO[selectedMonthIdx]}.
+              Pick an earlier month to see them.
+            </div>
+          )}
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:14,marginBottom:16}}>
-            {sms.map(s=>{
+            {smsActive.map(s=>{
               const sd=dealersForMonth.filter(d=>ownerOf(d,selectedMonthIdx)===s.id);
               const ownedNow=dealersForMonth.filter(d=>d.salesman===s.id).length;
               const st=sd.reduce((a,x)=>a+x.target,0),sa=sd.reduce((a,x)=>a+x.achieved,0),sp=pct(st,sa);
@@ -639,7 +664,7 @@ const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,sync
                 <tr><th>Salesman</th>{[...MO].map((_,di)=>{const i=MO.length-1-di;return<th key={i} style={{textAlign:'right',background:i===selectedMonthIdx?'rgba(99,102,241,.08)':'var(--bg1)'}}>{MO[i]}</th>;})}<th style={{textAlign:'right'}}>Tgt</th><th style={{textAlign:'right'}}>Ach</th><th style={{textAlign:'right'}}>%</th></tr>
               </thead>
               <tbody>
-                {sms.map(s=>{
+                {smsActive.map(s=>{
                   const sd=dealersForMonth.filter(d=>ownerOf(d,selectedMonthIdx)===s.id);
                   const st=sd.reduce((a,x)=>a+x.target,0),sa=sd.reduce((a,x)=>a+x.achieved,0);
                   const mT=MO.map((_,i)=>dealers.reduce((a,d)=>ownerOf(d,i)===s.id?a+(d.months[i]||0):a,0));
