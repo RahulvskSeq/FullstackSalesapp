@@ -3,6 +3,7 @@ import Setting from '../models/Setting.js';
 import { protect, adminOnly, requireFeature } from '../middleware/auth.js';
 import { TOGGLEABLE, getDisabled, setDisabled } from '../lib/featureFlags.js';
 import { ACTION_PERMISSIONS, groupedActions } from '../lib/actionPermissions.js';
+import AuditLog from '../models/AuditLog.js';
 
 const router = express.Router();
 
@@ -60,4 +61,42 @@ router.put('/features', protect, adminOnly, requireFeature('manageFeatures'), as
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+/* ------------------------------------------------------------------ *
+ *  GET /api/settings/audit — who changed what.                       *
+ *                                                                    *
+ *  Admin only: the trail names users and echoes request bodies, so it *
+ *  is not something a salesman should be able to read.               *
+ * ------------------------------------------------------------------ */
+router.get('/audit', protect, adminOnly, async (req, res) => {
+  try {
+    const q = {};
+    if (req.query.by) q.by = String(req.query.by);
+    if (req.query.from || req.query.to) {
+      q.createdAt = {};
+      if (req.query.from) q.createdAt.$gte = new Date(String(req.query.from) + 'T00:00:00');
+      if (req.query.to)   q.createdAt.$lte = new Date(String(req.query.to)   + 'T23:59:59');
+    }
+    // Free-text across the action and the dealer name a diff recorded, so
+    // "who touched PT LAM" is answerable without knowing the route.
+    if (req.query.q) {
+      const rx = new RegExp(String(req.query.q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      q.$or = [{ action: rx }, { byName: rx }, { 'detail.changed.dealer': rx }];
+    }
+    // Failed attempts are worth seeing — a refused permission is a real event.
+    if (req.query.failedOnly === '1') q['detail.status'] = { $gte: 400 };
+
+    const limit = Math.min(Math.max(Number(req.query.limit) || 200, 1), 1000);
+    const [rows, total, users] = await Promise.all([
+      AuditLog.find(q).sort({ createdAt: -1 }).limit(limit).lean(),
+      AuditLog.countDocuments(q),
+      AuditLog.distinct('byName'),
+    ]);
+    res.json({ rows, total, shown: rows.length, users: users.filter(Boolean).sort() });
+  } catch (e) {
+    console.error('[AUDIT GET]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 export default router;
+

@@ -164,6 +164,7 @@ import salesRoutes       from './routes/sales.js';
 import appUpdateRoutes  from './routes/appupdate.js';
 import sheetRoutes       from './routes/sheets.js';
 import productTxRoutes  from './routes/producttx.js';
+import { auditTrail }    from './lib/auditTrail.js';
 import { seedDefaultCategories } from './routes/categories.js';
 
 dotenv.config();
@@ -181,6 +182,11 @@ app.use(cors({
 }));
 app.use(express.json({ limit:'50mb' }));
 app.use(express.urlencoded({ extended:true }));
+
+// Records every mutation together with the user who made it. Mounted here so
+// a route added later is covered without anyone remembering, and it reads
+// req.user on 'finish' — by then each router's protect() has populated it.
+app.use('/api', auditTrail);
 
 app.use('/api/auth',        authRoutes);
 app.use('/api/dealers',     dealerRoutes);

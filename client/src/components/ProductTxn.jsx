@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Package, Upload, RefreshCw, AlertTriangle, CheckCircle2, Layers, FileSpreadsheet, X } from 'lucide-react';
+import { Package, Upload, RefreshCw, AlertTriangle, CheckCircle2, Layers, FileSpreadsheet, X, IndianRupee } from 'lucide-react';
 import { api, getApiBase } from '../api';
 import { notify, confirmDialog } from './Toast';
 
@@ -508,6 +508,153 @@ const Parked = ({ title, rows }) => {
 /*  Main page                                                          */
 /* ------------------------------------------------------------------ */
 
+/**
+ * IncentivePanel — what each billing person earned on the units they invoiced.
+ *
+ * The figure comes from the server, which owns the rule (lib/incentive.js), so
+ * what is displayed here and what would be paid cannot drift apart.
+ */
+function IncentivePanel() {
+  // ProductTxn filters by date range, not by month, so this picks its own —
+  // defaulting to the newest month that has data.
+  const [month, setMonth] = React.useState('');
+  const [data, setData]   = React.useState(null);
+  const [busy, setBusy]   = React.useState(false);
+  const [err, setErr]     = React.useState('');
+
+  React.useEffect(() => {
+    let dead = false;
+    setBusy(true); setErr('');
+    api.ptxIncentive(month)
+      .then(r => {
+        if (dead) return;
+        setData(r);
+        if (!month && r?.months?.length) setMonth(r.months[0]);
+      })
+      .catch(e => { if (!dead) setErr(e?.message || 'Could not load incentives'); })
+      .finally(() => { if (!dead) setBusy(false); });
+    return () => { dead = true; };
+  }, [month]);
+
+  const money = v => '₹' + Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const num   = v => Number(v || 0).toLocaleString('en-IN');
+  const r = data?.rule;
+
+  const cell = { padding: '8px 10px', borderBottom: '1px solid var(--b1)', verticalAlign: 'top' };
+  const th   = { ...cell, fontSize: 10, color: 'var(--t3)', textTransform: 'uppercase',
+                 letterSpacing: '.07em', fontWeight: 700, textAlign: 'left', whiteSpace: 'nowrap' };
+
+  return (
+    <div className="card" style={{ marginBottom: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+        <IndianRupee size={15} color="var(--acc)" />
+        <div style={{ fontSize: 13.5, fontWeight: 700 }}>Billing incentive</div>
+        {data && (
+          <span style={{ fontSize: 11, color: 'var(--t3)' }}>
+            {data.month === 'all' ? 'all months' : data.month} · {data.totals.people} billing {data.totals.people === 1 ? 'person' : 'people'}
+          </span>
+        )}
+        <div style={{ flex: 1 }} />
+        {data?.months?.length > 0 && (
+          <select className="sel" value={month} onChange={e=>setMonth(e.target.value)} style={{ fontSize: 12 }}>
+            {data.months.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+        )}
+        {data && (
+          <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--grn)' }}>{money(data.totals.amount)}</span>
+        )}
+      </div>
+
+      {r && (
+        <div style={{ fontSize: 11, color: 'var(--t3)', lineHeight: 1.65, marginBottom: 10 }}>
+          Up to {num(r.tier1)} units at ₹{r.rateLow.toFixed(2)} each ·
+          {' '}{num(r.tier1 + 1)}–{num(r.tier2)}: the first {num(r.tier1)} at ₹{r.rateLow.toFixed(2)}, the rest at ₹{r.rateHigh.toFixed(2)} ·
+          {' '}over {num(r.tier2)}: <b>every</b> unit at ₹{r.rateHigh.toFixed(2)}.
+          <br/>
+          {/* A ₹1,251 jump for one extra unit looks like a bug unless it is
+              stated plainly, so it is stated plainly. */}
+          Passing {num(r.tier2)} re-prices everything already billed — {num(r.tier2)} units pays
+          {' '}{money(r.tier1 * r.rateLow + (r.tier2 - r.tier1) * r.rateHigh)}, {num(r.tier2 + 1)} pays {money((r.tier2 + 1) * r.rateHigh)}.
+        </div>
+      )}
+
+      {data?.mapping && (
+        <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 10 }}>
+          Billing person is taken from the sheet's <b>Billed By</b> column when present,
+          otherwise from the salesman on each line:{' '}
+          {Object.entries(data.mapping).map(([sm, person], i, arr) => (
+            <span key={sm}>{sm} → {person}{i < arr.length - 1 ? ' · ' : ''}</span>
+          ))}
+        </div>
+      )}
+
+      {err && <div style={{ fontSize: 12, color: 'var(--red)' }}>{err}</div>}
+      {busy && !data && <div style={{ fontSize: 12, color: 'var(--t3)', padding: '10px 0' }}>Loading…</div>}
+
+      {data && data.people.length === 0 && (
+        <div style={{ fontSize: 12, color: 'var(--t3)', padding: '10px 0' }}>
+          No billing person on any line for this month. The importer reads a
+          <b> Billed By</b> column (Billing Person, Biller and Invoice By also work) —
+          add it to the sheet and re-upload.
+        </div>
+      )}
+
+      {data && data.people.length > 0 && (
+        <div className="scroll">
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, fontVariantNumeric: 'tabular-nums' }}>
+            <thead>
+              <tr>
+                <th style={th}>Billing person</th>
+                <th style={th}>Bills for</th>
+                <th style={{ ...th, textAlign: 'right' }}>Units</th>
+                <th style={{ ...th, textAlign: 'right' }}>Invoices</th>
+                <th style={th}>How it is worked out</th>
+                <th style={{ ...th, textAlign: 'right' }}>Incentive</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.people.map((p, i) => (
+                <tr key={p.name} style={{ background: i % 2 ? 'var(--bg2)' : 'transparent' }}>
+                  <td style={{ ...cell, fontWeight: 700 }}>{p.name}</td>
+                  <td style={{ ...cell, color: 'var(--t3)', fontSize: 11.5 }}>
+                    {(p.reps || []).join(', ') || '—'}
+                  </td>
+                  <td style={{ ...cell, textAlign: 'right' }}>{num(p.units)}</td>
+                  <td style={{ ...cell, textAlign: 'right', color: 'var(--t3)' }}>{num(p.invoices)}</td>
+                  <td style={{ ...cell, color: 'var(--t3)', fontSize: 11.5 }}>
+                    {p.detail}
+                    {p.next && (
+                      <div style={{ color: 'var(--yel)', marginTop: 2 }}>
+                        {num(p.next.unitsAway)} more {p.next.unitsAway === 1 ? 'unit' : 'units'} → +{money(p.next.gain)}
+                      </div>
+                    )}
+                  </td>
+                  <td style={{ ...cell, textAlign: 'right', fontWeight: 800, color: 'var(--grn)' }}>{money(p.amount)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {data?.unassigned?.units > 0 && (
+        <div style={{ fontSize: 11, color: 'var(--yel)', marginTop: 10, lineHeight: 1.7,
+                      padding: '8px 11px', borderRadius: 7,
+                      background: 'rgba(251,191,36,.08)', border: '1px solid rgba(251,191,36,.28)' }}>
+          <b>{num(data.unassigned.units)} units earn nothing</b> — no billing person is assigned to these salesmen:
+          <div style={{ marginTop: 4 }}>
+            {(data.unassigned.salesmen || []).map(u => (
+              <span key={u.salesmanId} style={{ marginRight: 12 }}>
+                {u.salesmanId} <b>{num(u.units)}</b>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ProductTxn({ currentUser }) {
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
   const [tab, setTab] = useState('report');
@@ -647,7 +794,7 @@ export default function ProductTxn({ currentUser }) {
         </div>
         {isAdmin && (
           <div className="tabs" style={{ display: 'flex', gap: 6 }}>
-            {[['report', 'Report', Layers], ['import', 'Import', Upload]].map(([id, label, Icon]) => (
+            {[['report', 'Report', Layers], ['incentive', 'Incentive', IndianRupee], ['import', 'Import', Upload]].map(([id, label, Icon]) => (
               <button key={id} onClick={() => setTab(id)}
                 className={tab === id ? 'btnp' : 'btn'}
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -658,6 +805,7 @@ export default function ProductTxn({ currentUser }) {
         )}
       </div>
 
+      {tab === 'incentive' && isAdmin && <IncentivePanel />}
       {tab === 'import' && isAdmin && <ImportPanel onImported={loadFacets} txnTotal={facets?.total || 0} />}
 
       {tab === 'report' && (

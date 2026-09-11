@@ -59,6 +59,10 @@ const ProductTxnSchema = new mongoose.Schema({
 
   // ── salesman ──
   salesPersonRaw: { type: String, trim: true },
+  // Whoever raised the invoice, from the sheet's "Billed By" column. Distinct
+  // from the salesman: one biller often invoices for several reps, and the
+  // incentive is paid on what they billed, not on whose customer it was.
+  billedBy:       { type: String, trim: true, default: '', index: true },
   salesman:       { type: String, trim: true, index: true }, // display name; '' when not matched
   // Sale.salesman / Dealer.salesman store the user *id* ("rakesh"), not the
   // display name. Kept separately so the sales sync writes rows that the

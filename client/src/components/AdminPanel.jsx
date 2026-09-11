@@ -269,6 +269,8 @@ import CategoryDrillChart from './CategoryDrillChart';
 import SampleMasterTab from './SampleMasterTab';
 import ManageCategories from './ManageCategories';
 import PermissionsMatrix from './PermissionsMatrix';
+import ActivityLog from './ActivityLog';
+import UserManagement from './UserManagement';
 import CategoryFilter from './CategoryFilter';
 import { useGlobalCategoryFilter } from '../hooks/useGlobalCategoryFilter';
 import { api } from '../api';
@@ -381,6 +383,8 @@ const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,sync
   const sms=Object.values(users).filter(u=>u.role==='salesman');
 
   // ── Login-as dropdown (superadmin only) ─────────────────────────────────
+  // Which section of the Permissions hub is open.
+  const [adminSec, setAdminSec] = useState('users');
   const isSuperAdmin = currentUser?.role === 'superadmin';
   const isStaff      = isSuperAdmin || currentUser?.role === 'admin';
   const [laOpen, setLaOpen]   = useState(false);
@@ -561,11 +565,13 @@ const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,sync
             </div>
           )}
 
-          {/* ── Add user (admin & superadmin) — opens UserManagement modal */}
+          {/* Users now live in the Permissions tab alongside what they may
+              see and do. This jumps there rather than opening a second copy
+              in a modal — two ways in was the thing worth removing. */}
           {isStaff && (
-            <button onClick={()=>setShowUM(true)} className="btn"
+            <button onClick={()=>{ setTab('features'); setAdminSec('users'); }} className="btn"
               style={{display:'flex',alignItems:'center',gap:6}}
-              title="Create a new user, change roles, or reset passwords">
+              title="Create a user, change roles, reset passwords, set permissions">
               <UserPlus size={13}/> Add / Manage Users
             </button>
           )}
@@ -581,10 +587,9 @@ const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,sync
         <button className={`tab ${tab==='summary'?'active':''}`} onClick={()=>setTab('summary')}>Summary</button>
         <button className={`tab ${tab==='compare'?'active':''}`} onClick={()=>setTab('compare')}>Salesman Compare</button>
         <button className={`tab ${tab==='category'?'active':''}`} onClick={()=>setTab('category')}>Categories</button>
-        <button className={`tab ${tab==='months'?'active':''}`} onClick={()=>setTab('months')} style={{color:tab==='months'?'var(--acc)':'var(--t3)'}}>📅 Month Settings</button>
         <button className={`tab ${tab==='samples'?'active':''}`} onClick={()=>setTab('samples')} style={{color:tab==='samples'?'var(--acc)':'var(--t3)'}}>📦 Sample Master</button>
         <button className={`tab ${tab==='cats'?'active':''}`} onClick={()=>setTab('cats')} style={{color:tab==='cats'?'var(--acc)':'var(--t3)'}}>🏷️ Categories</button>
-        {isStaff && <button className={`tab ${tab==='features'?'active':''}`} onClick={()=>setTab('features')} style={{color:tab==='features'?'var(--acc)':'var(--t3)'}}>🔐 Permissions</button>}
+        {isStaff && <button className={`tab ${tab==='features'?'active':''}`} onClick={()=>setTab('features')} style={{color:tab==='features'?'var(--acc)':'var(--t3)'}}>⚙️ Settings</button>}
       </div>
       {tab==='summary'&&(
         <>
@@ -695,20 +700,45 @@ const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,sync
           <ManageCategories currentUser={currentUser}/>
         </div>
       )}
+
       {tab==='features'&&isStaff&&(
-        <div style={{display:'flex', flexDirection:'column', gap:26}}>
-          {/* Layer 1 — is this switched on for the company at all? */}
-          <div>
-            <div style={{fontSize:14, fontWeight:700, marginBottom:4}}>Available features</div>
-            <FeatureSwitches/>
+        <div>
+          {/* Four questions that belong together: who exists, what they may
+              see and do, what the company has switched on, and what everyone
+              actually did. They used to live in a tab, another tab and a
+              modal — three places to look for one answer. */}
+          <div style={{display:'flex', gap:6, flexWrap:'wrap', marginBottom:18,
+                       borderBottom:'1px solid var(--b1)', paddingBottom:10}}>
+            {[
+              ['users',    'Users',       'Accounts, passwords, region scope'],
+              ['perms',    'Permissions', 'Which screens and actions each person gets'],
+              ['features', 'Features',    'Switch parts of the app on or off for everyone'],
+              ['activity', 'Activity',    'Who changed what'],
+              ['months',   'Months',      'Which months the app shows, and which is current'],
+            ].map(([id,label,desc])=>(
+              <button key={id} onClick={()=>setAdminSec(id)} title={desc}
+                className={adminSec===id ? 'btnp' : 'btn'}
+                style={{fontSize:12, padding:'6px 12px'}}>{label}</button>
+            ))}
           </div>
-          <div style={{height:1, background:'var(--b1)'}}/>
-          {/* Layers 2 and 3 — which screens each person sees, and what they
-              may do. Only meaningful for features left switched on above. */}
-          <PermissionsMatrix setUsers={setUsers} currentUser={currentUser}/>
+
+          {adminSec==='users' && (
+            <UserManagement users={users} setUsers={setUsers} currentUser={currentUser}
+              onClose={()=>{}} onLoginAs={onLoginAs} inline/>
+          )}
+          {adminSec==='perms' && (
+            <PermissionsMatrix setUsers={setUsers} currentUser={currentUser}/>
+          )}
+          {adminSec==='features' && (
+            <div>
+              <div style={{fontSize:14, fontWeight:700, marginBottom:4}}>Available features</div>
+              <FeatureSwitches/>
+            </div>
+          )}
+          {adminSec==='activity' && <ActivityLog/>}
         </div>
       )}
-      {tab==='months'&&(
+      {tab==='features'&&isStaff&&adminSec==='months'&&(
         <div className="fade">
           <div style={{fontSize:13,color:'var(--t3)',marginBottom:14}}>Control which months appear in the app. Changes apply instantly — no code editing needed.</div>
 

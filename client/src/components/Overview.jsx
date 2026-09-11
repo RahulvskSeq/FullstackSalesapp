@@ -1561,6 +1561,10 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
   // This reflects the REAL last data-update moment (any user, any field —
   // Achieved, Target, Status, Zone, etc.), not when this page was loaded.
   const [dbLastUpdatedAt, setDbLastUpdatedAt] = useState(null);
+  // The ERP upload is what the stamp actually reports. The dealer-write time
+  // above moves whenever anyone edits a zone or a credit limit, which says
+  // nothing about how fresh the sales figures are.
+  const [erpUpload, setErpUpload] = useState(null);
   useEffect(() => {
     let cancelled = false;
     const tick = async () => {
@@ -1569,6 +1573,11 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
         if (cancelled) return;
         setDbLastUpdatedAt(r?.lastUpdatedAt ? new Date(r.lastUpdatedAt) : null);
       } catch { /* network blip — keep showing the previous value */ }
+      try {
+        const u = await api.ptxLastUpload();
+        if (cancelled) return;
+        setErpUpload(u?.lastUploadAt ? { at: new Date(u.lastUploadAt), lines: u.lines || 0 } : null);
+      } catch { /* same */ }
     };
     tick();                                         // fire immediately on mount
     const id = setInterval(tick, 60_000);           // and refresh every minute
@@ -1576,6 +1585,9 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
   }, []);
   // Also fall back to the dealers prop in case the endpoint hasn't replied yet
   const lastUpdatedAt = useMemo(() => {
+    // ERP upload first — that is the question the stamp answers. The newest
+    // dealer write is the fallback for a database with no ERP lines yet.
+    if (erpUpload?.at) return erpUpload.at;
     if (dbLastUpdatedAt) return dbLastUpdatedAt;
     let max = 0;
     for (const d of (dealers || [])) {
@@ -1583,7 +1595,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
       if (t > max) max = t;
     }
     return max ? new Date(max) : null;
-  }, [dbLastUpdatedAt, dealers]);
+  }, [erpUpload, dbLastUpdatedAt, dealers]);
   const lastUpdatedLabel = useMemo(() => {
     if (!lastUpdatedAt) return '';
     const diffMs = Date.now() - lastUpdatedAt.getTime();
@@ -1645,12 +1657,16 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
               border:'1px solid rgba(52,211,153,0.30)',
               fontSize:12, color:'var(--grn)', fontWeight:600,
             }}
-              title="Most recent change to any dealer's Target / Achieved / Status / Zone / etc.">
+              title={erpUpload?.at
+                ? 'Last ERP sheet upload — ' + erpUpload.lines + ' invoice lines. Dealer edits (zone, credit, status) do not move this.'
+                : "No ERP upload yet — showing the most recent change to any dealer's Target / Achieved / Status / Zone."}>
               <span style={{
                 width:8, height:8, borderRadius:'50%', background:'#34d399',
                 boxShadow:'0 0 8px rgba(52,211,153,0.7)',
               }}/>
-              <span style={{color:'var(--t3)', fontWeight:500}}>Last updated on</span>
+              <span style={{color:'var(--t3)', fontWeight:500}}>
+                {erpUpload?.at ? 'Sales data uploaded' : 'Last updated on'}
+              </span>
               <b style={{color:'var(--grn)'}}>{lastUpdatedFull}</b>
               <span style={{color:'var(--t3)', fontWeight:500, fontSize:11}}>({lastUpdatedLabel})</span>
             </div>

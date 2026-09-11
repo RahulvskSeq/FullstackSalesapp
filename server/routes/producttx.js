@@ -8,12 +8,177 @@ import Dealer from '../models/Dealer.js';
 import Sale from '../models/Sale.js';
 import User from '../models/User.js';
 import { protect, adminOnly, superAdminOnly, requireFeature } from '../middleware/auth.js';
+import { incentiveFor, nextThreshold, billingPersonFor, BILLING_BY_SALESMAN,
+         TIER_1_LIMIT, TIER_2_LIMIT, RATE_LOW, RATE_HIGH } from '../lib/incentive.js';
 import {
   normCategory, normSubCategory, parseErpDate, nameKey, matchSalesman, str as S,
   dealerKey, matchDealer, salesmanOnDate,
 } from '../lib/productTaxonomy.js';
 
 const router = express.Router();
+
+/* ------------------------------------------------------------------ *
+ *  GET /api/producttx/incentive?month=YYYY-MM                        *
+ *                                                                    *
+ *  What each billing person earned on the units they invoiced.       *
+ *                                                                    *
+ *  Admin only: this is pay. The rule itself is in lib/incentive.js so *
+ *  the figure shown and the figure calculated can never drift apart. *
+ * ------------------------------------------------------------------ */
+router.get('/incentive', protect, adminOnly, async (req, res) => {
+  try {
+    const match = {};
+    const month = String(req.query.month || '').trim();
+    if (/^\d{4}-\d{2}$/.test(month)) match.month = month;
+
+    // Offered so the panel can build its own month selector without a second
+    // round trip, and so an empty month reads as empty rather than missing.
+    const months = (await ProductTxn.distinct('month')).filter(Boolean).sort().reverse();
+
+    const raw = await ProductTxn.aggregate([
+      { $match: match },
+      { $group: {
+          _id: {
+            billedBy:   { $trim: { input: { $ifNull: ['$billedBy', ''] } } },
+            salesmanId: { $ifNull: ['$salesmanId', ''] },
+          },
+          units:    { $sum: '$qty' },
+          lines:    { $sum: 1 },
+          invoices: { $addToSet: '$voucherNo' },
+          amount:   { $sum: { $ifNull: ['$netTotal', 0] } },
+      } },
+    ]);
+
+    // Fold each salesman's bucket into their billing person. Shashikala covers
+    // three reps, so her units combine before the rate is applied.
+    const byPerson = new Map();
+    const unmapped = new Map();
+    for (const g of raw) {
+      const person = billingPersonFor({ billedBy: g._id.billedBy, salesmanId: g._id.salesmanId });
+      if (!person) {
+        const sid = g._id.salesmanId || '(none)';
+        const u = unmapped.get(sid) || { salesmanId: sid, units: 0, lines: 0 };
+        u.units += g.units || 0; u.lines += g.lines || 0;
+        unmapped.set(sid, u);
+        continue;
+      }
+      const e = byPerson.get(person) || { _id: person, units: 0, lines: 0, amount: 0, invoices: new Set(), reps: new Set() };
+      e.units += g.units || 0;
+      e.lines += g.lines || 0;
+      e.amount += g.amount || 0;
+      for (const v of (g.invoices || [])) if (v) e.invoices.add(v);
+      if (g._id.salesmanId) e.reps.add(g._id.salesmanId);
+      byPerson.set(person, e);
+    }
+    const rows = [...byPerson.values()]
+      .map(e => ({ ...e, invoices: [...e.invoices], reps: [...e.reps].sort() }))
+      .sort((a, b) => b.units - a.units);
+
+    // Lines with no biller are reported separately rather than folded into a
+    // blank row — they usually mean the column was missing or spelled
+    // differently in that upload, which is worth seeing.
+    const people = [];
+    for (const r of rows) {
+      const name = String(r._id || '').trim();
+      const calc = incentiveFor(r.units);
+      people.push({
+        name,
+        units: r.units || 0,
+        lines: r.lines || 0,
+        invoices: (r.invoices || []).filter(Boolean).length,
+        reps: r.reps || [],
+        billedValue: Math.round(r.amount || 0),
+        amount: calc.amount,
+        band: calc.band,
+        detail: calc.detail,
+        next: nextThreshold(r.units),
+      });
+    }
+
+    res.json({
+      month: match.month || 'all',
+      months,
+      rule: { tier1: TIER_1_LIMIT, tier2: TIER_2_LIMIT, rateLow: RATE_LOW, rateHigh: RATE_HIGH },
+      people,
+      // Salesmen with nobody assigned to bill for them. Their units earn
+      // nothing, so they are named rather than quietly dropped.
+      unassigned: {
+        units: [...unmapped.values()].reduce((a, u) => a + u.units, 0),
+        lines: [...unmapped.values()].reduce((a, u) => a + u.lines, 0),
+        salesmen: [...unmapped.values()].sort((a, b) => b.units - a.units),
+      },
+      mapping: BILLING_BY_SALESMAN,
+      totals: {
+        people: people.length,
+        units:  people.reduce((a, p) => a + p.units, 0),
+        amount: Math.round(people.reduce((a, p) => a + p.amount, 0) * 100) / 100,
+      },
+    });
+  } catch (e) {
+    console.error('[PTX INCENTIVE]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * The "Billed By" column, however it happens to be spelled.
+ *
+ * Exports label this inconsistently — Billed By, Billing Person, Biller,
+ * Invoice By. Matching on a key with case and punctuation stripped means a new
+ * spelling does not quietly import a whole sheet with no biller on it, which
+ * would show as everyone earning nothing.
+ */
+const BILLED_BY_KEYS = new Set([
+  'billedby','billingperson','biller','billingby','invoiceby','billingname','billedperson',
+]);
+const billedByOf = (row) => {
+  for (const [k, v] of Object.entries(row || {})) {
+    if (BILLED_BY_KEYS.has(String(k).toLowerCase().replace(/[^a-z]/g, ''))) {
+      const t = S(v);
+      if (t) return t;
+    }
+  }
+  return '';
+};
+
+/* ------------------------------------------------------------------ *
+ *  GET /api/producttx/last-upload                                    *
+ *                                                                    *
+ *  When the ERP sheet was last brought in.                           *
+ *                                                                    *
+ *  The Overview stamp used to read the newest dealer write, which     *
+ *  moves whenever anyone edits a zone or a credit limit — so it       *
+ *  answered "when did someone touch a dealer", not "how fresh is the  *
+ *  sales data". Those are different questions and the second is the   *
+ *  one that matters on a sales dashboard.                            *
+ *                                                                    *
+ *  Sorted on updatedAt, not createdAt: re-uploading a day's sheet     *
+ *  upserts the same lines, which touches updatedAt but leaves         *
+ *  createdAt at the original import.                                 *
+ * ------------------------------------------------------------------ */
+router.get('/last-upload', protect, async (req, res) => {
+  try {
+    const latest = await ProductTxn
+      .findOne({}, { updatedAt: 1, createdAt: 1, uploadBatchId: 1, month: 1 })
+      .sort({ updatedAt: -1 })
+      .lean();
+    if (!latest) return res.json({ lastUploadAt: null });
+    // How much arrived in that same batch, so the stamp can say what landed
+    // and not only when.
+    const lines = latest.uploadBatchId
+      ? await ProductTxn.countDocuments({ uploadBatchId: latest.uploadBatchId })
+      : 0;
+    res.json({
+      lastUploadAt: latest.updatedAt || latest.createdAt || null,
+      batchId: latest.uploadBatchId || '',
+      lines,
+      month: latest.month || '',
+    });
+  } catch (e) {
+    console.error('[PTX LAST-UPLOAD]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 60 * 1024 * 1024 } });
 
 const newBatchId = () => crypto.randomBytes(8).toString('hex');
@@ -300,6 +465,7 @@ router.post('/upload', protect, adminOnly, requireFeature('uploadData'), upload.
           mobile: S(r['Mobile No.']) || S(r['Buyer Contact']),
           gst: S(r['Buyer Gstno']),
           salesPersonRaw: S(r['Sales Person']),
+          billedBy: billedByOf(r),
           closest: dm.suggestion || '',
           score: Math.round((dm.score || 0) * 100),
           lines: 0, qty: 0,

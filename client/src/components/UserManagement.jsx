@@ -12,9 +12,11 @@ import { notify, confirmDialog } from './Toast';
 // ever sees active users). For this admin screen we also need to see and
 // re-activate INACTIVE users, so we fetch a separate `allUsers` map via
 // `api.getUsersAll()` on mount and on every change.
-const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUsersChanged }) => {
+const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUsersChanged, inline = false }) => {
   // Full user map including inactive — used for display in this modal only.
   const [allUsers, setAllUsers] = useState(users || {});
+  // The create form lives in a modal now — see the Add user button above it.
+  const [addOpen, setAddOpen] = useState(false);
   const refreshAll = async () => {
     try { setAllUsers(await api.getUsersAll()); }
     catch(e) { /* fall back to active-only map already in state */ }
@@ -85,6 +87,9 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
       onUsersChanged?.();
       refreshAll();
       setName(''); setId(''); setPass(''); setUrl(''); setEmail(''); setRole('salesman'); setCreateStates(new Set()); setCreateCities(new Set());
+      // Close on success so the new row is visible underneath. A failure
+      // leaves the modal open with the typed values still there.
+      setAddOpen(false);
       flash('success', 'Created ' + name + ' (' + idC + '). Password: ' + pass);
     } catch(e){
       flash('error', 'Create failed: ' + e.message);
@@ -435,9 +440,20 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
     return false;
   };
 
+  // Modal and inline share one body; only the wrapper differs. A tab has no
+  // overlay to dim and nothing to close, so those are dropped rather than
+  // rendered invisibly.
+  const Shell = ({ children }) => inline
+    ? <div>{children}</div>
+    : (
+      <div className="overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+        <div className="modal" style={{maxWidth:720}}>{children}</div>
+      </div>
+    );
+
   return (
-    <div className="overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal" style={{maxWidth:720}}>
+    <Shell>
+      <>
         <div className="row" style={{marginBottom:14}}>
           <div style={{fontSize:17, fontWeight:700, display:'flex', alignItems:'center', gap:8}}>
             <UserPlus size={16}/> User Management
@@ -450,7 +466,11 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
             You: {roleBadge(currentUser?.role).label}
           </span>
           <div className="spacer"/>
-          <button onClick={onClose} className="btn"><X size={14}/></button>
+          <button className="btnp" onClick={()=>setAddOpen(true)}
+            style={{display:'inline-flex', alignItems:'center', gap:6, fontSize:12}}>
+            <UserPlus size={13}/> Add user
+          </button>
+          {!inline && <button onClick={onClose} className="btn"><X size={14}/></button>}
         </div>
 
         {msg && (
@@ -463,7 +483,12 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
         )}
 
         {/* ── User list ─────────────────────────────────────────────────── */}
-        <div style={{display:'flex', flexDirection:'column', gap:6, maxHeight:340, overflowY:'auto', marginBottom:16}}>
+        {/* The 340px cap belongs to the modal, where the card is height-
+            limited and an inner scroller is the only option. In a tab there
+            is a whole page below, so the list runs its full length and the
+            page scrolls instead — no scrollbar inside a scrollbar. */}
+        <div style={{display:'flex', flexDirection:'column', gap:6, marginBottom:16,
+          ...(inline ? {} : { maxHeight:340, overflowY:'auto' })}}>
           {sorted.map(u => {
             const isSelf = u.id === currentUser?.id;
             const rb = roleBadge(u.role);
@@ -617,11 +642,22 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
           })}
         </div>
 
-        {/* ── Create new user ───────────────────────────────────────────── */}
-        <div style={{paddingTop:14, borderTop:'1px solid var(--b1)'}}>
-          <div style={{fontSize:14, fontWeight:600, marginBottom:10, display:'flex', alignItems:'center', gap:6}}>
-            <UserPlus size={14}/> Create new user
-          </div>
+        {/* Create new user — behind a button rather than always on screen.
+            The form runs the full height of the panel, which buried the user
+            list underneath it. Same fields and the same create(), relocated. */}
+        {addOpen && (
+          <div className="overlay" style={{zIndex:70}}
+            onClick={e=>e.target===e.currentTarget&&setAddOpen(false)}>
+          <div className="modal" style={{maxWidth:640}}>
+          <div>
+            <div className="row" style={{marginBottom:12}}>
+              <div style={{fontSize:15, fontWeight:700, display:'flex', alignItems:'center', gap:8}}>
+                <UserPlus size={15}/> Create new user
+              </div>
+              <div className="spacer"/>
+              <button className="btn" onClick={()=>setAddOpen(false)}><X size={14}/></button>
+            </div>
+
           <div className="g2">
             <div className="field">
               <label>Full Name</label>
@@ -713,7 +749,9 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
             <UserPlus size={13}/> {busy ? 'Creating…' : 'Create Account'}
           </button>
         </div>
-      </div>
+          </div>
+          </div>
+        )}
 
       {/* ── Permissions modal (Edit existing user's data scope) ────────── */}
       {permsForUid && (
@@ -1151,7 +1189,8 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
           </div>
         </div>
       )}
-    </div>
+      </>
+    </Shell>
   );
 };
 

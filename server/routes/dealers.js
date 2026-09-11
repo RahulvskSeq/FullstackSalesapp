@@ -1523,6 +1523,29 @@ router.put('/:id', protect, async (req,res) => {
       });
     }
 
+    // Field-level diff for the audit trail. The generic middleware records
+    // the request body, which is what the client SENT — this records what
+    // actually changed on the record, which is the useful question when
+    // someone asks why a zone moved. `ex` is the pre-update document.
+    const auditChanges = {};
+    for (const [k, to] of Object.entries(setObj)) {
+      // monthlyData.<Label>.<field> — read the nested value off the Map.
+      let from;
+      const m = /^monthlyData\.([^.]+)(?:\.(.+))?$/.exec(k);
+      if (m) {
+        const md = ex.monthlyData;
+        const entry = (md && typeof md.get === 'function') ? md.get(m[1]) : md?.[m[1]];
+        from = m[2] ? entry?.[m[2]] : entry;
+      } else {
+        from = ex[k];
+      }
+      const same = JSON.stringify(from ?? null) === JSON.stringify(to ?? null);
+      if (!same) auditChanges[k] = { from: from ?? null, to };
+    }
+    if (Object.keys(auditChanges).length) {
+      res.locals.audit = { dealer: ex.name, id: String(ex._id), fields: auditChanges };
+    }
+
     const d=await Dealer.findByIdAndUpdate(req.params.id,{$set:setObj},{new:true,runValidators:false}).lean();
 
     if(moves.length){

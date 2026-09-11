@@ -2172,6 +2172,16 @@ export const api = {
   // The catalogue of per-user action permissions, served by the same module
   // the server enforces, so this screen can't drift from what is checked.
   actionPermissions: () => fetch(`${BASE}/settings/action-permissions`,{headers:authHeaders()}).then(handle),
+  // When the ERP sheet last landed — what the Overview stamp reports.
+  ptxLastUpload: () => fetch(`${BASE}/producttx/last-upload`,{headers:authHeaders()}).then(handle),
+  // Who changed what. Admin only on the server.
+  auditLog: (q={}) => {
+    const p = new URLSearchParams(q).toString();
+    return fetch(`${BASE}/settings/audit${p?'?'+p:''}`,{headers:authHeaders()}).then(handle);
+  },
+  // Billing-person incentive for a month. Admin only on the server.
+  ptxIncentive: (month) => fetch(`${BASE}/producttx/incentive${month?'?month='+encodeURIComponent(month):''}`,
+    { headers:authHeaders() }).then(handle),
   featuresGet: () => fetch(`${BASE}/settings/features`,{headers:authHeaders()}).then(handle),
   featuresSet: (disabled) => fetch(`${BASE}/settings/features`,{
     method:'PUT', headers:{...authHeaders(),'Content-Type':'application/json'},

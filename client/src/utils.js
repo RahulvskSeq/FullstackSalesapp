@@ -1133,13 +1133,50 @@ export const trendPct = (months) => {
 };
 export const forecast = (months) => Math.round(months.slice(-3).reduce((a,b)=>a+b,0)/3);
 
+/**
+ * Key-value storage that works in the APK *and* in a browser.
+ *
+ * `window.storage` is the Capacitor Preferences shim, and it only exists
+ * inside the Android build. On the web it is undefined, which meant every
+ * set() here did nothing at all — silently, because the old code just skipped
+ * the write. That is why the theme reset to dark on every reload: it was being
+ * saved to nowhere and read back as the default.
+ *
+ * localStorage is the fallback. Keys are prefixed to match the app's existing
+ * convention (stp_palette, stp_jwt) and to avoid colliding with anything else
+ * on the origin.
+ */
+const LS_PREFIX = 'stp_';
+const hasNative = () => typeof window !== 'undefined' && !!window.storage;
+const hasLocal  = () => { try { return typeof localStorage !== 'undefined'; } catch { return false; } };
+
 export const storage = {
   async get(key,fallback=null){
-    try{ if(typeof window!=='undefined'&&window.storage){ const r=await window.storage.get(key); return r?JSON.parse(r.value):fallback; } }catch(e){}
+    try{
+      if(hasNative()){
+        const r = await window.storage.get(key);
+        return r ? JSON.parse(r.value) : fallback;
+      }
+      if(hasLocal()){
+        const v = localStorage.getItem(LS_PREFIX + key);
+        return v === null ? fallback : JSON.parse(v);
+      }
+    }catch(e){ /* corrupt JSON or blocked storage — fall through to default */ }
     return fallback;
   },
   async set(key,value){
-    try{ if(typeof window!=='undefined'&&window.storage) await window.storage.set(key,JSON.stringify(value)); }catch(e){}
+    try{
+      if(hasNative()){
+        await window.storage.set(key, JSON.stringify(value));
+        return;
+      }
+      if(hasLocal()) localStorage.setItem(LS_PREFIX + key, JSON.stringify(value));
+    }catch(e){
+      // Quota (the dealer cache can be megabytes) or a private window that
+      // refuses writes. Losing a cache entry is not worth breaking a save over,
+      // so this stays quiet — but it is logged, unlike before.
+      console.warn('[storage] could not save "' + key + '":', e?.message);
+    }
   },
 };
 
