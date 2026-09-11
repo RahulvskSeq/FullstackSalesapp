@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Package, Upload, RefreshCw, AlertTriangle, CheckCircle2, Layers, FileSpreadsheet, X, IndianRupee } from 'lucide-react';
+import { Package, Upload, RefreshCw, AlertTriangle, CheckCircle2, Layers, FileSpreadsheet, X, IndianRupee, Settings } from 'lucide-react';
 import { api, getApiBase } from '../api';
 import { notify, confirmDialog } from './Toast';
 
@@ -509,6 +509,123 @@ const Parked = ({ title, rows }) => {
 /* ------------------------------------------------------------------ */
 
 /**
+ * RuleEditor — the thresholds, the rates, and who bills for whom.
+ *
+ * Everything the calculation depends on is editable here, so a change in the
+ * scheme does not need a deploy. The server re-validates whatever is sent:
+ * tier2 is floored at tier1 and non-numeric rates fall back, so a half-filled
+ * form cannot leave the maths in an impossible state.
+ */
+function RuleEditor({ onSaved, onClose }) {
+  const [cfg, setCfg]       = React.useState(null);
+  const [ids, setIds]       = React.useState([]);
+  const [defaults, setDefs] = React.useState(null);
+  const [busy, setBusy]     = React.useState(false);
+  const [err, setErr]       = React.useState('');
+
+  React.useEffect(() => {
+    let dead = false;
+    api.ptxIncentiveConfig()
+      .then(r => { if (dead) return; setCfg(r.config); setIds(r.salesmanIds || []); setDefs(r.defaults); })
+      .catch(e => { if (!dead) setErr(e?.message || 'Could not load the rule'); });
+    return () => { dead = true; };
+  }, []);
+
+  const set = (k, v) => setCfg(c => ({ ...c, [k]: v }));
+  const setMap = (id, person) => setCfg(c => {
+    const m = { ...c.mapping };
+    if (person) m[id] = person; else delete m[id];
+    return { ...c, mapping: m };
+  });
+
+  const save = async () => {
+    setBusy(true); setErr('');
+    try {
+      const r = await api.ptxIncentiveConfigSave(cfg);
+      setCfg(r.config);          // show what was actually stored, not what was typed
+      onSaved?.();
+      onClose?.();
+    } catch (e) { setErr(e?.message || 'Save failed'); }
+    setBusy(false);
+  };
+
+  if (!cfg) return <div style={{ fontSize: 12, color: 'var(--t3)', padding: 12 }}>{err || 'Loading…'}</div>;
+
+  // Every billing person already named, so the dropdowns stay consistent and
+  // a typo does not silently create a second "Lavanya".
+  const people = [...new Set(Object.values(cfg.mapping).filter(Boolean))].sort();
+  const numField = (label, key, step, hint) => (
+    <div>
+      <label style={{ display:'block', fontSize:10.5, fontWeight:700, letterSpacing:'.06em',
+                      textTransform:'uppercase', color:'var(--t3)', marginBottom:5 }}>{label}</label>
+      <input type="number" className="inp" min="0" step={step}
+        value={cfg[key]} onChange={e => set(key, e.target.value)} style={{ width:'100%' }}/>
+      <div style={{ fontSize:10, color:'var(--t3)', marginTop:3 }}>{hint}</div>
+    </div>
+  );
+
+  return (
+    <div className="overlay" style={{ zIndex: 70 }} onClick={e => e.target === e.currentTarget && onClose?.()}>
+      <div className="modal" style={{ maxWidth: 620 }}>
+        <div className="row" style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, display:'flex', alignItems:'center', gap:8 }}>
+            <IndianRupee size={15}/> Incentive rule
+          </div>
+          <div className="spacer"/>
+          <button className="btn" onClick={onClose}><X size={14}/></button>
+        </div>
+
+        {err && <div style={{ fontSize:12, color:'var(--red)', marginBottom:10 }}>{err}</div>}
+
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))', gap:12, marginBottom:8 }}>
+          {numField('Tier 1 limit', 'tier1', '1',   'units paid at the low rate')}
+          {numField('Tier 2 limit', 'tier2', '1',   'above this, every unit re-rates')}
+          {numField('Low rate ₹',   'rateLow',  '0.05', 'per unit up to tier 1')}
+          {numField('High rate ₹',  'rateHigh', '0.05', 'per unit above tier 1')}
+        </div>
+
+        <div style={{ fontSize:11, color:'var(--t3)', lineHeight:1.65, marginBottom:16,
+                      padding:'8px 11px', background:'var(--bg2)', borderRadius:7 }}>
+          With these numbers: {Number(cfg.tier1).toLocaleString('en-IN')} units pays
+          {' '}<b>₹{(cfg.tier1 * cfg.rateLow).toFixed(2)}</b>,
+          {' '}{Number(cfg.tier2).toLocaleString('en-IN')} pays
+          {' '}<b>₹{(cfg.tier1 * cfg.rateLow + (cfg.tier2 - cfg.tier1) * cfg.rateHigh).toFixed(2)}</b>,
+          {' '}and {Number(cfg.tier2 + 1).toLocaleString('en-IN')} pays
+          {' '}<b>₹{((cfg.tier2 + 1) * cfg.rateHigh).toFixed(2)}</b> — one more unit past tier 2 re-prices
+          everything already billed.
+        </div>
+
+        <div style={{ fontSize:11, fontWeight:700, letterSpacing:'.06em', textTransform:'uppercase',
+                      color:'var(--t3)', marginBottom:8 }}>
+          Who bills for each salesman
+        </div>
+        <div style={{ maxHeight:260, overflowY:'auto', border:'1px solid var(--b1)', borderRadius:8, padding:8, marginBottom:14 }}>
+          {ids.map(id => (
+            <div key={id} style={{ display:'flex', alignItems:'center', gap:8, padding:'4px 2px' }}>
+              <span style={{ width:96, fontSize:12, fontWeight:600 }}>{id}</span>
+              <input className="inp" list="lg-people" style={{ flex:1, fontSize:12 }}
+                placeholder="nobody — these units earn nothing"
+                value={cfg.mapping[id] || ''}
+                onChange={e => setMap(id, e.target.value.trim())}/>
+            </div>
+          ))}
+          <datalist id="lg-people">{people.map(p => <option key={p} value={p}/>)}</datalist>
+        </div>
+
+        <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+          <button className="btnp" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save rule'}</button>
+          <button className="btn" onClick={onClose}>Cancel</button>
+          {defaults && (
+            <button className="btn" style={{ marginLeft:'auto', fontSize:11 }}
+              onClick={() => setCfg({ ...defaults })}>Reset to defaults</button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
  * IncentivePanel — what each billing person earned on the units they invoiced.
  *
  * The figure comes from the server, which owns the rule (lib/incentive.js), so
@@ -521,6 +638,8 @@ function IncentivePanel() {
   const [data, setData]   = React.useState(null);
   const [busy, setBusy]   = React.useState(false);
   const [err, setErr]     = React.useState('');
+  const [editing, setEditing] = React.useState(false);
+  const [reloadKey, setReloadKey] = React.useState(0);
 
   React.useEffect(() => {
     let dead = false;
@@ -534,7 +653,7 @@ function IncentivePanel() {
       .catch(e => { if (!dead) setErr(e?.message || 'Could not load incentives'); })
       .finally(() => { if (!dead) setBusy(false); });
     return () => { dead = true; };
-  }, [month]);
+  }, [month, reloadKey]);
 
   const money = v => '₹' + Number(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const num   = v => Number(v || 0).toLocaleString('en-IN');
@@ -544,112 +663,191 @@ function IncentivePanel() {
   const th   = { ...cell, fontSize: 10, color: 'var(--t3)', textTransform: 'uppercase',
                  letterSpacing: '.07em', fontWeight: 700, textAlign: 'left', whiteSpace: 'nowrap' };
 
+  // Colour by band so a glance says who is where, and keep the same three
+  // colours on the tier legend above the table.
+  const BAND = {
+    'upto-tier1': { label: 'Tier 1', c: '#0891b2', bg: 'rgba(8,145,178,.12)' },
+    'mid':        { label: 'Tier 2', c: '#ca8a04', bg: 'rgba(202,138,4,.14)' },
+    'over-tier2': { label: 'Top',    c: '#16a34a', bg: 'rgba(22,163,74,.14)' },
+  };
+
+  const stat = (label, value, tone) => (
+    <div style={{ padding: '11px 13px', borderRadius: 10, background: 'var(--bg2)',
+                  border: '1px solid var(--b1)', minWidth: 0 }}>
+      <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '.09em',
+                    textTransform: 'uppercase', color: 'var(--t3)' }}>{label}</div>
+      <div style={{ fontSize: 19, fontWeight: 800, marginTop: 3, color: tone || 'var(--t1)',
+                    fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
+                    overflow: 'hidden', textOverflow: 'ellipsis' }}>{value}</div>
+    </div>
+  );
+
   return (
-    <div className="card" style={{ marginBottom: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
-        <IndianRupee size={15} color="var(--acc)" />
-        <div style={{ fontSize: 13.5, fontWeight: 700 }}>Billing incentive</div>
-        {data && (
-          <span style={{ fontSize: 11, color: 'var(--t3)' }}>
-            {data.month === 'all' ? 'all months' : data.month} · {data.totals.people} billing {data.totals.people === 1 ? 'person' : 'people'}
-          </span>
-        )}
+    <div style={{ marginBottom: 14 }}>
+      {/* ── header ─────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+        <span style={{ width: 30, height: 30, borderRadius: 9, display: 'flex',
+                       alignItems: 'center', justifyContent: 'center',
+                       background: 'linear-gradient(135deg,#4f46e5,#6366f1)', color: '#fff' }}>
+          <IndianRupee size={15} />
+        </span>
+        <div>
+          <div style={{ fontSize: 14.5, fontWeight: 750, letterSpacing: '-.01em' }}>Billing incentive</div>
+          {data && (
+            <div style={{ fontSize: 11, color: 'var(--t3)' }}>
+              {data.month === 'all' ? 'all months' : data.month} · {data.totals.people} billing {data.totals.people === 1 ? 'person' : 'people'}
+            </div>
+          )}
+        </div>
         <div style={{ flex: 1 }} />
         {data?.months?.length > 0 && (
-          <select className="sel" value={month} onChange={e=>setMonth(e.target.value)} style={{ fontSize: 12 }}>
+          <select className="sel" value={month} onChange={e => setMonth(e.target.value)} style={{ fontSize: 12 }}>
             {data.months.map(m => <option key={m} value={m}>{m}</option>)}
           </select>
         )}
-        {data && (
-          <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--grn)' }}>{money(data.totals.amount)}</span>
-        )}
+        <button className="btn" onClick={() => setEditing(true)}
+          style={{ fontSize: 11.5, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+          <Settings size={12} /> Edit rule
+        </button>
       </div>
 
-      {r && (
-        <div style={{ fontSize: 11, color: 'var(--t3)', lineHeight: 1.65, marginBottom: 10 }}>
-          Up to {num(r.tier1)} units at ₹{r.rateLow.toFixed(2)} each ·
-          {' '}{num(r.tier1 + 1)}–{num(r.tier2)}: the first {num(r.tier1)} at ₹{r.rateLow.toFixed(2)}, the rest at ₹{r.rateHigh.toFixed(2)} ·
-          {' '}over {num(r.tier2)}: <b>every</b> unit at ₹{r.rateHigh.toFixed(2)}.
-          <br/>
-          {/* A ₹1,251 jump for one extra unit looks like a bug unless it is
-              stated plainly, so it is stated plainly. */}
-          Passing {num(r.tier2)} re-prices everything already billed — {num(r.tier2)} units pays
-          {' '}{money(r.tier1 * r.rateLow + (r.tier2 - r.tier1) * r.rateHigh)}, {num(r.tier2 + 1)} pays {money((r.tier2 + 1) * r.rateHigh)}.
-        </div>
-      )}
+      {editing && <RuleEditor onClose={() => setEditing(false)} onSaved={() => setReloadKey(k => k + 1)} />}
+      {err && <div style={{ fontSize: 12, color: 'var(--red)', marginBottom: 10 }}>{err}</div>}
+      {busy && !data && <div style={{ fontSize: 12, color: 'var(--t3)', padding: '14px 0' }}>Loading…</div>}
 
-      {data?.mapping && (
-        <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 10 }}>
-          Billing person is taken from the sheet's <b>Billed By</b> column when present,
-          otherwise from the salesman on each line:{' '}
-          {Object.entries(data.mapping).map(([sm, person], i, arr) => (
-            <span key={sm}>{sm} → {person}{i < arr.length - 1 ? ' · ' : ''}</span>
-          ))}
-        </div>
-      )}
-
-      {err && <div style={{ fontSize: 12, color: 'var(--red)' }}>{err}</div>}
-      {busy && !data && <div style={{ fontSize: 12, color: 'var(--t3)', padding: '10px 0' }}>Loading…</div>}
-
-      {data && data.people.length === 0 && (
-        <div style={{ fontSize: 12, color: 'var(--t3)', padding: '10px 0' }}>
-          No billing person on any line for this month. The importer reads a
-          <b> Billed By</b> column (Billing Person, Biller and Invoice By also work) —
-          add it to the sheet and re-upload.
-        </div>
-      )}
-
-      {data && data.people.length > 0 && (
-        <div className="scroll">
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, fontVariantNumeric: 'tabular-nums' }}>
-            <thead>
-              <tr>
-                <th style={th}>Billing person</th>
-                <th style={th}>Bills for</th>
-                <th style={{ ...th, textAlign: 'right' }}>Units</th>
-                <th style={{ ...th, textAlign: 'right' }}>Invoices</th>
-                <th style={th}>How it is worked out</th>
-                <th style={{ ...th, textAlign: 'right' }}>Incentive</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.people.map((p, i) => (
-                <tr key={p.name} style={{ background: i % 2 ? 'var(--bg2)' : 'transparent' }}>
-                  <td style={{ ...cell, fontWeight: 700 }}>{p.name}</td>
-                  <td style={{ ...cell, color: 'var(--t3)', fontSize: 11.5 }}>
-                    {(p.reps || []).join(', ') || '—'}
-                  </td>
-                  <td style={{ ...cell, textAlign: 'right' }}>{num(p.units)}</td>
-                  <td style={{ ...cell, textAlign: 'right', color: 'var(--t3)' }}>{num(p.invoices)}</td>
-                  <td style={{ ...cell, color: 'var(--t3)', fontSize: 11.5 }}>
-                    {p.detail}
-                    {p.next && (
-                      <div style={{ color: 'var(--yel)', marginTop: 2 }}>
-                        {num(p.next.unitsAway)} more {p.next.unitsAway === 1 ? 'unit' : 'units'} → +{money(p.next.gain)}
-                      </div>
-                    )}
-                  </td>
-                  <td style={{ ...cell, textAlign: 'right', fontWeight: 800, color: 'var(--grn)' }}>{money(p.amount)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {data?.unassigned?.units > 0 && (
-        <div style={{ fontSize: 11, color: 'var(--yel)', marginTop: 10, lineHeight: 1.7,
-                      padding: '8px 11px', borderRadius: 7,
-                      background: 'rgba(251,191,36,.08)', border: '1px solid rgba(251,191,36,.28)' }}>
-          <b>{num(data.unassigned.units)} units earn nothing</b> — no billing person is assigned to these salesmen:
-          <div style={{ marginTop: 4 }}>
-            {(data.unassigned.salesmen || []).map(u => (
-              <span key={u.salesmanId} style={{ marginRight: 12 }}>
-                {u.salesmanId} <b>{num(u.units)}</b>
-              </span>
-            ))}
+      {data && (
+        <>
+          {/* ── the numbers that matter, before the detail ──────── */}
+          <div style={{ display: 'grid', gap: 10, marginBottom: 14,
+                        gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))' }}>
+            {stat('Total incentive', money(data.totals.amount), 'var(--grn)')}
+            {stat('Units billed', num(data.totals.units))}
+            {stat('Billing people', num(data.totals.people))}
+            {stat('Earning nothing', num(data.unassigned?.units || 0) + ' units',
+                  (data.unassigned?.units || 0) > 0 ? 'var(--yel)' : 'var(--t3)')}
           </div>
-        </div>
+
+          {/* ── the rule as three tiers, not a paragraph ────────── */}
+          {r && (
+            <div style={{ display: 'grid', gap: 8, marginBottom: 6,
+                          gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))' }}>
+              {[
+                ['upto-tier1', `Up to ${num(r.tier1)}`,               `₹${r.rateLow.toFixed(2)} per unit`],
+                ['mid',        `${num(r.tier1 + 1)} – ${num(r.tier2)}`, `first ${num(r.tier1)} at ₹${r.rateLow.toFixed(2)}, rest at ₹${r.rateHigh.toFixed(2)}`],
+                ['over-tier2', `Over ${num(r.tier2)}`,                 `every unit at ₹${r.rateHigh.toFixed(2)}`],
+              ].map(([band, head, sub]) => (
+                <div key={band} style={{ padding: '9px 12px', borderRadius: 9,
+                      background: BAND[band].bg, border: '1px solid ' + BAND[band].c + '44' }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: BAND[band].c }}>{head}</div>
+                  <div style={{ fontSize: 10.5, color: 'var(--t2)', marginTop: 2 }}>{sub}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* The cliff is the single most surprising part of the rule, so it
+              gets its own line rather than being buried in a paragraph. */}
+          {r && r.rateHigh > r.rateLow && (
+            <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 14 }}>
+              Passing {num(r.tier2)} re-prices everything already billed —
+              {' '}<b>{num(r.tier2)}</b> units pays {money(r.tier1 * r.rateLow + (r.tier2 - r.tier1) * r.rateHigh)},
+              {' '}<b>{num(r.tier2 + 1)}</b> pays {money((r.tier2 + 1) * r.rateHigh)}.
+            </div>
+          )}
+
+          {data.people.length === 0 && (
+            <div className="card" style={{ fontSize: 12, color: 'var(--t3)' }}>
+              No billing person on any line for this month. The importer reads a <b>Billed By</b> column
+              (Billing Person, Biller and Invoice By also work), and falls back to the salesman mapping
+              in <b>Edit rule</b>.
+            </div>
+          )}
+
+          {/* ── one card per person, with progress to the next tier ─ */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {data.people.map(p => {
+              const band = BAND[p.band] || BAND['upto-tier1'];
+              // How far through the current band they are — the bar answers
+              // "how close is this person to more money" at a glance.
+              const ceiling = p.band === 'upto-tier1' ? r.tier1 : r.tier2;
+              const pctFull = p.band === 'over-tier2' ? 100
+                : Math.max(3, Math.min(100, Math.round((p.units / Math.max(1, ceiling)) * 100)));
+              return (
+                <div key={p.name} className="card" style={{ padding: '13px 15px' }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+                    <div style={{ fontSize: 14, fontWeight: 750 }}>{p.name}</div>
+                    <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '.06em',
+                                   padding: '2px 7px', borderRadius: 5,
+                                   color: band.c, background: band.bg }}>{band.label}</span>
+                    <span style={{ fontSize: 11, color: 'var(--t3)' }}>
+                      bills for {(p.reps || []).join(', ') || '—'}
+                    </span>
+                    <div style={{ flex: 1 }} />
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--grn)',
+                                    fontVariantNumeric: 'tabular-nums' }}>{money(p.amount)}</div>
+                      <div style={{ fontSize: 10.5, color: 'var(--t3)' }}>{p.detail}</div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 9 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, fontVariantNumeric: 'tabular-nums',
+                                   minWidth: 62 }}>{num(p.units)}</span>
+                    <div style={{ flex: 1, height: 7, borderRadius: 4, background: 'var(--bg2)', overflow: 'hidden' }}>
+                      <div style={{ width: pctFull + '%', height: '100%', borderRadius: 4,
+                                    background: band.c, transition: 'width .3s' }} />
+                    </div>
+                    <span style={{ fontSize: 10.5, color: 'var(--t3)', minWidth: 60, textAlign: 'right' }}>
+                      {num(p.invoices)} inv
+                    </span>
+                  </div>
+
+                  {p.next && (
+                    <div style={{ fontSize: 11, color: band.c, marginTop: 7, fontWeight: 600 }}>
+                      {num(p.next.unitsAway)} more {p.next.unitsAway === 1 ? 'unit' : 'units'} → +{money(p.next.gain)}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {data.unassigned?.units > 0 && (
+            <div style={{ fontSize: 11.5, color: 'var(--t2)', marginTop: 12, lineHeight: 1.75,
+                          padding: '11px 13px', borderRadius: 9,
+                          background: 'rgba(251,191,36,.09)', border: '1px solid rgba(251,191,36,.3)' }}>
+              <b style={{ color: 'var(--yel)' }}>{num(data.unassigned.units)} units earn nothing</b>
+              {' '}— no billing person is assigned to these salesmen. Add them under <b>Edit rule</b>.
+              <div style={{ marginTop: 6, display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+                {(data.unassigned.salesmen || []).map(u => (
+                  <span key={u.salesmanId} style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999,
+                        background: 'var(--bg2)', border: '1px solid var(--b1)' }}>
+                    {u.salesmanId} <b>{num(u.units)}</b>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {data.mapping && (
+            <details style={{ marginTop: 10 }}>
+              <summary style={{ fontSize: 11, color: 'var(--t3)', cursor: 'pointer' }}>
+                Where the billing person comes from
+              </summary>
+              <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 6, lineHeight: 1.7 }}>
+                The sheet's <b>Billed By</b> column when present, otherwise the salesman on each line:
+                <div style={{ marginTop: 5, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {Object.entries(data.mapping).map(([sm, person]) => (
+                    <span key={sm} style={{ padding: '2px 9px', borderRadius: 999,
+                          background: 'var(--bg2)', border: '1px solid var(--b1)' }}>
+                      {sm} → <b>{person}</b>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </details>
+          )}
+        </>
       )}
     </div>
   );

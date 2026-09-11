@@ -2182,6 +2182,10 @@ export const api = {
   // Billing-person incentive for a month. Admin only on the server.
   ptxIncentive: (month) => fetch(`${BASE}/producttx/incentive${month?'?month='+encodeURIComponent(month):''}`,
     { headers:authHeaders() }).then(handle),
+  ptxIncentiveConfig:     ()   => fetch(`${BASE}/producttx/incentive-config`,{headers:authHeaders()}).then(handle),
+  ptxIncentiveConfigSave: (c)  => fetch(`${BASE}/producttx/incentive-config`,{
+    method:'PUT', headers:{...authHeaders(),'Content-Type':'application/json'}, body:JSON.stringify(c),
+  }).then(handle),
   featuresGet: () => fetch(`${BASE}/settings/features`,{headers:authHeaders()}).then(handle),
   featuresSet: (disabled) => fetch(`${BASE}/settings/features`,{
     method:'PUT', headers:{...authHeaders(),'Content-Type':'application/json'},

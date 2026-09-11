@@ -8,14 +8,28 @@ import Dealer from '../models/Dealer.js';
 import Sale from '../models/Sale.js';
 import User from '../models/User.js';
 import { protect, adminOnly, superAdminOnly, requireFeature } from '../middleware/auth.js';
-import { incentiveFor, nextThreshold, billingPersonFor, BILLING_BY_SALESMAN,
-         TIER_1_LIMIT, TIER_2_LIMIT, RATE_LOW, RATE_HIGH } from '../lib/incentive.js';
+import Setting from '../models/Setting.js';
+import { incentiveFor, nextThreshold, billingPersonFor,
+         normaliseConfig, DEFAULT_CONFIG } from '../lib/incentive.js';
 import {
   normCategory, normSubCategory, parseErpDate, nameKey, matchSalesman, str as S,
   dealerKey, matchDealer, salesmanOnDate,
 } from '../lib/productTaxonomy.js';
 
 const router = express.Router();
+
+/* The incentive rule is a business decision, so it is stored rather than
+ * compiled in. Cached briefly because every incentive request reads it, and
+ * the cache is dropped the moment it is saved. */
+const INCENTIVE_KEY = 'incentiveConfig';
+let cfgCache = null, cfgAt = 0;
+async function getIncentiveConfig({ fresh = false } = {}) {
+  if (!fresh && cfgCache && Date.now() - cfgAt < 10_000) return cfgCache;
+  const row = await Setting.findOne({ key: INCENTIVE_KEY }).lean();
+  cfgCache = normaliseConfig(row?.value);
+  cfgAt = Date.now();
+  return cfgCache;
+}
 
 /* ------------------------------------------------------------------ *
  *  GET /api/producttx/incentive?month=YYYY-MM                        *
@@ -25,8 +39,47 @@ const router = express.Router();
  *  Admin only: this is pay. The rule itself is in lib/incentive.js so *
  *  the figure shown and the figure calculated can never drift apart. *
  * ------------------------------------------------------------------ */
+/* ------------------------------------------------------------------ *
+ *  GET  /api/producttx/incentive-config                              *
+ *  PUT  /api/producttx/incentive-config                              *
+ *                                                                    *
+ *  The thresholds, the rates, and who bills for whom. Admin only —    *
+ *  this decides what people are paid.                                *
+ * ------------------------------------------------------------------ */
+router.get('/incentive-config', protect, adminOnly, async (req, res) => {
+  try {
+    const config = await getIncentiveConfig({ fresh: true });
+    // The salesmen actually present in the data, so the mapping editor can
+    // offer real options instead of a free-text box.
+    const ids = (await ProductTxn.distinct('salesmanId')).filter(Boolean).sort();
+    res.json({ config, defaults: DEFAULT_CONFIG, salesmanIds: ids });
+  } catch (e) {
+    console.error('[PTX INCENTIVE-CONFIG GET]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.put('/incentive-config', protect, adminOnly, async (req, res) => {
+  try {
+    // normaliseConfig drops junk and floors tier2 at tier1, so a half-filled
+    // form cannot leave the maths in an impossible state.
+    const clean = normaliseConfig(req.body);
+    await Setting.findOneAndUpdate(
+      { key: INCENTIVE_KEY },
+      { $set: { value: clean } },
+      { upsert: true, new: true },
+    );
+    cfgCache = clean; cfgAt = Date.now();
+    res.json({ ok: true, config: clean });
+  } catch (e) {
+    console.error('[PTX INCENTIVE-CONFIG PUT]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.get('/incentive', protect, adminOnly, async (req, res) => {
   try {
+    const config = await getIncentiveConfig();
     const match = {};
     const month = String(req.query.month || '').trim();
     if (/^\d{4}-\d{2}$/.test(month)) match.month = month;
@@ -54,7 +107,7 @@ router.get('/incentive', protect, adminOnly, async (req, res) => {
     const byPerson = new Map();
     const unmapped = new Map();
     for (const g of raw) {
-      const person = billingPersonFor({ billedBy: g._id.billedBy, salesmanId: g._id.salesmanId });
+      const person = billingPersonFor({ billedBy: g._id.billedBy, salesmanId: g._id.salesmanId }, config);
       if (!person) {
         const sid = g._id.salesmanId || '(none)';
         const u = unmapped.get(sid) || { salesmanId: sid, units: 0, lines: 0 };
@@ -80,7 +133,7 @@ router.get('/incentive', protect, adminOnly, async (req, res) => {
     const people = [];
     for (const r of rows) {
       const name = String(r._id || '').trim();
-      const calc = incentiveFor(r.units);
+      const calc = incentiveFor(r.units, config);
       people.push({
         name,
         units: r.units || 0,
@@ -91,14 +144,14 @@ router.get('/incentive', protect, adminOnly, async (req, res) => {
         amount: calc.amount,
         band: calc.band,
         detail: calc.detail,
-        next: nextThreshold(r.units),
+        next: nextThreshold(r.units, config),
       });
     }
 
     res.json({
       month: match.month || 'all',
       months,
-      rule: { tier1: TIER_1_LIMIT, tier2: TIER_2_LIMIT, rateLow: RATE_LOW, rateHigh: RATE_HIGH },
+      rule: { tier1: config.tier1, tier2: config.tier2, rateLow: config.rateLow, rateHigh: config.rateHigh },
       people,
       // Salesmen with nobody assigned to bill for them. Their units earn
       // nothing, so they are named rather than quietly dropped.
@@ -107,7 +160,7 @@ router.get('/incentive', protect, adminOnly, async (req, res) => {
         lines: [...unmapped.values()].reduce((a, u) => a + u.lines, 0),
         salesmen: [...unmapped.values()].sort((a, b) => b.units - a.units),
       },
-      mapping: BILLING_BY_SALESMAN,
+      mapping: config.mapping,
       totals: {
         people: people.length,
         units:  people.reduce((a, p) => a + p.units, 0),
