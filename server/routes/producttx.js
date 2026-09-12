@@ -9,14 +9,20 @@ import Sale from '../models/Sale.js';
 import User from '../models/User.js';
 import { protect, adminOnly, superAdminOnly, requireFeature } from '../middleware/auth.js';
 import Setting from '../models/Setting.js';
-import { incentiveFor, nextThreshold, billingPersonFor,
-         normaliseConfig, DEFAULT_CONFIG } from '../lib/incentive.js';
+import IncentivePeriod from '../models/IncentivePeriod.js';
+import { incentiveFor, nextThreshold, billingPersonFor, lookbackMonthsFor,
+         bandsFor, canonicalPerson, normaliseConfig, DEFAULT_CONFIG } from '../lib/incentive.js';
 import {
   normCategory, normSubCategory, parseErpDate, nameKey, matchSalesman, str as S,
   dealerKey, matchDealer, salesmanOnDate,
 } from '../lib/productTaxonomy.js';
 
 const router = express.Router();
+
+// Declared here rather than further down: routes registered above that point
+// would otherwise reference it before initialisation and the module would
+// fail to load.
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 60 * 1024 * 1024 } });
 
 /* The incentive rule is a business decision, so it is stored rather than
  * compiled in. Cached briefly because every incentive request reads it, and
@@ -77,94 +83,326 @@ router.put('/incentive-config', protect, adminOnly, async (req, res) => {
   }
 });
 
+/* ------------------------------------------------------------------ *
+ *  POST /api/producttx/incentive/upload                              *
+ *                                                                    *
+ *  Work the incentive out from an uploaded sheet instead of from the  *
+ *  ERP invoice lines.                                                *
+ *                                                                    *
+ *  Previews by default and only writes when ?commit=1, because the    *
+ *  figures decide what people are paid and a wrong column mapping     *
+ *  should be seen before it is stored, not after.                    *
+ * ------------------------------------------------------------------ */
+
+/** Column names, matched with case and punctuation ignored. */
+const PERSON_KEYS = new Set(['createdby','billedby','billingperson','biller','billingby',
+                             'invoiceby','billingname','billedperson','person','name']);
+const QTY_KEYS    = new Set(['qty','quantity','units','unit','nos','pcs','totalqty']);
+const MONTH_KEYS  = new Set(['month','period']);
+const DATE_KEYS   = new Set(['date','invoicedate','voucherdate','billdate']);
+const VOUCHER_KEYS= new Set(['voucherno','invoiceno','billno','voucher','invoice']);
+const norm = k => String(k).toLowerCase().replace(/[^a-z]/g, '');
+const pickCol = (headers, keys) => headers.find(h => keys.has(norm(h))) || '';
+
+/** "11-09-2026", a Date, or an Excel serial → "2026-09". */
+function monthOf(v) {
+  if (v === null || v === undefined || v === '') return '';
+  if (v instanceof Date && !isNaN(v)) return v.getFullYear() + '-' + String(v.getMonth() + 1).padStart(2, '0');
+  const s = String(v).trim();
+  let m = /^(\d{4})-(\d{2})/.exec(s);                        // 2026-09-11 or 2026-09
+  if (m) return m[1] + '-' + m[2];
+  m = /^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/.exec(s);       // 11-09-2026 (d-m-y)
+  if (m) return m[3] + '-' + String(m[2]).padStart(2, '0');
+  const n = Number(s);                                        // Excel serial
+  if (Number.isFinite(n) && n > 20000 && n < 60000) {
+    const d = new Date(Date.UTC(1899, 11, 30) + n * 86400000);
+    return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0');
+  }
+  return '';
+}
+
+router.post('/incentive/upload', protect, adminOnly, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file' });
+    const commit = String(req.query.commit || '') === '1';
+    const config = await getIncentiveConfig();
+
+    const wb = XLSX.read(req.file.buffer, { type: 'buffer', cellDates: true });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+    if (!rows.length) return res.status(400).json({ error: 'That sheet has no rows' });
+
+    const headers = Object.keys(rows[0]);
+    const cPerson  = pickCol(headers, PERSON_KEYS);
+    const cQty     = pickCol(headers, QTY_KEYS);
+    const cMonth   = pickCol(headers, MONTH_KEYS);
+    const cDate    = pickCol(headers, DATE_KEYS);
+    const cVoucher = pickCol(headers, VOUCHER_KEYS);
+    if (!cPerson || !cQty) {
+      return res.status(400).json({
+        error: 'Could not find the columns needed',
+        needed: { person: [...PERSON_KEYS].slice(0, 6), qty: [...QTY_KEYS].slice(0, 4) },
+        headers,
+      });
+    }
+
+    // The month may be stated, derived from a date column, or forced by the
+    // caller. Whichever it is, every row must agree — a sheet spanning two
+    // months would otherwise be filed under one of them silently.
+    const forced = /^\d{4}-\d{2}$/.test(String(req.body?.month || '')) ? String(req.body.month) : '';
+    const monthTally = new Map();
+    const spellings = new Map();
+    const usable = [];
+    let skipped = 0;
+    for (const r of rows) {
+      // Fold the spellings together before grouping, or one person splits into
+      // two rows and is paid less than their real total — see canonicalPerson.
+      const rawName = S(r[cPerson]);
+      const person = canonicalPerson(rawName, config);
+      const qty = Number(r[cQty]);
+      if (!person || !Number.isFinite(qty)) { skipped++; continue; }
+      // The row's OWN month, never the forced one: forcing a month says which
+      // month to work out, not that every row belongs to it. Stamping `forced`
+      // here would make every row match and nothing could be excluded.
+      const m = (cMonth ? monthOf(r[cMonth]) : '') || (cDate ? monthOf(r[cDate]) : '');
+      if (m) monthTally.set(m, (monthTally.get(m) || 0) + 1);
+      if (rawName && rawName !== person) {
+        if (!spellings.has(person)) spellings.set(person, new Set());
+        spellings.get(person).add(rawName);
+      }
+      usable.push({ person, qty, m, voucher: cVoucher ? S(r[cVoucher]) : '' });
+    }
+
+    const monthsSeen = [...monthTally.entries()].sort((a, b) => b[1] - a[1]);
+    const month = forced || (monthsSeen[0]?.[0] || '');
+    if (!month) {
+      return res.status(400).json({
+        error: 'Could not tell which month this sheet is for — add a Month or Date column, or pick one before uploading',
+        headers,
+      });
+    }
+
+    // Only this month's rows count towards this month's incentive. An export
+    // that runs over a month boundary is normal — the last file carried 113
+    // August rows alongside September's — and adding those units to September
+    // would pay people twice for the same sales. Rows whose month cannot be
+    // read at all are kept, since dropping them would silently lose units.
+    const byPerson = new Map();
+    let otherMonthRows = 0, otherMonthUnits = 0;
+    for (const r of usable) {
+      if (r.m && r.m !== month) { otherMonthRows++; otherMonthUnits += r.qty; continue; }
+      const e = byPerson.get(r.person) || { person: r.person, units: 0, lines: 0, invoices: new Set() };
+      e.units += r.qty;
+      e.lines++;
+      if (r.voucher) e.invoices.add(r.voucher);
+      byPerson.set(r.person, e);
+    }
+
+    const people = [...byPerson.values()]
+      .map(e => ({ person: e.person, units: Math.round(e.units), lines: e.lines, invoices: e.invoices.size }))
+      .sort((a, b) => b.units - a.units);
+
+    // What each person earns, using the same history-based bar the rest of the
+    // section uses, so an uploaded month is rated exactly like an ERP one.
+    const lookback = lookbackMonthsFor(month, config);
+    const priorPeriods = await IncentivePeriod.find({ month: { $in: lookback } }).lean();
+    const priorByPerson = new Map();
+    for (const p of priorPeriods) {
+      for (const r of (p.rows || [])) {
+        if (!priorByPerson.has(r.person)) priorByPerson.set(r.person, []);
+        priorByPerson.get(r.person).push(r.units || 0);
+      }
+    }
+    const priced = people.map(p => {
+      const past = priorByPerson.get(p.person) || [];
+      const withData = past.filter(u => u > 0);
+      const computed = withData.length ? Math.round(withData.reduce((a, b) => a + b, 0) / withData.length) : 0;
+      const opening = Number(config.openingAverage?.[p.person] || 0);
+      const average = withData.length ? computed : opening;
+      return {
+        ...p,
+        averageSource: withData.length ? 'history' : (opening > 0 ? 'opening' : 'none'),
+        monthsOfHistory: withData.length,
+        ...incentiveFor(p.units, average, config),
+        next: nextThreshold(p.units, average, config),
+      };
+    });
+
+    const existing = await IncentivePeriod.findOne({ month }).lean();
+    const payload = {
+      month, commit,
+      columns: { person: cPerson, qty: cQty, month: cMonth || null, date: cDate || null, voucher: cVoucher || null },
+      headers,
+      rowsRead: rows.length,
+      skipped,
+      // Which raw spellings were folded into each name. An unfamiliar one
+      // showing up here is the cue to add an alias, before the figures are
+      // stored rather than after somebody has been paid on them.
+      spellings: [...spellings].map(([name, raw]) => ({ name, raw: [...raw] })),
+      // A sheet covering more than one month is worth seeing before it is filed.
+      monthsSeen: monthsSeen.map(([m, n]) => ({ month: m, rows: n })),
+      // Rows left out because they belong to a different month.
+      excluded: { rows: otherMonthRows, units: Math.round(otherMonthUnits) },
+      replacing: existing ? { rows: existing.rows?.length || 0, uploadedAt: existing.updatedAt } : null,
+      people: priced,
+      totals: {
+        people: priced.length,
+        units:  priced.reduce((a, p) => a + p.units, 0),
+        amount: Math.round(priced.reduce((a, p) => a + p.amount, 0) * 100) / 100,
+        points: priced.reduce((a, p) => a + p.points, 0),
+      },
+    };
+
+    if (!commit) return res.json({ ...payload, preview: true });
+
+    await IncentivePeriod.findOneAndUpdate(
+      { month },
+      { $set: {
+          month,
+          rows: people,
+          fileName: req.file.originalname || '',
+          uploadedBy: req.user?.id || '',
+          replaced: existing?.rows || [],
+      } },
+      { upsert: true, new: true },
+    );
+    res.json({ ...payload, saved: true });
+  } catch (e) {
+    console.error('[PTX INCENTIVE UPLOAD]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/* Months that came from an uploaded sheet, so the UI can say which source a
+ * month is using and offer to remove one. */
+router.get('/incentive/periods', protect, adminOnly, async (req, res) => {
+  try {
+    const rows = await IncentivePeriod.find({}, { month: 1, fileName: 1, uploadedBy: 1, rows: 1, updatedAt: 1 })
+      .sort({ month: -1 }).lean();
+    res.json({ periods: rows.map(r => ({
+      month: r.month, fileName: r.fileName, uploadedBy: r.uploadedBy,
+      people: (r.rows || []).length,
+      units: (r.rows || []).reduce((a, x) => a + (x.units || 0), 0),
+      updatedAt: r.updatedAt,
+    })) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.delete('/incentive/periods/:month', protect, adminOnly, async (req, res) => {
+  try {
+    const r = await IncentivePeriod.deleteOne({ month: String(req.params.month) });
+    res.json({ ok: true, deleted: r.deletedCount || 0 });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 router.get('/incentive', protect, adminOnly, async (req, res) => {
   try {
     const config = await getIncentiveConfig();
-    const match = {};
-    const month = String(req.query.month || '').trim();
-    if (/^\d{4}-\d{2}$/.test(month)) match.month = month;
 
-    // Offered so the panel can build its own month selector without a second
-    // round trip, and so an empty month reads as empty rather than missing.
     const months = (await ProductTxn.distinct('month')).filter(Boolean).sort().reverse();
+    const month = /^\d{4}-\d{2}$/.test(String(req.query.month || ''))
+      ? String(req.query.month)
+      : (months[0] || '');
+    if (!month) {
+      return res.json({ month: '', months: [], config, people: [], unassigned: { units: 0, lines: 0, salesmen: [] }, totals: { people: 0, units: 0, amount: 0, points: 0 } });
+    }
+
+    // Every month that feeds a decision: the one being scored plus the
+    // lookback window the average is taken over. Fetched in one pass so a
+    // person's history and their current figure come from the same read.
+    const lookback = lookbackMonthsFor(month, config);
+    const wanted = [...new Set([month, ...lookback])];
 
     const raw = await ProductTxn.aggregate([
-      { $match: match },
+      { $match: { month: { $in: wanted } } },
       { $group: {
           _id: {
-            billedBy:   { $trim: { input: { $ifNull: ['$billedBy', ''] } } },
+            month: '$month',
+            billedBy: { $trim: { input: { $ifNull: ['$billedBy', ''] } } },
             salesmanId: { $ifNull: ['$salesmanId', ''] },
           },
           units:    { $sum: '$qty' },
           lines:    { $sum: 1 },
           invoices: { $addToSet: '$voucherNo' },
-          amount:   { $sum: { $ifNull: ['$netTotal', 0] } },
       } },
     ]);
 
-    // Fold each salesman's bucket into their billing person. Shashikala covers
-    // three reps, so her units combine before the rate is applied.
-    const byPerson = new Map();
+    // Fold each bucket into its billing person. One person may cover several
+    // reps, so their units combine before any rate is worked out.
+    const now = new Map();          // person → { units, lines, invoices, reps }
+    const history = new Map();      // person → Map(month → units)
     const unmapped = new Map();
     for (const g of raw) {
-      const person = billingPersonFor({ billedBy: g._id.billedBy, salesmanId: g._id.salesmanId }, config);
+      const person = billingPersonFor(
+        { billedBy: g._id.billedBy, salesmanId: g._id.salesmanId }, config);
+      const isScored = g._id.month === month;
       if (!person) {
+        if (!isScored) continue;    // only the scored month's orphans matter
         const sid = g._id.salesmanId || '(none)';
         const u = unmapped.get(sid) || { salesmanId: sid, units: 0, lines: 0 };
         u.units += g.units || 0; u.lines += g.lines || 0;
         unmapped.set(sid, u);
         continue;
       }
-      const e = byPerson.get(person) || { _id: person, units: 0, lines: 0, amount: 0, invoices: new Set(), reps: new Set() };
+      if (!history.has(person)) history.set(person, new Map());
+      const h = history.get(person);
+      h.set(g._id.month, (h.get(g._id.month) || 0) + (g.units || 0));
+      if (!isScored) continue;
+      const e = now.get(person) || { units: 0, lines: 0, invoices: new Set(), reps: new Set() };
       e.units += g.units || 0;
       e.lines += g.lines || 0;
-      e.amount += g.amount || 0;
       for (const v of (g.invoices || [])) if (v) e.invoices.add(v);
       if (g._id.salesmanId) e.reps.add(g._id.salesmanId);
-      byPerson.set(person, e);
+      now.set(person, e);
     }
-    const rows = [...byPerson.values()]
-      .map(e => ({ ...e, invoices: [...e.invoices], reps: [...e.reps].sort() }))
-      .sort((a, b) => b.units - a.units);
 
-    // Lines with no biller are reported separately rather than folded into a
-    // blank row — they usually mean the column was missing or spelled
-    // differently in that upload, which is worth seeing.
     const people = [];
-    for (const r of rows) {
-      const name = String(r._id || '').trim();
-      const calc = incentiveFor(r.units, config);
+    for (const [name, e] of now) {
+      const h = history.get(name) || new Map();
+      // Average over the months that actually have data, not over all six —
+      // dividing a newcomer's two months by six would invent a low bar and
+      // pay them the top rate for ordinary volume.
+      const past = lookback.map(m => ({ month: m, units: h.get(m) || 0 }));
+      const withData = past.filter(p => p.units > 0);
+      // Real history wins; the opening figure is only a stand-in until there
+      // is some. Recorded either way so the UI can say which one is in play.
+      const computed = withData.length
+        ? Math.round(withData.reduce((a, p) => a + p.units, 0) / withData.length)
+        : 0;
+      const opening = Number(config.openingAverage?.[name] || 0);
+      const average = withData.length ? computed : opening;
+      const averageSource = withData.length ? 'history' : (opening > 0 ? 'opening' : 'none');
+      const calc = incentiveFor(e.units, average, config);
       people.push({
         name,
-        units: r.units || 0,
-        lines: r.lines || 0,
-        invoices: (r.invoices || []).filter(Boolean).length,
-        reps: r.reps || [],
-        billedValue: Math.round(r.amount || 0),
-        amount: calc.amount,
-        band: calc.band,
-        detail: calc.detail,
-        next: nextThreshold(r.units, config),
+        units: e.units,
+        lines: e.lines,
+        invoices: e.invoices.size,
+        reps: [...e.reps].sort(),
+        rawAverage: average,
+        averageSource,
+        openingAverage: opening,
+        monthsOfHistory: withData.length,
+        history: past,
+        ...calc,
+        next: nextThreshold(e.units, average, config),
       });
     }
+    people.sort((a, b) => b.amount - a.amount);
 
     res.json({
-      month: match.month || 'all',
-      months,
-      rule: { tier1: config.tier1, tier2: config.tier2, rateLow: config.rateLow, rateHigh: config.rateHigh },
+      month, months, lookback, config,
       people,
-      // Salesmen with nobody assigned to bill for them. Their units earn
-      // nothing, so they are named rather than quietly dropped.
       unassigned: {
         units: [...unmapped.values()].reduce((a, u) => a + u.units, 0),
         lines: [...unmapped.values()].reduce((a, u) => a + u.lines, 0),
         salesmen: [...unmapped.values()].sort((a, b) => b.units - a.units),
       },
-      mapping: config.mapping,
       totals: {
         people: people.length,
         units:  people.reduce((a, p) => a + p.units, 0),
         amount: Math.round(people.reduce((a, p) => a + p.amount, 0) * 100) / 100,
+        points: people.reduce((a, p) => a + p.points, 0),
       },
     });
   } catch (e) {
@@ -232,7 +470,6 @@ router.get('/last-upload', protect, async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 60 * 1024 * 1024 } });
 
 const newBatchId = () => crypto.randomBytes(8).toString('hex');
 const num = v => { const n = parseFloat(String(v ?? '').replace(/,/g, '')); return isNaN(n) ? 0 : n; };

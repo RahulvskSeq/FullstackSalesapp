@@ -61,6 +61,10 @@ export const NAV_PAGES = [
   { id:'tickets',     label:'Support' },
   { id:'reports',     label:'Reports' },
   { id:'producttx',   label:'Product Transactions' },
+  { id:'incentive',        label:'Incentive — this month' },
+  { id:'incentiveHistory', label:'Incentive — history' },
+  { id:'incentiveRule',    label:'Incentive — rule' },
+  { id:'incentiveUpload',  label:'Incentive — upload sheet' },
   { id:'sheets',      label:'Sheets' },
   { id:'admin',       label:'Admin Panel' },
 ];

@@ -2186,6 +2186,22 @@ export const api = {
   ptxIncentiveConfigSave: (c)  => fetch(`${BASE}/producttx/incentive-config`,{
     method:'PUT', headers:{...authHeaders(),'Content-Type':'application/json'}, body:JSON.stringify(c),
   }).then(handle),
+  // Work the incentive out from an uploaded sheet instead of from the ERP.
+  //
+  // Previews by default: the server reads the sheet, says which columns and
+  // which month it found, and returns the figures WITHOUT storing them. Call
+  // again with commit=true once the preview looks right. Paying people is not
+  // something to do on a guessed column mapping.
+  ptxIncentiveUpload: (file, { month = '', commit = false } = {}, onProgress) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    if (month) fd.append('month', month);
+    return postForm(`${BASE}/producttx/incentive/upload${commit ? '?commit=1' : ''}`, fd, onProgress);
+  },
+  // Months that came from an uploaded sheet.
+  ptxIncentivePeriods:      ()      => fetch(`${BASE}/producttx/incentive/periods`,{headers:authHeaders()}).then(handle),
+  ptxIncentivePeriodDelete: (month) => fetch(`${BASE}/producttx/incentive/periods/${encodeURIComponent(month)}`,
+    { method:'DELETE', headers:authHeaders() }).then(handle),
   featuresGet: () => fetch(`${BASE}/settings/features`,{headers:authHeaders()}).then(handle),
   featuresSet: (disabled) => fetch(`${BASE}/settings/features`,{
     method:'PUT', headers:{...authHeaders(),'Content-Type':'application/json'},

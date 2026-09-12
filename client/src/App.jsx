@@ -15381,7 +15381,7 @@
 // }
 
 import React, { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
-import { LayoutDashboard, Users, TrendingUp, Settings, LogOut, Bell, GitCompare, Menu, RefreshCw, Map, AlertTriangle, Upload, Edit3, Calendar, LogIn, ChevronDown, ShieldCheck, Shield, Palette, Check, Briefcase, Camera, ClipboardList, UserCheck, Plane, FileSpreadsheet, LifeBuoy, CheckSquare, BarChart3, Table, Package } from 'lucide-react';
+import { LayoutDashboard, Users, TrendingUp, Settings, LogOut, Bell, GitCompare, Menu, RefreshCw, Map, AlertTriangle, Upload, Edit3, Calendar, LogIn, ChevronDown, ShieldCheck, Shield, Palette, Check, Briefcase, Camera, ClipboardList, UserCheck, Plane, FileSpreadsheet, LifeBuoy, CheckSquare, BarChart3, Table, Package, IndianRupee, Trophy, UploadCloud } from 'lucide-react';
 import { DEFAULT_USERS, MO as MO_DEFAULT, CURRENT_MONTH_IDX as CURRENT_MONTH_IDX_DEFAULT, CURRENT_MONTH_LABEL as CURRENT_MONTH_LABEL_DEFAULT, CURRENT_MONTH_SHORT as CURRENT_MONTH_SHORT_DEFAULT } from './constants';
 import { pct, spct, pclr, uid, isoNow, storage, parseCSV, fetchCSV, parseOutstandingCSV } from './utils';
 import { api, dbDealerToApp, dbOutstandingToApp, saveToken, getToken } from './api';
@@ -15406,6 +15406,7 @@ import Compare           from './components/Compare';
 import FollowupsHub      from './components/FollowupsHub';
 import AdminPanel        from './components/AdminPanel';
 import UserManagement    from './components/UserManagement';
+import Incentive        from './components/Incentive';
 import AddDealerModal    from './components/AddDealerModal';
 import BulkActionModal   from './components/BulkActionModal';
 import UpdateButton, { isNativeApp } from './components/UpdateButton';
@@ -16233,7 +16234,17 @@ export default function App(){
   // ── Derived values (MUST be before any early return) ────────
   // Topbar snapshot: only count dealers with data for selected month
   const ttSnap=myDealers
-    .filter(x=>x.monthsWithData?.has(selectedMonthIdx)||!x.monthsWithData||x.monthsWithData.size===0)
+    // monthsWithData arrives from the API as an ARRAY of month indexes (see
+    // fmt() in routes/dealers.js), so calling Set.has() on it threw as soon
+    // as dealers were actually present. Accept either shape: a cached copy
+    // predating this is a plain array too, and an empty list means the dealer
+    // has no month data at all, which should not hide it.
+    .filter(x=>{
+      const m = x.monthsWithData;
+      if (!m) return true;
+      const list = Array.isArray(m) ? m : (typeof m.has === 'function' ? [...m] : []);
+      return list.length === 0 || list.includes(selectedMonthIdx);
+    })
     .reduce((s,x)=>s+((x.monthTargets?.[selectedMonthIdx] ?? x.monthTargets?.[String(selectedMonthIdx)])||0),0);
   // With a category filter on, read the month's total straight from the Sale
   // data rather than summing the dealer rows. Sale rows whose dealerName
@@ -16343,6 +16354,15 @@ export default function App(){
         {id:'visits', label:'Visits', icon:ClipboardList},
         {id:'leads',  label:'Leads',  icon:UserCheck},
         {id:'tasks',  label:'Tasks',  icon:CheckSquare},
+    ]},
+    // Its own group rather than a tab inside Product Transactions: the
+    // incentive is what people come to look at, and burying it two clicks
+    // deep under a raw-data screen made it hard to find.
+    { group:'incentive', label:'Incentive', icon:IndianRupee, children:[
+        {id:'incentive',        label:'This month', icon:Trophy},
+        {id:'incentiveUpload',  label:'Upload sheet', icon:UploadCloud},
+        {id:'incentiveHistory', label:'History',    icon:TrendingUp},
+        {id:'incentiveRule',    label:'Rule',       icon:Settings},
     ]},
     {id:'leaves',  label:'Leaves',  icon:Plane},
     {id:'tickets', label:'Support', icon:LifeBuoy},
@@ -16854,6 +16874,10 @@ export default function App(){
                   {screen==='reports' && isStaff && <Reports dealers={dealers} users={users} currentUser={currentUser} monthConfig={monthConfig} outstandingData={outstandingData}/>}
                   {screen==='sheets' && <Suspense fallback={<div style={{padding:40,textAlign:'center',color:'var(--t3)'}}>Loading spreadsheet…</div>}><Sheets currentUser={currentUser} users={users}/></Suspense>}
                   {screen==='producttx' && <ProductTxn currentUser={currentUser}/>}
+                  {screen==='incentive'        && <Incentive view="month"/>}
+                  {screen==='incentiveHistory' && <Incentive view="history"/>}
+                  {screen==='incentiveRule'    && <Incentive view="rule"/>}
+                  {screen==='incentiveUpload'  && <Incentive view="upload"/>}
                   {screen==='tasks'   && <TasksPage   users={users} currentUser={currentUser}/>}
                   {screen==='tickets' && <TicketsPage users={users} currentUser={currentUser}/>}
                   {screen==='admin'&&isStaff&&<AdminPanel dealers={dealersGloballyFiltered} users={users} setUsers={setUsers} setShowUM={setShowUM} onSync={syncSheets} syncing={syncing} lastSync={lastSync} syncErrs={syncErrs} onNavigate={navigate} onOpenDealer={setEditingId} monthConfig={monthConfig} saveMonthConfig={saveMonthConfig} currentUser={currentUser} onLoginAs={(token, user, impersonatedBy)=>{
