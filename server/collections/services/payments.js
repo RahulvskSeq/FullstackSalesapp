@@ -201,5 +201,6 @@ export async function listPayments(filter, { page = 1, limit = 50 } = {}) {
     ColPayment.countDocuments(filter)]);
   const Dealer = mongoose.models.Dealer;
   const names = new Map((await Dealer.find({ _id: { $in: items.map(i => i.dealerId) } }, 'name code').lean()).map(d => [String(d._id), d]));
-  return { items: items.map(i => ({ ...i, dealer: names.get(String(i.dealerId)) || null })), total, page, limit };
+  const bm = new Map((await ColBalance.find({ dealerId: { $in: items.map(i => i.dealerId) } }, 'dealerId buckets total').lean()).map(b => [String(b.dealerId), b]));
+  return { items: items.map(i => ({ ...i, dealer: names.get(String(i.dealerId)) || null, buckets: asObj(bm.get(String(i.dealerId))?.buckets), balanceTotal: bm.get(String(i.dealerId))?.total ?? null })), total, page, limit };
 }

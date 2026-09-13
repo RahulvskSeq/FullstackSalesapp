@@ -105,10 +105,14 @@ export async function breakOverduePromises(today = todayYmd()) {
   return broken;
 }
 
-const withDealer = async items => {
+const asObj = b => b instanceof Map ? Object.fromEntries(b) : (b && typeof b === 'object' ? b : {});
+/** Dealer name/code/phone and the current month buckets ride along with every row, so any list can show the Outstanding columns. */
+export const withDealer = async items => {
   const Dealer = mongoose.models.Dealer;
-  const names = new Map((await Dealer.find({ _id: { $in: [...new Set(items.map(i => String(i.dealerId)))] } }, 'name code phone').lean()).map(d => [String(d._id), d]));
-  return items.map(i => ({ ...i, dealer: names.get(String(i.dealerId)) || null }));
+  const ids = [...new Set(items.map(i => String(i.dealerId)))];
+  const [names, bals] = await Promise.all([Dealer.find({ _id: { $in: ids } }, 'name code phone').lean(), ColBalance.find({ dealerId: { $in: ids } }, 'dealerId buckets total').lean()]);
+  const nm = new Map(names.map(d => [String(d._id), d])), bm = new Map(bals.map(b => [String(b.dealerId), b]));
+  return items.map(i => ({ ...i, dealer: nm.get(String(i.dealerId)) || null, buckets: asObj(bm.get(String(i.dealerId))?.buckets), balanceTotal: bm.get(String(i.dealerId))?.total ?? null }));
 };
 export async function listFollowups(filter, { page = 1, limit = 50 } = {}) {
   const [items, total] = await Promise.all([ColFollowUp.find(filter).sort({ date: -1, createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(), ColFollowUp.countDocuments(filter)]);

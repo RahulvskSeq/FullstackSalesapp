@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { UploadCloud, CheckCircle2, AlertTriangle, RefreshCw } from 'lucide-react';
 import { col } from './api';
-import { useLoad, PageHead, Card, Table, Pager, Badge, Modal, Field, DealerPicker, Busy, ErrorBox, money, num, fmtDate, fmtWhen, periodLabel, userName, useDealerCtx } from './ui';
+import { useLoad, PageHead, Card, Table, Pager, Badge, Modal, Field, DealerPicker, Busy, ErrorBox, money, num, fmtDate, fmtWhen, periodLabel, userName, useDealerCtx, CardRow } from './ui';
 
 /**
  * Import manager — upload, preview, resolve unmapped parties, apply, and the
@@ -54,7 +54,8 @@ export default function Imports() {
           { k: 'unmapped', h: 'Unmapped', align: 'right', r: r => <span style={{ color: r.stats?.unmapped ? 'var(--yel)' : undefined }}>{num(r.stats?.unmapped)}</span> },
           { k: 'totalAfter', h: 'Total', align: 'right', r: r => r.status === 'APPLIED' ? money(r.stats?.totalAfter) : '—' },
           { k: 'uploadedBy', h: 'By', r: r => r.uploadedByName || userName(users, r.uploadedBy) },
-        ]} rows={list.data?.items} onRow={r => setOpen(String(r._id))} empty="No imports yet." />}
+        ]} rows={list.data?.items} onRow={r => setOpen(String(r._id))} empty="No imports yet."
+        card={r => <><CardRow><b style={{ overflowWrap: 'anywhere' }}>{r.fileName}</b><Badge v={r.status} /></CardRow><div style={{ fontSize: 11.5, color: 'var(--t2)', marginTop: 3 }}>Statement {fmtDate(r.asOn)} · {(r.periods || []).map(periodLabel).join(', ')} · {r.balanceMode}</div><div style={{ fontSize: 11.5, color: 'var(--t2)' }}>{num(r.stats?.matched)} / {num(r.stats?.rows)} rows · {num(r.stats?.unmapped)} unmapped{r.status === 'APPLIED' ? ` · total ${money(r.stats?.totalAfter)}` : ''}</div></>} />}
         <div style={{ padding: '0 12px 10px' }}><Pager page={list.data?.page} limit={list.data?.limit} total={list.data?.total} onPage={setPage} /></div>
       </Card>
       {open && <Preview id={open} onClose={() => { setOpen(null); list.reload(); }} />}

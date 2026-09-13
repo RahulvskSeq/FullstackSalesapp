@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { ClipboardList, Check, X, MessageSquare, ClipboardCheck } from 'lucide-react';
 import { col } from './api';
-import { useLoad, PageHead, Card, Table, Pager, Badge, Busy, ErrorBox, num, fmtDate, DealerLink, userName, useDealerCtx, title, today } from './ui';
+import { useLoad, PageHead, Card, Table, Pager, Badge, Busy, ErrorBox, num, fmtDate, DealerLink, userName, useDealerCtx, title, today, CardRow, monthCols, MonthKVs } from './ui';
 import { TaskForm } from './forms';
 import { CompleteTask } from './Today';
 
 export default function Tasks({ params }) {
-  const { users, isStaff } = useDealerCtx();
+  const { users, isStaff, openRecord } = useDealerCtx();
   const [q, setQ] = useState({ page: 1, limit: 50, status: params?.status || 'OPEN,IN_PROGRESS', employeeId: '', due: '' });
   const { data, busy, err, reload } = useLoad(() => col.tasks(q), [JSON.stringify(q)]);
   const [form, setForm] = useState(false);
@@ -28,6 +28,7 @@ export default function Tasks({ params }) {
           { k: 'type', h: 'Task', r: r => <b>{title(r.type)}</b> },
           { k: 'priority', h: 'Priority', r: r => <Badge v={r.priority} /> },
           { k: 'dealer', h: 'Dealer', r: r => <DealerLink id={r.dealerId} name={r.dealerName || r.dealer?.name || String(r.dealerId)} code={r.dealerCode || r.dealer?.code} /> },
+          ...monthCols(data?.items), { k: 'balanceTotal', h: 'Outstanding', align: 'right', r: r => r.balanceTotal == null ? '—' : <b>{money(r.balanceTotal)}</b> },
           { k: 'dueDate', h: 'Due', r: r => <span style={{ color: r.dueDate < today() && ['OPEN', 'IN_PROGRESS'].includes(r.status) ? 'var(--red)' : undefined }}>{fmtDate(r.dueDate)}{r.dueTime ? ' ' + r.dueTime : ''}</span> },
           { k: 'status', h: 'Status', r: r => <Badge v={r.status} /> },
           { k: 'employeeId', h: 'Assigned', r: r => userName(users, r.employeeId) },
@@ -39,7 +40,19 @@ export default function Tasks({ params }) {
               <button className="btn" style={{ padding: '3px 7px' }} data-tip="Comment" onClick={async e => { e.stopPropagation(); const text = window.prompt('Comment'); if (!text) return; await col.commentTask(r._id, text).catch(x => alert(x.message)); reload(); }}><MessageSquare size={12} /></button>
               <button className="btn" style={{ padding: '3px 7px' }} data-tip="Cancel" onClick={async e => { e.stopPropagation(); const reason = window.prompt('Reason for cancelling?'); if (reason === null) return; await col.cancelTask(r._id, reason).catch(x => alert(x.message)); reload(); }}><X size={12} /></button>
             </div> : (r.comments?.length ? <span className="chip">{r.comments.length} comments</span> : null) },
-        ]} rows={data?.items} empty="No tasks." />}
+        ]} rows={data?.items} empty="No tasks." onRow={r => openRecord('task', r, reload)}
+        card={r => <>
+          <CardRow><span><Badge v={r.priority} /> <b style={{ marginLeft: 6 }}>{title(r.type)}</b></span><Badge v={r.status} /></CardRow>
+          <div style={{ margin: '4px 0' }}><DealerLink id={r.dealerId} name={r.dealerName || r.dealer?.name || String(r.dealerId)} code={r.dealerCode || r.dealer?.code} /></div>
+          {r.description && <div style={{ fontSize: 12, color: 'var(--t2)' }}>{r.description}</div>}
+          {r.balanceTotal != null && <MonthKVs row={r} rows={data?.items} total={r.balanceTotal} />}
+          <div style={{ fontSize: 11.5, color: r.dueDate < today() && ['OPEN', 'IN_PROGRESS'].includes(r.status) ? 'var(--red)' : 'var(--t2)', marginTop: 4 }}>#{r.taskNo} · Due {fmtDate(r.dueDate)}{r.dueTime ? ' ' + r.dueTime : ''} · {userName(users, r.employeeId)} · {r.points} pts{r.source === 'automation' ? ' · auto' : ''}</div>
+          {['OPEN', 'IN_PROGRESS'].includes(r.status) && <div className="row" style={{ gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+            <button className="btnp" style={{ padding: '4px 10px', fontSize: 12 }} onClick={e => { e.stopPropagation(); setDone(r); }}><Check size={12} /> Done</button>
+            <button className="btn" style={{ padding: '4px 8px', fontSize: 12 }} onClick={async e => { e.stopPropagation(); const text = window.prompt('Comment'); if (!text) return; await col.commentTask(r._id, text).catch(x => alert(x.message)); reload(); }}><MessageSquare size={12} /> Comment</button>
+            <button className="btn" style={{ padding: '4px 8px', fontSize: 12 }} onClick={async e => { e.stopPropagation(); const reason = window.prompt('Reason for cancelling?'); if (reason === null) return; await col.cancelTask(r._id, reason).catch(x => alert(x.message)); reload(); }}><X size={12} /> Cancel</button>
+          </div>}
+        </>} />}
         <div style={{ padding: '0 12px 10px' }}><Pager page={data?.page} limit={data?.limit} total={data?.total} onPage={p => setQ(x => ({ ...x, page: p }))} /></div>
       </Card>
       {form && <TaskForm onClose={() => setForm(false)} onDone={reload} />}

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ClipboardList, Check, X, CalendarCheck, NotebookPen, Banknote } from 'lucide-react';
 import { col } from './api';
-import { useLoad, PageHead, Card, Table, Badge, Busy, ErrorBox, money, num, fmtDate, DealerLink, useDealerCtx, userName, title, WhatsAppIcon, StatusBadge, CallButton } from './ui';
+import { useLoad, PageHead, Card, Table, Badge, Busy, ErrorBox, money, num, fmtDate, DealerLink, useDealerCtx, userName, title, WhatsAppIcon, StatusBadge, CallButton, CardRow, KV, monthCols, MonthKVs } from './ui';
 import { FollowupForm, PaymentForm, TaskForm, WhatsAppForm } from './forms';
 
 /**
@@ -9,7 +9,7 @@ import { FollowupForm, PaymentForm, TaskForm, WhatsAppForm } from './forms';
  * actions right on the rows so nothing needs a second screen.
  */
 export default function Today() {
-  const { users, isStaff, currentUser } = useDealerCtx();
+  const { users, isStaff, currentUser, openRecord, open: openDealer } = useDealerCtx();
   const [emp, setEmp] = useState('');
   const { data, busy, err, reload } = useLoad(() => col.today(emp ? { employeeId: emp } : {}), [emp]);
   const [form, setForm] = useState(null);   // { kind, dealer }
@@ -24,10 +24,44 @@ export default function Today() {
     <button className="btn" data-tip="Record a payment" style={{ padding: '3px 8px', color: 'var(--grn)', display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5 }} onClick={e => { e.stopPropagation(); setForm({ kind: 'payment', dealer: dealerOf(r) }); }}><Banknote size={12} /><span className="col-lbl">Payment</span></button>
     <button className="btn" data-tip="WhatsApp" style={{ padding: '3px 8px', color: '#25D366', display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5 }} onClick={e => { e.stopPropagation(); setForm({ kind: 'wa', dealer: dealerOf(r) }); }}><WhatsAppIcon size={13} /><span className="col-lbl">WhatsApp</span></button>
   </div>;
+  const actBtns = r => <div className="row" style={{ gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+    <CallButton dealer={dealerOf(r)} label="Call" onDialed={d => setForm({ kind: 'followup', dealer: d })} />
+    <button className="btn" style={{ padding: '3px 8px', color: 'var(--pur)', display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5 }} onClick={e => { e.stopPropagation(); setForm({ kind: 'followup', dealer: dealerOf(r) }); }}><NotebookPen size={12} />Follow-up</button>
+    <button className="btn" style={{ padding: '3px 8px', color: 'var(--grn)', display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5 }} onClick={e => { e.stopPropagation(); setForm({ kind: 'payment', dealer: dealerOf(r) }); }}><Banknote size={12} />Payment</button>
+    <button className="btn" style={{ padding: '3px 8px', color: '#25D366', display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5 }} onClick={e => { e.stopPropagation(); setForm({ kind: 'wa', dealer: dealerOf(r) }); }}><WhatsAppIcon size={13} />WhatsApp</button>
+  </div>;
+  const taskCard = r => <>
+    <CardRow><span><Badge v={r.priority} /> <b style={{ marginLeft: 6 }}>{title(r.type)}</b></span><span className="chip">#{r.taskNo}</span></CardRow>
+    <div style={{ margin: '4px 0' }}><DealerLink id={r.dealerId} name={r.dealerName} code={r.dealerCode} /></div>
+    {r.description && <div style={{ fontSize: 12, color: 'var(--t2)' }}>{r.description}</div>}
+    <MonthKVs row={r} rows={allRows} total={r.balanceTotal} />
+    <div style={{ fontSize: 11.5, color: r.dueDate < d.today ? 'var(--red)' : 'var(--t2)', marginTop: 4 }}>Due {fmtDate(r.dueDate)}{r.dueTime ? ' ' + r.dueTime : ''}{isStaff ? ' · ' + userName(users, r.employeeId) : ''} · {r.points} pts</div>
+    <div className="row" style={{ gap: 6, marginTop: 8 }}>
+      <button className="btnp" style={{ padding: '4px 10px', fontSize: 12 }} onClick={e => { e.stopPropagation(); setDone(r); }}><Check size={12} /> Done</button>
+      <button className="btn" style={{ padding: '4px 8px', fontSize: 12 }} onClick={async e => { e.stopPropagation(); const reason = window.prompt('Reason for cancelling?'); if (reason === null) return; await col.cancelTask(r._id, reason).catch(x => alert(x.message)); reload(); }}><X size={12} /> Cancel</button>
+    </div>
+  </>;
+  const balCard = r => <>
+    <CardRow><DealerLink id={r.dealerId} name={r.dealerName} code={r.dealerCode} /><StatusBadge status={r.status} priority={r.priority} /></CardRow>
+    <MonthKVs row={r} rows={allRows} />
+    <div style={{ fontSize: 11.5, color: 'var(--t2)' }}>{r.ageDays != null ? `${r.ageDays} days` : ''}{r.nextFollowupAt ? ` · follow-up ${fmtDate(r.nextFollowupAt)}` : ''}</div>
+    {r.promise?.amount ? <div style={{ fontSize: 11.5, color: 'var(--t2)' }}>Promise {money(r.promise.amount)} by {fmtDate(r.promise.date)}</div> : null}
+    {actBtns(r)}
+  </>;
+  const promCard = r => <>
+    <CardRow><DealerLink id={r.dealerId} name={r.dealerName} code={r.dealerCode} /><Badge v={r.status} /></CardRow>
+    <MonthKVs row={r} rows={allRows} total={r.balanceTotal} />
+    <div style={{ fontSize: 11.5, color: 'var(--t2)' }}>Promised {money(r.amount)} by {fmtDate(r.promiseDate)} · received {money(r.received)}</div>
+    {isStaff && <div style={{ fontSize: 11.5, color: 'var(--t2)' }}>{userName(users, r.employeeId)}</div>}
+    {actBtns(r)}
+  </>;
+  const allRows = [...d.tasksToday, ...d.tasksOverdue, ...d.followupsDue, ...d.followupsOverdue, ...d.promisesToday, ...d.promisesBroken, ...d.highPriority];
+  const months = monthCols(allRows);
   const taskCols = [
     { k: 'taskNo', h: '#', r: r => <span className="chip">{r.taskNo}</span> },
     { k: 'type', h: 'Task', r: r => <span><Badge v={r.priority} /> <b style={{ marginLeft: 6 }}>{title(r.type)}</b>{r.description ? <div style={{ fontSize: 11.5, color: 'var(--t2)', whiteSpace: 'normal' }}>{r.description}</div> : null}</span>, wrap: true },
     { k: 'dealer', h: 'Dealer', r: r => <DealerLink id={r.dealerId} name={r.dealerName} code={r.dealerCode} /> },
+    ...months, { k: 'balanceTotal', h: 'Outstanding', align: 'right', r: r => <b>{money(r.balanceTotal ?? r.total)}</b> },
     { k: 'dueDate', h: 'Due', r: r => <span style={{ color: r.dueDate < d.today ? 'var(--red)' : undefined }}>{fmtDate(r.dueDate)}{r.dueTime ? ' ' + r.dueTime : ''}</span> },
     ...(isStaff ? [{ k: 'employeeId', h: 'Assigned', r: r => userName(users, r.employeeId) }] : []),
     { k: 'points', h: 'Pts', align: 'right' },
@@ -38,7 +72,7 @@ export default function Today() {
   ];
   const balCols = [
     { k: 'dealer', h: 'Dealer', r: r => <DealerLink id={r.dealerId} name={r.dealerName} code={r.dealerCode} /> },
-    { k: 'total', h: 'Outstanding', align: 'right', r: r => money(r.total) },
+    ...months, { k: 'total', h: 'Outstanding', align: 'right', r: r => <b>{money(r.total)}</b> },
     { k: 'ageDays', h: 'Age', align: 'right', r: r => r.ageDays == null ? '—' : r.ageDays + 'd' },
     { k: 'status', h: 'Status', r: r => <StatusBadge status={r.status} priority={r.priority} /> },
     { k: 'nextFollowupAt', h: 'Follow-up', r: r => fmtDate(r.nextFollowupAt) },
@@ -47,6 +81,7 @@ export default function Today() {
   ];
   const promCols = [
     { k: 'dealer', h: 'Dealer', r: r => <DealerLink id={r.dealerId} name={r.dealerName} code={r.dealerCode} /> },
+    ...months, { k: 'balanceTotal', h: 'Outstanding', align: 'right', r: r => <b>{money(r.balanceTotal)}</b> },
     { k: 'amount', h: 'Promised', align: 'right', r: r => money(r.amount) },
     { k: 'received', h: 'Received', align: 'right', r: r => money(r.received) },
     { k: 'promiseDate', h: 'By', r: r => fmtDate(r.promiseDate) },
@@ -69,18 +104,13 @@ export default function Today() {
         <div className="stat-card"><div style={{ fontSize: 10.5, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase' }}>Promises today</div><div style={{ fontSize: 19, fontWeight: 800 }}>{money(d.promisesToday.reduce((s, p) => s + (p.amount - (p.received || 0)), 0))}</div></div>
         <div className="stat-card"><div style={{ fontSize: 10.5, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase' }}>Broken promises</div><div style={{ fontSize: 19, fontWeight: 800, color: d.promisesBroken.length ? 'var(--red)' : undefined }}>{num(d.promisesBroken.length)}</div></div>
       </div>
-      <Section t="Tasks due today" n={d.tasksToday.length}><Table dense cols={taskCols} rows={d.tasksToday} empty="No tasks due today." /></Section>
-      {d.tasksOverdue.length > 0 && <Section t="Overdue tasks" n={d.tasksOverdue.length} tone="var(--red)"><Table dense cols={taskCols} rows={d.tasksOverdue} /></Section>}
-      <Section t="Follow-ups due today" n={d.followupsDue.length}><Table dense cols={balCols} rows={d.followupsDue} keyOf={r => r.dealerId} empty="No follow-ups scheduled for today." /></Section>
-      {d.followupsOverdue.length > 0 && <Section t="Overdue follow-ups" n={d.followupsOverdue.length} tone="var(--red)"><Table dense cols={balCols} rows={d.followupsOverdue} keyOf={r => r.dealerId} /></Section>}
-      <Section t="Promises due today" n={d.promisesToday.length}><Table dense cols={promCols} rows={d.promisesToday} empty="No promises fall due today." /></Section>
-      {d.promisesBroken.length > 0 && <Section t="Broken promises" n={d.promisesBroken.length} tone="var(--red)"><Table dense cols={promCols} rows={d.promisesBroken} /></Section>}
-      <Section t="High-priority dealers" n={d.highPriority.length}><Table dense cols={balCols} rows={d.highPriority} keyOf={r => r.dealerId} empty="Nobody is flagged high priority." /></Section>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
-        <Card title="Payments confirmed (7 days)"><Table dense cols={[{ k: 'date', h: 'Date', r: r => fmtDate(r.date) }, { k: 'paymentNo', h: '#' }, { k: 'amount', h: 'Amount', align: 'right', r: r => money(r.amount) }, { k: 'mode', h: 'Mode' }]} rows={d.recentPayments} empty="None." /></Card>
-        <Card title="New outstanding (7 days)"><Table dense cols={[{ k: 'at', h: 'When', r: r => fmtDate(r.at) }, { k: 'type', h: 'Event', r: r => <Badge v={r.type === 'NEW_OUTSTANDING' ? 'NEW' : r.type} /> }, { k: 'amount', h: 'Amount', align: 'right', r: r => money(r.amount) }]} rows={d.newOutstanding} empty="None." /></Card>
-        <Card title="Cleared (7 days)"><Table dense cols={[{ k: 'at', h: 'When', r: r => fmtDate(r.at) }, { k: 'amount', h: 'Was', align: 'right', r: r => money(r.amount) }, { k: 'note', h: 'Note' }]} rows={d.recentlyCleared} empty="None." /></Card>
-      </div>
+      <Section t="Follow-ups due today" n={d.followupsDue.length}><Table dense cols={balCols} rows={d.followupsDue} keyOf={r => r.dealerId} empty="No follow-ups scheduled for today." card={balCard} onRow={r => openDealer(r.dealerId)} /></Section>
+      {d.followupsOverdue.length > 0 && <Section t="Overdue follow-ups" n={d.followupsOverdue.length} tone="var(--red)"><Table dense cols={balCols} rows={d.followupsOverdue} keyOf={r => r.dealerId} card={balCard} onRow={r => openDealer(r.dealerId)} /></Section>}
+      <Section t="Promises due today" n={d.promisesToday.length}><Table dense cols={promCols} rows={d.promisesToday} empty="No promises fall due today." card={promCard} onRow={r => openRecord('promise', r, reload)} /></Section>
+      {d.promisesBroken.length > 0 && <Section t="Broken promises" n={d.promisesBroken.length} tone="var(--red)"><Table dense cols={promCols} rows={d.promisesBroken} card={promCard} onRow={r => openRecord('promise', r, reload)} /></Section>}
+      <Section t="Tasks due today" n={d.tasksToday.length}><Table dense cols={taskCols} rows={d.tasksToday} empty="No tasks due today." card={taskCard} onRow={r => openRecord('task', r, reload)} /></Section>
+      {d.tasksOverdue.length > 0 && <Section t="Overdue tasks" n={d.tasksOverdue.length} tone="var(--red)"><Table dense cols={taskCols} rows={d.tasksOverdue} card={taskCard} onRow={r => openRecord('task', r, reload)} /></Section>}
+      <Section t="High-priority dealers" n={d.highPriority.length}><Table dense cols={balCols} rows={d.highPriority} keyOf={r => r.dealerId} empty="Nobody is flagged high priority." card={balCard} onRow={r => openDealer(r.dealerId)} /></Section>
       {form?.kind === 'followup' && <FollowupForm dealer={form.dealer} onClose={() => setForm(null)} onDone={reload} />}
       {form?.kind === 'payment' && <PaymentForm dealer={form.dealer} onClose={() => setForm(null)} onDone={reload} />}
       {form?.kind === 'task' && <TaskForm dealer={form.dealer} onClose={() => setForm(null)} onDone={reload} />}

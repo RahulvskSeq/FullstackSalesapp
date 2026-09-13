@@ -48,10 +48,13 @@ router.get('/today', async (req, res) => {
       ColEvent.find({ ...sf, type: 'CLEARED', at: { $gte: since } }).sort({ at: -1 }).limit(20).lean(),
     ]);
     const Dealer = (await import('mongoose')).default.models.Dealer;
-    const ids = [...new Set([...tasksToday, ...tasksOverdue, ...promisesToday, ...promisesBroken, ...followupsDue, ...followupsOverdue, ...highPriority].map(t => String(t.dealerId)))];
+    const ids = [...new Set([...tasksToday, ...tasksOverdue, ...promisesToday, ...promisesBroken, ...followupsDue, ...followupsOverdue, ...highPriority, ...recentPayments, ...newOutstanding, ...recentlyCleared].map(t => String(t.dealerId)))];
     const names = new Map((await Dealer.find({ _id: { $in: ids } }, 'name code phone').lean()).map(d => [String(d._id), d]));
-    const named = a => a.map(t => ({ ...t, dealerName: t.dealerName || names.get(String(t.dealerId))?.name || '', dealerCode: t.dealerCode || names.get(String(t.dealerId))?.code || '', phone: names.get(String(t.dealerId))?.phone || '' }));
-    res.json({ today, employeeId: me, tasksToday: named(tasksToday), tasksOverdue: named(tasksOverdue), followupsDue, followupsOverdue, promisesToday: named(promisesToday), promisesBroken: named(promisesBroken), followupsDue: named(followupsDue), followupsOverdue: named(followupsOverdue), highPriority: named(highPriority), recentPayments, newOutstanding, recentlyCleared });
+    // Month buckets travel with every dealer row (tasks and promises included), so each list can show the same columns as Outstanding.
+    const balById = new Map((await ColBalance.find({ dealerId: { $in: ids } }, 'dealerId buckets total').lean()).map(b => [String(b.dealerId), b]));
+    const asObj = b => b instanceof Map ? Object.fromEntries(b) : (b && typeof b === 'object' ? b : {});
+    const named = a => a.map(t => { const b = balById.get(String(t.dealerId)); return { ...t, buckets: asObj(t.buckets && Object.keys(asObj(t.buckets)).length ? t.buckets : b?.buckets), balanceTotal: b?.total ?? t.total, dealerName: t.dealerName || names.get(String(t.dealerId))?.name || '', dealerCode: t.dealerCode || names.get(String(t.dealerId))?.code || '', phone: names.get(String(t.dealerId))?.phone || '' }; });
+    res.json({ today, employeeId: me, tasksToday: named(tasksToday), tasksOverdue: named(tasksOverdue), followupsDue, followupsOverdue, promisesToday: named(promisesToday), promisesBroken: named(promisesBroken), followupsDue: named(followupsDue), followupsOverdue: named(followupsOverdue), highPriority: named(highPriority), recentPayments: named(recentPayments), newOutstanding: named(newOutstanding), recentlyCleared: named(recentlyCleared) });
   } catch (e) { fail(res, e); }
 });
 

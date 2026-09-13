@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Download, BadgeIndianRupee, NotebookPen, Banknote } from 'lucide-react';
 import { col, downloadReport } from './api';
-import { useLoad, PageHead, Card, Table, Pager, Badge, Busy, ErrorBox, money, num, fmtDate, periodLabel, DealerLink, useDealerCtx, WhatsAppIcon, StatusBadge, CallButton } from './ui';
+import { useLoad, PageHead, Card, Table, Pager, Badge, Busy, ErrorBox, money, num, fmtDate, periodLabel, DealerLink, useDealerCtx, WhatsAppIcon, StatusBadge, CallButton, CardRow, KV } from './ui';
 import { FollowupForm, PaymentForm, WhatsAppForm } from './forms';
 
 const STATUSES = ['DUE', 'FOLLOW_UP_REQUIRED', 'PROMISED', 'PARTIAL_PAYMENT', 'OVERDUE', 'HIGH_PRIORITY', 'CLEARED', 'CLOSED'];
@@ -9,8 +9,8 @@ const PRIORITIES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
 
 /** The current book: one row per dealer, the server's figure, never a sheet. */
 export default function Outstanding({ params }) {
-  const { users, isStaff } = useDealerCtx();
-  const [q, setQ] = useState({ page: 1, limit: 50, sort: 'total', dir: 'desc', owing: '1', status: params?.status || '', priority: params?.priority || '', salesmanId: '', q: '' });
+  const { users, isStaff, open: openDealer } = useDealerCtx();
+  const [q, setQ] = useState({ page: 1, limit: 50, sort: 'total', dir: 'desc', owing: '1', status: params?.status || '', priority: params?.priority || '', salesmanId: params?.salesmanId || '', q: '' });
   const [text, setText] = useState('');
   const { data, busy, err, reload } = useLoad(() => col.outstanding(q), [JSON.stringify(q)]);
   const [form, setForm] = useState(null);
@@ -55,7 +55,23 @@ export default function Outstanding({ params }) {
                 <button className="btn" style={{ padding: '3px 8px', color: 'var(--pur)', display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5 }} data-tip="Write down a follow-up" onClick={e => { e.stopPropagation(); setForm({ kind: 'followup', dealer: dealerOf(r) }); }}><NotebookPen size={12} /><span className="col-lbl">Follow-up</span></button>
                 <button className="btn" style={{ padding: '3px 8px', color: 'var(--grn)', display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5 }} data-tip="Record a payment" onClick={e => { e.stopPropagation(); setForm({ kind: 'payment', dealer: dealerOf(r) }); }}><Banknote size={12} /><span className="col-lbl">Payment</span></button>
                 <button className="btn" style={{ padding: '3px 8px', color: '#25D366', display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5 }} data-tip="WhatsApp" onClick={e => { e.stopPropagation(); setForm({ kind: 'wa', dealer: dealerOf(r) }); }}><WhatsAppIcon size={13} /><span className="col-lbl">WhatsApp</span></button></div> },
-          ]} rows={data?.items} keyOf={r => r.dealerId} empty="No dealers match. Import a statement first if the module is new." />)}
+          ]} rows={data?.items} keyOf={r => r.dealerId} onRow={r => openDealer(r.dealerId)} empty="No dealers match. Import a statement first if the module is new."
+          card={r => <>
+            <CardRow><DealerLink id={r.dealerId} name={r.dealerName} code={r.dealerCode} /><StatusBadge status={r.status} priority={r.priority} /></CardRow>
+            <div style={{ fontSize: 11.5, color: 'var(--t2)', margin: '2px 0 8px' }}>{r.salesmanName}{r.ageDays != null ? ` · ${r.ageDays} days` : ''}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${periods.length + 1}, minmax(0,1fr))`, gap: 6, marginBottom: 8 }}>
+              {periods.map(p => <KV key={p} k={periodLabel(p)} v={r.buckets?.[p] ? money(r.buckets[p]) : '–'} />)}
+              <KV k="Total" v={money(r.total)} big />
+            </div>
+            {(r.nextFollowupAt || r.promise?.amount || r.lastPaymentAt) && <div style={{ fontSize: 11.5, color: 'var(--t2)', marginBottom: 8 }}>
+              {r.nextFollowupAt ? `Follow-up ${fmtDate(r.nextFollowupAt)}` : ''}{r.promise?.amount ? ` · Promise ${money(r.promise.amount)} by ${fmtDate(r.promise.date)}` : ''}{r.lastPaymentAt ? ` · Last paid ${fmtDate(r.lastPaymentAt)}` : ''}</div>}
+            <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+              <CallButton dealer={dealerOf(r)} label="Call" onDialed={d => setForm({ kind: 'followup', dealer: d })} />
+              <button className="btn" style={{ padding: '3px 8px', color: 'var(--pur)', display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5 }} onClick={e => { e.stopPropagation(); setForm({ kind: 'followup', dealer: dealerOf(r) }); }}><NotebookPen size={12} />Follow-up</button>
+              <button className="btn" style={{ padding: '3px 8px', color: 'var(--grn)', display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5 }} onClick={e => { e.stopPropagation(); setForm({ kind: 'payment', dealer: dealerOf(r) }); }}><Banknote size={12} />Payment</button>
+              <button className="btn" style={{ padding: '3px 8px', color: '#25D366', display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5 }} onClick={e => { e.stopPropagation(); setForm({ kind: 'wa', dealer: dealerOf(r) }); }}><WhatsAppIcon size={13} />WhatsApp</button>
+            </div>
+          </>} />)}
         <div style={{ padding: '0 12px 10px' }}><Pager page={data?.page} limit={data?.limit} total={data?.total} onPage={p => setQ(x => ({ ...x, page: p }))} /></div>
       </Card>
       {form?.kind === 'followup' && <FollowupForm dealer={form.dealer} onClose={() => setForm(null)} onDone={reload} />}

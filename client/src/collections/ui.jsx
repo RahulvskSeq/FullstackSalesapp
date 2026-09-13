@@ -90,9 +90,20 @@ export function ErrorBox({ err, onRetry }) {
 }
 export function Busy() { return <div style={{ padding: 20, color: 'var(--t3)', fontSize: 12.5 }}><span className="spin" style={{ display: 'inline-block', marginRight: 6 }}><RefreshCw size={12} /></span>Loading…</div>; }
 
-/* One table for every list. `cols` = [{ k, h, r?: row => node, w?, align? }] */
-export function Table({ cols, rows, keyOf = r => r._id, onRow, empty = 'Nothing to show.', dense }) {
+/** True below the app's phone breakpoint; re-evaluated on resize. */
+export function useIsMobile(bp = 768) {
+  const [m, setM] = useState(typeof window !== 'undefined' && window.innerWidth <= bp);
+  useEffect(() => { const f = () => setM(window.innerWidth <= bp); window.addEventListener('resize', f); return () => window.removeEventListener('resize', f); }, [bp]);
+  return m;
+}
+
+/* One table for every list. `cols` = [{ k, h, r?: row => node, w?, align? }].
+ * On a phone, a list that supplies `card` (row => node) is drawn as cards
+ * instead — a wide table squeezed into 375px is not readable. */
+export function Table({ cols, rows, keyOf = r => r._id, onRow, empty = 'Nothing to show.', dense, card }) {
+  const mobile = useIsMobile();
   if (!rows?.length) return <Empty>{empty}</Empty>;
+  if (mobile && card) return <div style={{ display: 'grid', gap: 8, padding: '4px 0' }}>{rows.map(r => <div key={keyOf(r)} onClick={onRow ? () => onRow(r) : undefined} style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--bg2)', border: '1px solid var(--b1)' }}>{card(r)}</div>)}</div>;
   return (
     <div className="scroll col-scroll">
       <table className="col-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: dense ? 12 : 12.5 }}>
@@ -172,7 +183,7 @@ export function DealerPicker({ value, onChange, placeholder = 'Search dealer by 
 }
 
 /* ── the Dealer 360 drawer is reachable from any screen ────────────── */
-export const DealerCtx = createContext({ open: () => {}, users: [], currentUser: null, isStaff: false });
+export const DealerCtx = createContext({ open: () => {}, openRecord: () => {}, users: [], currentUser: null, isStaff: false, features: { has: () => false } });
 export const useDealerCtx = () => useContext(DealerCtx);
 export function DealerLink({ id, name, code }) {
   const { open } = useDealerCtx();
@@ -240,3 +251,13 @@ export function CallButton({ dealer, onDialed, size = 12, style, label }) {
   };
   return <a href={phone ? 'tel:+' + phone : '#'} onClick={dial} className="btn" data-tip={phone ? 'Call +' + phone : 'Call — add the number first'} style={{ padding: '3px 8px', fontSize: 11.5, color: '#0ea5e9', display: 'inline-flex', alignItems: 'center', gap: 5, textDecoration: 'none', ...style }}><PhoneCall size={size} />{label}</a>;
 }
+
+/* Small building blocks for phone cards. */
+export const CardRow = ({ children, style }) => <div className="row" style={{ justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', ...style }}>{children}</div>;
+export const KV = ({ k, v, big }) => <div style={{ minWidth: 0 }}><div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--t3)' }}>{k}</div><div style={{ fontSize: big ? 16 : 12.5, fontWeight: big ? 800 : 600, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{v}</div></div>;
+
+/** The last few month columns present in these rows (newest 4), as table columns — the same look as Outstanding. */
+export const periodsOf = (rows, n = 4) => [...new Set((rows || []).flatMap(r => Object.keys(r.buckets || {})))].sort().slice(-n);
+export const monthCols = rows => periodsOf(rows).map(p => ({ k: p, h: periodLabel(p), align: 'right', r: r => r.buckets?.[p] ? money(r.buckets[p]) : <span style={{ color: 'var(--t3)' }}>–</span> }));
+/** The same months for a phone card, with the total at the end. */
+export const MonthKVs = ({ row, rows, total }) => { const ps = periodsOf(rows || [row]); return <div style={{ display: 'grid', gridTemplateColumns: `repeat(${ps.length + 1}, minmax(0,1fr))`, gap: 6, margin: '8px 0 4px' }}>{ps.map(p => <KV key={p} k={periodLabel(p)} v={row.buckets?.[p] ? money(row.buckets[p]) : '–'} />)}<KV k="Total" v={money(total ?? row.total)} big /></div>; };

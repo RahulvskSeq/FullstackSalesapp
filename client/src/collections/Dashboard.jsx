@@ -2,13 +2,13 @@ import { Gauge } from 'lucide-react';
 import React from 'react';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid } from 'recharts';
 import { col } from './api';
-import { useLoad, PageHead, Card, Tile, Table, Badge, Busy, ErrorBox, money, num, fmtDate, DealerLink, userName, useDealerCtx } from './ui';
+import { useLoad, PageHead, Card, Tile, Table, Badge, Busy, ErrorBox, money, num, fmtDate, DealerLink, userName, useDealerCtx, CardRow, monthCols, MonthKVs } from './ui';
 
 const AGE_COLOURS = ['#22c55e', '#84cc16', '#eab308', '#f97316', '#ef4444', '#991b1b'];
 
 export default function Dashboard({ go }) {
   const { data, busy, err, reload } = useLoad(() => col.dashboard(), []);
-  const { users, isStaff } = useDealerCtx();
+  const { users, isStaff, open: openDealer } = useDealerCtx();
   if (busy && !data) return <Busy />;
   if (err) return <ErrorBox err={err} onRetry={reload} />;
   const t = data.tiles;
@@ -24,7 +24,7 @@ export default function Dashboard({ go }) {
         <Tile label="Follow-ups due today" value={num(t.followupsToday)} sub={`${num(t.followupsOverdue)} overdue`} tone="var(--yel)" onClick={() => go('colToday')} />
         <Tile label="Promises due today" value={money(t.promisesToday)} sub={`${num(t.promisesTodayCount)} promises`} tone="var(--pur)" onClick={() => go('colFollowups', { tab: 'promises' })} />
         <Tile label="Broken promises" value={money(t.brokenPromises)} sub={`${num(t.brokenPromisesCount)} still unpaid`} tone="var(--red)" onClick={() => go('colFollowups', { tab: 'promises', status: 'BROKEN' })} />
-        <Tile label="New outstanding (7 days)" value={money(t.newOutstanding7d)} sub={`${num(t.newOutstanding7dCount)} dealers · cleared today ${money(t.clearedToday)}`} tone="#f97316" />
+        <Tile label="Newly owing (7 days)" value={money(t.newOutstanding7d)} sub={`${num(t.newOutstanding7dCount)} dealers went from ₹0 to owing`} tone="#f97316" />
       </div>
 
       <div className="col-2" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.1fr) minmax(0,1fr)', gap: 12, marginBottom: 12 }}>
@@ -45,11 +45,12 @@ export default function Dashboard({ go }) {
         <Card title="High-priority dealers" right={<button className="btn" style={{ fontSize: 11 }} onClick={() => go('colOutstanding', { priority: 'HIGH,CRITICAL' })}>See all</button>}>
           <Table dense cols={[
             { k: 'dealer', h: 'Dealer', r: r => <DealerLink id={r.dealerId} name={r.dealerName} code={r.dealerCode} /> },
-            { k: 'total', h: 'Total', align: 'right', r: r => money(r.total) },
+            ...monthCols(data.highPriority), { k: 'total', h: 'Total', align: 'right', r: r => <b>{money(r.total)}</b> },
             { k: 'ageDays', h: 'Age', align: 'right', r: r => r.ageDays == null ? '—' : r.ageDays + 'd' },
             { k: 'priority', h: 'Priority', r: r => <Badge v={r.priority} /> },
             { k: 'salesmanName', h: 'Salesman' },
-          ]} rows={data.highPriority} keyOf={r => r.dealerId} empty="No high-priority dealers." />
+          ]} rows={data.highPriority} keyOf={r => r.dealerId} empty="No high-priority dealers." onRow={r => openDealer(r.dealerId)}
+          card={r => <><CardRow><DealerLink id={r.dealerId} name={r.dealerName} code={r.dealerCode} /><Badge v={r.priority} /></CardRow><div style={{ fontSize: 11, color: 'var(--t2)' }}>{r.salesmanName}{r.ageDays != null ? ` · ${r.ageDays}d` : ''}</div><MonthKVs row={r} rows={data.highPriority} /></>} />
         </Card>
         <Card title="By salesman">
           <Table dense cols={[
@@ -58,7 +59,8 @@ export default function Dashboard({ go }) {
             { k: 'total', h: 'Outstanding', align: 'right', r: r => money(r.total) },
             { k: 'overdue', h: 'Overdue', align: 'right', r: r => <span style={{ color: r.overdue ? 'var(--red)' : undefined }}>{money(r.overdue)}</span> },
             { k: 'collectedThisMonth', h: 'Collected (month)', align: 'right', r: r => money(r.collectedThisMonth) },
-          ]} rows={data.bySalesman} keyOf={r => r.salesmanId || 'none'} empty="No balances in scope." />
+          ]} rows={data.bySalesman} keyOf={r => r.salesmanId || 'none'} empty="No balances in scope." onRow={r => go('colOutstanding', { salesmanId: r.salesmanId })}
+          card={r => <><CardRow><b>{r.name}</b><b>{money(r.total)}</b></CardRow><div style={{ fontSize: 11.5, color: 'var(--t2)' }}>{num(r.dealers)} dealers · overdue {money(r.overdue)} · collected {money(r.collectedThisMonth)}</div></>} />
         </Card>
       </div>
 
@@ -68,7 +70,8 @@ export default function Dashboard({ go }) {
           { k: 'followups', h: 'Follow-ups', align: 'right' }, { k: 'calls', h: 'Calls', align: 'right' }, { k: 'visits', h: 'Visits', align: 'right' },
           { k: 'tasksDone', h: 'Tasks done', align: 'right' }, { k: 'promisesKept', h: 'Kept', align: 'right' }, { k: 'promisesBroken', h: 'Broken', align: 'right' },
           { k: 'collected', h: 'Collected', align: 'right', r: r => money(r.collected) }, { k: 'points', h: 'Points', align: 'right' },
-        ]} rows={data.activity30d} keyOf={r => r.employeeId} empty="No activity recorded in the last 30 days." />
+        ]} rows={data.activity30d} keyOf={r => r.employeeId} empty="No activity recorded in the last 30 days." onRow={() => go('colEmployees')}
+        card={r => <><CardRow><b>{r.name}</b><span className="chip">{num(r.points)} pts</span></CardRow><div style={{ fontSize: 11.5, color: 'var(--t2)' }}>{num(r.followups)} follow-ups · {num(r.calls)} calls · {num(r.visits)} visits · {num(r.tasksDone)} tasks · collected {money(r.collected)}</div></>} />
       </Card>
     </div>);
 }

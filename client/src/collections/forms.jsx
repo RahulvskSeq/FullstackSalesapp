@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { col } from './api';
-import { Modal, Field, DealerPicker, ErrorBox, money, today, useDealerCtx } from './ui';
+import { Modal, Field, DealerPicker, ErrorBox, money, today, useDealerCtx, MonthKVs, StatusBadge, fmtDate } from './ui';
 
 /**
  * The three write forms — follow-up, payment, task — shared by the Today
@@ -13,6 +13,27 @@ const MODES = ['CASH', 'CHEQUE', 'NEFT', 'RTGS', 'UPI', 'CARD', 'OTHER'];
 const TASK_TYPES = ['CALL', 'VISIT', 'PAYMENT_COLLECTION', 'WHATSAPP', 'SEND_STATEMENT', 'SEND_INVOICE', 'FOLLOW_UP', 'ESCALATION', 'VERIFICATION', 'PROMISE_FOLLOW_UP', 'CUSTOM'];
 const PRIORITY = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'];
 const t = s => String(s).replace(/_/g, ' ').toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase());
+
+/**
+ * The dealer's current position, right under the dealer field of every form —
+ * the months, the total, status, promise and last follow-up. Nobody should
+ * have to open Dealer 360 to know what they are calling about.
+ */
+export function DealerSummary({ dealer }) {
+  const [b, setB] = useState(null);
+  useEffect(() => { setB(null); if (!dealer?.id) return; let dead = false; col.dealer360(dealer.id).then(d => { if (!dead) setB(d.balance || { total: 0, buckets: {} }); }).catch(() => {}); return () => { dead = true; }; }, [dealer?.id]);
+  if (!dealer) return null;
+  if (!b) return <div style={{ fontSize: 11.5, color: 'var(--t3)', margin: '-6px 0 12px' }}>Loading outstanding…</div>;
+  return <div style={{ margin: '-6px 0 12px', padding: '8px 12px', borderRadius: 8, background: 'var(--accL)', border: '1px solid var(--b1)' }}>
+    <div className="row" style={{ justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+      <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--t2)' }}>OUTSTANDING</span><StatusBadge status={b.status} priority={b.priority} />
+    </div>
+    <MonthKVs row={b} total={b.total} />
+    <div style={{ fontSize: 11.5, color: 'var(--t2)' }}>
+      {b.ageDays != null ? `${b.ageDays} days old · ` : ''}{b.promise?.amount ? `promised ${money(b.promise.amount)} by ${fmtDate(b.promise.date)} · ` : ''}{b.lastFollowupAt ? `last follow-up ${fmtDate(b.lastFollowupAt)} · ` : ''}{b.lastPaymentAt ? `last paid ${fmtDate(b.lastPaymentAt)}` : 'no payment recorded yet'}
+    </div>
+  </div>;
+}
 
 function useSubmit(onDone) {
   const [busy, setBusy] = useState(false); const [err, setErr] = useState('');
@@ -31,6 +52,7 @@ export function FollowupForm({ dealer: preset, onClose, onDone }) {
   return (
     <Modal title="Record follow-up" onClose={onClose}>
       <Field label="Dealer"><DealerPicker value={dealer} onChange={setDealer} /></Field>
+      <DealerSummary dealer={dealer} />
       <div className="g2">
         <Field label="Date"><input type="date" className="inp" value={f.date} onChange={e => set('date', e.target.value)} max={today()} /></Field>
         <Field label="Time"><input type="time" className="inp" value={f.time} onChange={e => set('time', e.target.value)} /></Field>
@@ -76,6 +98,7 @@ export function PaymentForm({ dealer: preset, onClose, onDone }) {
   return (
     <Modal title="Record payment" onClose={onClose}>
       <Field label="Dealer"><DealerPicker value={dealer} onChange={setDealer} /></Field>
+      <DealerSummary dealer={dealer} />
       <div className="g2">
         <Field label="Date"><input type="date" className="inp" value={f.date} onChange={e => set('date', e.target.value)} max={today()} /></Field>
         <Field label="Amount (₹)"><input type="number" className="inp" value={f.amount} onChange={e => set('amount', e.target.value)} min={1} /></Field>
@@ -112,6 +135,7 @@ export function TaskForm({ dealer: preset, onClose, onDone }) {
   return (
     <Modal title="New task" onClose={onClose}>
       <Field label="Dealer"><DealerPicker value={dealer} onChange={setDealer} /></Field>
+      <DealerSummary dealer={dealer} />
       <div className="g2">
         <Field label="Type"><select className="sel" style={{ width: '100%' }} value={f.type} onChange={e => set('type', e.target.value)}>{TASK_TYPES.map(m => <option key={m} value={m}>{t(m)}</option>)}</select></Field>
         <Field label="Priority"><select className="sel" style={{ width: '100%' }} value={f.priority} onChange={e => set('priority', e.target.value)}>{PRIORITY.map(m => <option key={m} value={m}>{t(m)}</option>)}</select></Field>
@@ -141,6 +165,7 @@ export function WhatsAppForm({ dealer, onClose, onDone }) {
   useEffect(() => { if (!key || !dealer) return; col.waPreview(dealer.id, key).then(setPreview).catch(e => setPreview({ error: e.message })); }, [key, dealer]);
   return (
     <Modal title={`WhatsApp · ${dealer?.name || ''}`} onClose={onClose}>
+      <DealerSummary dealer={dealer} />
       <Field label="Send to (WhatsApp number)" hint={dealer?.phone ? '' : 'No number on record for this dealer yet.'}>
         <div className="row" style={{ gap: 8 }}>
           <input className="inp" value={to} onChange={e => setTo(e.target.value)} placeholder="10-digit mobile" />

@@ -1,7 +1,7 @@
 import { Scale } from 'lucide-react';
 import React, { useState } from 'react';
 import { col } from './api';
-import { useLoad, PageHead, Card, Table, Pager, Busy, ErrorBox, money, num, fmtDate, fmtWhen, DealerLink } from './ui';
+import { useLoad, PageHead, Card, Table, Pager, Busy, ErrorBox, money, num, fmtDate, fmtWhen, DealerLink, useDealerCtx } from './ui';
 
 /**
  * Where the statement and the books disagree. A positive difference is a
@@ -10,6 +10,7 @@ import { useLoad, PageHead, Card, Table, Pager, Busy, ErrorBox, money, num, fmtD
  * here that the statement has not reflected yet.
  */
 export default function Reconciliation() {
+  const { openRecord } = useDealerCtx();
   const [q, setQ] = useState({ page: 1, limit: 50, from: '', to: '' });
   const { data, busy, err, reload } = useLoad(() => col.reconciliation(q), [JSON.stringify(q)]);
   const set = p => setQ(x => ({ ...x, ...p, page: p.page || 1 }));
@@ -31,7 +32,7 @@ export default function Reconciliation() {
           { k: 'paid', h: 'Confirmed payments', align: 'right', r: r => money(r.meta?.confirmed ?? r.meta?.payments ?? 0) },
           { k: 'amount', h: 'Difference', align: 'right', r: r => <b style={{ color: r.amount > 0 ? 'var(--yel)' : 'var(--acc)' }}>{r.amount > 0 ? '+' : ''}{money(r.amount)}</b> },
           { k: 'note', h: 'Note', wrap: true },
-        ]} rows={data?.items} empty="Statement and books agree everywhere." />}
+        ]} rows={data?.items} empty="Statement and books agree everywhere." onRow={r => openRecord('event', r)} />}
         <div style={{ padding: '0 12px 10px' }}><Pager page={data?.page} limit={data?.limit} total={data?.total} onPage={p => setQ(x => ({ ...x, page: p }))} /></div>
       </Card>
     </div>);

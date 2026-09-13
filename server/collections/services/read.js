@@ -123,7 +123,7 @@ export async function dashboard(scopeF) {
       clearedToday: clearedToday[0]?.sum || 0, clearedTodayCount: clearedToday[0]?.n || 0,
       highPriorityDealers: hi.length,
     },
-    highPriority: await (async () => { const ph = new Map((await Dealer().find({ _id: { $in: hi.map(b => b.dealerId) } }, 'phone').lean()).map(d => [String(d._id), d.phone || ''])); return hi.map(b => ({ dealerId: b.dealerId, dealerName: b.dealerName, dealerCode: b.dealerCode, total: b.total, ageDays: b.ageDays, priority: b.priority, status: b.status, salesmanName: users.get(b.salesmanId) || b.salesmanId, phone: ph.get(String(b.dealerId)) || '' })); })(),
+    highPriority: await (async () => { const ph = new Map((await Dealer().find({ _id: { $in: hi.map(b => b.dealerId) } }, 'phone').lean()).map(d => [String(d._id), d.phone || ''])); return hi.map(b => ({ dealerId: b.dealerId, dealerName: b.dealerName, dealerCode: b.dealerCode, total: b.total, buckets: asObj(b.buckets), ageDays: b.ageDays, priority: b.priority, status: b.status, salesmanName: users.get(b.salesmanId) || b.salesmanId, phone: ph.get(String(b.dealerId)) || '' })); })(),
     aging: bands,
     bySalesman: bySm.map(s => ({ salesmanId: s._id, name: users.get(s._id) || s._id || '(unassigned)', total: s.total, dealers: s.dealers, overdue: s.overdue, collectedThisMonth: smCollected.get(s._id) || 0 })),
     activity30d: act.map(a => ({ ...a, employeeId: a._id, name: users.get(a._id) || a._id })),

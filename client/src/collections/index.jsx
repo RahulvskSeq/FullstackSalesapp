@@ -12,6 +12,7 @@ import Reports from './Reports';
 import Employees from './Employees';
 import Settings from './Settings';
 import Dealer360 from './Dealer360';
+import RecordModal from './RecordModal';
 
 /**
  * Collections — the Outstanding + Collection CRM.
@@ -25,11 +26,14 @@ export const COL_SCREENS = new Set(['colDashboard', 'colToday', 'colOutstanding'
 
 export default function Collections({ view, currentUser, users, hasFeature, navigate }) {
   const [dealerId, setDealerId] = useState(null);
+  const [rec, setRec] = useState(null);             // { kind, record, onChanged }
+  const [bump, setBump] = useState(0);             // screens re-fetch after a modal action
   const [params, setParams] = useState({});
   const go = useCallback((target, p) => { setParams(p || {}); navigate(target); }, [navigate]);
   const list = useMemo(() => Array.isArray(users) ? users : Object.values(users || {}), [users]);
   const ctx = useMemo(() => ({
     open: id => setDealerId(String(id)),
+    openRecord: (kind, record, onChanged) => setRec({ kind, record, onChanged }),
     users: list, currentUser,
     isStaff: ['admin', 'superadmin', 'employee'].includes(currentUser?.role),
     features: { has: key => !!hasFeature?.(key) },
@@ -83,5 +87,6 @@ export default function Collections({ view, currentUser, users, hasFeature, navi
       {view === 'colEmployees' && <Employees />}
       {view === 'colSettings' && <Settings />}
       {dealerId && <Dealer360 dealerId={dealerId} onClose={() => setDealerId(null)} />}
+      {rec && <RecordModal kind={rec.kind} record={rec.record} onClose={() => setRec(null)} onChanged={() => { rec.onChanged?.(); setBump(b => b + 1); }} />}
     </DealerCtx.Provider>);
 }
