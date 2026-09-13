@@ -131,11 +131,14 @@ export default function UpdateButton({ compact = false }) {
     return (
       <button onClick={install} disabled={busy} className="btnp"
         title={latest.notes || `Install ${latest.versionName}${mb ? ' · ' + mb : ''}`}
-        style={{ ...base, position:'relative', overflow:'hidden', fontWeight:700 }}>
+        // Fixed colours on purpose: the material top bar sets --acc to white,
+        // which turned this button white-on-white while it was downloading.
+        style={{ ...base, position:'relative', overflow:'hidden', fontWeight:700,
+                 background:'#16a34a', borderColor:'#16a34a', color:'#fff', opacity:1 }}>
         {downloading && (
           <span style={{
             position:'absolute', left:0, top:0, bottom:0, width:`${pct}%`,
-            background:'rgba(255,255,255,0.35)', transition:'width .15s linear',
+            background:'rgba(0,0,0,0.28)', transition:'width .15s linear',
             pointerEvents:'none',
           }}/>
         )}
@@ -160,5 +163,12 @@ export default function UpdateButton({ compact = false }) {
   if (!checked) return (
     <span style={{ ...base, color:'var(--t3)' }}><RefreshCw size={13} className="spin"/><span className="hide-sm">Loading…</span></span>
   );
-  return null;
+  // Up to date: a quiet tick with the version, so the bar never looks broken. Tap re-checks.
+  return (
+    <button onClick={() => check(false)} disabled={busy} className="btn" title="You're on the latest version — tap to check again"
+      style={{ ...base, color:'var(--t3)', background:'transparent', border:'1px solid transparent' }}>
+      {busy ? <RefreshCw size={13} className="spin"/> : <Check size={13}/>}
+      <span className="hide-sm">{INSTALLED_NAME || 'latest'}</span>
+    </button>
+  );
 }
