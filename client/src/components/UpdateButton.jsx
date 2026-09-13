@@ -1,4 +1,5 @@
-// "Check for updates" — in-app APK update for the Android build.
+// In-app APK update for the Android build: checks by itself, shows an Update
+// button only when a newer build exists, and one progress bar while it downloads.
 //
 // The repo is private, so the phone can't read GitHub Releases. CI publishes
 // each APK to our own server instead (POST /api/app/publish) and this asks
@@ -7,7 +8,7 @@
 // The installed build's number is baked in at build time by the workflow
 // (VITE_APP_VERSION_CODE). Locally it's undefined, so the button reports that
 // rather than pretending to compare.
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Download, RefreshCw, Check } from 'lucide-react';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { api } from '../api';
@@ -38,30 +39,24 @@ export default function UpdateButton({ compact = false }) {
   const [busy, setBusy]     = useState(false);
   const [latest, setLatest] = useState(null);   // newer build, once found
   const [pct, setPct]       = useState(null);   // download progress, 0-100
+  const [checked, setChecked] = useState(false);
 
-  const check = async () => {
+  // The check runs by itself — on open and every half hour — so there is no
+  // "check" step for the user. The button shows only when there is
+  // something to install; otherwise it stays out of the way.
+  const check = async (quiet = true) => {
     setBusy(true);
     try {
       const v = await api.appVersion();
-      if (!v || v.versionCode == null) {
-        notify.info('No build has been published to the server yet.');
-        setLatest(null);
-      } else if (INSTALLED_CODE == null) {
-        // Dev/browser build — no version was stamped in.
-        setLatest(v);
-        notify.info(`Latest published build is ${v.versionName}. (This copy has no version stamp — it was not built by CI.)`);
-      } else if (v.versionCode > INSTALLED_CODE) {
-        setLatest(v);
-        notify.success(`Update available: ${v.versionName}`);
-      } else {
-        setLatest(null);
-        notify.success(`You're on the latest version (${INSTALLED_NAME || INSTALLED_CODE}).`);
-      }
+      const newer = v && v.versionCode != null && (INSTALLED_CODE == null || v.versionCode > INSTALLED_CODE);
+      setLatest(newer ? v : null);
+      if (!quiet && !newer) notify.success(`You're on the latest version (${INSTALLED_NAME || INSTALLED_CODE || 'dev'}).`);
     } catch (e) {
-      notify.error('Update check failed: ' + (e.message || 'network error'));
+      if (!quiet) notify.error('Update check failed: ' + (e.message || 'network error'));
     }
-    setBusy(false);
+    setBusy(false); setChecked(true);
   };
+  useEffect(() => { check(true); const t = setInterval(() => check(true), 30 * 60 * 1000); return () => clearInterval(t); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // Download inside the app and hand the file to Android's package installer.
   //
@@ -112,7 +107,6 @@ export default function UpdateButton({ compact = false }) {
       const opener = nativeFileOpener();
       if(!opener) throw new Error('installer unavailable');
       await opener.open({ filePath: written.uri, contentType: APK_MIME });
-      notify.info('Tap Install when Android asks.');
     } catch (e) {
       // Falling back to the browser is better than a dead button — the user
       // can still install from Downloads.
@@ -141,7 +135,7 @@ export default function UpdateButton({ compact = false }) {
         {downloading && (
           <span style={{
             position:'absolute', left:0, top:0, bottom:0, width:`${pct}%`,
-            background:'rgba(255,255,255,0.28)', transition:'width .15s linear',
+            background:'rgba(255,255,255,0.35)', transition:'width .15s linear',
             pointerEvents:'none',
           }}/>
         )}
@@ -154,20 +148,17 @@ export default function UpdateButton({ compact = false }) {
         <Download size={13} style={{ position:'relative' }}/>
         <span style={{ position:'relative' }}>
           {downloading
-            ? (pct < 100 ? `${pct}%` : 'Installing…')
-            : <>Update<span className="hide-sm"> {latest.versionName}</span></>}
+            ? (pct < 100 ? `Downloading ${pct}%` : 'Installing…')
+            : <>Update<span className="hide-sm"> to {latest.versionName}</span></>}
         </span>
       </button>
     );
   }
 
-  // Idle: quiet. Nothing to do, so it shouldn't compete with the rest of the bar.
-  return (
-    <button onClick={check} disabled={busy} className="btn"
-      title={INSTALLED_NAME ? `You're on ${INSTALLED_NAME} — check for a newer build` : 'Check the server for a newer app build'}
-      style={{ ...base, color:'var(--t2)' }}>
-      {busy ? <RefreshCw size={13} className="spin"/> : <Download size={13}/>}
-      <span className="hide-sm">{busy ? 'Checking…' : 'Update'}</span>
-    </button>
+  // Still asking the server on first open: a quiet "Loading…" so the bar is
+  // not empty for a second. Up to date: nothing at all — there is nothing to do.
+  if (!checked) return (
+    <span style={{ ...base, color:'var(--t3)' }}><RefreshCw size={13} className="spin"/><span className="hide-sm">Loading…</span></span>
   );
+  return null;
 }
