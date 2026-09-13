@@ -16,7 +16,7 @@ export default function Reconciliation() {
   return (
     <div>
       <PageHead icon={Scale} tone="var(--yel)" title="Reconciliation" sub="Decrease in the statement ≠ payment. This is the list of every gap between the two." />
-      <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(3,1fr)' }}>
+      <div className="stat-grid col-stats" style={{ gridTemplateColumns: 'repeat(3,1fr)' }}>
         <div className="stat-card"><div style={{ fontSize: 10.5, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase' }}>Unexplained decreases</div><div style={{ fontSize: 19, fontWeight: 800, color: 'var(--yel)' }}>{money(data?.unexplained)}</div><div style={{ fontSize: 11, color: 'var(--t2)' }}>ERP fell with no confirmed payment behind it</div></div>
         <div className="stat-card"><div style={{ fontSize: 10.5, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase' }}>Payments not yet reflected</div><div style={{ fontSize: 19, fontWeight: 800, color: 'var(--acc)' }}>{money(data?.unreflected)}</div><div style={{ fontSize: 11, color: 'var(--t2)' }}>confirmed here, statement still shows it owed</div></div>
         <div className="stat-card"><div style={{ fontSize: 10.5, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase' }}>Differences</div><div style={{ fontSize: 19, fontWeight: 800 }}>{num(data?.total)}</div></div>

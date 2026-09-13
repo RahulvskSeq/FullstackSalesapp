@@ -2,7 +2,7 @@ import { SlidersHorizontal } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
 import { col } from './api';
 import { WhatsAppForm } from './forms';
-import { useLoad, PageHead, Card, Table, Badge, Tabs, Busy, ErrorBox, fmtWhen, useDealerCtx, title, DealerPicker, WhatsAppIcon } from './ui';
+import { useLoad, PageHead, Card, Table, Badge, Tabs, Busy, ErrorBox, fmtWhen, useDealerCtx, title, DealerPicker, WhatsAppIcon, CallButton } from './ui';
 
 /**
  * Settings — every business rule the module applies, editable in place and
@@ -23,10 +23,10 @@ export default function Settings() {
   const s = draft, d = data.defaults;
   const set = (k, v) => setDraft(x => ({ ...x, [k]: v }));
   const save = async k => { setSaving(k); setMsg(''); try { const r = await col.setSetting(k, s[k]); set(k, r.value); setMsg(`Saved ${k.replace('collections.', '')}.`); } catch (e) { setMsg('Error: ' + e.message); } finally { setSaving(''); } };
-  const Row = ({ k, label, hint, children }) => <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr auto', gap: 12, alignItems: 'start', padding: '10px 0', borderBottom: '1px solid var(--b1)' }}>
+  const Row = ({ k, label, hint, children }) => <div className="col-setting" style={{ display: 'grid', gridTemplateColumns: '220px 1fr auto', gap: 12, alignItems: 'start', padding: '10px 0', borderBottom: '1px solid var(--b1)' }}>
     <div><div style={{ fontSize: 13, fontWeight: 600 }}>{label}</div>{hint && <div style={{ fontSize: 11, color: 'var(--t3)' }}>{hint}</div>}</div>
     <div>{children}</div>
-    <div>{canEdit && <button className="btnp" style={{ padding: '5px 12px', fontSize: 12 }} disabled={saving === k || JSON.stringify(s[k]) === JSON.stringify(data.settings[k])} onClick={() => save(k)}>{saving === k ? 'Saving…' : 'Save'}</button>}</div>
+    <div>{canEdit && <button className="btnp" data-tip="Save this setting" style={{ padding: '5px 12px', fontSize: 12 }} disabled={saving === k || JSON.stringify(s[k]) === JSON.stringify(data.settings[k])} onClick={() => save(k)}>{saving === k ? 'Saving…' : 'Save'}</button>}</div>
   </div>;
   const NumList = ({ k }) => <input className="inp" value={(s[k] || []).join(', ')} onChange={e => set(k, e.target.value.split(',').map(x => Number(x.trim())).filter(n => Number.isFinite(n)))} disabled={!canEdit} />;
   const Num = ({ k }) => <input type="number" className="inp" style={{ maxWidth: 200 }} value={s[k] ?? ''} onChange={e => set(k, Number(e.target.value))} disabled={!canEdit} />;
@@ -62,18 +62,18 @@ const TRIGGERS = ['tick', 'event:CLEARED', 'event:REOPENED', 'event:NEW_OUTSTAND
 function Automation({ rules, onChange, onSave, dirty, canEdit, saving }) {
   const upd = (i, patch) => onChange(rules.map((r, j) => j === i ? { ...r, ...patch } : r));
   const updJson = (i, k, text) => { try { upd(i, { [k]: JSON.parse(text || '{}') }); } catch { /* keep typing */ } };
-  return <Card title="Automation rules" right={canEdit && <button className="btnp" style={{ padding: '5px 12px', fontSize: 12 }} disabled={!dirty || saving} onClick={onSave}>{saving ? 'Saving…' : 'Save rules'}</button>}>
+  return <Card title="Automation rules" right={canEdit && <button className="btnp" data-tip="Save all rule changes" style={{ padding: '5px 12px', fontSize: 12 }} disabled={!dirty || saving} onClick={onSave}>{saving ? 'Saving…' : 'Save rules'}</button>}>
     <div style={{ fontSize: 11.5, color: 'var(--t3)', marginBottom: 10 }}>Tick rules run every hour; event rules run when the statement or a payment changes a dealer. Conditions: minTotal, minAgeDays, noFollowupDays, noPaymentDays. Params: type, priority, assignTo ("approver" or a user id), templateKey.</div>
-    {rules.map((r, i) => <div key={r.id} style={{ display: 'grid', gridTemplateColumns: '24px 1.2fr 1fr 1fr 1.4fr 1.4fr auto', gap: 8, alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--b1)', fontSize: 12 }}>
+    {rules.map((r, i) => <div key={r.id} className="col-rule" style={{ display: 'grid', gridTemplateColumns: '24px 1.2fr 1fr 1fr 1.4fr 1.4fr auto', gap: 8, alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--b1)', fontSize: 12 }}>
       <input type="checkbox" checked={r.enabled !== false} onChange={e => upd(i, { enabled: e.target.checked })} disabled={!canEdit} />
       <div><input className="inp" value={r.name || ''} onChange={e => upd(i, { name: e.target.value })} disabled={!canEdit} /><div style={{ fontSize: 10.5, color: 'var(--t3)', marginTop: 2 }}>{r.id}</div></div>
       <select className="sel" value={r.trigger} onChange={e => upd(i, { trigger: e.target.value })} disabled={!canEdit}>{[...new Set([r.trigger, ...TRIGGERS])].map(t => <option key={t} value={t}>{t}</option>)}</select>
       <select className="sel" value={r.action} onChange={e => upd(i, { action: e.target.value })} disabled={!canEdit}>{ACTIONS.map(a => <option key={a} value={a}>{a}</option>)}</select>
       <textarea className="inp" rows={2} defaultValue={JSON.stringify(r.conditions || {})} onBlur={e => updJson(i, 'conditions', e.target.value)} disabled={!canEdit} style={{ fontFamily: 'monospace', fontSize: 11 }} />
       <textarea className="inp" rows={2} defaultValue={JSON.stringify(r.params || {})} onBlur={e => updJson(i, 'params', e.target.value)} disabled={!canEdit} style={{ fontFamily: 'monospace', fontSize: 11 }} />
-      {canEdit && <button className="btnd" onClick={() => onChange(rules.filter((_, j) => j !== i))}>Remove</button>}
+      {canEdit && <button className="btnd" data-tip="Delete this rule" onClick={() => onChange(rules.filter((_, j) => j !== i))}>Remove</button>}
     </div>)}
-    {canEdit && <button className="btn" style={{ marginTop: 10 }} onClick={() => onChange([...rules, { id: 'rule-' + Date.now().toString(36), name: 'New rule', enabled: false, trigger: 'tick', conditions: {}, action: 'createTask', params: { type: 'FOLLOW_UP', priority: 'MEDIUM' } }])}>+ Add rule</button>}
+    {canEdit && <button className="btn" data-tip="Add a new automation rule" style={{ marginTop: 10 }} onClick={() => onChange([...rules, { id: 'rule-' + Date.now().toString(36), name: 'New rule', enabled: false, trigger: 'tick', conditions: {}, action: 'createTask', params: { type: 'FOLLOW_UP', priority: 'MEDIUM' } }])}>+ Add rule</button>}
   </Card>;
 }
 
@@ -91,7 +91,7 @@ function WhatsApp({ canEdit }) {
     <PhoneManual canEdit={canEdit} />
     <PhoneUpload canEdit={canEdit} />
     <Card title="Templates" style={{ marginBottom: 12 }}>
-      {tpl.busy && !tpl.data ? <Busy /> : <Table dense cols={[{ k: 'key', h: 'Key' }, { k: 'metaName', h: 'Meta template' }, { k: 'language', h: 'Lang' }, { k: 'category', h: 'Category' }, { k: 'body', h: 'Body', wrap: true, max: 460 }, { k: 'active', h: '', r: r => r.active === false ? <Badge v="CANCELLED" label="off" /> : <Badge v="CONFIRMED" label="on" /> }, { k: 'act', h: '', r: r => canEdit ? <button className="btn" style={{ fontSize: 11 }} onClick={() => setEdit({ ...r })}>Edit</button> : null }]} rows={tpl.data} keyOf={r => r.key} />}
+      {tpl.busy && !tpl.data ? <Busy /> : <Table dense cols={[{ k: 'key', h: 'Key' }, { k: 'metaName', h: 'Meta template' }, { k: 'language', h: 'Lang' }, { k: 'category', h: 'Category' }, { k: 'body', h: 'Body', wrap: true, max: 460 }, { k: 'active', h: '', r: r => r.active === false ? <Badge v="CANCELLED" label="off" /> : <Badge v="CONFIRMED" label="on" /> }, { k: 'act', h: '', r: r => canEdit ? <button className="btn" data-tip="Edit the message text" style={{ fontSize: 11 }} onClick={() => setEdit({ ...r })}>Edit</button> : null }]} rows={tpl.data} keyOf={r => r.key} />}
     </Card>
     <Card title="Recent messages" pad={false}>
       {msgs.busy && !msgs.data ? <Busy /> : <Table dense cols={[{ k: 'createdAt', h: 'When', r: r => fmtWhen(r.createdAt) }, { k: 'templateKey', h: 'Template' }, { k: 'to', h: 'To' }, { k: 'status', h: 'Status', r: r => <Badge v={r.status} /> }, { k: 'error', h: 'Error', wrap: true }]} rows={msgs.data?.items} empty="No messages yet." />}
@@ -115,7 +115,7 @@ function PhoneUpload({ canEdit }) {
     <div style={{ fontSize: 12, color: 'var(--t2)', marginBottom: 8 }}>Excel with <b>Party Name</b> (or <b>Code</b>) and <b>Phone</b>. Matched by code, else by exact name. 10-digit numbers get 91 in front. Nothing is written until you apply.</div>
     <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
       <input type="file" className="inp" style={{ maxWidth: 360 }} accept=".xlsx,.xls,.csv" onChange={e => { setFile(e.target.files?.[0] || null); setRes(null); }} disabled={!canEdit} />
-      <button className="btn" disabled={!file || busy || !canEdit} onClick={() => run(false)}>{busy ? 'Reading…' : 'Preview'}</button>
+      <button className="btn" data-tip="Show what would change — nothing saved yet" disabled={!file || busy || !canEdit} onClick={() => run(false)}>{busy ? 'Reading…' : 'Preview'}</button>
       {res?.preview && <button className="btnp" disabled={busy || !((sm.NEW || 0) + (sm.CHANGED || 0))} onClick={() => run(true)}>Apply {((sm.NEW || 0) + (sm.CHANGED || 0))} numbers</button>}
     </div>
     <ErrorBox err={err} />
@@ -139,12 +139,13 @@ function PhoneManual({ canEdit }) {
   const digits = phone.replace(/\D/g, ''); const ok = digits.length === 10 || (digits.length === 12 && digits.startsWith('91'));
   const save = async () => { setBusy(true); setErr(''); try { const r = await col.setContact(dealer.id, { phone: digits }); setDone(x => [{ name: dealer.name, code: dealer.code, phone: r.phone, before: current?.phone || '' }, ...x].slice(0, 20)); setCurrent(c => ({ ...c, phone: r.phone })); setDealer(null); } catch (e) { setErr(e.message); } finally { setBusy(false); } };
   return <Card title="Add a dealer's number" style={{ marginBottom: 12 }}>
-    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 1fr) 200px auto', gap: 8, alignItems: 'start' }}>
+    <div className="col-phone" style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 1fr) 200px auto', gap: 8, alignItems: 'start' }}>
       <DealerPicker value={dealer} onChange={setDealer} placeholder="Search dealer by name or code…" />
       <input className="inp" value={phone} onChange={e => setPhone(e.target.value)} placeholder="10-digit mobile" disabled={!dealer || !canEdit} onKeyDown={e => { if (e.key === 'Enter' && ok) save(); }} />
       <div className="row" style={{ gap: 6 }}>
-        <button className="btnp" disabled={!dealer || !ok || busy || !canEdit || digits === (current?.phone || '')} onClick={save}>{busy ? 'Saving…' : current?.phone ? 'Update' : 'Save'}</button>
-        <button className="btn" style={{ color: '#25D366', display: 'inline-flex', gap: 5, alignItems: 'center' }} disabled={!dealer || !ok} title="Send a WhatsApp to this number" onClick={() => setWa({ ...dealer, phone: digits.length === 10 ? '91' + digits : digits })}><WhatsAppIcon size={14} /> WhatsApp</button>
+        <button className="btnp" data-tip="Save this number on the dealer" disabled={!dealer || !ok || busy || !canEdit || digits === (current?.phone || '')} onClick={save}>{busy ? 'Saving…' : current?.phone ? 'Update' : 'Save'}</button>
+        {dealer && ok && <CallButton dealer={{ ...dealer, phone: digits.length === 10 ? '91' + digits : digits }} label="Call" size={13} />}
+        <button className="btn" style={{ color: '#25D366', display: 'inline-flex', gap: 5, alignItems: 'center' }} disabled={!dealer || !ok} data-tip="Send a WhatsApp to this number" onClick={() => setWa({ ...dealer, phone: digits.length === 10 ? '91' + digits : digits })}><WhatsAppIcon size={14} /> WhatsApp</button>
       </div>
     </div>
     {wa && <WhatsAppForm dealer={wa} onClose={() => setWa(null)} onDone={() => { if (dealer) col.dealer360(dealer.id).then(d => setCurrent({ phone: d.dealer.phone || '', optOut: !!d.dealer.whatsappOptOut })).catch(() => {}); }} />}

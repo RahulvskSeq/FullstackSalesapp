@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Phone, IndianRupee, ClipboardList, Check, X, CalendarCheck } from 'lucide-react';
+import { ClipboardList, Check, X, CalendarCheck, NotebookPen, Banknote } from 'lucide-react';
 import { col } from './api';
-import { useLoad, PageHead, Card, Table, Badge, Busy, ErrorBox, money, num, fmtDate, DealerLink, useDealerCtx, userName, title, WhatsAppIcon } from './ui';
+import { useLoad, PageHead, Card, Table, Badge, Busy, ErrorBox, money, num, fmtDate, DealerLink, useDealerCtx, userName, title, WhatsAppIcon, StatusBadge, CallButton } from './ui';
 import { FollowupForm, PaymentForm, TaskForm, WhatsAppForm } from './forms';
 
 /**
@@ -17,11 +17,12 @@ export default function Today() {
   if (busy && !data) return <Busy />;
   if (err) return <ErrorBox err={err} onRetry={reload} />;
   const d = data;
-  const dealerOf = r => ({ id: String(r.dealerId), name: r.dealerName || r.dealer?.name || '', code: r.dealerCode || r.dealer?.code || '' });
+  const dealerOf = r => ({ id: String(r.dealerId), name: r.dealerName || r.dealer?.name || '', code: r.dealerCode || r.dealer?.code || '', phone: r.phone || r.dealer?.phone || '' });
   const actions = r => <div className="row" style={{ gap: 4 }}>
-    <button className="btn" title="Record follow-up" style={{ padding: '3px 7px' }} onClick={e => { e.stopPropagation(); setForm({ kind: 'followup', dealer: dealerOf(r) }); }}><Phone size={12} /></button>
-    <button className="btn" title="Record payment" style={{ padding: '3px 7px' }} onClick={e => { e.stopPropagation(); setForm({ kind: 'payment', dealer: dealerOf(r) }); }}><IndianRupee size={12} /></button>
-    <button className="btn" title="WhatsApp" style={{ padding: '3px 7px', color: '#25D366' }} onClick={e => { e.stopPropagation(); setForm({ kind: 'wa', dealer: dealerOf(r) }); }}><WhatsAppIcon size={13} /></button>
+    <CallButton dealer={dealerOf(r)} label={<span className="col-lbl">Call</span>} onDialed={d => setForm({ kind: 'followup', dealer: d })} />
+    <button className="btn" data-tip="Write down a follow-up" style={{ padding: '3px 8px', color: 'var(--pur)', display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5 }} onClick={e => { e.stopPropagation(); setForm({ kind: 'followup', dealer: dealerOf(r) }); }}><NotebookPen size={12} /><span className="col-lbl">Follow-up</span></button>
+    <button className="btn" data-tip="Record a payment" style={{ padding: '3px 8px', color: 'var(--grn)', display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5 }} onClick={e => { e.stopPropagation(); setForm({ kind: 'payment', dealer: dealerOf(r) }); }}><Banknote size={12} /><span className="col-lbl">Payment</span></button>
+    <button className="btn" data-tip="WhatsApp" style={{ padding: '3px 8px', color: '#25D366', display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5 }} onClick={e => { e.stopPropagation(); setForm({ kind: 'wa', dealer: dealerOf(r) }); }}><WhatsAppIcon size={13} /><span className="col-lbl">WhatsApp</span></button>
   </div>;
   const taskCols = [
     { k: 'taskNo', h: '#', r: r => <span className="chip">{r.taskNo}</span> },
@@ -31,15 +32,15 @@ export default function Today() {
     ...(isStaff ? [{ k: 'employeeId', h: 'Assigned', r: r => userName(users, r.employeeId) }] : []),
     { k: 'points', h: 'Pts', align: 'right' },
     { k: 'act', h: '', r: r => <div className="row" style={{ gap: 4 }}>
-        <button className="btnp" style={{ padding: '3px 8px', fontSize: 11 }} onClick={e => { e.stopPropagation(); setDone(r); }}><Check size={12} /> Done</button>
-        <button className="btn" style={{ padding: '3px 7px' }} title="Cancel task" onClick={async e => { e.stopPropagation(); const reason = window.prompt('Reason for cancelling?'); if (reason === null) return; await col.cancelTask(r._id, reason).catch(x => alert(x.message)); reload(); }}><X size={12} /></button>
+        <button className="btnp" data-tip="Mark this task done" style={{ padding: '3px 8px', fontSize: 11 }} onClick={e => { e.stopPropagation(); setDone(r); }}><Check size={12} /> Done</button>
+        <button className="btn" style={{ padding: '3px 7px' }} data-tip="Cancel task" onClick={async e => { e.stopPropagation(); const reason = window.prompt('Reason for cancelling?'); if (reason === null) return; await col.cancelTask(r._id, reason).catch(x => alert(x.message)); reload(); }}><X size={12} /></button>
       </div> },
   ];
   const balCols = [
     { k: 'dealer', h: 'Dealer', r: r => <DealerLink id={r.dealerId} name={r.dealerName} code={r.dealerCode} /> },
     { k: 'total', h: 'Outstanding', align: 'right', r: r => money(r.total) },
     { k: 'ageDays', h: 'Age', align: 'right', r: r => r.ageDays == null ? '—' : r.ageDays + 'd' },
-    { k: 'status', h: 'Status', r: r => <Badge v={r.status} /> },
+    { k: 'status', h: 'Status', r: r => <StatusBadge status={r.status} priority={r.priority} /> },
     { k: 'nextFollowupAt', h: 'Follow-up', r: r => fmtDate(r.nextFollowupAt) },
     { k: 'promise', h: 'Promise', r: r => r.promise?.amount ? `${money(r.promise.amount)} by ${fmtDate(r.promise.date)}` : '—' },
     { k: 'act', h: '', r: actions },
@@ -58,9 +59,9 @@ export default function Today() {
     <div>
       <PageHead icon={CalendarCheck} tone="var(--yel)" title="Today's work" sub={fmtDate(d.today) + (isStaff ? (emp ? ' · ' + userName(users, emp) : ' · everyone in scope') : '')} right={<>
         {isStaff && <select className="sel" value={emp} onChange={e => setEmp(e.target.value)}><option value="">Everyone</option>{(users || []).filter(u => u.role === 'salesman').map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select>}
-        <button className="btn" onClick={() => setForm({ kind: 'followup' })}><Phone size={12} /> Follow-up</button>
-        <button className="btn" onClick={() => setForm({ kind: 'payment' })}><IndianRupee size={12} /> Payment</button>
-        <button className="btnp" onClick={() => setForm({ kind: 'task' })}><ClipboardList size={12} /> Task</button>
+        <button className="btn" data-tip="Record a call or visit" onClick={() => setForm({ kind: 'followup' })}><NotebookPen size={12} /> Follow-up</button>
+        <button className="btn" data-tip="Record money received" onClick={() => setForm({ kind: 'payment' })}><Banknote size={12} /> Payment</button>
+        <button className="btnp" data-tip="Create a task for someone" onClick={() => setForm({ kind: 'task' })}><ClipboardList size={12} /> Task</button>
       </>} />
       <div className="stat-grid">
         <div className="stat-card"><div style={{ fontSize: 10.5, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase' }}>Tasks</div><div style={{ fontSize: 19, fontWeight: 800 }}>{num(d.tasksToday.length)} <span style={{ fontSize: 12, color: 'var(--red)' }}>{d.tasksOverdue.length ? `+${d.tasksOverdue.length} overdue` : ''}</span></div></div>

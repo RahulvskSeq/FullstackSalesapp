@@ -25,7 +25,7 @@ export default function Employees() {
       {tab === 'reviews' && <>
         <Card style={{ marginBottom: 12 }}><div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
           <input type="month" className="inp" style={{ maxWidth: 170 }} value={period} onChange={e => setPeriod(e.target.value)} />
-          {canReview && <button className="btnp" disabled={busy} onClick={gen}>{busy ? 'Generating…' : 'Generate / refresh for all salesmen'}</button>}
+          {canReview && <button className="btnp" data-tip="Score every salesman from this month's activity" disabled={busy} onClick={gen}>{busy ? 'Generating…' : 'Generate / refresh for all salesmen'}</button>}
         </div></Card>
         <Card pad={false}>
           {reviews.err ? <ErrorBox err={reviews.err} onRetry={reviews.reload} /> : reviews.busy && !reviews.data ? <Busy /> : <Table cols={[
@@ -33,7 +33,7 @@ export default function Employees() {
             { k: 'score', h: 'Score', align: 'right', r: r => <b style={{ color: r.score >= 70 ? 'var(--grn)' : r.score >= 40 ? 'var(--yel)' : 'var(--red)' }}>{Number(r.score || 0).toFixed(1)}</b> },
             ...METRICS.map(m => ({ k: m, h: title(m), align: 'right', r: r => r.metrics?.[m] == null ? '—' : Number(r.metrics[m]).toFixed(0) })),
             { k: 'status', h: 'Status', r: r => <Badge v={r.status} /> },
-            { k: 'act', h: '', r: r => canReview ? <div className="row" style={{ gap: 4 }}><button className="btn" style={{ fontSize: 11 }} onClick={() => setEdit(r)}>Manager review</button>{r.status !== 'FINAL' && <button className="btne" onClick={async () => { if (!window.confirm('Finalise this review? It stops changing with new activity.')) return; await col.finalizeReview(r._id).catch(e => alert(e.message)); reviews.reload(); }}>Finalise</button>}</div> : null },
+            { k: 'act', h: '', r: r => canReview ? <div className="row" style={{ gap: 4 }}><button className="btn" data-tip="Add the manager's score and notes" style={{ fontSize: 11 }} onClick={() => setEdit(r)}>Manager review</button>{r.status !== 'FINAL' && <button className="btne" data-tip="Lock this review" onClick={async () => { if (!window.confirm('Finalise this review? It stops changing with new activity.')) return; await col.finalizeReview(r._id).catch(e => alert(e.message)); reviews.reload(); }}>Finalise</button>}</div> : null },
           ]} rows={reviews.data} empty={canReview ? 'No reviews for this month yet — generate them.' : 'No review for this month yet.'} />}
         </Card>
         <div style={{ fontSize: 11.5, color: 'var(--t3)', marginTop: 8 }}>Each metric is 0–100 before weighting. Inputs: follow-ups met on the scheduled day, tasks done on time, visits vs the monthly target, promises followed up, records edited within the window, dealers with no activity, task points vs the best performer, collected vs outstanding.</div>
@@ -41,7 +41,7 @@ export default function Employees() {
       {tab === 'activity' && <>
         <Card style={{ marginBottom: 12 }}><div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
           <input type="date" className="inp" style={{ maxWidth: 160 }} value={range.from} onChange={e => setRange(x => ({ ...x, from: e.target.value }))} /><span style={{ color: 'var(--t3)' }}>to</span><input type="date" className="inp" style={{ maxWidth: 160 }} value={range.to} onChange={e => setRange(x => ({ ...x, to: e.target.value }))} />
-          {canReview && <button className="btn" onClick={async () => { await col.rebuildActivity(range.from, range.to).catch(e => alert(e.message)); activity.reload(); }}>Rebuild from records</button>}
+          {canReview && <button className="btn" data-tip="Recount activity from the records for this range" onClick={async () => { await col.rebuildActivity(range.from, range.to).catch(e => alert(e.message)); activity.reload(); }}>Rebuild from records</button>}
         </div></Card>
         <Card pad={false}>
           {activity.err ? <ErrorBox err={activity.err} onRetry={activity.reload} /> : activity.busy && !activity.data ? <Busy /> : <Table cols={[

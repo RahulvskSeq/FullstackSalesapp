@@ -38,7 +38,7 @@ export default function Imports() {
           <div className="field" style={{ marginBottom: 0, flex: '1 1 260px' }}><label>File (.xlsx / .xls / .csv)</label><input ref={fileRef} type="file" className="inp" accept=".xlsx,.xls,.csv" onChange={e => setFile(e.target.files?.[0] || null)} /></div>
           <div className="field" style={{ marginBottom: 0 }}><label>Statement date</label><input type="date" className="inp" value={asOn} onChange={e => setAsOn(e.target.value)} /><div style={{ fontSize: 10.5, color: 'var(--t3)', marginTop: 2 }}>Blank = read from the file name, else today</div></div>
           <div className="field" style={{ marginBottom: 0 }}><label>Columns mean</label><select className="sel" value={mode} onChange={e => setMode(e.target.value)}><option value="">Detect</option><option value="buckets">Bills raised that month (sum)</option><option value="snapshot">Running balance (latest)</option></select></div>
-          <button className="btnp" disabled={!file || busy} onClick={upload}><UploadCloud size={14} /> {busy ? 'Reading…' : 'Upload & preview'}</button>
+          <button className="btnp" data-tip="Read the file and show what would change — nothing is saved yet" disabled={!file || busy} onClick={upload}><UploadCloud size={14} /> {busy ? 'Reading…' : 'Upload & preview'}</button>
         </div>
         <ErrorBox err={err} />
       </Card>
@@ -85,10 +85,10 @@ function Preview({ id, onClose }) {
       <div className="row" style={{ gap: 8, flexWrap: 'wrap', marginBottom: 10, fontSize: 12.5 }}>
         <Badge v={imp.status} /><span>Statement <b>{fmtDate(imp.asOn)}</b></span><span>· mode <b>{imp.balanceMode}</b>{imp.balanceModeDetected && imp.balanceModeDetected !== imp.balanceMode ? ` (detected ${imp.balanceModeDetected})` : ''}</span><span>· months {(imp.periods || []).map(periodLabel).join(', ')}</span><span>· by {imp.uploadedByName || userName(users, imp.uploadedBy)}</span>
       </div>
-      <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(6, 1fr)' }}>
+      <div className="stat-grid col-stats" style={{ gridTemplateColumns: 'repeat(6, 1fr)' }}>
         {[['Rows', st.rows], ['Matched', st.matched], ['Unmapped', st.unmapped, st.unmapped ? 'var(--yel)' : null], ['Errors', st.errors, st.errors ? 'var(--red)' : null], ['Duplicates in file', st.duplicatesInFile], ...(data.dealersInMaster != null ? [['Dealers in master', data.dealersInMaster]] : [])].map(([l, v, c]) => <div key={l} className="stat-card"><div style={{ fontSize: 10, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase' }}>{l}</div><div style={{ fontSize: 17, fontWeight: 800, color: c || undefined }}>{num(v)}</div></div>)}
       </div>
-      <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(8, 1fr)' }}>
+      <div className="stat-grid col-stats" style={{ gridTemplateColumns: 'repeat(8, 1fr)' }}>
         {[['New', st.new], ['Increased', st.increased], ['Decreased', st.decreased], ['Cleared', st.cleared], ['Unchanged', st.unchanged], ['Reopened', st.reopened], ['Before', money(st.totalBefore)], ['After', money(st.totalAfter)]].map(([l, v]) => <div key={l} className="stat-card" style={{ padding: '8px 10px' }}><div style={{ fontSize: 10, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase' }}>{l}</div><div style={{ fontSize: 14, fontWeight: 800 }}>{typeof v === 'number' ? num(v) : v}</div></div>)}
       </div>
       {data.olderThanLatest > 0 && <div style={{ fontSize: 12, padding: 8, borderRadius: 7, background: 'rgba(217,119,6,.12)', color: 'var(--yel)', marginBottom: 8 }}><AlertTriangle size={12} /> {num(data.olderThanLatest)} dealers already have a newer statement — this file is recorded as history for them and does not move their current figure.</div>}
@@ -97,7 +97,7 @@ function Preview({ id, onClose }) {
       {imp.status === 'FAILED' && imp.errorReport?.length > 0 && <ErrorBox err={'Last attempt failed: ' + imp.errorReport[imp.errorReport.length - 1].message + '. Apply again to resume — completed chunks are kept.'} />}
       <ErrorBox err={aerr} />
       {data.unmapped?.length > 0 && <Card title={`Unmapped parties (${num(data.unmapped.length)}) — map or add before applying, or they are skipped`} style={{ marginBottom: 10 }}>
-        <Table dense cols={[{ k: 'rowNo', h: 'Row' }, { k: 'rawParty', h: 'Party in file', max: 320 }, { k: 'code', h: 'Code' }, { k: 'total', h: 'Total', align: 'right', r: r => money(r.total) }, { k: 'act', h: '', r: r => <div className="row" style={{ gap: 4 }}><button className="btn" style={{ fontSize: 11 }} onClick={() => setMapRow(r)}>Map to dealer</button><button className="btne" onClick={async () => { if (!window.confirm(`Add "${r.partyName}" as a new dealer?`)) return; try { await col.createDealerFromRow(id, r.rowNo, 'none'); reload(); } catch (e) { alert(e.message); } }}>Add as new</button></div> }]} rows={data.unmapped} keyOf={r => r.rowNo} />
+        <Table dense cols={[{ k: 'rowNo', h: 'Row' }, { k: 'rawParty', h: 'Party in file', max: 320 }, { k: 'code', h: 'Code' }, { k: 'total', h: 'Total', align: 'right', r: r => money(r.total) }, { k: 'act', h: '', r: r => <div className="row" style={{ gap: 4 }}><button className="btn" data-tip="Pick the dealer this party is" style={{ fontSize: 11 }} onClick={() => setMapRow(r)}>Map to dealer</button><button className="btne" data-tip="Create this party as a new dealer" onClick={async () => { if (!window.confirm(`Add "${r.partyName}" as a new dealer?`)) return; try { await col.createDealerFromRow(id, r.rowNo, 'none'); reload(); } catch (e) { alert(e.message); } }}>Add as new</button></div> }]} rows={data.unmapped} keyOf={r => r.rowNo} />
       </Card>}
       {data.errors?.length > 0 && <Card title={`Rows with errors (${num(data.errors.length)})`} style={{ marginBottom: 10 }}><Table dense cols={[{ k: 'rowNo', h: 'Row' }, { k: 'rawParty', h: 'Party' }, { k: 'message', h: 'Problem', wrap: true }]} rows={data.errors} keyOf={r => r.rowNo} /></Card>}
       {data.duplicatesInFile?.length > 0 && <Card title={`Repeated in the file (${num(data.duplicatesInFile.length)}) — only the first occurrence counts`} style={{ marginBottom: 10 }}><Table dense cols={[{ k: 'rowNo', h: 'Row' }, { k: 'rawParty', h: 'Party' }, { k: 'total', h: 'Total', align: 'right', r: r => money(r.total) }]} rows={data.duplicatesInFile} keyOf={r => r.rowNo} /></Card>}
@@ -107,7 +107,7 @@ function Preview({ id, onClose }) {
       <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
         <button className="btn" onClick={onClose}>Close</button>
         {imp.status === 'APPLIED' ? <span className="row" style={{ color: 'var(--grn)', fontSize: 12.5, gap: 5 }}><CheckCircle2 size={14} /> Applied {fmtWhen(imp.appliedAt)}</span>
-          : <button className="btnp" disabled={!canApply || applying} onClick={apply}>{applying ? 'Applying…' : imp.status === 'FAILED' ? 'Resume apply' : 'Apply statement'}</button>}
+          : <button className="btnp" data-tip="Write these figures as the current book" disabled={!canApply || applying} onClick={apply}>{applying ? 'Applying…' : imp.status === 'FAILED' ? 'Resume apply' : 'Apply statement'}</button>}
       </div>
       {mapRow && <MapRow importId={id} row={mapRow} onClose={() => setMapRow(null)} onDone={reload} />}
     </Modal>);

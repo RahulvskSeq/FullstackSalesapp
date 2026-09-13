@@ -52,6 +52,6 @@ test('status precedence', () => {
   assert.equal(deriveStatus({ total: 100, lastPaymentAt: new Date('2026-07-01') }, cyc, cfg, T), 'PARTIAL_PAYMENT');
   assert.equal(deriveStatus({ total: 600000, ageDays: 10 }, cyc, cfg, T), 'HIGH_PRIORITY');
   assert.equal(deriveStatus({ total: 100, ageDays: 120 }, cyc, cfg, T), 'OVERDUE');
-  assert.equal(deriveStatus({ total: 100, ageDays: 10 }, cyc, cfg, T), 'NEW');
-  assert.equal(deriveStatus({ total: 100, ageDays: 10, lastFollowupAt: new Date('2026-07-01') }, cyc, cfg, T), 'OPEN');
+  assert.equal(deriveStatus({ total: 100, ageDays: 10 }, cyc, cfg, T), 'DUE');
+  assert.equal(deriveStatus({ total: 100, ageDays: 10, lastFollowupAt: new Date('2026-07-01') }, cyc, cfg, T), 'DUE');
 });

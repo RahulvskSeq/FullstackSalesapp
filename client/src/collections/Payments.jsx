@@ -15,7 +15,7 @@ export default function Payments({ params }) {
   const act = async (fn, prompt) => { let reason; if (prompt) { reason = window.prompt(prompt); if (reason === null) return; } try { await fn(reason); reload(); } catch (e) { alert(e.message); } };
   return (
     <div>
-      <PageHead icon={HandCoins} tone="var(--grn)" title="Payments" sub="A recorded payment is a claim; a confirmed one moves the balance. Bounce reverses it and reopens the cycle." right={<button className="btnp" onClick={() => setForm(true)}><IndianRupee size={12} /> Record payment</button>} />
+      <PageHead icon={HandCoins} tone="var(--grn)" title="Payments" sub="A recorded payment is a claim; a confirmed one moves the balance. Bounce reverses it and reopens the cycle." right={<button className="btnp" data-tip="Record money received from a dealer" onClick={() => setForm(true)}><IndianRupee size={12} /> Record payment</button>} />
       <Card style={{ marginBottom: 12 }}><div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
         <select className="sel" value={q.status} onChange={e => set({ status: e.target.value })}><option value="">Any status</option>{['RECORDED', 'CONFIRMED', 'BOUNCED', 'CANCELLED'].map(s => <option key={s} value={s}>{s}</option>)}</select>
         <input type="date" className="inp" style={{ maxWidth: 160 }} value={q.from} onChange={e => set({ from: e.target.value })} /><span style={{ color: 'var(--t3)' }}>to</span><input type="date" className="inp" style={{ maxWidth: 160 }} value={q.to} onChange={e => set({ to: e.target.value })} max={today()} />
@@ -35,9 +35,9 @@ export default function Payments({ params }) {
           { k: 'confirmedAt', h: 'Confirmed', r: r => r.confirmedAt ? `${fmtWhen(r.confirmedAt)} · ${userName(users, r.confirmedBy)}` : '—' },
           { k: 'proof', h: '', r: r => r.proofId ? <a href={col.proofUrl(r.proofId)} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} title="Proof"><Paperclip size={13} /></a> : null },
           { k: 'act', h: '', r: r => <div className="row" style={{ gap: 4 }}>
-              {r.status === 'RECORDED' && canConfirm && <button className="btnp" style={{ padding: '3px 8px', fontSize: 11 }} onClick={() => act(() => col.confirmPayment(r._id))}><Check size={12} /> Confirm</button>}
-              {r.status === 'CONFIRMED' && canConfirm && <button className="btnd" onClick={() => act(rs => col.bouncePayment(r._id, rs), 'Reason for the bounce?')}>Bounce</button>}
-              {r.status === 'RECORDED' && <button className="btn" style={{ padding: '3px 7px' }} title="Cancel" onClick={() => act(rs => col.cancelPayment(r._id, rs), 'Reason for cancelling?')}><X size={12} /></button>}
+              {r.status === 'RECORDED' && canConfirm && <button className="btnp" data-tip="Confirm: the balance moves by this amount" style={{ padding: '3px 8px', fontSize: 11 }} onClick={() => act(() => col.confirmPayment(r._id))}><Check size={12} /> Confirm</button>}
+              {r.status === 'CONFIRMED' && canConfirm && <button className="btnd" data-tip="Cheque returned: reverse this payment" onClick={() => act(rs => col.bouncePayment(r._id, rs), 'Reason for the bounce?')}>Bounce</button>}
+              {r.status === 'RECORDED' && <button className="btn" style={{ padding: '3px 7px' }} data-tip="Cancel" onClick={() => act(rs => col.cancelPayment(r._id, rs), 'Reason for cancelling?')}><X size={12} /></button>}
             </div> },
         ]} rows={data?.items} empty="No payments." />}
         <div style={{ padding: '0 12px 10px' }}><Pager page={data?.page} limit={data?.limit} total={data?.total} onPage={p => setQ(x => ({ ...x, page: p }))} /></div>

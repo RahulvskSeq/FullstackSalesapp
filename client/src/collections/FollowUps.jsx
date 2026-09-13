@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Phone, PhoneCall } from 'lucide-react';
+import { PhoneCall, NotebookPen } from 'lucide-react';
 import { col } from './api';
 import { useLoad, PageHead, Card, Table, Pager, Badge, Tabs, Busy, ErrorBox, money, num, fmtDate, DealerLink, userName, useDealerCtx, title } from './ui';
 import { FollowupForm } from './forms';
@@ -13,7 +13,7 @@ export default function FollowUps({ params }) {
   const set = p => setQ(x => ({ ...x, ...p, page: p.page || 1 }));
   return (
     <div>
-      <PageHead icon={PhoneCall} tone="var(--pur)" title="Follow-ups & promises" sub="Every conversation with a dealer, and what they said they would pay." right={<button className="btnp" onClick={() => setForm(true)}><Phone size={12} /> Record follow-up</button>} />
+      <PageHead icon={PhoneCall} tone="var(--pur)" title="Follow-ups & promises" sub="Every conversation with a dealer, and what they said they would pay." right={<button className="btnp" data-tip="Record a call or visit" onClick={() => setForm(true)}><NotebookPen size={12} /> Record follow-up</button>} />
       <Tabs value={tab} onChange={t => { setTab(t); set({ status: '' }); }} tabs={[{ id: 'followups', label: 'Follow-ups' }, { id: 'promises', label: 'Promises' }]} />
       <Card style={{ marginBottom: 12 }}><div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
         {isStaff && <select className="sel" value={q.employeeId} onChange={e => set({ employeeId: e.target.value })}><option value="">Everyone</option>{(users || []).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select>}

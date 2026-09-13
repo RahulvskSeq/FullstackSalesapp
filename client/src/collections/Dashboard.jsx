@@ -15,7 +15,7 @@ export default function Dashboard({ go }) {
   const ageData = (data.aging || []).map(b => ({ name: b.label, value: b.total, dealers: b.dealers }));
   return (
     <div>
-      <PageHead icon={Gauge} tone="var(--acc)" title={isStaff ? "Collection dashboard" : "My dashboard"} sub={`As of ${fmtDate(data.today)} · figures in whole rupees`} right={<button className="btn" onClick={reload}>Refresh</button>} />
+      <PageHead icon={Gauge} tone="var(--acc)" title={isStaff ? "Collection dashboard" : "My dashboard"} sub={`As of ${fmtDate(data.today)} · figures in whole rupees`} right={<button className="btn" data-tip="Reload the figures" onClick={reload}>Refresh</button>} />
       <div className="stat-grid">
         <Tile label="Total outstanding" value={money(t.totalOutstanding)} sub={`${num(t.owingDealers)} dealers owing`} tone="var(--acc)" onClick={() => go('colOutstanding')} />
         <Tile label="Overdue" value={money(t.overdueOutstanding)} sub={`${num(t.overdueDealers)} dealers past the overdue mark`} tone="var(--red)" onClick={() => go('colOutstanding', { status: 'OVERDUE' })} />
@@ -27,10 +27,10 @@ export default function Dashboard({ go }) {
         <Tile label="New outstanding (7 days)" value={money(t.newOutstanding7d)} sub={`${num(t.newOutstanding7dCount)} dealers · cleared today ${money(t.clearedToday)}`} tone="#f97316" />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.1fr) minmax(0,1fr)', gap: 12, marginBottom: 12 }}>
+      <div className="col-2" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.1fr) minmax(0,1fr)', gap: 12, marginBottom: 12 }}>
         <Card title="Ageing">
           {ageData.some(a => a.value > 0) ? (
-            <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 10, alignItems: 'center' }}>
+            <div className="col-2" style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 10, alignItems: 'center' }}>
               <ResponsiveContainer width="100%" height={170}><PieChart><Pie data={ageData} dataKey="value" nameKey="name" innerRadius={45} outerRadius={75} paddingAngle={2}>{ageData.map((_, i) => <Cell key={i} fill={AGE_COLOURS[i % AGE_COLOURS.length]} />)}</Pie><Tooltip formatter={v => money(v)} /></PieChart></ResponsiveContainer>
               <table style={{ fontSize: 12, width: '100%' }}><tbody>{ageData.map((a, i) => <tr key={a.name}><td><span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2, background: AGE_COLOURS[i % AGE_COLOURS.length], marginRight: 6 }} />{a.name} days</td><td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{money(a.value)}</td><td style={{ textAlign: 'right', color: 'var(--t3)' }}>{num(a.dealers)}</td></tr>)}</tbody></table>
             </div>) : <div style={{ color: 'var(--t3)', fontSize: 12.5, padding: 12 }}>No ageing yet. Ageing needs a month-wise statement (bills raised per month); the migrated sheet carried running balances only.</div>}
@@ -41,7 +41,7 @@ export default function Dashboard({ go }) {
         </Card>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 12, marginBottom: 12 }}>
+      <div className="col-2" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 12, marginBottom: 12 }}>
         <Card title="High-priority dealers" right={<button className="btn" style={{ fontSize: 11 }} onClick={() => go('colOutstanding', { priority: 'HIGH,CRITICAL' })}>See all</button>}>
           <Table dense cols={[
             { k: 'dealer', h: 'Dealer', r: r => <DealerLink id={r.dealerId} name={r.dealerName} code={r.dealerCode} /> },

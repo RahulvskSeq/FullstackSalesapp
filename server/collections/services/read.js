@@ -27,7 +27,8 @@ export async function listBalances(scopeF, q = {}) {
     ColBalance.aggregate([{ $match: f }, { $group: { _id: null, sum: { $sum: '$total' }, owing: { $sum: { $cond: [{ $gt: ['$total', 0] }, 1, 0] } } } }]),
   ]);
   const names = new Map((await User().find({ id: { $in: [...new Set(items.map(i => i.salesmanId))] } }, 'id name').lean()).map(u => [u.id, u.name]));
-  return { items: items.map(i => ({ ...i, buckets: asObj(i.buckets), salesmanName: names.get(i.salesmanId) || i.salesmanId })), total, page, limit, sum: agg[0]?.sum || 0, owing: agg[0]?.owing || 0 };
+  const phones = new Map((await Dealer().find({ _id: { $in: items.map(i => i.dealerId) } }, 'phone whatsappOptOut').lean()).map(d => [String(d._id), d]));
+  return { items: items.map(i => ({ ...i, buckets: asObj(i.buckets), salesmanName: names.get(i.salesmanId) || i.salesmanId, phone: phones.get(String(i.dealerId))?.phone || '', whatsappOptOut: !!phones.get(String(i.dealerId))?.whatsappOptOut })), total, page, limit, sum: agg[0]?.sum || 0, owing: agg[0]?.owing || 0 };
 }
 
 /** Everything about one dealer, in the sections the Dealer 360 screen shows. */
@@ -122,7 +123,7 @@ export async function dashboard(scopeF) {
       clearedToday: clearedToday[0]?.sum || 0, clearedTodayCount: clearedToday[0]?.n || 0,
       highPriorityDealers: hi.length,
     },
-    highPriority: hi.map(b => ({ dealerId: b.dealerId, dealerName: b.dealerName, dealerCode: b.dealerCode, total: b.total, ageDays: b.ageDays, priority: b.priority, status: b.status, salesmanName: users.get(b.salesmanId) || b.salesmanId })),
+    highPriority: await (async () => { const ph = new Map((await Dealer().find({ _id: { $in: hi.map(b => b.dealerId) } }, 'phone').lean()).map(d => [String(d._id), d.phone || ''])); return hi.map(b => ({ dealerId: b.dealerId, dealerName: b.dealerName, dealerCode: b.dealerCode, total: b.total, ageDays: b.ageDays, priority: b.priority, status: b.status, salesmanName: users.get(b.salesmanId) || b.salesmanId, phone: ph.get(String(b.dealerId)) || '' })); })(),
     aging: bands,
     bySalesman: bySm.map(s => ({ salesmanId: s._id, name: users.get(s._id) || s._id || '(unassigned)', total: s.total, dealers: s.dealers, overdue: s.overdue, collectedThisMonth: smCollected.get(s._id) || 0 })),
     activity30d: act.map(a => ({ ...a, employeeId: a._id, name: users.get(a._id) || a._id })),

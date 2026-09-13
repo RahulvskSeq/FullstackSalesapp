@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { DealerCtx } from './ui';
+import { DealerCtx, Tooltips } from './ui';
 import Dashboard from './Dashboard';
 import Today from './Today';
 import Outstanding from './Outstanding';
@@ -37,6 +37,40 @@ export default function Collections({ view, currentUser, users, hasFeature, navi
   const p = params;
   return (
     <DealerCtx.Provider value={ctx}>
+      <Tooltips />
+      {/* Phone layout for the module. Inline styles carry the desktop layout, so
+          these override with !important — one place, instead of a media query
+          per component. */}
+      <style>{`
+        @media (max-width: 768px) {
+          /* grid children default to min-width:auto and get pushed wide by a long figure or a table */
+          .col-2 > *, .stat-grid > *, .col-stats > *, .card, .stat-card { min-width: 0; max-width: 100%; }
+          .col-2 { grid-template-columns: 1fr !important; }
+          .col-stats { grid-template-columns: repeat(2, 1fr) !important; }
+          .col-setting { grid-template-columns: 1fr !important; }
+          .col-setting > div:last-child { justify-self: end; }
+          .col-rule { grid-template-columns: 24px 1fr !important; }
+          .col-rule > *:nth-child(n+3) { grid-column: 2; }
+          .col-phone { grid-template-columns: 1fr !important; }
+          .col-drawer { padding: 12px !important; width: 100vw !important; max-width: 100vw !important; margin: 0 !important; }
+          .col-head { flex-direction: column; }
+          .col-head .row { flex-wrap: wrap; }
+          .col-scroll { margin: 0 -6px; }
+          .col-table th:first-child, .col-table td:first-child { position: sticky; left: 0; z-index: 1; background: var(--bg1); box-shadow: 2px 0 0 var(--b1); }
+          .col-table th, .col-table td { padding: 7px 8px !important; }
+          .col-lbl { display: none; }   /* icons only on a phone; the tooltip still names them */
+          .page-head .page-title { font-size: 19px !important; }
+          .page-head .row button { padding: 6px 10px; font-size: 12px; }
+          .tabs { gap: 0; }
+          .tab { padding: 8px 10px; font-size: 12px; }
+          .overlay { padding: 0 !important; align-items: flex-end !important; }
+          .overlay .modal:not(.col-drawer) { max-height: 94vh; border-radius: 14px 14px 0 0; }
+        }
+        @media (max-width: 480px) {
+          .col-stats { grid-template-columns: repeat(2, 1fr) !important; }
+          .stat-grid .stat-card > div:nth-child(2) { font-size: 16px !important; }
+        }
+      `}</style>
       {view === 'colDashboard' && <Dashboard go={go} />}
       {view === 'colToday' && <Today />}
       {view === 'colOutstanding' && <Outstanding params={p} key={JSON.stringify(p)} />}

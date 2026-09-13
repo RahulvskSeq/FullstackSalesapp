@@ -15,7 +15,7 @@ export default function Tasks({ params }) {
   const points = (data?.items || []).reduce((s, t) => s + (t.status === 'DONE' ? t.points || 0 : 0), 0);
   return (
     <div>
-      <PageHead icon={ClipboardCheck} tone="var(--acc)" title={isStaff ? "Team tasks" : "My tasks"} sub="Manual and automatic. Points are earned on completion and feed the monthly review." right={<button className="btnp" onClick={() => setForm(true)}><ClipboardList size={12} /> New task</button>} />
+      <PageHead icon={ClipboardCheck} tone="var(--acc)" title={isStaff ? "Team tasks" : "My tasks"} sub="Manual and automatic. Points are earned on completion and feed the monthly review." right={<button className="btnp" data-tip="Create a task for someone" onClick={() => setForm(true)}><ClipboardList size={12} /> New task</button>} />
       <Card style={{ marginBottom: 12 }}><div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
         <select className="sel" value={q.status} onChange={e => set({ status: e.target.value })}><option value="OPEN,IN_PROGRESS">Open</option><option value="DONE">Done</option><option value="CANCELLED,EXPIRED">Cancelled / expired</option><option value="">All</option></select>
         <select className="sel" value={q.due} onChange={e => set({ due: e.target.value })}><option value="">Any due date</option><option value="today">Due today</option><option value="overdue">Overdue</option></select>
@@ -35,9 +35,9 @@ export default function Tasks({ params }) {
           { k: 'points', h: 'Pts', align: 'right' },
           { k: 'description', h: 'Description', wrap: true, max: 300 },
           { k: 'act', h: '', r: r => ['OPEN', 'IN_PROGRESS'].includes(r.status) ? <div className="row" style={{ gap: 4 }}>
-              <button className="btnp" style={{ padding: '3px 8px', fontSize: 11 }} onClick={e => { e.stopPropagation(); setDone(r); }}><Check size={12} /> Done</button>
-              <button className="btn" style={{ padding: '3px 7px' }} title="Comment" onClick={async e => { e.stopPropagation(); const text = window.prompt('Comment'); if (!text) return; await col.commentTask(r._id, text).catch(x => alert(x.message)); reload(); }}><MessageSquare size={12} /></button>
-              <button className="btn" style={{ padding: '3px 7px' }} title="Cancel" onClick={async e => { e.stopPropagation(); const reason = window.prompt('Reason for cancelling?'); if (reason === null) return; await col.cancelTask(r._id, reason).catch(x => alert(x.message)); reload(); }}><X size={12} /></button>
+              <button className="btnp" data-tip="Mark this task done" style={{ padding: '3px 8px', fontSize: 11 }} onClick={e => { e.stopPropagation(); setDone(r); }}><Check size={12} /> Done</button>
+              <button className="btn" style={{ padding: '3px 7px' }} data-tip="Comment" onClick={async e => { e.stopPropagation(); const text = window.prompt('Comment'); if (!text) return; await col.commentTask(r._id, text).catch(x => alert(x.message)); reload(); }}><MessageSquare size={12} /></button>
+              <button className="btn" style={{ padding: '3px 7px' }} data-tip="Cancel" onClick={async e => { e.stopPropagation(); const reason = window.prompt('Reason for cancelling?'); if (reason === null) return; await col.cancelTask(r._id, reason).catch(x => alert(x.message)); reload(); }}><X size={12} /></button>
             </div> : (r.comments?.length ? <span className="chip">{r.comments.length} comments</span> : null) },
         ]} rows={data?.items} empty="No tasks." />}
         <div style={{ padding: '0 12px 10px' }}><Pager page={data?.page} limit={data?.limit} total={data?.total} onPage={p => setQ(x => ({ ...x, page: p }))} /></div>

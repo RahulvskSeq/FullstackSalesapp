@@ -20,8 +20,8 @@ export default function Reports() {
   return (
     <div>
       <PageHead icon={FileBarChart2} tone="var(--acc)" title="Reports" sub="Everything the module knows, as a table or an Excel file. Scoped to what you can see." right={<>
-        <button className="btn" disabled={!ready} onClick={() => downloadReport(kind, q, 'csv').catch(e => alert(e.message))}><Download size={12} /> CSV</button>
-        <button className="btnp" disabled={!ready} onClick={() => downloadReport(kind, q, 'xlsx').catch(e => alert(e.message))}><Download size={12} /> Excel</button></>} />
+        <button className="btn" data-tip="Download all rows as CSV" disabled={!ready} onClick={() => downloadReport(kind, q, 'csv').catch(e => alert(e.message))}><Download size={12} /> CSV</button>
+        <button className="btnp" data-tip="Download all rows as Excel" disabled={!ready} onClick={() => downloadReport(kind, q, 'xlsx').catch(e => alert(e.message))}><Download size={12} /> Excel</button></>} />
       <Card style={{ marginBottom: 12 }}><div className="row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <div className="field" style={{ marginBottom: 0 }}><label>Report</label><select className="sel" value={kind} onChange={e => setKind(e.target.value)}>{(kinds.data || []).map(k => <option key={k.id} value={k.id}>{k.label}</option>)}</select></div>
         {NEEDS_RANGE.has(kind) && <><div className="field" style={{ marginBottom: 0 }}><label>From</label><input type="date" className="inp" value={p.from} onChange={e => setP(x => ({ ...x, from: e.target.value }))} /></div><div className="field" style={{ marginBottom: 0 }}><label>To</label><input type="date" className="inp" value={p.to} onChange={e => setP(x => ({ ...x, to: e.target.value }))} /></div></>}

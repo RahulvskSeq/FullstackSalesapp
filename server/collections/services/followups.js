@@ -107,7 +107,7 @@ export async function breakOverduePromises(today = todayYmd()) {
 
 const withDealer = async items => {
   const Dealer = mongoose.models.Dealer;
-  const names = new Map((await Dealer.find({ _id: { $in: [...new Set(items.map(i => String(i.dealerId)))] } }, 'name code').lean()).map(d => [String(d._id), d]));
+  const names = new Map((await Dealer.find({ _id: { $in: [...new Set(items.map(i => String(i.dealerId)))] } }, 'name code phone').lean()).map(d => [String(d._id), d]));
   return items.map(i => ({ ...i, dealer: names.get(String(i.dealerId)) || null }));
 };
 export async function listFollowups(filter, { page = 1, limit = 50 } = {}) {

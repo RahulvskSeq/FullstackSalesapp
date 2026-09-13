@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, createContext, useContext } from 'react';
-import { X, Search, ChevronLeft, ChevronRight, RefreshCw, AlertTriangle } from 'lucide-react';
+import { X, Search, ChevronLeft, ChevronRight, RefreshCw, AlertTriangle, PhoneCall } from 'lucide-react';
 import { col } from './api';
 
 /* ── formatting ─────────────────────────────────────────────────────── */
@@ -19,10 +19,15 @@ export const TONE = {
   OPEN: 'var(--acc)', IN_PROGRESS: 'var(--yel)', DONE: 'var(--grn)', CANCELLED: 'var(--t3)', EXPIRED: 'var(--red)',
   RECORDED: 'var(--yel)', CONFIRMED: 'var(--grn)', BOUNCED: 'var(--red)',
   PENDING: 'var(--yel)', PARTIALLY_FULFILLED: '#f97316', FULFILLED: 'var(--grn)', BROKEN: 'var(--red)',
-  OVERDUE: 'var(--red)', HIGH_PRIORITY: '#f97316', PROMISED: 'var(--pur)', PARTIAL_PAYMENT: 'var(--yel)', FOLLOW_UP_REQUIRED: 'var(--acc)', CLOSED: 'var(--t3)',
+  DUE: 'var(--yel)', OVERDUE: 'var(--red)', HIGH_PRIORITY: '#f97316', PROMISED: 'var(--pur)', PARTIAL_PAYMENT: 'var(--yel)', FOLLOW_UP_REQUIRED: 'var(--acc)', CLOSED: 'var(--t3)',
   APPLIED: 'var(--grn)', FAILED: 'var(--red)', APPLYING: 'var(--yel)', DUPLICATE: 'var(--t3)', PREVIEWED: 'var(--acc)', VALIDATED: 'var(--acc)', STAGED: 'var(--t3)',
   QUEUED: 'var(--yel)', RUNNING: 'var(--yel)', SENT: 'var(--acc)', DELIVERED: 'var(--grn)', READ: 'var(--grn)', OPTED_OUT: 'var(--t3)',
 };
+/** Status for a balance: a plain due balance shows how urgent it is (from priority) instead of a bare "due". */
+export function StatusBadge({ status, priority }) {
+  if (!status || ['DUE', 'NEW', 'OPEN'].includes(status)) return <Badge v={priority || 'MEDIUM'} label={title(priority || 'MEDIUM') + ' · due'} />;
+  return <Badge v={status} />;
+}
 export function Badge({ v, label }) {
   const c = TONE[v] || 'var(--t2)';
   return <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 20, fontSize: 10.5, fontWeight: 700, letterSpacing: '.04em', whiteSpace: 'nowrap', color: c, background: 'color-mix(in srgb, ' + c + ' 14%, transparent)', border: '1px solid color-mix(in srgb, ' + c + ' 35%, transparent)' }}>{label || title(v)}</span>;
@@ -89,8 +94,8 @@ export function Busy() { return <div style={{ padding: 20, color: 'var(--t3)', f
 export function Table({ cols, rows, keyOf = r => r._id, onRow, empty = 'Nothing to show.', dense }) {
   if (!rows?.length) return <Empty>{empty}</Empty>;
   return (
-    <div className="scroll">
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: dense ? 12 : 12.5 }}>
+    <div className="scroll col-scroll">
+      <table className="col-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: dense ? 12 : 12.5 }}>
         <thead><tr>{cols.map(c => <th key={c.k || c.h} style={{ textAlign: c.align || 'left', padding: dense ? '6px 8px' : '8px 10px', fontSize: 10.5, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--t3)', borderBottom: '1px solid var(--b1)', whiteSpace: 'nowrap', width: c.w }}>{c.h}</th>)}</tr></thead>
         <tbody>{rows.map(r => (
           <tr key={keyOf(r)} onClick={onRow ? () => onRow(r) : undefined} style={{ cursor: onRow ? 'pointer' : 'default' }}
@@ -180,4 +185,58 @@ export function WhatsAppIcon({ size = 14, style }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0, ...style }} aria-label="WhatsApp">
     <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.885-9.885 9.885m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
   </svg>;
+}
+
+/**
+ * One tooltip for the whole module. Any element with data-tip="…" gets it on
+ * hover. Rendered fixed at the top of the page (not inside the button), so a
+ * scrolling table or a card edge can never clip it; flips below the button
+ * when there is no room above.
+ */
+export function Tooltips() {
+  const [tip, setTip] = useState(null);
+  useEffect(() => {
+    const over = e => {
+      const el = e.target.closest?.('[data-tip]');
+      if (!el || el.disabled) { setTip(null); return; }
+      const r = el.getBoundingClientRect();
+      const above = r.top > 44;
+      setTip({ text: el.getAttribute('data-tip'), x: r.left + r.width / 2, y: above ? r.top - 8 : r.bottom + 8, above });
+    };
+    const out = e => { if (e.target.closest?.('[data-tip]')) setTip(null); };
+    const clear = () => setTip(null);
+    document.addEventListener('mouseover', over); document.addEventListener('mouseout', out);
+    document.addEventListener('scroll', clear, true); document.addEventListener('click', clear, true);
+    return () => { document.removeEventListener('mouseover', over); document.removeEventListener('mouseout', out); document.removeEventListener('scroll', clear, true); document.removeEventListener('click', clear, true); };
+  }, []);
+  if (!tip) return null;
+  return (
+    <div style={{ position: 'fixed', left: tip.x, top: tip.y, transform: tip.above ? 'translate(-50%, -100%)' : 'translate(-50%, 0)', zIndex: 9999, pointerEvents: 'none',
+                  background: 'var(--t1)', color: 'var(--bg1)', padding: '6px 10px', borderRadius: 7, fontSize: 11.5, fontWeight: 600, lineHeight: 1.25, whiteSpace: 'nowrap', maxWidth: 320, boxShadow: '0 6px 18px rgba(0,0,0,.28)' }}>
+      {tip.text}
+      <div style={{ position: 'absolute', left: '50%', [tip.above ? 'top' : 'bottom']: '100%', transform: 'translateX(-50%)', border: '5px solid transparent', [tip.above ? 'borderTopColor' : 'borderBottomColor']: 'var(--t1)' }} />
+    </div>);
+}
+
+/**
+ * Call the dealer. On a phone this opens the dialer (tel:); on a desktop it
+ * hands the number to FaceTime / Skype / whatever is registered. With no
+ * number on record it asks for one, saves it, then dials. `onDialed` lets
+ * the screen open the follow-up form so the call gets written down.
+ */
+export function CallButton({ dealer, onDialed, size = 12, style, label }) {
+  const phone = String(dealer?.phone || '').replace(/\D/g, '');
+  const dial = async e => {
+    e.stopPropagation(); e.preventDefault();
+    let n = phone;
+    if (!n) {
+      const typed = window.prompt(`No number on record for ${dealer?.name || 'this dealer'}. Enter the mobile to call:`); if (!typed) return;
+      const d = typed.replace(/\D/g, ''); n = d.length === 10 ? '91' + d : d;
+      if (!(n.length === 12)) { alert('Enter a 10-digit mobile'); return; }
+      try { await col.setContact(dealer.id, { phone: n }); } catch (x) { alert(x.message); return; }
+    }
+    window.location.href = 'tel:+' + n;
+    onDialed?.({ ...dealer, phone: n });
+  };
+  return <a href={phone ? 'tel:+' + phone : '#'} onClick={dial} className="btn" data-tip={phone ? 'Call +' + phone : 'Call — add the number first'} style={{ padding: '3px 8px', fontSize: 11.5, color: '#0ea5e9', display: 'inline-flex', alignItems: 'center', gap: 5, textDecoration: 'none', ...style }}><PhoneCall size={size} />{label}</a>;
 }

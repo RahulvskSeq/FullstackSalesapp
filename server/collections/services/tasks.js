@@ -82,6 +82,6 @@ export async function cancelOpenTasksFor(dealerId, { by = 'automation', reason =
 export async function listTasks(filter, { page = 1, limit = 50 } = {}) {
   const [items, total] = await Promise.all([ColTask.find(filter).sort({ dueDate: 1, priority: -1, taskNo: 1 }).skip((page - 1) * limit).limit(limit).lean(), ColTask.countDocuments(filter)]);
   const Dealer = mongoose.models.Dealer;
-  const names = new Map((await Dealer.find({ _id: { $in: [...new Set(items.map(i => String(i.dealerId)))] } }, 'name code').lean()).map(d => [String(d._id), d]));
+  const names = new Map((await Dealer.find({ _id: { $in: [...new Set(items.map(i => String(i.dealerId)))] } }, 'name code phone').lean()).map(d => [String(d._id), d]));
   return { items: items.map(i => ({ ...i, dealer: names.get(String(i.dealerId)) || null })), total, page, limit };
 }

@@ -56,8 +56,9 @@ export function deriveStatus(b, cycle, cfg, today = todayYmd()) {
   if (b.lastPaymentAt && cycle && b.lastPaymentAt >= cycle.openedAt) return 'PARTIAL_PAYMENT';
   if ((b.total || 0) >= (cfg.highValue || Infinity)) return 'HIGH_PRIORITY';
   if (b.ageDays !== null && b.ageDays !== undefined && b.ageDays > (cfg.overdueDays || Infinity)) return 'OVERDUE';
-  if (!b.lastFollowupAt || (cycle && b.lastFollowupAt < cycle.openedAt)) return 'NEW';
-  return 'OPEN';
+  // Nothing specific has happened yet: it is simply due, and the priority
+  // (critical / high / medium / low, from amount and age) says how urgently.
+  return 'DUE';
 }
 
 /* ─────────────────────────── transactions ─────────────────────────── */

@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { X, Phone, IndianRupee, ClipboardList } from 'lucide-react';
+import { X, ClipboardList, NotebookPen, Banknote } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { col } from './api';
-import { useLoad, Card, Table, Badge, Tabs, Busy, ErrorBox, money, num, fmtDate, fmtWhen, periodLabel, title, userName, useDealerCtx, WhatsAppIcon } from './ui';
+import { useLoad, Card, Table, Badge, Tabs, Busy, ErrorBox, money, num, fmtDate, fmtWhen, periodLabel, title, userName, useDealerCtx, WhatsAppIcon, StatusBadge, CallButton } from './ui';
 import { FollowupForm, PaymentForm, TaskForm, WhatsAppForm } from './forms';
 
 /**
@@ -20,25 +20,26 @@ export default function Dealer360({ dealerId, onClose }) {
   const both = () => { reload(); tl.reload(); };
   return (
     <div className="overlay" style={{ justifyContent: 'flex-end', padding: 0 }} onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal" style={{ maxWidth: 980, width: '100%', height: '100vh', maxHeight: '100vh', borderRadius: 0, padding: 18, overflowY: 'auto' }}>
+      <div className="modal col-drawer" style={{ maxWidth: 980, width: '100%', height: '100vh', maxHeight: '100vh', borderRadius: 0, padding: 18, overflowY: 'auto' }}>
         {busy && !d ? <Busy /> : err ? <ErrorBox err={err} onRetry={reload} /> : (<>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 12 }}>
+          <div className="col-head" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
             <div>
               <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--t3)' }}>Dealer 360</div>
               <div style={{ fontSize: 20, fontWeight: 800 }}>{d.dealer.name} {d.dealer.code && <span className="chip">{d.dealer.code}</span>}</div>
               <div style={{ fontSize: 12, color: 'var(--t2)' }}>{[d.dealer.city, d.dealer.state, d.dealer.zone].filter(Boolean).join(' · ')} · Salesman {d.dealer.salesmanName || '—'} · <ContactInline dealer={dealer} onSaved={reload} />{d.dealer.creditDays ? ` · credit ${d.dealer.creditDays} days` : ''}{d.dealer.creditLimit ? ` · limit ${money(d.dealer.creditLimit)}` : ''}</div>
             </div>
             <div className="row" style={{ gap: 6 }}>
-              <button className="btn" onClick={() => setForm('followup')}><Phone size={12} /> Follow-up</button>
-              <button className="btn" onClick={() => setForm('payment')}><IndianRupee size={12} /> Payment</button>
-              <button className="btn" onClick={() => setForm('task')}><ClipboardList size={12} /> Task</button>
+              <CallButton dealer={dealer} label="Call" size={12} onDialed={() => setForm('followup')} />
+              <button className="btn" data-tip="Record a call or visit" onClick={() => setForm('followup')}><NotebookPen size={12} /> Follow-up</button>
+              <button className="btn" data-tip="Record money received" onClick={() => setForm('payment')}><Banknote size={12} /> Payment</button>
+              <button className="btn" data-tip="Create a task for this dealer" onClick={() => setForm('task')}><ClipboardList size={12} /> Task</button>
               <button className="btn" onClick={() => setForm('wa')} disabled={d.dealer.whatsappOptOut} title={d.dealer.whatsappOptOut ? 'Dealer has opted out' : ''}><WhatsAppIcon size={13} /> WhatsApp</button>
               <button className="btn" onClick={onClose} style={{ padding: '4px 7px' }}><X size={14} /></button>
             </div>
           </div>
           <div className="stat-grid">
             <div className="stat-card"><div style={{ fontSize: 10.5, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase' }}>Outstanding</div><div style={{ fontSize: 19, fontWeight: 800 }}>{money(d.balance?.total)}</div><div style={{ fontSize: 11, color: 'var(--t2)' }}>{d.balance?.lastSnapshotAsOn ? 'statement ' + fmtDate(d.balance.lastSnapshotAsOn) : 'no statement yet'}</div></div>
-            <div className="stat-card"><div style={{ fontSize: 10.5, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase' }}>Status</div><div style={{ marginTop: 5 }}><Badge v={d.balance?.status || 'NEW'} /> <Badge v={d.balance?.priority || 'MEDIUM'} /></div><div style={{ fontSize: 11, color: 'var(--t2)', marginTop: 4 }}>{d.balance?.ageDays != null ? `oldest ${periodLabel(d.balance.oldestPeriod)} · ${d.balance.ageDays} days` : ''}</div></div>
+            <div className="stat-card"><div style={{ fontSize: 10.5, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase' }}>Status</div><div style={{ marginTop: 5 }}><StatusBadge status={d.balance?.status} priority={d.balance?.priority} /></div><div style={{ fontSize: 11, color: 'var(--t2)', marginTop: 4 }}>{d.balance?.ageDays != null ? `oldest ${periodLabel(d.balance.oldestPeriod)} · ${d.balance.ageDays} days` : ''}</div></div>
             <div className="stat-card"><div style={{ fontSize: 10.5, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase' }}>Promise</div><div style={{ fontSize: 15, fontWeight: 800 }}>{d.balance?.promise?.amount ? `${money(d.balance.promise.amount)} by ${fmtDate(d.balance.promise.date)}` : '—'}</div><div style={{ fontSize: 11, color: d.balance?.brokenPromises ? 'var(--red)' : 'var(--t2)' }}>{num(d.balance?.brokenPromises || 0)} broken so far</div></div>
             <div className="stat-card"><div style={{ fontSize: 10.5, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase' }}>Cycles</div><div style={{ fontSize: 19, fontWeight: 800 }}>{num(d.cycles.length)}</div><div style={{ fontSize: 11, color: 'var(--t2)' }}>{d.cycles.filter(c => c.status === 'CLEARED').length} cleared · last payment {fmtDate(d.balance?.lastPaymentAt)}</div></div>
           </div>
@@ -66,7 +67,7 @@ function Overview({ d }) {
   const b = d.balance;
   const series = [...d.snapshots].reverse().map(s => ({ asOn: s.asOn, total: s.total }));
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 12 }}>
+    <div className="col-2" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 12 }}>
       <Card title="Current statement buckets">
         {b?.buckets && Object.keys(b.buckets).length ? <Table dense cols={[{ k: 'p', h: 'Month', r: r => periodLabel(r.p) }, { k: 'v', h: 'Amount', align: 'right', r: r => money(r.v) }]} rows={Object.entries(b.buckets).sort().map(([p, v]) => ({ p, v }))} keyOf={r => r.p} /> : <div style={{ color: 'var(--t3)', fontSize: 12.5 }}>No statement yet.</div>}
         {b && <div style={{ fontSize: 11.5, color: 'var(--t2)', marginTop: 8 }}>Mode: {b.balanceMode} · total is {b.balanceMode === 'buckets' ? 'the sum of the months' : 'the latest month'}.</div>}

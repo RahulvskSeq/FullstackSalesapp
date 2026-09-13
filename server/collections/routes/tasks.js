@@ -48,10 +48,10 @@ router.get('/today', async (req, res) => {
       ColEvent.find({ ...sf, type: 'CLEARED', at: { $gte: since } }).sort({ at: -1 }).limit(20).lean(),
     ]);
     const Dealer = (await import('mongoose')).default.models.Dealer;
-    const ids = [...new Set([...tasksToday, ...tasksOverdue, ...promisesToday, ...promisesBroken].map(t => String(t.dealerId)))];
-    const names = new Map((await Dealer.find({ _id: { $in: ids } }, 'name code').lean()).map(d => [String(d._id), d]));
-    const named = a => a.map(t => ({ ...t, dealerName: names.get(String(t.dealerId))?.name || '', dealerCode: names.get(String(t.dealerId))?.code || '' }));
-    res.json({ today, employeeId: me, tasksToday: named(tasksToday), tasksOverdue: named(tasksOverdue), followupsDue, followupsOverdue, promisesToday: named(promisesToday), promisesBroken: named(promisesBroken), highPriority, recentPayments, newOutstanding, recentlyCleared });
+    const ids = [...new Set([...tasksToday, ...tasksOverdue, ...promisesToday, ...promisesBroken, ...followupsDue, ...followupsOverdue, ...highPriority].map(t => String(t.dealerId)))];
+    const names = new Map((await Dealer.find({ _id: { $in: ids } }, 'name code phone').lean()).map(d => [String(d._id), d]));
+    const named = a => a.map(t => ({ ...t, dealerName: t.dealerName || names.get(String(t.dealerId))?.name || '', dealerCode: t.dealerCode || names.get(String(t.dealerId))?.code || '', phone: names.get(String(t.dealerId))?.phone || '' }));
+    res.json({ today, employeeId: me, tasksToday: named(tasksToday), tasksOverdue: named(tasksOverdue), followupsDue, followupsOverdue, promisesToday: named(promisesToday), promisesBroken: named(promisesBroken), followupsDue: named(followupsDue), followupsOverdue: named(followupsOverdue), highPriority: named(highPriority), recentPayments, newOutstanding, recentlyCleared });
   } catch (e) { fail(res, e); }
 });
 
