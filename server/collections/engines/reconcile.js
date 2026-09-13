@@ -50,7 +50,9 @@ export function derivePriority({ total, ageDays, brokenPromises }, thresholds) {
 }
 
 export function deriveStatus(b, cycle, cfg, today = todayYmd()) {
-  if ((b.total || 0) <= 0) return cycle && cycle.status === 'CLOSED_MANUAL' ? 'CLOSED' : 'CLEARED';
+  // Nothing due: CLEARED if a cycle was ever paid down to zero, NIL if the
+  // dealer has simply never owed anything in the app's memory.
+  if ((b.total || 0) <= 0) return !cycle ? 'NIL' : cycle.status === 'CLOSED_MANUAL' ? 'CLOSED' : 'CLEARED';
   if (b.promise?.date && b.promise.date >= today && b.promise.amount > 0) return 'PROMISED';
   if ((b.brokenPromises || 0) > 0) return 'FOLLOW_UP_REQUIRED';
   if (b.lastPaymentAt && cycle && b.lastPaymentAt >= cycle.openedAt) return 'PARTIAL_PAYMENT';

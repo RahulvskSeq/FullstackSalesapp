@@ -56,7 +56,10 @@ export default function Collections({ view, currentUser, users, hasFeature, navi
           .col-rule { grid-template-columns: 24px 1fr !important; }
           .col-rule > *:nth-child(n+3) { grid-column: 2; }
           .col-phone { grid-template-columns: 1fr !important; }
-          .col-drawer { padding: 12px !important; width: 100vw !important; max-width: 100vw !important; margin: 0 !important; }
+          .col-drawer { padding: 12px !important; width: 100vw !important; max-width: 100vw !important; max-height: 94vh !important; margin: 0 !important; border-radius: 14px 14px 0 0 !important; }
+          .overlay .modal { box-sizing: border-box; width: 100vw; max-width: 100vw; }   /* padding must not push the sheet past the screen edge */
+          .col-head > div:first-child { min-width: 0; }
+          .col-head .page-title, .col-head div { overflow-wrap: anywhere; }
           .col-head { flex-direction: column; }
           .col-head .row { flex-wrap: wrap; }
           .col-scroll { margin: 0 -6px; }
@@ -71,6 +74,9 @@ export default function Collections({ view, currentUser, users, hasFeature, navi
           .overlay .modal:not(.col-drawer) { max-height: 94vh; border-radius: 14px 14px 0 0; }
         }
         @media (max-width: 480px) {
+          .col-months { grid-template-columns: repeat(2, minmax(0,1fr)) !important; row-gap: 8px !important; }
+          .col-actions { display: grid !important; grid-template-columns: repeat(2, 1fr) !important; gap: 6px !important; }
+          .col-actions > * { justify-content: center; width: 100%; box-sizing: border-box; }
           .col-stats { grid-template-columns: repeat(2, 1fr) !important; }
           .stat-grid .stat-card > div:nth-child(2) { font-size: 16px !important; }
         }

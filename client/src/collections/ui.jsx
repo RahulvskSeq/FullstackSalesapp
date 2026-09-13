@@ -19,13 +19,14 @@ export const TONE = {
   OPEN: 'var(--acc)', IN_PROGRESS: 'var(--yel)', DONE: 'var(--grn)', CANCELLED: 'var(--t3)', EXPIRED: 'var(--red)',
   RECORDED: 'var(--yel)', CONFIRMED: 'var(--grn)', BOUNCED: 'var(--red)',
   PENDING: 'var(--yel)', PARTIALLY_FULFILLED: '#f97316', FULFILLED: 'var(--grn)', BROKEN: 'var(--red)',
-  DUE: 'var(--yel)', OVERDUE: 'var(--red)', HIGH_PRIORITY: '#f97316', PROMISED: 'var(--pur)', PARTIAL_PAYMENT: 'var(--yel)', FOLLOW_UP_REQUIRED: 'var(--acc)', CLOSED: 'var(--t3)',
+  NIL: 'var(--t3)', DUE: 'var(--yel)', OVERDUE: 'var(--red)', HIGH_PRIORITY: '#f97316', PROMISED: 'var(--pur)', PARTIAL_PAYMENT: 'var(--yel)', FOLLOW_UP_REQUIRED: 'var(--acc)', CLOSED: 'var(--t3)',
   APPLIED: 'var(--grn)', FAILED: 'var(--red)', APPLYING: 'var(--yel)', DUPLICATE: 'var(--t3)', PREVIEWED: 'var(--acc)', VALIDATED: 'var(--acc)', STAGED: 'var(--t3)',
   QUEUED: 'var(--yel)', RUNNING: 'var(--yel)', SENT: 'var(--acc)', DELIVERED: 'var(--grn)', READ: 'var(--grn)', OPTED_OUT: 'var(--t3)',
 };
 /** Status for a balance: a plain due balance shows how urgent it is (from priority) instead of a bare "due". */
 export function StatusBadge({ status, priority }) {
   if (!status || ['DUE', 'NEW', 'OPEN'].includes(status)) return <Badge v={priority || 'MEDIUM'} label={title(priority || 'MEDIUM') + ' · due'} />;
+  if (status === 'NIL') return <Badge v="NIL" label="Nil" />;
   return <Badge v={status} />;
 }
 export function Badge({ v, label }) {
@@ -51,9 +52,9 @@ export function useLoad(fn, deps = []) {
 export function PageHead({ eyebrow = 'Collections', title: t, sub, right, icon: Icon, tone = 'var(--acc)' }) {
   return (
     <div className="page-head" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
-      <div className="row" style={{ gap: 12, alignItems: 'center' }}>
+      <div className="row" style={{ gap: 12, alignItems: 'center', flexWrap: 'nowrap', minWidth: 0 }}>
         {Icon && <div style={{ width: 42, height: 42, borderRadius: 12, display: 'grid', placeItems: 'center', flexShrink: 0, color: tone, background: 'color-mix(in srgb, ' + tone + ' 14%, transparent)', border: '1px solid color-mix(in srgb, ' + tone + ' 30%, transparent)' }}><Icon size={22} /></div>}
-        <div>
+        <div style={{ minWidth: 0 }}>
           <div className="page-eyebrow" style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--t3)' }}>{eyebrow}</div>
           <div className="page-title" style={{ fontSize: 22, fontWeight: 800, lineHeight: 1.15 }}>{t}</div>
           {sub && <div style={{ fontSize: 12.5, color: 'var(--t2)', marginTop: 3 }}>{sub}</div>}
@@ -107,11 +108,11 @@ export function Table({ cols, rows, keyOf = r => r._id, onRow, empty = 'Nothing 
   return (
     <div className="scroll col-scroll">
       <table className="col-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: dense ? 12 : 12.5 }}>
-        <thead><tr>{cols.map(c => <th key={c.k || c.h} style={{ textAlign: c.align || 'left', padding: dense ? '6px 8px' : '8px 10px', fontSize: 10.5, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--t3)', borderBottom: '1px solid var(--b1)', whiteSpace: 'nowrap', width: c.w }}>{c.h}</th>)}</tr></thead>
+        <thead><tr>{cols.map(c => <th key={c.k || c.h} style={{ textAlign: c.align || 'left', padding: dense ? '6px 8px' : '8px 10px', fontSize: 10.5, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--t3)', borderBottom: '1px solid var(--b1)', whiteSpace: 'nowrap', width: c.w, ...(c.style || {}) }}>{c.h}</th>)}</tr></thead>
         <tbody>{rows.map(r => (
           <tr key={keyOf(r)} onClick={onRow ? () => onRow(r) : undefined} style={{ cursor: onRow ? 'pointer' : 'default' }}
               onMouseEnter={e => { if (onRow) e.currentTarget.style.background = 'var(--bg2)'; }} onMouseLeave={e => { e.currentTarget.style.background = ''; }}>
-            {cols.map(c => <td key={c.k || c.h} style={{ padding: dense ? '6px 8px' : '9px 10px', borderBottom: '1px solid var(--b1)', textAlign: c.align || 'left', fontVariantNumeric: 'tabular-nums', whiteSpace: c.wrap ? 'normal' : 'nowrap', maxWidth: c.max, overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.r ? c.r(r) : r[c.k]}</td>)}
+            {cols.map(c => <td key={c.k || c.h} style={{ padding: dense ? '6px 8px' : '9px 10px', borderBottom: '1px solid var(--b1)', textAlign: c.align || 'left', fontVariantNumeric: 'tabular-nums', whiteSpace: c.wrap ? 'normal' : 'nowrap', maxWidth: c.max, overflow: 'hidden', textOverflow: 'ellipsis', ...(c.style || {}) }}>{c.r ? c.r(r) : r[c.k]}</td>)}
           </tr>))}</tbody>
       </table>
     </div>
@@ -254,10 +255,20 @@ export function CallButton({ dealer, onDialed, size = 12, style, label }) {
 
 /* Small building blocks for phone cards. */
 export const CardRow = ({ children, style }) => <div className="row" style={{ justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', ...style }}>{children}</div>;
-export const KV = ({ k, v, big }) => <div style={{ minWidth: 0 }}><div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--t3)' }}>{k}</div><div style={{ fontSize: big ? 16 : 12.5, fontWeight: big ? 800 : 600, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{v}</div></div>;
+export const KV = ({ k, v, big }) => <div style={{ minWidth: 0 }}><div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--t3)' }}>{k}</div><div style={{ fontSize: big ? 16 : 12.5, fontWeight: big ? 800 : 600, fontVariantNumeric: 'tabular-nums', overflowWrap: 'anywhere' }}>{v}</div></div>;
 
 /** The last few month columns present in these rows (newest 4), as table columns — the same look as Outstanding. */
 export const periodsOf = (rows, n = 4) => [...new Set((rows || []).flatMap(r => Object.keys(r.buckets || {})))].sort().slice(-n);
-export const monthCols = rows => periodsOf(rows).map(p => ({ k: p, h: periodLabel(p), align: 'right', r: r => r.buckets?.[p] ? money(r.buckets[p]) : <span style={{ color: 'var(--t3)' }}>–</span> }));
+/** The oldest month on screen is the one being chased this month — it gets a light red wash so the eye lands on it. */
+export const OLDEST_BG = 'rgba(220,38,38,.09)';
+/** The month being chased is drawn as a red rounded pill — the same look as a "Broken" badge — so it cannot be missed. */
+export const OldestPill = ({ children }) => <span style={{ display: 'inline-block', padding: '2px 9px', borderRadius: 20, fontWeight: 700, color: 'var(--red)', background: 'rgba(220,38,38,.12)', border: '1px solid rgba(220,38,38,.35)', whiteSpace: 'nowrap' }}>{children}</span>;
+export const monthCols = rows => { const ps = periodsOf(rows); return ps.map((p, i) => ({ k: p, h: i === 0 ? <span style={{ color: 'var(--red)' }}>{periodLabel(p)}</span> : periodLabel(p), align: 'right', r: r => r.buckets?.[p] ? (i === 0 ? <OldestPill>{money(r.buckets[p])}</OldestPill> : money(r.buckets[p])) : <span style={{ color: 'var(--t3)' }}>–</span> })); };
 /** The same months for a phone card, with the total at the end. */
-export const MonthKVs = ({ row, rows, total }) => { const ps = periodsOf(rows || [row]); return <div style={{ display: 'grid', gridTemplateColumns: `repeat(${ps.length + 1}, minmax(0,1fr))`, gap: 6, margin: '8px 0 4px' }}>{ps.map(p => <KV key={p} k={periodLabel(p)} v={row.buckets?.[p] ? money(row.buckets[p]) : '–'} />)}<KV k="Total" v={money(total ?? row.total)} big /></div>; };
+export const MonthKVs = ({ row, rows, total }) => { const ps = periodsOf(rows || [row]); return <div className="col-months" style={{ display: 'grid', gridTemplateColumns: `repeat(${ps.length + 1}, minmax(0,1fr))`, gap: 6, margin: '8px 0 4px' }}>{ps.map((p, i) => <KV key={p} k={i === 0 ? <span style={{ color: 'var(--red)' }}>{periodLabel(p)}</span> : periodLabel(p)} v={row.buckets?.[p] ? (i === 0 ? <OldestPill>{money(row.buckets[p])}</OldestPill> : money(row.buckets[p])) : '–'} />)}<KV k="Total" v={money(total ?? row.total)} big /></div>; };
+
+/** A follow-up date you can click: shows the date (or "set date") and opens the follow-up form on that dealer with the date field focused. */
+export function FollowupDate({ value, onOpen, prefix = '' }) {
+  return <a href="#" data-tip={value ? 'Change the follow-up date' : 'Set a follow-up date'} onClick={e => { e.preventDefault(); e.stopPropagation(); onOpen(); }}
+    style={{ color: value ? 'var(--t1)' : 'var(--acc)', textDecoration: 'none', borderBottom: '1px dotted var(--t3)', whiteSpace: 'nowrap' }}>{value ? prefix + fmtDate(value) : 'set date'}</a>;
+}

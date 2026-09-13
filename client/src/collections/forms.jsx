@@ -41,44 +41,39 @@ function useSubmit(onDone) {
   return { busy, err, run };
 }
 
-export function FollowupForm({ dealer: preset, onClose, onDone }) {
+export function FollowupForm({ dealer: preset, onClose, onDone, focusDate = false }) {
   const { users, isStaff, currentUser } = useDealerCtx();
   const [dealer, setDealer] = useState(preset || null);
-  const [f, setF] = useState({ date: today(), time: new Date().toTimeString().slice(0, 5), channel: 'CALL', outcome: 'CALLBACK', discussion: '', customerResponse: '', nextFollowupDate: '', nextAction: '', remarks: '', promiseAmount: '', promiseDate: '', employeeId: currentUser?.id || '' });
+  // Kept short on purpose: who, how, what happened, when next, a note. Date and
+  // time are now; the rest is optional.
+  const [f, setF] = useState({ channel: 'CALL', outcome: 'CALLBACK', notes: '', nextFollowupDate: '', promiseAmount: '', promiseDate: '', employeeId: currentUser?.id || '' });
   const set = (k, v) => setF(x => ({ ...x, [k]: v }));
   const { busy, err, run } = useSubmit(r => { onDone?.(r); onClose(); });
   const salesmen = (users || []).filter(u => u.role === 'salesman' || u.role === 'employee' || u.role === 'admin');
   const promising = f.outcome === 'PROMISED';
+  const CH = [['CALL', 'Call'], ['VISIT', 'Visit'], ['WHATSAPP', 'WhatsApp']];
+  const OC = [['CALLBACK', 'Call back later'], ['PROMISED', 'Promised to pay'], ['PAID', 'Paid'], ['NO_ANSWER', 'No answer'], ['DISPUTED', 'Dispute']];
+  const Chips = ({ items, value, onPick }) => <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>{items.map(([v, l]) => <button key={v} type="button" onClick={() => onPick(v)} className={value === v ? 'btnp' : 'btn'} style={{ padding: '6px 12px', fontSize: 12.5 }}>{l}</button>)}</div>;
   return (
     <Modal title="Record follow-up" onClose={onClose}>
       <Field label="Dealer"><DealerPicker value={dealer} onChange={setDealer} /></Field>
       <DealerSummary dealer={dealer} />
-      <div className="g2">
-        <Field label="Date"><input type="date" className="inp" value={f.date} onChange={e => set('date', e.target.value)} max={today()} /></Field>
-        <Field label="Time"><input type="time" className="inp" value={f.time} onChange={e => set('time', e.target.value)} /></Field>
-        <Field label="Channel"><select className="sel" style={{ width: '100%' }} value={f.channel} onChange={e => set('channel', e.target.value)}>{CHANNELS.map(c => <option key={c} value={c}>{t(c)}</option>)}</select></Field>
-        <Field label="Outcome"><select className="sel" style={{ width: '100%' }} value={f.outcome} onChange={e => set('outcome', e.target.value)}>{OUTCOMES.map(c => <option key={c} value={c}>{t(c)}</option>)}</select></Field>
-      </div>
+      <Field label="How"><Chips items={CH} value={f.channel} onPick={v => set('channel', v)} /></Field>
+      <Field label="What happened"><Chips items={OC} value={f.outcome} onPick={v => set('outcome', v)} /></Field>
       {isStaff && <Field label="Recorded for"><select className="sel" style={{ width: '100%' }} value={f.employeeId} onChange={e => set('employeeId', e.target.value)}>{salesmen.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></Field>}
-      <Field label="Discussion"><textarea className="inp" rows={3} value={f.discussion} onChange={e => set('discussion', e.target.value)} placeholder="What was discussed" /></Field>
-      <Field label="Customer response"><input className="inp" value={f.customerResponse} onChange={e => set('customerResponse', e.target.value)} /></Field>
-      {(promising || f.promiseAmount) && <div className="g2" style={{ padding: 10, borderRadius: 8, background: 'var(--accL)', marginBottom: 12 }}>
-        <Field label="Promised amount"><input type="number" className="inp" value={f.promiseAmount} onChange={e => set('promiseAmount', e.target.value)} min={1} /></Field>
-        <Field label="Promised by"><input type="date" className="inp" value={f.promiseDate} onChange={e => set('promiseDate', e.target.value)} min={f.date} /></Field>
+      {promising && <div className="g2" style={{ padding: 10, borderRadius: 8, background: 'var(--accL)', marginBottom: 12 }}>
+        <Field label="Promised amount (₹)"><input type="number" className="inp" value={f.promiseAmount} onChange={e => set('promiseAmount', e.target.value)} min={1} autoFocus /></Field>
+        <Field label="Promised by"><input type="date" className="inp" value={f.promiseDate} onChange={e => set('promiseDate', e.target.value)} min={today()} /></Field>
       </div>}
-      {!promising && !f.promiseAmount && <button className="btne" style={{ marginBottom: 12 }} onClick={() => set('outcome', 'PROMISED')}>+ Dealer promised a payment</button>}
-      <div className="g2">
-        <Field label="Next follow-up"><input type="date" className="inp" value={f.nextFollowupDate} onChange={e => set('nextFollowupDate', e.target.value)} min={f.date} /></Field>
-        <Field label="Next action"><input className="inp" value={f.nextAction} onChange={e => set('nextAction', e.target.value)} /></Field>
-      </div>
-      <Field label="Remarks"><input className="inp" value={f.remarks} onChange={e => set('remarks', e.target.value)} /></Field>
+      <Field label="Next follow-up"><input type="date" className="inp" value={f.nextFollowupDate} onChange={e => set('nextFollowupDate', e.target.value)} min={today()} autoFocus={focusDate} /></Field>
+      <Field label="Notes"><textarea className="inp" rows={2} value={f.notes} onChange={e => set('notes', e.target.value)} placeholder="Anything worth remembering (optional)" /></Field>
       <ErrorBox err={err} />
       <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
         <button className="btn" onClick={onClose}>Cancel</button>
-        <button className="btnp" disabled={busy || !dealer} onClick={() => run(() => col.recordFollowup({
-          dealerId: dealer.id, date: f.date, time: f.time, channel: f.channel, outcome: f.outcome, discussion: f.discussion, customerResponse: f.customerResponse,
-          nextFollowupDate: f.nextFollowupDate, nextAction: f.nextAction, remarks: f.remarks, employeeId: f.employeeId,
-          promise: (promising || f.promiseAmount) ? { amount: Number(f.promiseAmount), date: f.promiseDate } : undefined }))}>{busy ? 'Saving…' : 'Save follow-up'}</button>
+        <button className="btnp" disabled={busy || !dealer || (promising && !(Number(f.promiseAmount) > 0 && f.promiseDate))} onClick={() => run(() => col.recordFollowup({
+          dealerId: dealer.id, channel: f.channel, outcome: f.outcome, discussion: f.notes,
+          nextFollowupDate: f.nextFollowupDate, employeeId: f.employeeId,
+          promise: promising ? { amount: Number(f.promiseAmount), date: f.promiseDate } : undefined }))}>{busy ? 'Saving…' : 'Save'}</button>
       </div>
     </Modal>);
 }

@@ -46,6 +46,7 @@ test('status precedence', () => {
   const cyc = { status: 'OPEN', openedAt: new Date('2026-06-01') };
   const T = '2026-09-13';
   assert.equal(deriveStatus({ total: 0 }, cyc, cfg, T), 'CLEARED');
+  assert.equal(deriveStatus({ total: 0 }, null, cfg, T), 'NIL', 'never owed → NIL, not CLEARED');
   assert.equal(deriveStatus({ total: 0 }, { status: 'CLOSED_MANUAL' }, cfg, T), 'CLOSED');
   assert.equal(deriveStatus({ total: 100, promise: { amount: 50, date: '2026-09-20' } }, cyc, cfg, T), 'PROMISED');
   assert.equal(deriveStatus({ total: 100, promise: { amount: 50, date: '2026-09-01' }, brokenPromises: 1 }, cyc, cfg, T), 'FOLLOW_UP_REQUIRED');

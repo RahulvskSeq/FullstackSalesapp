@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Download, BadgeIndianRupee, NotebookPen, Banknote } from 'lucide-react';
 import { col, downloadReport } from './api';
-import { useLoad, PageHead, Card, Table, Pager, Badge, Busy, ErrorBox, money, num, fmtDate, periodLabel, DealerLink, useDealerCtx, WhatsAppIcon, StatusBadge, CallButton, CardRow, KV } from './ui';
+import { useLoad, PageHead, Card, Table, Pager, Badge, Busy, ErrorBox, money, num, fmtDate, periodLabel, DealerLink, useDealerCtx, WhatsAppIcon, StatusBadge, CallButton, CardRow, KV, OldestPill } from './ui';
 import { FollowupForm, PaymentForm, WhatsAppForm } from './forms';
 
-const STATUSES = ['DUE', 'FOLLOW_UP_REQUIRED', 'PROMISED', 'PARTIAL_PAYMENT', 'OVERDUE', 'HIGH_PRIORITY', 'CLEARED', 'CLOSED'];
+const STATUSES = ['DUE', 'NIL', 'FOLLOW_UP_REQUIRED', 'PROMISED', 'PARTIAL_PAYMENT', 'OVERDUE', 'HIGH_PRIORITY', 'CLEARED', 'CLOSED'];
 const PRIORITIES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
 
 /** The current book: one row per dealer, the server's figure, never a sheet. */
@@ -42,12 +42,12 @@ export default function Outstanding({ params }) {
           <Table cols={[
             { k: 'dealer', h: H('dealerName', 'Dealer'), r: r => <DealerLink id={r.dealerId} name={r.dealerName} code={r.dealerCode} /> },
             { k: 'salesmanName', h: 'Salesman' },
-            ...periods.map(p => ({ k: p, h: periodLabel(p), align: 'right', r: r => r.buckets?.[p] ? money(r.buckets[p]) : <span style={{ color: 'var(--t3)' }}>–</span> })),
+            ...periods.map((p, i) => ({ k: p, h: i === 0 ? <span style={{ color: 'var(--red)' }}>{periodLabel(p)}</span> : periodLabel(p), align: 'right', r: r => r.buckets?.[p] ? (i === 0 ? <OldestPill>{money(r.buckets[p])}</OldestPill> : money(r.buckets[p])) : <span style={{ color: 'var(--t3)' }}>–</span> })),
             { k: 'total', h: H('total', 'Total'), align: 'right', r: r => <b>{money(r.total)}</b> },
             { k: 'ageDays', h: H('ageDays', 'Age'), align: 'right', r: r => r.ageDays == null ? '—' : <span style={{ color: r.ageDays > 90 ? 'var(--red)' : undefined }}>{r.ageDays}d</span> },
             { k: 'status', h: 'Status', r: r => <StatusBadge status={r.status} priority={r.priority} /> },
             { k: 'priority', h: H('priority', 'Priority'), r: r => <Badge v={r.priority} /> },
-            { k: 'nextFollowupAt', h: H('nextFollowupAt', 'Next follow-up'), r: r => fmtDate(r.nextFollowupAt) },
+            { k: 'nextFollowupAt', h: H('nextFollowupAt', 'Next follow-up'), r: r => <a href="#" data-tip={r.nextFollowupAt ? 'Change the follow-up date' : 'Set a follow-up date'} onClick={e => { e.preventDefault(); e.stopPropagation(); setForm({ kind: 'followup', dealer: dealerOf(r), focusDate: true }); }} style={{ color: r.nextFollowupAt ? 'var(--t1)' : 'var(--acc)', textDecoration: 'none', borderBottom: '1px dotted var(--t3)' }}>{r.nextFollowupAt ? fmtDate(r.nextFollowupAt) : 'set date'}</a> },
             { k: 'promise', h: 'Promise', r: r => r.promise?.amount ? `${money(r.promise.amount)} · ${fmtDate(r.promise.date)}` : '—' },
             { k: 'lastPaymentAt', h: H('lastPaymentAt', 'Last paid'), r: r => fmtDate(r.lastPaymentAt) },
             { k: 'act', h: '', r: r => <div className="row" style={{ gap: 4 }}>
@@ -59,13 +59,13 @@ export default function Outstanding({ params }) {
           card={r => <>
             <CardRow><DealerLink id={r.dealerId} name={r.dealerName} code={r.dealerCode} /><StatusBadge status={r.status} priority={r.priority} /></CardRow>
             <div style={{ fontSize: 11.5, color: 'var(--t2)', margin: '2px 0 8px' }}>{r.salesmanName}{r.ageDays != null ? ` · ${r.ageDays} days` : ''}</div>
-            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${periods.length + 1}, minmax(0,1fr))`, gap: 6, marginBottom: 8 }}>
-              {periods.map(p => <KV key={p} k={periodLabel(p)} v={r.buckets?.[p] ? money(r.buckets[p]) : '–'} />)}
+            <div className="col-months" style={{ display: 'grid', gridTemplateColumns: `repeat(${periods.length + 1}, minmax(0,1fr))`, gap: 6, marginBottom: 8 }}>
+              {periods.map((p, i) => <KV key={p} k={i === 0 ? <span style={{ color: 'var(--red)' }}>{periodLabel(p)}</span> : periodLabel(p)} v={r.buckets?.[p] ? (i === 0 ? <OldestPill>{money(r.buckets[p])}</OldestPill> : money(r.buckets[p])) : '–'} />)}
               <KV k="Total" v={money(r.total)} big />
             </div>
-            {(r.nextFollowupAt || r.promise?.amount || r.lastPaymentAt) && <div style={{ fontSize: 11.5, color: 'var(--t2)', marginBottom: 8 }}>
-              {r.nextFollowupAt ? `Follow-up ${fmtDate(r.nextFollowupAt)}` : ''}{r.promise?.amount ? ` · Promise ${money(r.promise.amount)} by ${fmtDate(r.promise.date)}` : ''}{r.lastPaymentAt ? ` · Last paid ${fmtDate(r.lastPaymentAt)}` : ''}</div>}
-            <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+            <div style={{ fontSize: 11.5, color: 'var(--t2)', marginBottom: 8 }}>
+              <a href="#" onClick={e => { e.preventDefault(); e.stopPropagation(); setForm({ kind: 'followup', dealer: dealerOf(r), focusDate: true }); }} style={{ color: r.nextFollowupAt ? 'var(--t1)' : 'var(--acc)', textDecoration: 'none', borderBottom: '1px dotted var(--t3)' }}>{r.nextFollowupAt ? `Follow-up ${fmtDate(r.nextFollowupAt)}` : 'Set follow-up date'}</a>{r.promise?.amount ? ` · Promise ${money(r.promise.amount)} by ${fmtDate(r.promise.date)}` : ''}{r.lastPaymentAt ? ` · Last paid ${fmtDate(r.lastPaymentAt)}` : ''}</div>
+            <div className="row col-actions" style={{ gap: 6, flexWrap: 'wrap' }}>
               <CallButton dealer={dealerOf(r)} label="Call" onDialed={d => setForm({ kind: 'followup', dealer: d })} />
               <button className="btn" style={{ padding: '3px 8px', color: 'var(--pur)', display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5 }} onClick={e => { e.stopPropagation(); setForm({ kind: 'followup', dealer: dealerOf(r) }); }}><NotebookPen size={12} />Follow-up</button>
               <button className="btn" style={{ padding: '3px 8px', color: 'var(--grn)', display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5 }} onClick={e => { e.stopPropagation(); setForm({ kind: 'payment', dealer: dealerOf(r) }); }}><Banknote size={12} />Payment</button>
@@ -74,7 +74,7 @@ export default function Outstanding({ params }) {
           </>} />)}
         <div style={{ padding: '0 12px 10px' }}><Pager page={data?.page} limit={data?.limit} total={data?.total} onPage={p => setQ(x => ({ ...x, page: p }))} /></div>
       </Card>
-      {form?.kind === 'followup' && <FollowupForm dealer={form.dealer} onClose={() => setForm(null)} onDone={reload} />}
+      {form?.kind === 'followup' && <FollowupForm dealer={form.dealer} focusDate={form.focusDate} onClose={() => setForm(null)} onDone={reload} />}
       {form?.kind === 'payment' && <PaymentForm dealer={form.dealer} onClose={() => setForm(null)} onDone={reload} />}
       {form?.kind === 'wa' && <WhatsAppForm dealer={form.dealer} onClose={() => setForm(null)} onDone={reload} />}
     </div>);

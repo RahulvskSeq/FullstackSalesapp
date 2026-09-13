@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { opts } from './_common.js';
-export const BALANCE_STATUS = ['DUE', 'NEW', 'OPEN', 'FOLLOW_UP_REQUIRED', 'PROMISED', 'PARTIAL_PAYMENT', 'OVERDUE', 'HIGH_PRIORITY', 'CLEARED', 'CLOSED'];
+export const BALANCE_STATUS = ['NIL', 'DUE', 'NEW', 'OPEN', 'FOLLOW_UP_REQUIRED', 'PROMISED', 'PARTIAL_PAYMENT', 'OVERDUE', 'HIGH_PRIORITY', 'CLEARED', 'CLOSED'];
 export const PRIORITY = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 /** CURRENT state, one per dealer. The only collection the Outstanding list reads. */
 const S = new mongoose.Schema({

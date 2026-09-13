@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { X, ClipboardList, NotebookPen, Banknote } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { col } from './api';
-import { useLoad, Card, Table, Badge, Tabs, Busy, ErrorBox, money, num, fmtDate, fmtWhen, periodLabel, title, userName, useDealerCtx, WhatsAppIcon, StatusBadge, CallButton } from './ui';
+import { useLoad, Card, Table, Badge, Tabs, Busy, ErrorBox, money, num, fmtDate, fmtWhen, periodLabel, title, userName, useDealerCtx, WhatsAppIcon, StatusBadge, CallButton, OLDEST_BG, FollowupDate, OldestPill } from './ui';
 import { FollowupForm, PaymentForm, TaskForm, WhatsAppForm } from './forms';
 
 /**
@@ -19,8 +19,8 @@ export default function Dealer360({ dealerId, onClose }) {
   const dealer = d ? { id: dealerId, name: d.dealer.name, code: d.dealer.code, total: d.balance?.total, phone: d.dealer.phone || '', whatsappOptOut: !!d.dealer.whatsappOptOut } : null;
   const both = () => { reload(); tl.reload(); };
   return (
-    <div className="overlay" style={{ justifyContent: 'flex-end', padding: 0 }} onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal col-drawer" style={{ maxWidth: 980, width: '100%', height: '100vh', maxHeight: '100vh', borderRadius: 0, padding: 18, overflowY: 'auto' }}>
+    <div className="overlay" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal col-drawer" style={{ maxWidth: 900, width: '100%', maxHeight: '90vh', padding: 18, overflowY: 'auto' }}>
         {busy && !d ? <Busy /> : err ? <ErrorBox err={err} onRetry={reload} /> : (<>
           <div className="col-head" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
             <div>
@@ -37,9 +37,10 @@ export default function Dealer360({ dealerId, onClose }) {
               <button className="btn" onClick={onClose} style={{ padding: '4px 7px' }}><X size={14} /></button>
             </div>
           </div>
-          <div className="stat-grid">
+          <div className="stat-grid col-stats" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
             <div className="stat-card"><div style={{ fontSize: 10.5, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase' }}>Outstanding</div><div style={{ fontSize: 19, fontWeight: 800 }}>{money(d.balance?.total)}</div><div style={{ fontSize: 11, color: 'var(--t2)' }}>{d.balance?.lastSnapshotAsOn ? 'statement ' + fmtDate(d.balance.lastSnapshotAsOn) : 'no statement yet'}</div></div>
             <div className="stat-card"><div style={{ fontSize: 10.5, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase' }}>Status</div><div style={{ marginTop: 5 }}><StatusBadge status={d.balance?.status} priority={d.balance?.priority} /></div><div style={{ fontSize: 11, color: 'var(--t2)', marginTop: 4 }}>{d.balance?.ageDays != null ? `oldest ${periodLabel(d.balance.oldestPeriod)} · ${d.balance.ageDays} days` : ''}</div></div>
+            <div className="stat-card"><div style={{ fontSize: 10.5, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase' }}>Next follow-up</div><div style={{ fontSize: 15, fontWeight: 800, marginTop: 4 }}><FollowupDate value={d.balance?.nextFollowupAt} onOpen={() => setForm('followupDate')} /></div><div style={{ fontSize: 11, color: 'var(--t2)' }}>{d.balance?.lastFollowupAt ? 'last ' + fmtDate(d.balance.lastFollowupAt) : 'no follow-up yet'}</div></div>
             <div className="stat-card"><div style={{ fontSize: 10.5, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase' }}>Promise</div><div style={{ fontSize: 15, fontWeight: 800 }}>{d.balance?.promise?.amount ? `${money(d.balance.promise.amount)} by ${fmtDate(d.balance.promise.date)}` : '—'}</div><div style={{ fontSize: 11, color: d.balance?.brokenPromises ? 'var(--red)' : 'var(--t2)' }}>{num(d.balance?.brokenPromises || 0)} broken so far</div></div>
             <div className="stat-card"><div style={{ fontSize: 10.5, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase' }}>Cycles</div><div style={{ fontSize: 19, fontWeight: 800 }}>{num(d.cycles.length)}</div><div style={{ fontSize: 11, color: 'var(--t2)' }}>{d.cycles.filter(c => c.status === 'CLEARED').length} cleared · last payment {fmtDate(d.balance?.lastPaymentAt)}</div></div>
           </div>
@@ -55,7 +56,7 @@ export default function Dealer360({ dealerId, onClose }) {
           {tab === 'history' && <History d={d} />}
           {tab === 'whatsapp' && <Table dense cols={[{ k: 'createdAt', h: 'When', r: r => fmtWhen(r.createdAt) }, { k: 'templateKey', h: 'Template' }, { k: 'to', h: 'To' }, { k: 'status', h: 'Status', r: r => <Badge v={r.status} /> }, { k: 'error', h: 'Error', wrap: true }]} rows={d.whatsapp} empty="No messages sent." />}
         </>)}
-        {form === 'followup' && <FollowupForm dealer={dealer} onClose={() => setForm(null)} onDone={both} />}
+        {(form === 'followup' || form === 'followupDate') && <FollowupForm dealer={dealer} focusDate={form === 'followupDate'} onClose={() => setForm(null)} onDone={both} />}
         {form === 'payment' && <PaymentForm dealer={dealer} onClose={() => setForm(null)} onDone={both} />}
         {form === 'task' && <TaskForm dealer={dealer} onClose={() => setForm(null)} onDone={both} />}
         {form === 'wa' && <WhatsAppForm dealer={dealer} onClose={() => setForm(null)} onDone={both} />}
@@ -69,7 +70,7 @@ function Overview({ d }) {
   return (
     <div className="col-2" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 12 }}>
       <Card title="Current statement buckets">
-        {b?.buckets && Object.keys(b.buckets).length ? <Table dense cols={[{ k: 'p', h: 'Month', r: r => periodLabel(r.p) }, { k: 'v', h: 'Amount', align: 'right', r: r => money(r.v) }]} rows={Object.entries(b.buckets).sort().map(([p, v]) => ({ p, v }))} keyOf={r => r.p} /> : <div style={{ color: 'var(--t3)', fontSize: 12.5 }}>No statement yet.</div>}
+        {b?.buckets && Object.keys(b.buckets).length ? <Table dense cols={[{ k: 'p', h: 'Month', r: r => r.oldest ? <OldestPill>{periodLabel(r.p)} · chasing</OldestPill> : periodLabel(r.p) }, { k: 'v', h: 'Amount', align: 'right', r: r => r.oldest ? <OldestPill>{money(r.v)}</OldestPill> : money(r.v) }]} rows={Object.entries(b.buckets).sort().map(([p, v], i) => ({ p, v, oldest: i === 0 }))} keyOf={r => r.p} /> : <div style={{ color: 'var(--t3)', fontSize: 12.5 }}>No statement yet.</div>}
         {b && <div style={{ fontSize: 11.5, color: 'var(--t2)', marginTop: 8 }}>Mode: {b.balanceMode} · total is {b.balanceMode === 'buckets' ? 'the sum of the months' : 'the latest month'}.</div>}
       </Card>
       <Card title="Outstanding over statements">

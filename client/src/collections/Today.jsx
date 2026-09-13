@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ClipboardList, Check, X, CalendarCheck, NotebookPen, Banknote } from 'lucide-react';
 import { col } from './api';
-import { useLoad, PageHead, Card, Table, Badge, Busy, ErrorBox, money, num, fmtDate, DealerLink, useDealerCtx, userName, title, WhatsAppIcon, StatusBadge, CallButton, CardRow, KV, monthCols, MonthKVs } from './ui';
+import { useLoad, PageHead, Card, Table, Badge, Busy, ErrorBox, money, num, fmtDate, DealerLink, useDealerCtx, userName, title, WhatsAppIcon, StatusBadge, CallButton, CardRow, KV, monthCols, MonthKVs, FollowupDate } from './ui';
 import { FollowupForm, PaymentForm, TaskForm, WhatsAppForm } from './forms';
 
 /**
@@ -24,7 +24,7 @@ export default function Today() {
     <button className="btn" data-tip="Record a payment" style={{ padding: '3px 8px', color: 'var(--grn)', display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5 }} onClick={e => { e.stopPropagation(); setForm({ kind: 'payment', dealer: dealerOf(r) }); }}><Banknote size={12} /><span className="col-lbl">Payment</span></button>
     <button className="btn" data-tip="WhatsApp" style={{ padding: '3px 8px', color: '#25D366', display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5 }} onClick={e => { e.stopPropagation(); setForm({ kind: 'wa', dealer: dealerOf(r) }); }}><WhatsAppIcon size={13} /><span className="col-lbl">WhatsApp</span></button>
   </div>;
-  const actBtns = r => <div className="row" style={{ gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+  const actBtns = r => <div className="row col-actions" style={{ gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
     <CallButton dealer={dealerOf(r)} label="Call" onDialed={d => setForm({ kind: 'followup', dealer: d })} />
     <button className="btn" style={{ padding: '3px 8px', color: 'var(--pur)', display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5 }} onClick={e => { e.stopPropagation(); setForm({ kind: 'followup', dealer: dealerOf(r) }); }}><NotebookPen size={12} />Follow-up</button>
     <button className="btn" style={{ padding: '3px 8px', color: 'var(--grn)', display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5 }} onClick={e => { e.stopPropagation(); setForm({ kind: 'payment', dealer: dealerOf(r) }); }}><Banknote size={12} />Payment</button>
@@ -44,7 +44,7 @@ export default function Today() {
   const balCard = r => <>
     <CardRow><DealerLink id={r.dealerId} name={r.dealerName} code={r.dealerCode} /><StatusBadge status={r.status} priority={r.priority} /></CardRow>
     <MonthKVs row={r} rows={allRows} />
-    <div style={{ fontSize: 11.5, color: 'var(--t2)' }}>{r.ageDays != null ? `${r.ageDays} days` : ''}{r.nextFollowupAt ? ` · follow-up ${fmtDate(r.nextFollowupAt)}` : ''}</div>
+    <div style={{ fontSize: 11.5, color: 'var(--t2)' }}>{r.ageDays != null ? `${r.ageDays} days · ` : ''}<FollowupDate value={r.nextFollowupAt} prefix="follow-up " onOpen={() => setForm({ kind: 'followup', dealer: dealerOf(r), focusDate: true })} /></div>
     {r.promise?.amount ? <div style={{ fontSize: 11.5, color: 'var(--t2)' }}>Promise {money(r.promise.amount)} by {fmtDate(r.promise.date)}</div> : null}
     {actBtns(r)}
   </>;
@@ -75,7 +75,7 @@ export default function Today() {
     ...months, { k: 'total', h: 'Outstanding', align: 'right', r: r => <b>{money(r.total)}</b> },
     { k: 'ageDays', h: 'Age', align: 'right', r: r => r.ageDays == null ? '—' : r.ageDays + 'd' },
     { k: 'status', h: 'Status', r: r => <StatusBadge status={r.status} priority={r.priority} /> },
-    { k: 'nextFollowupAt', h: 'Follow-up', r: r => fmtDate(r.nextFollowupAt) },
+    { k: 'nextFollowupAt', h: 'Follow-up', r: r => <FollowupDate value={r.nextFollowupAt} onOpen={() => setForm({ kind: 'followup', dealer: dealerOf(r), focusDate: true })} /> },
     { k: 'promise', h: 'Promise', r: r => r.promise?.amount ? `${money(r.promise.amount)} by ${fmtDate(r.promise.date)}` : '—' },
     { k: 'act', h: '', r: actions },
   ];
@@ -111,7 +111,7 @@ export default function Today() {
       <Section t="Tasks due today" n={d.tasksToday.length}><Table dense cols={taskCols} rows={d.tasksToday} empty="No tasks due today." card={taskCard} onRow={r => openRecord('task', r, reload)} /></Section>
       {d.tasksOverdue.length > 0 && <Section t="Overdue tasks" n={d.tasksOverdue.length} tone="var(--red)"><Table dense cols={taskCols} rows={d.tasksOverdue} card={taskCard} onRow={r => openRecord('task', r, reload)} /></Section>}
       <Section t="High-priority dealers" n={d.highPriority.length}><Table dense cols={balCols} rows={d.highPriority} keyOf={r => r.dealerId} empty="Nobody is flagged high priority." card={balCard} onRow={r => openDealer(r.dealerId)} /></Section>
-      {form?.kind === 'followup' && <FollowupForm dealer={form.dealer} onClose={() => setForm(null)} onDone={reload} />}
+      {form?.kind === 'followup' && <FollowupForm dealer={form.dealer} focusDate={form.focusDate} onClose={() => setForm(null)} onDone={reload} />}
       {form?.kind === 'payment' && <PaymentForm dealer={form.dealer} onClose={() => setForm(null)} onDone={reload} />}
       {form?.kind === 'task' && <TaskForm dealer={form.dealer} onClose={() => setForm(null)} onDone={reload} />}
       {form?.kind === 'wa' && <WhatsAppForm dealer={form.dealer} onClose={() => setForm(null)} onDone={reload} />}
