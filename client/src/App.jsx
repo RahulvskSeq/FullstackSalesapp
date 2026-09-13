@@ -15381,7 +15381,7 @@
 // }
 
 import React, { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
-import { LayoutDashboard, Users, TrendingUp, Settings, LogOut, Bell, GitCompare, Menu, RefreshCw, Map, AlertTriangle, Upload, Edit3, Calendar, LogIn, ChevronDown, ShieldCheck, Shield, Palette, Check, Briefcase, Camera, ClipboardList, UserCheck, Plane, FileSpreadsheet, LifeBuoy, CheckSquare, BarChart3, Table, Package, IndianRupee, Trophy, UploadCloud } from 'lucide-react';
+import { LayoutDashboard, Users, TrendingUp, Settings, LogOut, Bell, GitCompare, Menu, RefreshCw, Map, AlertTriangle, Upload, Edit3, Calendar, LogIn, ChevronDown, ShieldCheck, Shield, Palette, Check, Briefcase, Camera, ClipboardList, UserCheck, Plane, FileSpreadsheet, LifeBuoy, CheckSquare, BarChart3, Table, Package, IndianRupee, Trophy, UploadCloud, Landmark, Wallet, Scale, CalendarCheck, PhoneCall, ClipboardCheck, FileBarChart2, Gauge, BadgeIndianRupee, HandCoins, SlidersHorizontal } from 'lucide-react';
 import { DEFAULT_USERS, MO as MO_DEFAULT, CURRENT_MONTH_IDX as CURRENT_MONTH_IDX_DEFAULT, CURRENT_MONTH_LABEL as CURRENT_MONTH_LABEL_DEFAULT, CURRENT_MONTH_SHORT as CURRENT_MONTH_SHORT_DEFAULT } from './constants';
 import { pct, spct, pclr, uid, isoNow, storage, parseCSV, fetchCSV, parseOutstandingCSV } from './utils';
 import { api, dbDealerToApp, dbOutstandingToApp, saveToken, getToken } from './api';
@@ -15407,6 +15407,9 @@ import FollowupsHub      from './components/FollowupsHub';
 import AdminPanel        from './components/AdminPanel';
 import UserManagement    from './components/UserManagement';
 import Incentive        from './components/Incentive';
+import SalesIncentive   from './components/SalesIncentive';
+import SalesIncentiveRule from './components/SalesIncentiveRule';
+import Collections, { COL_SCREENS } from './collections';
 import AddDealerModal    from './components/AddDealerModal';
 import BulkActionModal   from './components/BulkActionModal';
 import UpdateButton, { isNativeApp } from './components/UpdateButton';
@@ -16328,6 +16331,8 @@ export default function App(){
     // Checked before the superadmin bypass — off means off for everyone.
     // Admin Panel is never in the toggleable list, so the way back is safe.
     if (item.id && disabledFeatures.includes(item.id)) return false;
+    // A module's screens share one switch in Features (e.g. 'collections').
+    if (item.flag && disabledFeatures.includes(item.flag)) return false;
     if (isSuperAdmin) return true;
     if (hasPagePerms) return pagePerms.includes(item.id);   // explicit grant wins
     // Default gates when no explicit page allowlist:
@@ -16358,11 +16363,38 @@ export default function App(){
     // Its own group rather than a tab inside Product Transactions: the
     // incentive is what people come to look at, and burying it two clicks
     // deep under a raw-data screen made it hard to find.
-    { group:'incentive', label:'Incentive', icon:IndianRupee, children:[
-        {id:'incentive',        label:'This month', icon:Trophy},
+    // Two schemes that share a word and nothing else: the billing team earns
+    // points against their own recent average, the sales team earns rupees
+    // per sheet behind a laminate gate. Split so nobody reads one screen and
+    // assumes it governs the other.
+    { group:'incentiveBilling', label:'Billing incentive', icon:IndianRupee, children:[
+        {id:'incentiveHome',    label:'Dashboard',    icon:LayoutDashboard},
+        {id:'incentive',        label:'This month',   icon:Trophy},
         {id:'incentiveUpload',  label:'Upload sheet', icon:UploadCloud},
-        {id:'incentiveHistory', label:'History',    icon:TrendingUp},
-        {id:'incentiveRule',    label:'Rule',       icon:Settings},
+        {id:'incentiveHistory', label:'History',      icon:TrendingUp},
+        {id:'incentiveRule',    label:'Rule & setup', icon:Settings},
+    ]},
+    { group:'incentiveSales', label:'Sales incentive', icon:Briefcase, children:[
+        {id:'salesIncentive',     label:'Dashboard',    icon:LayoutDashboard},
+        {id:'salesIncentiveRule', label:'Rule & setup', icon:Settings},
+    ]},
+    // Outstanding + Collection CRM. Every screen carries flag:'collections' so
+    // the one Features switch hides the whole group; the server applies scope
+    // and permissions regardless of what the nav shows.
+    // A salesman sees his own book, so the labels say "my"; admin sees the
+    // whole team's, so they say what the screen is.
+    { group:'collections', label:'Collections', icon:Landmark, children:[
+        {id:'colDashboard',      label:isStaff ? 'Dashboard'        : 'My dashboard',     icon:Gauge,            flag:'collections'},
+        {id:'colToday',          label:"Today's work",           icon:CalendarCheck,    flag:'collections'},
+        {id:'colOutstanding',    label:'Outstanding',   icon:BadgeIndianRupee, flag:'collections'},
+        {id:'colPayments',       label:'Payments',   icon:HandCoins,        flag:'collections'},
+        {id:'colFollowups',      label:'Follow-ups',    icon:PhoneCall,        flag:'collections'},
+        {id:'colTasks',          label:isStaff ? 'Team tasks'       : 'My tasks',         icon:ClipboardCheck,   flag:'collections'},
+        {id:'colImports',        label:'Upload statement',                                 icon:UploadCloud,     flag:'collections', staff:true},
+        {id:'colReconciliation', label:'Reconciliation',                                   icon:Scale,           flag:'collections', staff:true},
+        {id:'colReports',        label:'Reports',       icon:FileBarChart2,    flag:'collections'},
+        {id:'colEmployees',      label:isStaff ? 'Team performance' : 'My activity', icon:Trophy,           flag:'collections'},
+        {id:'colSettings',       label:'Settings',                                         icon:SlidersHorizontal, flag:'collections', staff:true},
     ]},
     {id:'leaves',  label:'Leaves',  icon:Plane},
     {id:'tickets', label:'Support', icon:LifeBuoy},
@@ -16781,7 +16813,8 @@ export default function App(){
                             className={`nav-item ${screen===c.id?'active':''}`}
                             style={{paddingLeft:32}}
                             onClick={()=>navigate(c.id)}>
-                            <CIcon size={13}/><span style={{flex:1}}>{c.label}</span>
+                            {/* the icon must never shrink — a long label used to squeeze it to nothing */}
+                            <CIcon size={13} style={{flexShrink:0}}/><span style={{flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis'}}>{c.label}</span>
                           </div>
                         );
                       })}
@@ -16874,9 +16907,13 @@ export default function App(){
                   {screen==='reports' && isStaff && <Reports dealers={dealers} users={users} currentUser={currentUser} monthConfig={monthConfig} outstandingData={outstandingData}/>}
                   {screen==='sheets' && <Suspense fallback={<div style={{padding:40,textAlign:'center',color:'var(--t3)'}}>Loading spreadsheet…</div>}><Sheets currentUser={currentUser} users={users}/></Suspense>}
                   {screen==='producttx' && <ProductTxn currentUser={currentUser}/>}
+                  {screen==='incentiveHome'    && <Incentive view="dashboard" currentUser={currentUser}/>}
                   {screen==='incentive'        && <Incentive view="month"/>}
                   {screen==='incentiveHistory' && <Incentive view="history"/>}
                   {screen==='incentiveRule'    && <Incentive view="rule"/>}
+                  {screen==='salesIncentive'     && <SalesIncentive/>}
+                  {screen==='salesIncentiveRule' && <SalesIncentiveRule/>}
+                  {COL_SCREENS.has(screen) && <Collections view={screen} currentUser={currentUser} users={users} hasFeature={hasFeature} navigate={navigate}/>}
                   {screen==='incentiveUpload'  && <Incentive view="upload"/>}
                   {screen==='tasks'   && <TasksPage   users={users} currentUser={currentUser}/>}
                   {screen==='tickets' && <TicketsPage users={users} currentUser={currentUser}/>}

@@ -61,6 +61,16 @@ const dealerSchema = new mongoose.Schema({
   // Keep in step with models/Dealer.js — this file registers the 'Dealer'
   // model first, so a field missing here is silently stripped on write.
   tallyGuid:    { type:String, default:'', index:true },
+  // ── Collections module (additive) ─────────────────────────────────────
+  // The ERP's party code ("SSL14140"), the stable identity a statement is
+  // matched on. Bound from the first statement that carries it, or set by
+  // hand. Sparse so dealers without one do not collide on ''.
+  code:         { type:String, default:'', index:{ sparse:true } },
+  // Every other spelling a statement has used for this dealer.
+  aliases:      { type:[String], default:[] },
+  phone:        { type:String, default:'' },      // E.164, for WhatsApp
+  whatsappOptOut:{ type:Boolean, default:false },
+
   category:     { type:String, default:'' },
   categoryType: { type:String, default:'' },
   target:       { type:Number, default:0 },
@@ -262,49 +272,28 @@ router.get('/distinct-states', protect, async (req, res) => {
 // ── POST /api/dealers/recompute-status ────────────────────────────────────
 // Recomputes Type 1 (perfStatus) for every dealer from the Sale rows.
 //
-// Runs automatically after a sales upload; also callable by hand. Type 2
-// (`status`) is the salesman's own label and is never touched here.
+// Runs automatically after BOTH upload paths — the manual Monthly Entry
+// upload and the ERP sync — and is also callable by hand. Type 2 (`status`)
+// is the salesman's own label and is never touched here.
 //
 // ?dry=1 reports what WOULD change without writing.
 router.post('/recompute-status', protect, adminOnly, async (req, res) => {
   try {
-    const { TIER_CATEGORIES, perfStatusFor } = await import('../lib/accountStatus.js');
+    const { recomputePerfStatus } = await import('../lib/accountStatus.js');
     const Sale = (await import('../models/Sale.js')).default;
 
     const months = (await Sale.distinct('month')).filter(Boolean).sort();
     if (!months.length) return res.status(400).json({ error: 'No sale data to compute from' });
 
-    // Category-restricted qty per dealer per month.
-    const rows = await Sale.aggregate([
-      { $match: { category: { $in: TIER_CATEGORIES } } },
-      { $group: { _id: { d: '$dealerName', m: '$month' }, qty: { $sum: '$qty' } } },
-    ]);
-    const byDealer = {};
-    rows.forEach(r => { (byDealer[r._id.d] ||= {})[r._id.m] = r.qty; });
-
-    // Match on the dealer's own name so a dealer with no sale rows at all is
-    // still evaluated — that absence is exactly what makes it DEAD.
-    const dealers = await Dealer.find({}, 'name perfStatus').lean();
-    const latest = months.at(-1);
-    const ops = [], counts = {}, changed = [];
-
-    for (const d of dealers) {
-      const q = byDealer[d.name] || {};
-      const next = perfStatusFor(q, months);
-      counts[next] = (counts[next] || 0) + 1;
-      if (next !== d.perfStatus) changed.push({ name: d.name, from: d.perfStatus || '(unset)', to: next });
-      ops.push({ updateOne: { filter: { _id: d._id }, update: { $set: {
-        perfStatus: next, perfQty: Number(q[latest]) || 0, perfMonth: latest,
-      } } } });
+    const dry = String(req.query.dry || '') === '1';
+    const r = await recomputePerfStatus({ dry });
+    if (dry) {
+      return res.json({ dry: true, month: r.month, dealers: r.dealers, counts: r.counts,
+                        wouldChange: r.changed.length, sample: r.changed.slice(0, 20) });
     }
 
-    if (String(req.query.dry || '') === '1') {
-      return res.json({ dry: true, month: latest, dealers: dealers.length, counts,
-                        wouldChange: changed.length, sample: changed.slice(0, 20) });
-    }
-    if (ops.length) await Dealer.bulkWrite(ops, { ordered: false });
-    console.log(`[RECOMPUTE-STATUS] ${dealers.length} dealers, ${changed.length} changed, month ${latest}`);
-    res.json({ ok: true, month: latest, dealers: dealers.length, counts, changed: changed.length });
+    console.log(`[RECOMPUTE-STATUS] ${r.dealers} dealers, ${r.changed.length} changed, month ${r.month}`);
+    res.json({ ok: true, month: r.month, dealers: r.dealers, counts: r.counts, changed: r.changed.length });
   } catch (e) {
     console.error('[RECOMPUTE-STATUS]', e.message);
     res.status(500).json({ error: e.message });

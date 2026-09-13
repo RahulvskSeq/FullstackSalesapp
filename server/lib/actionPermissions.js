@@ -26,6 +26,13 @@ export const ACTION_PERMISSIONS = [
   { key:'monthlyEntry',      group:'Data entry',  label:'Monthly Entry',        desc:'Save monthly figures and upload the filled sheet' },
   { key:'uploadData',        group:'Data entry',  label:'Upload data',          desc:'Product transactions, dealer sheets, sales uploads' },
   { key:'manageOutstanding', group:'Data entry',  label:'Outstanding',          desc:'Upload and revert outstanding batches' },
+  // Collections module (Outstanding + Collection CRM). Role defaults: admin and
+  // superadmin hold all of these; employee needs them granted; salesman none.
+  { key:'collections.import',   group:'Collections', label:'Import statements',    desc:'Upload, preview and apply outstanding statements' },
+  { key:'collections.payments', group:'Collections', label:'Confirm payments',     desc:'Record and confirm money received (accounts)' },
+  { key:'collections.settings', group:'Collections', label:'Collection settings',  desc:'Task points, review weights, automation rules, templates' },
+  { key:'collections.whatsapp', group:'Collections', label:'WhatsApp reminders',   desc:'Send templated WhatsApp reminders to dealers' },
+  { key:'collections.reviews',  group:'Collections', label:'Employee reviews',     desc:'Generate and finalise employee review scores' },
 
   { key:'deleteDealers',     group:'Dealers',     label:'Delete dealers',       desc:'Remove dealer records' },
 

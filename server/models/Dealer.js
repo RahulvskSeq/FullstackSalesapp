@@ -103,6 +103,16 @@ const dealerSchema = new mongoose.Schema({
   // Tally ledger GUID, bound on the first successful name match during a
   // Tally sync. Once set, the link survives a ledger rename in Tally.
   tallyGuid:    { type:String, default:'', index:true },
+  // ── Collections module (additive) ─────────────────────────────────────
+  // The ERP's party code ("SSL14140"), the stable identity a statement is
+  // matched on. Bound from the first statement that carries it, or set by
+  // hand. Sparse so dealers without one do not collide on ''.
+  code:         { type:String, default:'', index:{ sparse:true } },
+  // Every other spelling a statement has used for this dealer.
+  aliases:      { type:[String], default:[] },
+  phone:        { type:String, default:'' },      // E.164, for WhatsApp
+  whatsappOptOut:{ type:Boolean, default:false },
+
   category:     { type:String, default:'' },
   categoryType: { type:String, default:'' },
   target:       { type:Number, default:0 },

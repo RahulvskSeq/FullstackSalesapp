@@ -1,0 +1,366 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { Plus, X, RotateCcw, Save } from 'lucide-react';
+import { api } from '../api';
+
+/**
+ * Sales incentive — rule & setup.
+ *
+ * Every number the scheme uses is editable here, because a published scheme
+ * gets amended and a rate hard-coded in a file needs a developer to change.
+ * The worked example at the bottom recalculates from whatever is on screen,
+ * so the page can never describe a rule the system is not applying.
+ */
+
+const money = v => '₹' + Math.round(Number(v) || 0).toLocaleString('en-IN');
+const num   = v => Number(v || 0).toLocaleString('en-IN');
+
+const CATEGORIES = ['LAMINATE', 'LINER', 'LOUVRES', 'POLYMER SHEET', 'ROLLS',
+                    'DECORATIVE - SPECIAL', 'FOLDERS', 'EDGE BANDING', 'OTHER'];
+
+function Field({ label, hint, value, onChange, step = '1', prefix, suffix, width }) {
+  return (
+    <div style={{ minWidth: width || 0 }}>
+      <label style={{ display: 'block', fontSize: 10.5, fontWeight: 700, letterSpacing: '.06em',
+                      textTransform: 'uppercase', color: 'var(--t3)', marginBottom: 5 }}>{label}</label>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+        {prefix && <span style={{ fontSize: 13, color: 'var(--t3)' }}>{prefix}</span>}
+        <input type="number" step={step} value={value}
+               onChange={e => onChange(e.target.value)}
+               style={{ width: '100%', fontSize: 13, padding: '7px 9px', borderRadius: 8,
+                        border: '1px solid var(--b1)', background: 'var(--bg1)', color: 'var(--t1)' }} />
+        {suffix && <span style={{ fontSize: 12, color: 'var(--t3)' }}>{suffix}</span>}
+      </div>
+      {hint && <div style={{ fontSize: 10, color: 'var(--t3)', marginTop: 3, lineHeight: 1.5 }}>{hint}</div>}
+    </div>
+  );
+}
+
+export default function SalesIncentiveRule() {
+  const [cfg, setCfg]   = useState(null);
+  const [defs, setDefs] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr]   = useState('');
+  const [ok, setOk]     = useState('');
+
+  const load = useCallback(() => {
+    api.salesIncentiveConfig()
+      .then(r => { setCfg(r.config); setDefs(r.defaults); })
+      .catch(e => setErr(e?.message || 'Could not load the rule'));
+  }, []);
+  useEffect(load, [load]);
+
+  const set = (k, v) => setCfg(c => ({ ...c, [k]: v }));
+  const n   = (v, d = 0) => { const x = Number(v); return Number.isFinite(x) ? x : d; };
+
+  const setTier = (i, k, v) => setCfg(c => {
+    const t = c.starterTiers.map((x, j) => j === i ? { ...x, [k]: n(v) } : x);
+    return { ...c, starterTiers: t };
+  });
+  const addTier = () => setCfg(c => ({ ...c,
+    starterTiers: [...c.starterTiers, { upTo: (c.starterTiers.at(-1)?.upTo || 0) + 250, rate: 25 }] }));
+  const dropTier = (i) => setCfg(c => ({ ...c, starterTiers: c.starterTiers.filter((_, j) => j !== i) }));
+
+  const setProd = (i, k, v) => setCfg(c => {
+    const p = c.products.map((x, j) => j === i ? { ...x, [k]: v } : x);
+    return { ...c, products: p };
+  });
+  const addProd = () => setCfg(c => ({ ...c, products: [...c.products,
+    { key: 'p' + Date.now(), label: 'New product', category: 'OTHER', targetPct: 0.1, rate: 10 }] }));
+  const dropProd = (i) => setCfg(c => ({ ...c, products: c.products.filter((_, j) => j !== i) }));
+
+  const save = async () => {
+    setBusy(true); setErr(''); setOk('');
+    try {
+      const r = await api.salesIncentiveConfigSave(cfg);
+      setCfg(r.config);
+      setOk('Saved. Every screen uses these immediately.');
+      setTimeout(() => setOk(''), 3000);
+    } catch (e) { setErr(e?.message || 'Save failed'); }
+    finally { setBusy(false); }
+  };
+
+  if (!cfg) return <div style={{ fontSize: 12.5, color: 'var(--t3)' }}>{err || 'Loading…'}</div>;
+
+  // The ramp, worked through with whatever is currently on screen.
+  const rampAt = (excess) => {
+    if (excess <= 0) return { amount: 0, rate: 0 };
+    if (excess < cfg.retroFrom) {
+      let amount = 0, prev = 0;
+      for (const t of cfg.starterTiers) {
+        const inBand = Math.min(excess, t.upTo) - prev;
+        if (inBand > 0) amount += inBand * t.rate;
+        prev = t.upTo;
+        if (excess <= t.upTo) break;
+      }
+      return { amount, rate: null };
+    }
+    const blocks = Math.floor(excess / cfg.retroBlock);
+    const rate = Math.min(cfg.retroCap, cfg.retroBase + cfg.retroStep * (blocks - 1));
+    return { amount: excess * rate, rate };
+  };
+
+  return (
+    <div className="fade">
+      <div className="page-head" style={{ marginBottom: 14 }}>
+        <div className="page-eyebrow">Sales incentive</div>
+        <div className="page-title">Rule &amp; setup</div>
+      </div>
+
+      {err && <div className="card" style={{ color: 'var(--red)', fontSize: 12.5, marginBottom: 12 }}>{err}</div>}
+      {ok  && <div className="card" style={{ color: 'var(--grn)', fontSize: 12.5, marginBottom: 12 }}>{ok}</div>}
+
+      {/* ── the gate ────────────────────────────────────────────── */}
+      <div className="card" style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>The gate</div>
+        <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 11, lineHeight: 1.7 }}>
+          Miss this category's basic target and the month pays nothing at all — not on it, not on any
+          other product, not on display. Everything else on this page only matters once it is cleared.
+        </div>
+        {/* Read-only: the deduction is changed on the dashboard, against the
+            month's figures. Shown here so the rule reads in one place. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 11,
+                      padding: '8px 12px', borderRadius: 9, background: 'var(--bg2)' }}>
+          <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.06em',
+                         textTransform: 'uppercase', color: 'var(--t3)' }}>Deduction</span>
+          <b style={{ fontSize: 13 }}>{Math.round((cfg.deductionPct ?? 0) * 1000) / 10}%</b>
+          <span style={{ fontSize: 11, color: 'var(--t3)' }}>
+            taken off after the bad-debt recovery — change it on the Dashboard
+          </span>
+        </div>
+
+        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: 10.5, fontWeight: 700, letterSpacing: '.06em',
+                            textTransform: 'uppercase', color: 'var(--t3)', marginBottom: 5 }}>Gate category</label>
+            <select value={cfg.gateCategory} onChange={e => set('gateCategory', e.target.value)}
+                    style={{ width: '100%', fontSize: 13, padding: '7px 9px', borderRadius: 8,
+                             border: '1px solid var(--b1)', background: 'var(--bg1)', color: 'var(--t1)' }}>
+              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <div style={{ fontSize: 10, color: 'var(--t3)', marginTop: 3 }}>the basic target is set per salesman</div>
+          </div>
+          <Field label="Display %" value={Math.round((cfg.displayPct || 0) * 1000) / 10}
+                 onChange={v => set('displayPct', n(v) / 100)} step="0.5" suffix="%"
+                 hint="of the value of display material sold to dealers" />
+          <Field label="Project-sale credit %" value={Math.round((cfg.projectCredit || 0) * 1000) / 10}
+                 onChange={v => set('projectCredit', n(v) / 100)} step="5" suffix="%"
+                 hint="how much of a discounted sale counts toward target" />
+          <Field label="Bad-debt clawback %" value={Math.round((cfg.badDebtClawback || 0) * 1000) / 10}
+                 onChange={v => set('badDebtClawback', n(v) / 100)} step="5" suffix="%"
+                 hint="taken from each month's incentive until recovered" />
+          <Field label="Points per ₹" value={cfg.pointsPerRupee ?? 4}
+                 onChange={v => set('pointsPerRupee', n(v))} step="1"
+                 hint="so the payout can also be shown in points" />
+        </div>
+      </div>
+
+      {/* ── starter tiers ───────────────────────────────────────── */}
+      <div className="card" style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>Starter tiers</div>
+        <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 11, lineHeight: 1.7 }}>
+          Applies while the excess over basic is below {num(cfg.retroFrom)}. Each band earns its own
+          rate on the sheets that fall inside it.
+        </div>
+        {cfg.starterTiers.map((t, i) => (
+          <div key={i} style={{ display: 'flex', gap: 9, alignItems: 'center', marginBottom: 8 }}>
+            <span style={{ fontSize: 11.5, color: 'var(--t3)', minWidth: 76 }}>
+              {i === 0 ? 'first' : 'up to'}
+            </span>
+            <input type="number" value={t.upTo} onChange={e => setTier(i, 'upTo', e.target.value)}
+                   style={{ width: 100, fontSize: 13, padding: '6px 9px', borderRadius: 8,
+                            border: '1px solid var(--b1)', background: 'var(--bg1)', color: 'var(--t1)' }} />
+            <span style={{ fontSize: 11.5, color: 'var(--t3)' }}>sheets above basic earn ₹</span>
+            <input type="number" value={t.rate} onChange={e => setTier(i, 'rate', e.target.value)}
+                   style={{ width: 80, fontSize: 13, padding: '6px 9px', borderRadius: 8,
+                            border: '1px solid var(--b1)', background: 'var(--bg1)', color: 'var(--t1)' }} />
+            <span style={{ fontSize: 11.5, color: 'var(--t3)' }}>each</span>
+            <button className="btn" onClick={() => dropTier(i)} style={{ marginLeft: 'auto', fontSize: 11 }}>
+              <X size={11} />
+            </button>
+          </div>
+        ))}
+        <button className="btn" onClick={addTier}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, marginTop: 4 }}>
+          <Plus size={12} /> Add a tier
+        </button>
+      </div>
+
+      {/* ── retroactive escalation ──────────────────────────────── */}
+      <div className="card" style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>Retroactive escalation</div>
+        <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 11, lineHeight: 1.7 }}>
+          Past the threshold, <b>one rate applies to the entire excess</b> — crossing a block re-prices
+          sheets already earned, which is why the payout jumps rather than rising smoothly. The rate is
+          the base plus one step for every further block, up to the cap.
+        </div>
+        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))' }}>
+          <Field label="Starts at" value={cfg.retroFrom} onChange={v => set('retroFrom', n(v))}
+                 step="100" suffix="sheets" hint="excess at or above this uses one rate" />
+          <Field label="Base rate" value={cfg.retroBase} onChange={v => set('retroBase', n(v))}
+                 prefix="₹" hint="at the first block" />
+          <Field label="Block size" value={cfg.retroBlock} onChange={v => set('retroBlock', n(v))}
+                 step="100" suffix="sheets" hint="every further block raises the rate" />
+          <Field label="Step" value={cfg.retroStep} onChange={v => set('retroStep', n(v))}
+                 prefix="₹" hint="added per block" />
+          <Field label="Cap" value={cfg.retroCap} onChange={v => set('retroCap', n(v))}
+                 prefix="₹" hint="the rate stops climbing here" />
+        </div>
+        <div style={{ marginTop: 12, padding: '10px 13px', borderRadius: 9, background: 'var(--bg2)' }}>
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase',
+                        color: 'var(--t3)', marginBottom: 7 }}>What that pays</div>
+          <div style={{ display: 'grid', gap: 6, gridTemplateColumns: 'repeat(auto-fit,minmax(130px,1fr))' }}>
+            {[500, 1000, 2000, 3000, 4000, 6000].map(x => {
+              const r = rampAt(x);
+              return (
+                <div key={x} style={{ fontSize: 11.5 }}>
+                  <span style={{ color: 'var(--t3)' }}>{num(x)} above → </span>
+                  <b>{money(r.amount)}</b>
+                  <span style={{ color: 'var(--t3)' }}>{r.rate ? ` (₹${r.rate}/sheet)` : ' (tiers)'}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* ── other products ──────────────────────────────────────── */}
+      <div className="card" style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>Other products</div>
+        <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 11, lineHeight: 1.7 }}>
+          Each target is derived from the gate target, so a salesman only has one number to remember.
+          Only units <b>above</b> the derived target earn — hitting it exactly earns nothing. Leave the
+          percentage blank and set a fixed target instead where the target is a flat count.
+        </div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 620 }}>
+            <thead>
+              <tr style={{ textAlign: 'left', color: 'var(--t3)', fontSize: 9.5,
+                           letterSpacing: '.07em', textTransform: 'uppercase' }}>
+                <th style={{ padding: '5px 6px' }}>Shown as</th>
+                <th style={{ padding: '5px 6px' }}>Sales category</th>
+                <th style={{ padding: '5px 6px' }}>Target % of gate</th>
+                <th style={{ padding: '5px 6px' }}>or fixed</th>
+                <th style={{ padding: '5px 6px' }}>₹ per unit above</th>
+                <th style={{ padding: '5px 6px' }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {cfg.products.map((p, i) => (
+                <tr key={i} style={{ borderTop: '1px solid var(--b1)' }}>
+                  <td style={{ padding: '6px 6px' }}>
+                    <input value={p.label} onChange={e => setProd(i, 'label', e.target.value)}
+                           style={{ width: 110, fontSize: 12, padding: '5px 7px', borderRadius: 7,
+                                    border: '1px solid var(--b1)', background: 'var(--bg1)', color: 'var(--t1)' }} />
+                  </td>
+                  <td style={{ padding: '6px 6px' }}>
+                    <select value={p.category} onChange={e => setProd(i, 'category', e.target.value)}
+                            style={{ fontSize: 12, padding: '5px 7px', borderRadius: 7,
+                                     border: '1px solid var(--b1)', background: 'var(--bg1)', color: 'var(--t1)' }}>
+                      {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </td>
+                  <td style={{ padding: '6px 6px' }}>
+                    <input type="number" step="1" placeholder="—"
+                           value={p.targetPct === undefined || p.targetPct === null ? '' : Math.round(p.targetPct * 1000) / 10}
+                           onChange={e => setProd(i, 'targetPct', e.target.value === '' ? null : n(e.target.value) / 100)}
+                           style={{ width: 70, fontSize: 12, padding: '5px 7px', borderRadius: 7,
+                                    border: '1px solid var(--b1)', background: 'var(--bg1)', color: 'var(--t1)' }} />
+                    <span style={{ color: 'var(--t3)', fontSize: 11 }}> %</span>
+                  </td>
+                  <td style={{ padding: '6px 6px' }}>
+                    <input type="number" placeholder="—"
+                           value={p.fixedTarget === undefined || p.fixedTarget === null ? '' : p.fixedTarget}
+                           onChange={e => setProd(i, 'fixedTarget', e.target.value === '' ? null : n(e.target.value))}
+                           style={{ width: 70, fontSize: 12, padding: '5px 7px', borderRadius: 7,
+                                    border: '1px solid var(--b1)', background: 'var(--bg1)', color: 'var(--t1)' }} />
+                  </td>
+                  <td style={{ padding: '6px 6px' }}>
+                    <input type="number" value={p.rate} onChange={e => setProd(i, 'rate', n(e.target.value))}
+                           style={{ width: 80, fontSize: 12, padding: '5px 7px', borderRadius: 7,
+                                    border: '1px solid var(--b1)', background: 'var(--bg1)', color: 'var(--t1)' }} />
+                  </td>
+                  <td style={{ padding: '6px 6px', textAlign: 'right' }}>
+                    <button className="btn" onClick={() => dropProd(i)} style={{ fontSize: 11 }}><X size={11} /></button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <button className="btn" onClick={addProd}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, marginTop: 10 }}>
+          <Plus size={12} /> Add a product
+        </button>
+      </div>
+
+      {/* ── worked example, live ────────────────────────────────── */}
+      <div className="card" style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Worked example</div>
+        {(() => {
+          const basic = 2500, achieved = 3800, display = 80000;
+          const excess = achieved - basic;
+          const r = rampAt(excess);
+          const rows = cfg.products.map(p => {
+            const target = (p.fixedTarget !== undefined && p.fixedTarget !== null)
+              ? p.fixedTarget : Math.round(basic * (p.targetPct || 0));
+            const actual = Math.round(target * 1.1);         // 10% over, for illustration
+            return { ...p, target, actual, over: actual - target, earns: (actual - target) * p.rate };
+          });
+          const other = rows.reduce((a, x) => a + x.earns, 0);
+          const disp = display * (cfg.displayPct || 0);
+          return (
+            <div style={{ fontSize: 11.5, color: 'var(--t2)', lineHeight: 1.8 }}>
+              A salesman with a basic of <b>{num(basic)}</b> who bills <b>{num(achieved)}</b> is{' '}
+              <b>{num(excess)}</b> above basic, earning <b>{money(r.amount)}</b>
+              {r.rate ? <> at ₹{r.rate} on every sheet of the excess</> : <> across the starter tiers</>}.
+              <div style={{ marginTop: 6 }}>
+                {rows.map(x => (
+                  <div key={x.key || x.label} style={{ color: 'var(--t3)' }}>
+                    {x.label}: target {num(x.target)}, bills {num(x.actual)} → {num(x.over)} above ×
+                    ₹{x.rate} = <b style={{ color: 'var(--t2)' }}>{money(x.earns)}</b>
+                  </div>
+                ))}
+                <div style={{ color: 'var(--t3)' }}>
+                  Display {money(display)} × {Math.round((cfg.displayPct || 0) * 1000) / 10}% ={' '}
+                  <b style={{ color: 'var(--t2)' }}>{money(disp)}</b>
+                </div>
+              </div>
+              {(() => {
+                const earned = r.amount + other + disp;
+                const ded = earned * (cfg.deductionPct || 0);
+                return (
+                  <div style={{ marginTop: 6 }}>
+                    <div style={{ color: 'var(--t3)' }}>Earned {money(earned)}</div>
+                    {ded > 0 && (
+                      <div style={{ color: 'var(--red)' }}>
+                        Deduction {Math.round((cfg.deductionPct || 0) * 100)}% −{money(ded)}
+                      </div>
+                    )}
+                    <div style={{ marginTop: 3, fontSize: 13, fontWeight: 800, color: 'var(--grn)' }}>
+                      Payable {money(earned - ded)}
+                      {cfg.pointsPerRupee
+                        ? `  ·  ${num(Math.round((earned - ded) * cfg.pointsPerRupee))} points` : ''}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          );
+        })()}
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <button className="btn btn-primary" onClick={save} disabled={busy}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12.5 }}>
+          <Save size={12} /> {busy ? 'Saving…' : 'Save rule'}
+        </button>
+        {defs && (
+          <button className="btn" onClick={() => setCfg({ ...defs })}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12.5 }}>
+            <RotateCcw size={12} /> Reset to the published scheme
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}

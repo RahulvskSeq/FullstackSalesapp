@@ -1747,7 +1747,8 @@ export const api = {
   updateNote: (id,n)  => fetch(`${BASE}/notes/${id}`,{method:'PUT',headers:authHeaders(),body:JSON.stringify(n)}).then(handle),
   deleteNote: (id)    => fetch(`${BASE}/notes/${id}`,{method:'DELETE',headers:authHeaders()}).then(handle),
 
-  getOutstanding:    ()     => fetch(`${BASE}/outstanding`,{headers:authHeaders()}).then(handle),
+  // Served by the Collections module (col_balances) in the legacy shape; the old outstanding collections were retired 13 Sep 2026.
+  getOutstanding:    ()     => fetch(`${BASE}/collections/compat/outstanding`,{headers:authHeaders()}).then(handle),
   // Two-phase Saturday upload. Preview parses + matches against the Dealer
   // master and returns previous-vs-new totals WITHOUT writing anything;
   // the plain upload commits and creates a batch + weekly history.
@@ -1771,13 +1772,13 @@ export const api = {
     fetch(`${BASE}/outstanding/month/${encodeURIComponent(month)}`,{method:'DELETE',headers:authHeaders()}).then(handle),
 
   // Outstanding Followups
-  getFollowups:    ()      => fetch(`${BASE}/followups`,{headers:authHeaders()}).then(handle),
+  getFollowups:    ()      => fetch(`${BASE}/collections/compat/followups`,{headers:authHeaders()}).then(handle),
   // Unsettled payment commitments (promises). state = 'BROKEN' | 'OPEN'.
   getCommitments:  (state) => fetch(`${BASE}/followups/commitments${state?`?state=${state}`:''}`,{headers:authHeaders()}).then(handle),
   // Record money received against a commitment — admin / accounts only.
   creditFollowup:  (id,body)=> fetch(`${BASE}/followups/${id}/credit`,{method:'POST',headers:authHeaders(),body:JSON.stringify(body)}).then(handle),
   addFollowup:     (d)     => fetch(`${BASE}/followups`,{method:'POST',headers:authHeaders(),body:JSON.stringify(d)}).then(handle),
-  updateFollowup:  (id,d)  => fetch(`${BASE}/followups/${id}`,{method:'PUT',headers:authHeaders(),body:JSON.stringify(d)}).then(handle),
+  updateFollowup:  (id,d)  => fetch(`${BASE}/collections/compat/followups/${id}`,{method:'PUT',headers:authHeaders(),body:JSON.stringify(d)}).then(handle),
   deleteFollowup:  (id)    => fetch(`${BASE}/followups/${id}`,{method:'DELETE',headers:authHeaders()}).then(handle),
   // Admin: wipe EVERY follow-up so user can start fresh under the new
   // month-tagged scheme. Outstanding amounts are NOT touched.
@@ -2182,6 +2183,17 @@ export const api = {
   // Billing-person incentive for a month. Admin only on the server.
   ptxIncentive: (month) => fetch(`${BASE}/producttx/incentive${month?'?month='+encodeURIComponent(month):''}`,
     { headers:authHeaders() }).then(handle),
+  // Everything the incentive home screen shows, in one call.
+  // Pass from/to (YYYY-MM-DD) to score a date window instead of a whole
+  // month — the question a daily upload raises.
+  ptxIncentiveDashboard: (month, range) => {
+    const q = new URLSearchParams();
+    if (range?.from && range?.to) { q.set('from', range.from); q.set('to', range.to); }
+    else if (month) q.set('month', month);
+    const qs = q.toString();
+    return fetch(`${BASE}/producttx/incentive/dashboard${qs?'?'+qs:''}`,
+      { headers:authHeaders() }).then(handle);
+  },
   ptxIncentiveConfig:     ()   => fetch(`${BASE}/producttx/incentive-config`,{headers:authHeaders()}).then(handle),
   ptxIncentiveConfigSave: (c)  => fetch(`${BASE}/producttx/incentive-config`,{
     method:'PUT', headers:{...authHeaders(),'Content-Type':'application/json'}, body:JSON.stringify(c),
@@ -2192,16 +2204,44 @@ export const api = {
   // which month it found, and returns the figures WITHOUT storing them. Call
   // again with commit=true once the preview looks right. Paying people is not
   // something to do on a guessed column mapping.
-  ptxIncentiveUpload: (file, { month = '', commit = false } = {}, onProgress) => {
+  // `all` is the history-seed mode: file every month the sheet contains, not
+  // just the main one. That is how the six-month report goes in.
+  ptxIncentiveUpload: (file, { month = '', commit = false, all = false } = {}, onProgress) => {
     const fd = new FormData();
     fd.append('file', file);
     if (month) fd.append('month', month);
-    return postForm(`${BASE}/producttx/incentive/upload${commit ? '?commit=1' : ''}`, fd, onProgress);
+    const qs = new URLSearchParams({ ...(commit?{commit:'1'}:{}), ...(all?{all:'1'}:{}) }).toString();
+    return postForm(`${BASE}/producttx/incentive/upload${qs?'?'+qs:''}`, fd, onProgress);
   },
   // Months that came from an uploaded sheet.
+  // Which days of a month have billing, which are closed and which never
+  // arrived — the reminder behind a daily upload.
+  ptxIncentiveDays: (month) => fetch(
+    `${BASE}/producttx/incentive/days${month?'?month='+encodeURIComponent(month):''}`,
+    { headers:authHeaders() }).then(handle),
+  ptxIncentiveDayHoliday: (day, holiday) => fetch(`${BASE}/producttx/incentive/days/holiday`,{
+    method:'PUT', headers:{...authHeaders(),'Content-Type':'application/json'},
+    body:JSON.stringify({ day, holiday }),
+  }).then(handle),
   ptxIncentivePeriods:      ()      => fetch(`${BASE}/producttx/incentive/periods`,{headers:authHeaders()}).then(handle),
   ptxIncentivePeriodDelete: (month) => fetch(`${BASE}/producttx/incentive/periods/${encodeURIComponent(month)}`,
     { method:'DELETE', headers:authHeaders() }).then(handle),
+  // Salesman incentive — the laminate-gated scheme, separate from the
+  // billing-team points scheme above.
+  salesIncentive: (month, range) => {
+    const q = new URLSearchParams();
+    if (range?.from && range?.to) { q.set('from', range.from); q.set('to', range.to); }
+    else if (month) q.set('month', month);
+    const qs = q.toString();
+    return fetch(`${BASE}/sales-incentive${qs?'?'+qs:''}`, { headers:authHeaders() }).then(handle);
+  },
+  salesIncentiveAdjSave: (body) => fetch(`${BASE}/sales-incentive/adjustments`,{
+    method:'PUT', headers:{...authHeaders(),'Content-Type':'application/json'}, body:JSON.stringify(body),
+  }).then(handle),
+  salesIncentiveConfig:  ()     => fetch(`${BASE}/sales-incentive/config`,{headers:authHeaders()}).then(handle),
+  salesIncentiveConfigSave: (c) => fetch(`${BASE}/sales-incentive/config`,{
+    method:'PUT', headers:{...authHeaders(),'Content-Type':'application/json'}, body:JSON.stringify(c),
+  }).then(handle),
   featuresGet: () => fetch(`${BASE}/settings/features`,{headers:authHeaders()}).then(handle),
   featuresSet: (disabled) => fetch(`${BASE}/settings/features`,{
     method:'PUT', headers:{...authHeaders(),'Content-Type':'application/json'},
@@ -2363,3 +2403,11 @@ export const dbOutstandingToApp = (records=[]) => {
   }).sort((a,b)=>b.latestOutstanding-a.latestOutstanding);
 };
 
+
+// The Collections module lives in its own folder and builds its own request
+// layer on the same base URL, token and error handling as everything above.
+// Exposed as functions rather than the raw constants so nothing outside this
+// file can mutate them.
+export const _requestBase = () => BASE;
+export const _requestHeaders = () => authHeaders();
+export const _requestHandle = (res) => handle(res);

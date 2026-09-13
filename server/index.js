@@ -161,6 +161,8 @@ import sampleRoutes      from './routes/samples.js';
 import crmRoutes         from './routes/crm.js';
 import categoryRoutes    from './routes/categories.js';
 import salesRoutes       from './routes/sales.js';
+import salesIncentiveRoutes from './routes/salesIncentive.js';
+import collectionsRoutes, { startJobs as startCollectionJobs, startTick as startCollectionTick } from './collections/routes/index.js';
 import appUpdateRoutes  from './routes/appupdate.js';
 import sheetRoutes       from './routes/sheets.js';
 import productTxRoutes  from './routes/producttx.js';
@@ -180,7 +182,9 @@ app.use(cors({
   origin: (origin, cb) => cb(null, origin || true), // reflect or allow non-browser callers
   credentials: true,
 }));
-app.use(express.json({ limit:'50mb' }));
+// `verify` keeps the raw bytes so the WhatsApp webhook can check Meta's
+// HMAC signature against exactly what was sent, not a re-serialisation.
+app.use(express.json({ limit:'50mb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
 app.use(express.urlencoded({ extended:true }));
 
 // Records every mutation together with the user who made it. Mounted here so
@@ -197,6 +201,8 @@ app.use('/api/followups',   followupRoutes);
 app.use('/api/samples',     sampleRoutes);
 app.use('/api/crm',         crmRoutes);
 app.use('/api/categories',  categoryRoutes);
+app.use('/api/sales-incentive', salesIncentiveRoutes);
+app.use('/api/collections',     collectionsRoutes);
 app.use('/api/sales',       salesRoutes);
 app.use('/api/sheets',      sheetRoutes);
 app.use('/api/producttx',   productTxRoutes);  // raw ERP product-transaction import + report
@@ -326,6 +332,9 @@ mongoose.connect(process.env.MONGO_URI)
     console.log('✅ MongoDB connected');
     await seedUsers();
     await runMigrations();
+    // Collections module: background jobs (imports, automation) start with the server.
+    startCollectionJobs().catch(e => console.warn('[COL JOBS] failed to start:', e.message));
+    startCollectionTick();
     // Seed the default Category/Sub-Category taxonomy on first boot.
     // Safe to call every boot — it skips entries that already exist.
     try {

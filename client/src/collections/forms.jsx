@@ -1,0 +1,161 @@
+import React, { useState, useEffect } from 'react';
+import { col } from './api';
+import { Modal, Field, DealerPicker, ErrorBox, money, today, useDealerCtx } from './ui';
+
+/**
+ * The three write forms — follow-up, payment, task — shared by the Today
+ * screen, the Outstanding list and the Dealer 360 drawer. Each takes an
+ * optional pre-selected dealer so a row can open the form already filled in.
+ */
+const CHANNELS = ['CALL', 'VISIT', 'WHATSAPP', 'EMAIL', 'SMS', 'OTHER'];
+const OUTCOMES = ['NO_ANSWER', 'CALLBACK', 'PROMISED', 'DISPUTED', 'PARTIAL', 'PAID', 'NOT_REACHABLE', 'OTHER'];
+const MODES = ['CASH', 'CHEQUE', 'NEFT', 'RTGS', 'UPI', 'CARD', 'OTHER'];
+const TASK_TYPES = ['CALL', 'VISIT', 'PAYMENT_COLLECTION', 'WHATSAPP', 'SEND_STATEMENT', 'SEND_INVOICE', 'FOLLOW_UP', 'ESCALATION', 'VERIFICATION', 'PROMISE_FOLLOW_UP', 'CUSTOM'];
+const PRIORITY = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'];
+const t = s => String(s).replace(/_/g, ' ').toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase());
+
+function useSubmit(onDone) {
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState('');
+  const run = async fn => { setBusy(true); setErr(''); try { const r = await fn(); onDone?.(r); } catch (e) { setErr(e.message || String(e)); } finally { setBusy(false); } };
+  return { busy, err, run };
+}
+
+export function FollowupForm({ dealer: preset, onClose, onDone }) {
+  const { users, isStaff, currentUser } = useDealerCtx();
+  const [dealer, setDealer] = useState(preset || null);
+  const [f, setF] = useState({ date: today(), time: new Date().toTimeString().slice(0, 5), channel: 'CALL', outcome: 'CALLBACK', discussion: '', customerResponse: '', nextFollowupDate: '', nextAction: '', remarks: '', promiseAmount: '', promiseDate: '', employeeId: currentUser?.id || '' });
+  const set = (k, v) => setF(x => ({ ...x, [k]: v }));
+  const { busy, err, run } = useSubmit(r => { onDone?.(r); onClose(); });
+  const salesmen = (users || []).filter(u => u.role === 'salesman' || u.role === 'employee' || u.role === 'admin');
+  const promising = f.outcome === 'PROMISED';
+  return (
+    <Modal title="Record follow-up" onClose={onClose}>
+      <Field label="Dealer"><DealerPicker value={dealer} onChange={setDealer} /></Field>
+      <div className="g2">
+        <Field label="Date"><input type="date" className="inp" value={f.date} onChange={e => set('date', e.target.value)} max={today()} /></Field>
+        <Field label="Time"><input type="time" className="inp" value={f.time} onChange={e => set('time', e.target.value)} /></Field>
+        <Field label="Channel"><select className="sel" style={{ width: '100%' }} value={f.channel} onChange={e => set('channel', e.target.value)}>{CHANNELS.map(c => <option key={c} value={c}>{t(c)}</option>)}</select></Field>
+        <Field label="Outcome"><select className="sel" style={{ width: '100%' }} value={f.outcome} onChange={e => set('outcome', e.target.value)}>{OUTCOMES.map(c => <option key={c} value={c}>{t(c)}</option>)}</select></Field>
+      </div>
+      {isStaff && <Field label="Recorded for"><select className="sel" style={{ width: '100%' }} value={f.employeeId} onChange={e => set('employeeId', e.target.value)}>{salesmen.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></Field>}
+      <Field label="Discussion"><textarea className="inp" rows={3} value={f.discussion} onChange={e => set('discussion', e.target.value)} placeholder="What was discussed" /></Field>
+      <Field label="Customer response"><input className="inp" value={f.customerResponse} onChange={e => set('customerResponse', e.target.value)} /></Field>
+      {(promising || f.promiseAmount) && <div className="g2" style={{ padding: 10, borderRadius: 8, background: 'var(--accL)', marginBottom: 12 }}>
+        <Field label="Promised amount"><input type="number" className="inp" value={f.promiseAmount} onChange={e => set('promiseAmount', e.target.value)} min={1} /></Field>
+        <Field label="Promised by"><input type="date" className="inp" value={f.promiseDate} onChange={e => set('promiseDate', e.target.value)} min={f.date} /></Field>
+      </div>}
+      {!promising && !f.promiseAmount && <button className="btne" style={{ marginBottom: 12 }} onClick={() => set('outcome', 'PROMISED')}>+ Dealer promised a payment</button>}
+      <div className="g2">
+        <Field label="Next follow-up"><input type="date" className="inp" value={f.nextFollowupDate} onChange={e => set('nextFollowupDate', e.target.value)} min={f.date} /></Field>
+        <Field label="Next action"><input className="inp" value={f.nextAction} onChange={e => set('nextAction', e.target.value)} /></Field>
+      </div>
+      <Field label="Remarks"><input className="inp" value={f.remarks} onChange={e => set('remarks', e.target.value)} /></Field>
+      <ErrorBox err={err} />
+      <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btnp" disabled={busy || !dealer} onClick={() => run(() => col.recordFollowup({
+          dealerId: dealer.id, date: f.date, time: f.time, channel: f.channel, outcome: f.outcome, discussion: f.discussion, customerResponse: f.customerResponse,
+          nextFollowupDate: f.nextFollowupDate, nextAction: f.nextAction, remarks: f.remarks, employeeId: f.employeeId,
+          promise: (promising || f.promiseAmount) ? { amount: Number(f.promiseAmount), date: f.promiseDate } : undefined }))}>{busy ? 'Saving…' : 'Save follow-up'}</button>
+      </div>
+    </Modal>);
+}
+
+export function PaymentForm({ dealer: preset, onClose, onDone }) {
+  const { users, currentUser } = useDealerCtx();
+  const [dealer, setDealer] = useState(preset || null);
+  const [invoices, setInvoices] = useState([]);
+  const [alloc, setAlloc] = useState({});
+  const [f, setF] = useState({ date: today(), amount: '', mode: 'NEFT', reference: '', bankReference: '', collectedBy: currentUser?.id || '', remarks: '' });
+  const [proof, setProof] = useState(null);
+  const set = (k, v) => setF(x => ({ ...x, [k]: v }));
+  const { busy, err, run } = useSubmit(r => { onDone?.(r); onClose(); });
+  useEffect(() => { if (!dealer) { setInvoices([]); return; } col.dealer360(dealer.id).then(d => setInvoices((d.invoices || []).filter(i => i.status === 'OPEN'))).catch(() => setInvoices([])); }, [dealer]);
+  const allocated = Object.values(alloc).reduce((s, v) => s + (Number(v) || 0), 0);
+  const onProof = e => { const file = e.target.files?.[0]; if (!file) return setProof(null); const rd = new FileReader(); rd.onload = () => setProof({ mime: file.type, data: rd.result, name: file.name }); rd.readAsDataURL(file); };
+  return (
+    <Modal title="Record payment" onClose={onClose}>
+      <Field label="Dealer"><DealerPicker value={dealer} onChange={setDealer} /></Field>
+      <div className="g2">
+        <Field label="Date"><input type="date" className="inp" value={f.date} onChange={e => set('date', e.target.value)} max={today()} /></Field>
+        <Field label="Amount (₹)"><input type="number" className="inp" value={f.amount} onChange={e => set('amount', e.target.value)} min={1} /></Field>
+        <Field label="Mode"><select className="sel" style={{ width: '100%' }} value={f.mode} onChange={e => set('mode', e.target.value)}>{MODES.map(m => <option key={m} value={m}>{t(m)}</option>)}</select></Field>
+        <Field label="Collected by"><select className="sel" style={{ width: '100%' }} value={f.collectedBy} onChange={e => set('collectedBy', e.target.value)}><option value="">—</option>{(users || []).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></Field>
+        <Field label="Reference (cheque / UTR)"><input className="inp" value={f.reference} onChange={e => set('reference', e.target.value)} /></Field>
+        <Field label="Bank reference"><input className="inp" value={f.bankReference} onChange={e => set('bankReference', e.target.value)} /></Field>
+      </div>
+      <Field label="Proof (image / PDF, up to 5 MB)" hint={proof ? proof.name : ''}><input type="file" className="inp" accept="image/*,application/pdf" onChange={onProof} /></Field>
+      {invoices.length > 0 && <Field label="Allocate to invoices (optional)" hint={allocated ? `Allocated ${money(allocated)} of ${money(f.amount)}` : 'Leave blank to keep the payment unallocated'}>
+        <div style={{ maxHeight: 160, overflowY: 'auto', border: '1px solid var(--b1)', borderRadius: 7 }}>
+          {invoices.map(i => <div key={i._id} className="row" style={{ padding: '6px 10px', gap: 8, borderBottom: '1px solid var(--b1)', fontSize: 12 }}>
+            <span style={{ flex: 1 }}>{i.billRef} · {i.billDate}</span><span style={{ color: 'var(--t2)' }}>due {money(i.pending)}</span>
+            <input type="number" className="inp" style={{ width: 110 }} value={alloc[i._id] || ''} onChange={e => setAlloc(a => ({ ...a, [i._id]: e.target.value }))} placeholder="0" />
+          </div>)}
+        </div></Field>}
+      <Field label="Remarks"><input className="inp" value={f.remarks} onChange={e => set('remarks', e.target.value)} /></Field>
+      <ErrorBox err={err} />
+      <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btnp" disabled={busy || !dealer || !(Number(f.amount) > 0)} onClick={() => run(() => col.recordPayment({
+          dealerId: dealer.id, ...f, amount: Number(f.amount), proof: proof ? { mime: proof.mime, data: proof.data } : undefined,
+          allocations: Object.entries(alloc).filter(([, v]) => Number(v) > 0).map(([invoiceId, amount]) => ({ invoiceId, amount: Number(amount) })) }))}>{busy ? 'Saving…' : 'Record payment'}</button>
+      </div>
+    </Modal>);
+}
+
+export function TaskForm({ dealer: preset, onClose, onDone }) {
+  const { users, isStaff, currentUser } = useDealerCtx();
+  const [dealer, setDealer] = useState(preset || null);
+  const [f, setF] = useState({ type: 'CALL', priority: 'MEDIUM', dueDate: today(), dueTime: '', description: '', employeeId: currentUser?.id || '' });
+  const set = (k, v) => setF(x => ({ ...x, [k]: v }));
+  const { busy, err, run } = useSubmit(r => { onDone?.(r); onClose(); });
+  return (
+    <Modal title="New task" onClose={onClose}>
+      <Field label="Dealer"><DealerPicker value={dealer} onChange={setDealer} /></Field>
+      <div className="g2">
+        <Field label="Type"><select className="sel" style={{ width: '100%' }} value={f.type} onChange={e => set('type', e.target.value)}>{TASK_TYPES.map(m => <option key={m} value={m}>{t(m)}</option>)}</select></Field>
+        <Field label="Priority"><select className="sel" style={{ width: '100%' }} value={f.priority} onChange={e => set('priority', e.target.value)}>{PRIORITY.map(m => <option key={m} value={m}>{t(m)}</option>)}</select></Field>
+        <Field label="Due date"><input type="date" className="inp" value={f.dueDate} onChange={e => set('dueDate', e.target.value)} /></Field>
+        <Field label="Due time"><input type="time" className="inp" value={f.dueTime} onChange={e => set('dueTime', e.target.value)} /></Field>
+      </div>
+      {isStaff && <Field label="Assign to"><select className="sel" style={{ width: '100%' }} value={f.employeeId} onChange={e => set('employeeId', e.target.value)}>{(users || []).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></Field>}
+      <Field label="Description"><textarea className="inp" rows={3} value={f.description} onChange={e => set('description', e.target.value)} /></Field>
+      <ErrorBox err={err} />
+      <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btnp" disabled={busy || !dealer} onClick={() => run(() => col.createTask({ dealerId: dealer.id, ...f }))}>{busy ? 'Saving…' : 'Create task'}</button>
+      </div>
+    </Modal>);
+}
+
+export function WhatsAppForm({ dealer, onClose, onDone }) {
+  const [templates, setTemplates] = useState([]);
+  const [key, setKey] = useState('');
+  const [preview, setPreview] = useState(null);
+  const [to, setTo] = useState(dealer?.phone || '');
+  const [remember, setRemember] = useState(true);
+  const { busy, err, run } = useSubmit(r => { onDone?.(r); onClose(); });
+  const digits = String(to).replace(/\D/g, '');
+  const toOk = digits.length === 10 || (digits.length === 12 && digits.startsWith('91'));
+  useEffect(() => { col.waTemplates().then(ts => { const a = ts.filter(x => x.active !== false); setTemplates(a); setKey(a[0]?.key || ''); }).catch(() => {}); }, []);
+  useEffect(() => { if (!key || !dealer) return; col.waPreview(dealer.id, key).then(setPreview).catch(e => setPreview({ error: e.message })); }, [key, dealer]);
+  return (
+    <Modal title={`WhatsApp · ${dealer?.name || ''}`} onClose={onClose}>
+      <Field label="Send to (WhatsApp number)" hint={dealer?.phone ? '' : 'No number on record for this dealer yet.'}>
+        <div className="row" style={{ gap: 8 }}>
+          <input className="inp" value={to} onChange={e => setTo(e.target.value)} placeholder="10-digit mobile" />
+          {!dealer?.phone || digits !== String(dealer.phone) ? <label className="row" style={{ fontSize: 12, gap: 5, whiteSpace: 'nowrap' }}><input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} /> save to dealer</label> : null}
+        </div>
+      </Field>
+      <Field label="Template"><select className="sel" style={{ width: '100%' }} value={key} onChange={e => setKey(e.target.value)}>{templates.map(x => <option key={x.key} value={x.key}>{x.key}</option>)}</select></Field>
+      <Field label="Preview"><div style={{ whiteSpace: 'pre-wrap', fontSize: 13, padding: 12, borderRadius: 8, background: 'var(--bg2)', border: '1px solid var(--b1)', minHeight: 60 }}>{preview?.error ? <span style={{ color: 'var(--red)' }}>{preview.error}</span> : (preview?.preview || '…')}</div></Field>
+      <ErrorBox err={err} />
+      <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btnp" disabled={busy || !key || !dealer || !toOk || preview?.error} onClick={() => run(async () => {
+          if (remember && digits !== String(dealer.phone || '')) await col.setContact(dealer.id, { phone: digits });
+          return col.waSend({ dealerId: dealer.id, templateKey: key, to: digits.length === 10 ? '91' + digits : digits });
+        })}>{busy ? 'Queuing…' : 'Send'}</button>
+      </div>
+    </Modal>);
+}

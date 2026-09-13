@@ -375,6 +375,10 @@ router.post('/users/:id/reassign', protect, adminOnly, requireFeature('manageUse
       await tryMove('attendance', '../models/Attendance.js', { userId: fromId }, { userId: toId, userName: toName });
     }
     await tryMove('tasks', '../models/Task.js', { assignedTo: fromId },{ assignedTo: toId });
+    // Collections module: the balance's copy of the salesman, and open work.
+    await tryMove('colBalances', '../collections/models/Balance.js',        { salesmanId: fromId }, { salesmanId: toId });
+    await tryMove('colTasks',    '../collections/models/CollectionTask.js', { employeeId: fromId, status: { $in: ['OPEN', 'IN_PROGRESS'] } }, { employeeId: toId });
+    await tryMove('colPromises', '../collections/models/Promise.js',        { employeeId: fromId, status: { $in: ['PENDING', 'PARTIALLY_FULFILLED'] } }, { employeeId: toId });
     await tryMove('leads', '../models/Lead.js', { assignedTo: fromId },{ assignedTo: toId });
 
     console.log('[REASSIGN] ' + fromId + ' → ' + toId + (cutYM ? ' from ' + fromMonth : ' (full)'), moved);

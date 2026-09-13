@@ -58,6 +58,51 @@ export function perfStatusFor(qtyByMonth, months) {
   return 'DEAD';
 }
 
+/**
+ * Recompute Type 1 (perfStatus) for every dealer from the Sale rows.
+ *
+ * One implementation on purpose. This existed three times — in the manual
+ * Monthly Entry upload, in the recompute endpoint, and nowhere at all in the
+ * ERP sync — and the path that was missing it is why the Performance Tiers
+ * row went stale: an ERP upload wrote new Sale rows and left every dealer's
+ * tier describing the month before.
+ *
+ * Pass dry:true to find out what would change without writing.
+ */
+export async function recomputePerfStatus({ dry = false } = {}) {
+  const Sale   = (await import('../models/Sale.js')).default;
+  const Dealer = (await import('../models/Dealer.js')).default;
+
+  const months = (await Sale.distinct('month')).filter(Boolean).sort();
+  if (!months.length) return { months: 0, dealers: 0, counts: {}, changed: [] };
+
+  const agg = await Sale.aggregate([
+    { $match: { category: { $in: TIER_CATEGORIES } } },
+    { $group: { _id: { d: '$dealerName', m: '$month' }, qty: { $sum: '$qty' } } },
+  ]);
+  const byDealer = {};
+  for (const r of agg) (byDealer[r._id.d] ||= {})[r._id.m] = r.qty;
+
+  // Every dealer, not just those with sale rows — an absence of rows is
+  // exactly what makes a dealer DEAD.
+  const dealers = await Dealer.find({}, 'name perfStatus').lean();
+  const latest = months.at(-1);
+  const ops = [], counts = {}, changed = [];
+  for (const d of dealers) {
+    const q = byDealer[d.name] || {};
+    const next = perfStatusFor(q, months);
+    counts[next] = (counts[next] || 0) + 1;
+    if (next !== (d.perfStatus || '')) {
+      changed.push({ name: d.name, from: d.perfStatus || '(unset)', to: next });
+    }
+    ops.push({ updateOne: { filter: { _id: d._id }, update: { $set: {
+      perfStatus: next, perfQty: Number(q[latest]) || 0, perfMonth: latest,
+    } } } });
+  }
+  if (!dry && ops.length) await Dealer.bulkWrite(ops, { ordered: false });
+  return { month: latest, months: months.length, dealers: dealers.length, counts, changed };
+}
+
 /** Normalise whatever is in the manual field to a valid Type 2 value. */
 export function normalizeAccountStatus(v) {
   const s = String(v || '').trim().toUpperCase();

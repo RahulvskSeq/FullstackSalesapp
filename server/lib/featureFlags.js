@@ -24,6 +24,7 @@ export const TOGGLEABLE = [
   { id:'compare',     label:'Compare' },
   { id:'map',         label:'Map View' },
   { id:'outstanding', label:'Outstanding' },
+  { id:'collections', label:'Collections' },
   { id:'salesCat',    label:'Sales by Category' },
   { id:'upload',      label:'Upload Data' },
   { id:'entry',       label:'Monthly Entry' },
