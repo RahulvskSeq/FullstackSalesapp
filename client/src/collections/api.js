@@ -50,6 +50,9 @@ export const col = {
   bouncePayment:  (id, reason)=> post(`/payments/${id}/bounce`, { reason }),
   cancelPayment:  (id, reason)=> post(`/payments/${id}/cancel`, { reason }),
   proofUrl:       (id)        => base() + `/payments/attachments/${id}`,
+  pendingApprovals: (q)       => get('/payments/pending-approvals', q),
+  approveDecrease:  (id)      => post(`/payments/approvals/${id}/approve`),
+  dismissDecrease:  (id, reason) => post(`/payments/approvals/${id}/dismiss`, { reason }),
 
   // follow-ups and promises
   followups:      (q)         => get('/followups', q),

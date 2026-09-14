@@ -263,12 +263,21 @@ export const periodsOf = (rows, n = 4) => [...new Set((rows || []).flatMap(r => 
 export const OLDEST_BG = 'rgba(220,38,38,.09)';
 /** The month being chased is drawn as a red rounded pill — the same look as a "Broken" badge — so it cannot be missed. */
 export const OldestPill = ({ children }) => <span style={{ display: 'inline-block', padding: '2px 9px', borderRadius: 20, fontWeight: 700, color: 'var(--red)', background: 'rgba(220,38,38,.12)', border: '1px solid rgba(220,38,38,.35)', whiteSpace: 'nowrap' }}>{children}</span>;
-export const monthCols = rows => { const ps = periodsOf(rows); return ps.map((p, i) => ({ k: p, h: i === 0 ? <span style={{ color: 'var(--red)' }}>{periodLabel(p)}</span> : periodLabel(p), align: 'right', r: r => r.buckets?.[p] ? (i === 0 ? <OldestPill>{money(r.buckets[p])}</OldestPill> : money(r.buckets[p])) : <span style={{ color: 'var(--t3)' }}>–</span> })); };
+export const monthCols = (rows, onPending) => { const ps = periodsOf(rows); return ps.map((p, i) => ({ k: p, h: i === 0 ? <span style={{ color: 'var(--red)' }}>{periodLabel(p)}</span> : periodLabel(p), align: 'right', r: r => <span>{r.buckets?.[p] ? (i === 0 ? <OldestPill>{money(r.buckets[p])}</OldestPill> : money(r.buckets[p])) : <span style={{ color: 'var(--t3)' }}>–</span>}{i === 0 && (r.pendingApproval > 0 || r.pendingRecorded > 0) ? <div><PendingChip amount={r.pendingApproval} recorded={r.pendingRecorded} onClick={onPending} /></div> : null}</span> })); };
 /** The same months for a phone card, with the total at the end. */
-export const MonthKVs = ({ row, rows, total }) => { const ps = periodsOf(rows || [row]); return <div className="col-months" style={{ display: 'grid', gridTemplateColumns: `repeat(${ps.length + 1}, minmax(0,1fr))`, gap: 6, margin: '8px 0 4px' }}>{ps.map((p, i) => <KV key={p} k={i === 0 ? <span style={{ color: 'var(--red)' }}>{periodLabel(p)}</span> : periodLabel(p)} v={row.buckets?.[p] ? (i === 0 ? <OldestPill>{money(row.buckets[p])}</OldestPill> : money(row.buckets[p])) : '–'} />)}<KV k="Total" v={money(total ?? row.total)} big /></div>; };
+export const MonthKVs = ({ row, rows, total, onPending }) => { const ps = periodsOf(rows || [row]); return <div className="col-months" style={{ display: 'grid', gridTemplateColumns: `repeat(${ps.length + 1}, minmax(0,1fr))`, gap: 6, margin: '8px 0 4px' }}>{ps.map((p, i) => <KV key={p} k={i === 0 ? <span style={{ color: 'var(--red)' }}>{periodLabel(p)}</span> : periodLabel(p)} v={<span>{row.buckets?.[p] ? (i === 0 ? <OldestPill>{money(row.buckets[p])}</OldestPill> : money(row.buckets[p])) : '–'}{i === 0 && (row.pendingApproval > 0 || row.pendingRecorded > 0) ? <div><PendingChip amount={row.pendingApproval} recorded={row.pendingRecorded} onClick={onPending} /></div> : null}</span>} />)}<KV k="Total" v={money(total ?? row.total)} big /></div>; };
 
 /** A follow-up date you can click: shows the date (or "set date") and opens the follow-up form on that dealer with the date field focused. */
 export function FollowupDate({ value, onOpen, prefix = '' }) {
   return <a href="#" data-tip={value ? 'Change the follow-up date' : 'Set a follow-up date'} onClick={e => { e.preventDefault(); e.stopPropagation(); onOpen(); }}
     style={{ color: value ? 'var(--t1)' : 'var(--acc)', textDecoration: 'none', borderBottom: '1px dotted var(--t3)', whiteSpace: 'nowrap' }}>{value ? prefix + fmtDate(value) : 'set date'}</a>;
+}
+
+/** Money the statement shows as received but accounts has not approved yet — amber until they do. */
+export function PendingChip({ amount, recorded, onClick }) {
+  const chip = (text, tip) => <span onClick={onClick ? e => { e.stopPropagation(); onClick(); } : undefined} data-tip={tip} style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 20, fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap', color: '#b45309', background: 'rgba(245,158,11,.16)', border: '1px solid rgba(245,158,11,.45)', cursor: onClick ? 'pointer' : 'default', marginTop: 2 }}>{text}</span>;
+  return <>
+    {amount > 0 && chip(`${money(amount)} pending approval`, 'The statement shows this came in — waiting for accounts to approve')}
+    {recorded > 0 && chip(`${money(recorded)} pending approval`, 'A salesman recorded this payment — waiting for accounts to confirm')}
+  </>;
 }

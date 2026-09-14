@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Download, BadgeIndianRupee, NotebookPen, Banknote } from 'lucide-react';
 import { col, downloadReport } from './api';
-import { useLoad, PageHead, Card, Table, Pager, Badge, Busy, ErrorBox, money, num, fmtDate, periodLabel, DealerLink, useDealerCtx, WhatsAppIcon, StatusBadge, CallButton, CardRow, KV, OldestPill } from './ui';
+import { useLoad, PageHead, Card, Table, Pager, Badge, Busy, ErrorBox, money, num, fmtDate, periodLabel, DealerLink, useDealerCtx, WhatsAppIcon, StatusBadge, CallButton, CardRow, KV, OldestPill, PendingChip } from './ui';
 import { FollowupForm, PaymentForm, WhatsAppForm } from './forms';
 
 const STATUSES = ['DUE', 'NIL', 'FOLLOW_UP_REQUIRED', 'PROMISED', 'PARTIAL_PAYMENT', 'OVERDUE', 'HIGH_PRIORITY', 'CLEARED', 'CLOSED'];
@@ -42,7 +42,7 @@ export default function Outstanding({ params }) {
           <Table cols={[
             { k: 'dealer', h: H('dealerName', 'Dealer'), r: r => <DealerLink id={r.dealerId} name={r.dealerName} code={r.dealerCode} /> },
             { k: 'salesmanName', h: 'Salesman' },
-            ...periods.map((p, i) => ({ k: p, h: i === 0 ? <span style={{ color: 'var(--red)' }}>{periodLabel(p)}</span> : periodLabel(p), align: 'right', r: r => r.buckets?.[p] ? (i === 0 ? <OldestPill>{money(r.buckets[p])}</OldestPill> : money(r.buckets[p])) : <span style={{ color: 'var(--t3)' }}>–</span> })),
+            ...periods.map((p, i) => ({ k: p, h: i === 0 ? <span style={{ color: 'var(--red)' }}>{periodLabel(p)}</span> : periodLabel(p), align: 'right', r: r => <span>{r.buckets?.[p] ? (i === 0 ? <OldestPill>{money(r.buckets[p])}</OldestPill> : money(r.buckets[p])) : <span style={{ color: 'var(--t3)' }}>–</span>}{i === 0 && (r.pendingApproval > 0 || r.pendingRecorded > 0) ? <div><PendingChip amount={r.pendingApproval} recorded={r.pendingRecorded} /></div> : null}</span> })),
             { k: 'total', h: H('total', 'Total'), align: 'right', r: r => <b>{money(r.total)}</b> },
             { k: 'ageDays', h: H('ageDays', 'Age'), align: 'right', r: r => r.ageDays == null ? '—' : <span style={{ color: r.ageDays > 90 ? 'var(--red)' : undefined }}>{r.ageDays}d</span> },
             { k: 'status', h: 'Status', r: r => <StatusBadge status={r.status} priority={r.priority} /> },
@@ -60,7 +60,7 @@ export default function Outstanding({ params }) {
             <CardRow><DealerLink id={r.dealerId} name={r.dealerName} code={r.dealerCode} /><StatusBadge status={r.status} priority={r.priority} /></CardRow>
             <div style={{ fontSize: 11.5, color: 'var(--t2)', margin: '2px 0 8px' }}>{r.salesmanName}{r.ageDays != null ? ` · ${r.ageDays} days` : ''}</div>
             <div className="col-months" style={{ display: 'grid', gridTemplateColumns: `repeat(${periods.length + 1}, minmax(0,1fr))`, gap: 6, marginBottom: 8 }}>
-              {periods.map((p, i) => <KV key={p} k={i === 0 ? <span style={{ color: 'var(--red)' }}>{periodLabel(p)}</span> : periodLabel(p)} v={r.buckets?.[p] ? (i === 0 ? <OldestPill>{money(r.buckets[p])}</OldestPill> : money(r.buckets[p])) : '–'} />)}
+              {periods.map((p, i) => <KV key={p} k={i === 0 ? <span style={{ color: 'var(--red)' }}>{periodLabel(p)}</span> : periodLabel(p)} v={<span>{r.buckets?.[p] ? (i === 0 ? <OldestPill>{money(r.buckets[p])}</OldestPill> : money(r.buckets[p])) : '–'}{i === 0 && (r.pendingApproval > 0 || r.pendingRecorded > 0) ? <div><PendingChip amount={r.pendingApproval} recorded={r.pendingRecorded} /></div> : null}</span>} />)}
               <KV k="Total" v={money(r.total)} big />
             </div>
             <div style={{ fontSize: 11.5, color: 'var(--t2)', marginBottom: 8 }}>

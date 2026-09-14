@@ -4,6 +4,7 @@ import { ColTask, ColPromise, ColBalance, ColPayment, ColEvent } from '../models
 import { createTask, completeTask, cancelTask, addComment, listTasks } from '../services/tasks.js';
 import { withScope, ensureInScope, paging, fail, scopeFilter, isStaff } from '../lib/http.js';
 import { todayYmd } from '../lib/periods.js';
+import { pendingByDealer } from '../services/payments.js';
 
 const router = express.Router();
 router.use(protect, withScope);
@@ -51,10 +52,16 @@ router.get('/today', async (req, res) => {
     const ids = [...new Set([...tasksToday, ...tasksOverdue, ...promisesToday, ...promisesBroken, ...followupsDue, ...followupsOverdue, ...highPriority, ...recentPayments, ...newOutstanding, ...recentlyCleared].map(t => String(t.dealerId)))];
     const names = new Map((await Dealer.find({ _id: { $in: ids } }, 'name code phone').lean()).map(d => [String(d._id), d]));
     // Month buckets travel with every dealer row (tasks and promises included), so each list can show the same columns as Outstanding.
-    const balById = new Map((await ColBalance.find({ dealerId: { $in: ids } }, 'dealerId buckets total').lean()).map(b => [String(b.dealerId), b]));
+    const balById = new Map((await ColBalance.find({ dealerId: { $in: ids } }, 'dealerId buckets total status priority nextFollowupAt ageDays').lean()).map(b => [String(b.dealerId), b]));
     const asObj = b => b instanceof Map ? Object.fromEntries(b) : (b && typeof b === 'object' ? b : {});
-    const named = a => a.map(t => { const b = balById.get(String(t.dealerId)); return { ...t, buckets: asObj(t.buckets && Object.keys(asObj(t.buckets)).length ? t.buckets : b?.buckets), balanceTotal: b?.total ?? t.total, dealerName: t.dealerName || names.get(String(t.dealerId))?.name || '', dealerCode: t.dealerCode || names.get(String(t.dealerId))?.code || '', phone: names.get(String(t.dealerId))?.phone || '' }; });
-    res.json({ today, employeeId: me, tasksToday: named(tasksToday), tasksOverdue: named(tasksOverdue), followupsDue, followupsOverdue, promisesToday: named(promisesToday), promisesBroken: named(promisesBroken), followupsDue: named(followupsDue), followupsOverdue: named(followupsOverdue), highPriority: named(highPriority), recentPayments: named(recentPayments), newOutstanding: named(newOutstanding), recentlyCleared: named(recentlyCleared) });
+    const pend = await pendingByDealer(ids);
+    const named = a => a.map(t => { const b = balById.get(String(t.dealerId)); return { ...t, pendingApproval: pend.get(String(t.dealerId))?.amount || 0, pendingRecorded: pend.get(String(t.dealerId))?.recorded || 0, balStatus: b?.status, balPriority: b?.priority, balNextFollowupAt: b?.nextFollowupAt || '', balAgeDays: b?.ageDays ?? null, buckets: asObj(t.buckets && Object.keys(asObj(t.buckets)).length ? t.buckets : b?.buckets), balanceTotal: b?.total ?? t.total, dealerName: t.dealerName || names.get(String(t.dealerId))?.name || '', dealerCode: t.dealerCode || names.get(String(t.dealerId))?.code || '', phone: names.get(String(t.dealerId))?.phone || '' }; });
+    // The banner counts everything waiting for accounts in scope: statement decreases to approve and payments recorded by salesmen to confirm.
+    const [decAll, recAll] = await Promise.all([
+      ColEvent.aggregate([{ $match: { ...sf, type: 'RECONCILIATION_DIFFERENCE', amount: { $gt: 0 }, 'meta.approved': { $exists: false } } }, { $group: { _id: null, sum: { $sum: '$amount' }, n: { $sum: 1 } } }]),
+      ColPayment.aggregate([{ $match: { ...sf, status: 'RECORDED' } }, { $group: { _id: null, sum: { $sum: '$amount' }, n: { $sum: 1 } } }])]);
+    const pendAll = { sum: (decAll[0]?.sum || 0) + (recAll[0]?.sum || 0), n: (decAll[0]?.n || 0) + (recAll[0]?.n || 0), decreases: decAll[0]?.n || 0, recorded: recAll[0]?.n || 0 };
+    res.json({ today, employeeId: me, pendingApprovals: pendAll.sum, pendingApprovalsCount: pendAll.n, pendingDecreases: pendAll.decreases, pendingRecorded: pendAll.recorded, tasksToday: named(tasksToday), tasksOverdue: named(tasksOverdue), followupsDue, followupsOverdue, promisesToday: named(promisesToday).filter(p => (p.balanceTotal ?? 1) > 0), promisesBroken: named(promisesBroken).filter(p => (p.balanceTotal ?? 1) > 0), followupsDue: named(followupsDue), followupsOverdue: named(followupsOverdue), highPriority: named(highPriority), recentPayments: named(recentPayments), newOutstanding: named(newOutstanding), recentlyCleared: named(recentlyCleared) });
   } catch (e) { fail(res, e); }
 });
 

@@ -23,7 +23,7 @@ const S = new mongoose.Schema({
   confirmedAt:   { type: Date, default: null },
   cancelledBy:   { type: String, default: '' },
   cancelReason:  { type: String, default: '' },
-  source:        { type: String, enum: ['manual', 'migrated'], default: 'manual' },
+  source:        { type: String, enum: ['manual', 'migrated', 'statement'], default: 'manual' },
   legacyId:      { type: String, default: '' },
 }, opts('col_payments'));
 S.index({ dealerId: 1, date: -1 });

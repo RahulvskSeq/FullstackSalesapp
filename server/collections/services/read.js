@@ -1,3 +1,4 @@
+import { pendingByDealer } from './payments.js';
 import mongoose from 'mongoose';
 import { ColBalance, ColCycle, ColSnapshot, ColEvent, ColInvoice, ColPayment, ColPaymentAllocation, ColFollowUp, ColPromise, ColTask, ColEmployeeActivity, ColImport, ColWhatsAppMessage } from '../models/index.js';
 import { getSetting } from '../lib/settings.js';
@@ -28,7 +29,8 @@ export async function listBalances(scopeF, q = {}) {
   ]);
   const names = new Map((await User().find({ id: { $in: [...new Set(items.map(i => i.salesmanId))] } }, 'id name').lean()).map(u => [u.id, u.name]));
   const phones = new Map((await Dealer().find({ _id: { $in: items.map(i => i.dealerId) } }, 'phone whatsappOptOut').lean()).map(d => [String(d._id), d]));
-  return { items: items.map(i => ({ ...i, buckets: asObj(i.buckets), salesmanName: names.get(i.salesmanId) || i.salesmanId, phone: phones.get(String(i.dealerId))?.phone || '', whatsappOptOut: !!phones.get(String(i.dealerId))?.whatsappOptOut })), total, page, limit, sum: agg[0]?.sum || 0, owing: agg[0]?.owing || 0 };
+  const pend = await pendingByDealer(items.map(i => String(i.dealerId)));
+  return { items: items.map(i => ({ ...i, buckets: asObj(i.buckets), salesmanName: names.get(i.salesmanId) || i.salesmanId, phone: phones.get(String(i.dealerId))?.phone || '', whatsappOptOut: !!phones.get(String(i.dealerId))?.whatsappOptOut, pendingApproval: pend.get(String(i.dealerId))?.amount || 0, pendingRecorded: pend.get(String(i.dealerId))?.recorded || 0 })), total, page, limit, sum: agg[0]?.sum || 0, owing: agg[0]?.owing || 0 };
 }
 
 /** Everything about one dealer, in the sections the Dealer 360 screen shows. */
@@ -85,6 +87,8 @@ export async function dashboard(scopeF) {
   const today = todayYmd(), monthStart = today.slice(0, 7) + '-01';
   const [overdueDays, agingBuckets] = await Promise.all([getSetting('collections.overdueDays'), getSetting('collections.agingBuckets')]);
   const since7 = new Date(Date.now() - 7 * 86400000), since30 = new Date(Date.now() - 30 * 86400000);
+  const pendingPay = (await ColPayment.aggregate([{ $match: { ...scopeF, status: 'RECORDED' } }, { $group: { _id: null, sum: { $sum: '$amount' }, n: { $sum: 1 } } }]))[0] || { sum: 0, n: 0 };
+  const pendingDec = (await ColEvent.aggregate([{ $match: { ...scopeF, type: 'RECONCILIATION_DIFFERENCE', amount: { $gt: 0 }, 'meta.approved': { $exists: false } } }, { $group: { _id: null, sum: { $sum: '$amount' }, n: { $sum: 1 } } }]))[0] || { sum: 0, n: 0 };
   const [bal, todayPay, monthPay, fuToday, fuOverdue, prToday, prBroken, newOut, clearedToday, hi, bySm, act, imports] = await Promise.all([
     ColBalance.aggregate([{ $match: scopeF }, { $group: { _id: null, total: { $sum: '$total' }, owing: { $sum: { $cond: [{ $gt: ['$total', 0] }, 1, 0] } }, overdue: { $sum: { $cond: [{ $gt: ['$ageDays', overdueDays] }, '$total', 0] } }, overdueDealers: { $sum: { $cond: [{ $gt: ['$ageDays', overdueDays] }, 1, 0] } } } }]),
     ColPayment.aggregate([{ $match: { ...scopeF, status: 'CONFIRMED', date: today } }, { $group: { _id: null, sum: { $sum: '$amount' }, n: { $sum: 1 } } }]),
@@ -116,6 +120,8 @@ export async function dashboard(scopeF) {
       overdueOutstanding: bal[0]?.overdue || 0, overdueDealers: bal[0]?.overdueDealers || 0,
       todayCollection: todayPay[0]?.sum || 0, todayPayments: todayPay[0]?.n || 0,
       monthCollection: monthPay[0]?.sum || 0, monthPayments: monthPay[0]?.n || 0,
+      pendingPayments: pendingPay.sum || 0, pendingPaymentsCount: pendingPay.n || 0,
+      pendingApprovals: pendingDec.sum || 0, pendingApprovalsCount: pendingDec.n || 0,
       followupsToday: fuToday, followupsOverdue: fuOverdue,
       promisesToday: prToday[0]?.sum || 0, promisesTodayCount: prToday[0]?.n || 0,
       brokenPromises: prBroken[0]?.sum || 0, brokenPromisesCount: prBroken[0]?.n || 0,

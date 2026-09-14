@@ -1,5 +1,6 @@
 import { Gauge } from 'lucide-react';
-import React from 'react';
+import React, { useState } from 'react';
+import ApprovalsModal from './Approvals';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid } from 'recharts';
 import { col } from './api';
 import { useLoad, PageHead, Card, Tile, Table, Badge, Busy, ErrorBox, money, num, fmtDate, DealerLink, userName, useDealerCtx, CardRow, monthCols, MonthKVs } from './ui';
@@ -7,6 +8,7 @@ import { useLoad, PageHead, Card, Tile, Table, Badge, Busy, ErrorBox, money, num
 const AGE_COLOURS = ['#22c55e', '#84cc16', '#eab308', '#f97316', '#ef4444', '#991b1b'];
 
 export default function Dashboard({ go }) {
+  const [approvals, setApprovals] = useState(false);
   const { data, busy, err, reload } = useLoad(() => col.dashboard(), []);
   const { users, isStaff, open: openDealer } = useDealerCtx();
   if (busy && !data) return <Busy />;
@@ -24,7 +26,7 @@ export default function Dashboard({ go }) {
         <Tile label="Follow-ups due today" value={num(t.followupsToday)} sub={`${num(t.followupsOverdue)} overdue`} tone="var(--yel)" onClick={() => go('colToday')} />
         <Tile label="Promises due today" value={money(t.promisesToday)} sub={`${num(t.promisesTodayCount)} promises`} tone="var(--pur)" onClick={() => go('colFollowups', { tab: 'promises' })} />
         <Tile label="Broken promises" value={money(t.brokenPromises)} sub={`${num(t.brokenPromisesCount)} still unpaid`} tone="var(--red)" onClick={() => go('colFollowups', { tab: 'promises', status: 'BROKEN' })} />
-        <Tile label="Newly owing (7 days)" value={money(t.newOutstanding7d)} sub={`${num(t.newOutstanding7dCount)} dealers went from ₹0 to owing`} tone="#f97316" />
+        <Tile label="Pending approvals" value={money(t.pendingApprovals + t.pendingPayments)} sub={`${num(t.pendingPaymentsCount)} recorded to confirm · ${num(t.pendingApprovalsCount)} statement decreases to approve`} tone={t.pendingApprovalsCount + t.pendingPaymentsCount ? '#f59e0b' : 'var(--t3)'} onClick={() => setApprovals(true)} />
       </div>
 
       <div className="col-2" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.1fr) minmax(0,1fr)', gap: 12, marginBottom: 12 }}>
@@ -64,6 +66,7 @@ export default function Dashboard({ go }) {
         </Card>
       </div>
 
+      {approvals && <ApprovalsModal onClose={() => setApprovals(false)} onChanged={reload} />}
       <Card title="Activity — last 30 days">
         <Table dense cols={[
           { k: 'name', h: 'Employee' },

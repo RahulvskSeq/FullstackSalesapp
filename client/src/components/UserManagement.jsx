@@ -12,6 +12,21 @@ import { notify, confirmDialog } from './Toast';
 // ever sees active users). For this admin screen we also need to see and
 // re-activate INACTIVE users, so we fetch a separate `allUsers` map via
 // `api.getUsersAll()` on mount and on every change.
+// Modal and inline share one body; only the wrapper differs. A tab has no
+// overlay to dim and nothing to close, so those are dropped rather than
+// rendered invisibly. Defined at module level on purpose: declared inside the
+// component it got a new identity on every render, so every tick of a checkbox
+// unmounted and remounted the whole panel (the pop-in replayed, focus was lost).
+function Shell({ inline, onClose, children }) {
+  return inline
+    ? <div>{children}</div>
+    : (
+      <div className="overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+        <div className="modal" style={{maxWidth:720}}>{children}</div>
+      </div>
+    );
+}
+
 const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUsersChanged, inline = false }) => {
   // Full user map including inactive — used for display in this modal only.
   const [allUsers, setAllUsers] = useState(users || {});
@@ -442,19 +457,9 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
     return false;
   };
 
-  // Modal and inline share one body; only the wrapper differs. A tab has no
-  // overlay to dim and nothing to close, so those are dropped rather than
-  // rendered invisibly.
-  const Shell = ({ children }) => inline
-    ? <div>{children}</div>
-    : (
-      <div className="overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-        <div className="modal" style={{maxWidth:720}}>{children}</div>
-      </div>
-    );
 
   return (
-    <Shell>
+    <Shell inline={inline} onClose={onClose}>
       <>
         <div className="row" style={{marginBottom:14}}>
           <div style={{fontSize:17, fontWeight:700, display:'flex', alignItems:'center', gap:8}}>

@@ -204,3 +204,95 @@ export async function listPayments(filter, { page = 1, limit = 50 } = {}) {
   const bm = new Map((await ColBalance.find({ dealerId: { $in: items.map(i => i.dealerId) } }, 'dealerId buckets total').lean()).map(b => [String(b.dealerId), b]));
   return { items: items.map(i => ({ ...i, dealer: names.get(String(i.dealerId)) || null, buckets: asObj(bm.get(String(i.dealerId))?.buckets), balanceTotal: bm.get(String(i.dealerId))?.total ?? null })), total, page, limit };
 }
+
+/* ─────────────────── statement decreases awaiting approval ───────────────────
+ * The morning statement shows a dealer owing less than yesterday. The engine
+ * records the gap (RECONCILIATION_DIFFERENCE, amount = decrease not explained
+ * by confirmed payments). Accounts then say what it was: money received
+ * (approve → a confirmed payment is written against the dealer, promises are
+ * credited, the cycle's paid total moves) or not a payment (dismiss → credit
+ * note, return, correction). The balance itself is not touched either way —
+ * the statement already moved it. */
+const PENDING = { type: 'RECONCILIATION_DIFFERENCE', amount: { $gt: 0 }, 'meta.approved': { $exists: false } };
+
+export async function listPendingApprovals(scopeF, { page = 1, limit = 50 } = {}) {
+  const f = { ...scopeF, ...PENDING };
+  const [items, total, agg] = await Promise.all([
+    ColEvent.find(f).sort({ at: -1 }).skip((page - 1) * limit).limit(limit).lean(), ColEvent.countDocuments(f),
+    ColEvent.aggregate([{ $match: f }, { $group: { _id: null, sum: { $sum: '$amount' } } }])]);
+  const ids = items.map(i => i.dealerId);
+  const Dealer = mongoose.models.Dealer;
+  const [names, bals, promises] = await Promise.all([
+    Dealer.find({ _id: { $in: ids } }, 'name code phone').lean(),
+    ColBalance.find({ dealerId: { $in: ids } }, 'dealerId buckets total status priority').lean(),
+    ColPromise.find({ dealerId: { $in: ids }, status: { $in: ['PENDING', 'PARTIALLY_FULFILLED', 'BROKEN'] } }, 'dealerId amount received promiseDate status').lean()]);
+  const nm = new Map(names.map(d => [String(d._id), d])), bm = new Map(bals.map(b => [String(b.dealerId), b]));
+  const pm = new Map(); for (const pr of promises) { const k = String(pr.dealerId); if (!pm.has(k)) pm.set(k, []); pm.get(k).push(pr); }
+  return { items: items.map(e => { const b = bm.get(String(e.dealerId)); return { ...e, dealer: nm.get(String(e.dealerId)) || null, buckets: asObj(b?.buckets), balanceTotal: b?.total ?? null, status: b?.status, priority: b?.priority, promises: pm.get(String(e.dealerId)) || [] }; }), total, page, limit, sum: agg[0]?.sum || 0 };
+}
+
+/** Unapproved decrease per dealer — what a row shows as "₹X came · pending approval". */
+export async function pendingByDealer(dealerIds) {
+  const ids = dealerIds.map(oid);
+  const [dec, rec] = await Promise.all([
+    ColEvent.aggregate([{ $match: { ...PENDING, dealerId: { $in: ids } } }, { $group: { _id: '$dealerId', sum: { $sum: '$amount' }, n: { $sum: 1 } } }]),
+    ColPayment.aggregate([{ $match: { status: 'RECORDED', dealerId: { $in: ids } } }, { $group: { _id: '$dealerId', sum: { $sum: '$amount' }, n: { $sum: 1 } } }])]);
+  const m = new Map();
+  for (const a of dec) m.set(String(a._id), { amount: a.sum, count: a.n, recorded: 0, recordedCount: 0 });
+  for (const a of rec) { const k = String(a._id); const cur = m.get(k) || { amount: 0, count: 0, recorded: 0, recordedCount: 0 }; cur.recorded = a.sum; cur.recordedCount = a.n; m.set(k, cur); }
+  return m;
+}
+
+export async function approveDecrease(eventId, { by }) {
+  return withTxn(async session => {
+    const e = await ColEvent.findById(eventId).session(session);
+    if (!e || e.type !== 'RECONCILIATION_DIFFERENCE') throw bad('not a statement decrease');
+    if (e.meta?.approved !== undefined) throw bad('already decided');
+    if (!(e.amount > 0)) throw bad('nothing to approve');
+    const Dealer = mongoose.models.Dealer;
+    const dealer = await Dealer.findById(e.dealerId, 'name salesman').session(session).lean();
+    const balance = await ColBalance.findOne({ dealerId: e.dealerId }).session(session);
+    const paymentNo = await Counter.next('col_payment');
+    const date = e.meta?.to || todayYmd();
+    const [p] = await ColPayment.create([{
+      paymentNo, dealerId: e.dealerId, cycleId: e.cycleId || balance?.openCycleId || null, salesmanId: dealer?.salesman || '',
+      date, amount: e.amount, mode: 'OTHER', reference: `statement ${date}`, collectedBy: '', enteredBy: by, remarks: `Decrease in the statement of ${date}, approved as money received`,
+      status: 'CONFIRMED', allocated: 0, unallocated: e.amount, confirmedBy: by, confirmedAt: new Date(), source: 'statement',
+    }], { session });
+    // The same crediting a confirmed payment does — promises first, then the cycle — but the balance stays: the statement already moved it.
+    let toCredit = e.amount;
+    const promises = [
+      ...await ColPromise.find({ dealerId: e.dealerId, status: { $in: ['PENDING', 'PARTIALLY_FULFILLED'] } }).sort({ promiseDate: 1 }).session(session),
+      ...await ColPromise.find({ dealerId: e.dealerId, status: 'BROKEN' }).sort({ promiseDate: 1 }).session(session)];
+    for (const pr of promises) {
+      if (toCredit <= 0) break;
+      const gap = Math.max(0, pr.amount - pr.received); const give = Math.min(gap, toCredit); if (give <= 0) continue;
+      pr.received += give; toCredit -= give;
+      if (pr.received >= pr.amount) { pr.status = 'FULFILLED'; pr.fulfilledAt = new Date(); } else pr.status = 'PARTIALLY_FULFILLED';
+      await pr.save({ session });
+      if (pr.status === 'FULFILLED') await ColEvent.create([{ dealerId: e.dealerId, cycleId: e.cycleId, type: 'PROMISE_KEPT', amount: pr.amount, refType: 'promise', refId: pr._id, by }], { session });
+    }
+    const cycle = e.cycleId ? await ColCycle.findById(e.cycleId).session(session) : null;
+    if (cycle) { cycle.paidTotal += e.amount; await cycle.save({ session }); }
+    if (balance) {
+      const next = await ColPromise.findOne({ dealerId: e.dealerId, status: { $in: ['PENDING', 'PARTIALLY_FULFILLED'] } }).sort({ promiseDate: 1 }).session(session).lean();
+      balance.promise = next ? { id: next._id, amount: next.amount - next.received, date: next.promiseDate } : undefined;
+      balance.brokenPromises = await ColPromise.countDocuments({ dealerId: e.dealerId, status: 'BROKEN' }).session(session);
+      balance.lastPaymentAt = new Date(date + 'T00:00:00');
+      await balance.save({ session });
+    }
+    e.set('meta', { ...(e.meta || {}), approved: true, approvedBy: by, approvedAt: new Date(), paymentId: p._id }); e.markModified('meta'); await e.save({ session });
+    await ColEvent.create([{ dealerId: e.dealerId, cycleId: e.cycleId, type: 'PAYMENT_CONFIRMED', amount: e.amount, refType: 'payment', refId: p._id, by, note: `from statement ${date} · approved` }], { session });
+    await writeAudit({ entity: 'payment', entityId: p._id, action: 'approved-from-statement', after: { dealer: dealer?.name, amount: e.amount, statement: date, eventId: e._id }, by });
+    return p;
+  }).then(async p => { await refreshBalance(p.dealerId); return p; });
+}
+
+export async function dismissDecrease(eventId, { by, reason }) {
+  const e = await ColEvent.findById(eventId);
+  if (!e || e.type !== 'RECONCILIATION_DIFFERENCE') throw bad('not a statement decrease');
+  if (e.meta?.approved !== undefined) throw bad('already decided');
+  e.set('meta', { ...(e.meta || {}), approved: false, dismissedBy: by, dismissedAt: new Date(), reason: String(reason || '').slice(0, 300) }); e.markModified('meta'); await e.save();
+  await writeAudit({ entity: 'event', entityId: e._id, action: 'decrease-not-a-payment', after: { amount: e.amount, reason }, by });
+  return e;
+}

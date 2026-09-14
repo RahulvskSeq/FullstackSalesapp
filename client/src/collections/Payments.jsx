@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { IndianRupee, Check, X, Paperclip, HandCoins } from 'lucide-react';
 import { col } from './api';
 import { useLoad, PageHead, Card, Table, Pager, Badge, Busy, ErrorBox, money, num, fmtDate, fmtWhen, DealerLink, userName, useDealerCtx, today, CardRow, KV, monthCols, MonthKVs } from './ui';
@@ -7,9 +7,13 @@ import { PaymentForm } from './forms';
 /** Payment manager: record → confirm (accounts) → the balance moves. */
 export default function Payments({ params }) {
   const { users, isStaff, features, openRecord } = useDealerCtx();
-  const [q, setQ] = useState({ page: 1, limit: 50, status: params?.status || '', from: '', to: '' });
+  // Opens on the queue accounts actually works from — payments waiting to be
+  // confirmed — and falls back to everything once that queue is empty.
+  const [q, setQ] = useState({ page: 1, limit: 50, status: params?.status ?? 'RECORDED', from: '', to: '' });
+  const [autoFell, setAutoFell] = useState(false);
   const { data, busy, err, reload } = useLoad(() => col.payments(q), [JSON.stringify(q)]);
   const [form, setForm] = useState(false);
+  useEffect(() => { if (!autoFell && data && q.status === 'RECORDED' && !params?.status && data.total === 0) { setAutoFell(true); setQ(x => ({ ...x, status: '' })); } }, [data]);   // eslint-disable-line
   const canConfirm = features.has('collections.payments');
   const set = p => setQ(x => ({ ...x, ...p, page: p.page || 1 }));
   const act = async (fn, prompt) => { let reason; if (prompt) { reason = window.prompt(prompt); if (reason === null) return; } try { await fn(reason); reload(); } catch (e) { alert(e.message); } };
