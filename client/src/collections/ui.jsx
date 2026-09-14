@@ -101,17 +101,20 @@ export function useIsMobile(bp = 768) {
 /* One table for every list. `cols` = [{ k, h, r?: row => node, w?, align? }].
  * On a phone, a list that supplies `card` (row => node) is drawn as cards
  * instead — a wide table squeezed into 375px is not readable. */
+export const PENDING_BG = 'rgba(245,158,11,.13)';
+export const isPending = r => (r?.pendingApproval > 0 || r?.pendingRecorded > 0);
+const pendingTip = r => isPending(r) ? `${money((r.pendingApproval || 0) + (r.pendingRecorded || 0))} pending approval` : undefined;
 export function Table({ cols, rows, keyOf = r => r._id, onRow, empty = 'Nothing to show.', dense, card }) {
   const mobile = useIsMobile();
   if (!rows?.length) return <Empty>{empty}</Empty>;
-  if (mobile && card) return <div style={{ display: 'grid', gap: 8, padding: '4px 0' }}>{rows.map(r => <div key={keyOf(r)} onClick={onRow ? () => onRow(r) : undefined} style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--bg2)', border: '1px solid var(--b1)' }}>{card(r)}</div>)}</div>;
+  if (mobile && card) return <div style={{ display: 'grid', gap: 8, padding: '4px 0' }}>{rows.map(r => <div key={keyOf(r)} onClick={onRow ? () => onRow(r) : undefined} data-tip={pendingTip(r)} style={{ padding: '10px 12px', borderRadius: 10, background: isPending(r) ? PENDING_BG : 'var(--bg2)', border: '1px solid ' + (isPending(r) ? 'rgba(245,158,11,.45)' : 'var(--b1)') }}>{card(r)}</div>)}</div>;
   return (
     <div className="scroll col-scroll">
       <table className="col-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: dense ? 12 : 12.5 }}>
         <thead><tr>{cols.map(c => <th key={c.k || c.h} style={{ textAlign: c.align || 'left', padding: dense ? '6px 8px' : '8px 10px', fontSize: 10.5, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--t3)', borderBottom: '1px solid var(--b1)', whiteSpace: 'nowrap', width: c.w, ...(c.style || {}) }}>{c.h}</th>)}</tr></thead>
         <tbody>{rows.map(r => (
-          <tr key={keyOf(r)} onClick={onRow ? () => onRow(r) : undefined} style={{ cursor: onRow ? 'pointer' : 'default' }}
-              onMouseEnter={e => { if (onRow) e.currentTarget.style.background = 'var(--bg2)'; }} onMouseLeave={e => { e.currentTarget.style.background = ''; }}>
+          <tr key={keyOf(r)} onClick={onRow ? () => onRow(r) : undefined} data-tip={pendingTip(r)} style={{ cursor: onRow ? 'pointer' : 'default', background: isPending(r) ? PENDING_BG : undefined, boxShadow: isPending(r) ? 'inset 3px 0 0 #f59e0b' : undefined }}
+              onMouseEnter={e => { if (onRow && !isPending(r)) e.currentTarget.style.background = 'var(--bg2)'; }} onMouseLeave={e => { e.currentTarget.style.background = isPending(r) ? PENDING_BG : ''; }}>
             {cols.map(c => <td key={c.k || c.h} style={{ padding: dense ? '6px 8px' : '9px 10px', borderBottom: '1px solid var(--b1)', textAlign: c.align || 'left', fontVariantNumeric: 'tabular-nums', whiteSpace: c.wrap ? 'normal' : 'nowrap', maxWidth: c.max, overflow: 'hidden', textOverflow: 'ellipsis', ...(c.style || {}) }}>{c.r ? c.r(r) : r[c.k]}</td>)}
           </tr>))}</tbody>
       </table>
@@ -263,9 +266,9 @@ export const periodsOf = (rows, n = 4) => [...new Set((rows || []).flatMap(r => 
 export const OLDEST_BG = 'rgba(220,38,38,.09)';
 /** The month being chased is drawn as a red rounded pill — the same look as a "Broken" badge — so it cannot be missed. */
 export const OldestPill = ({ children }) => <span style={{ display: 'inline-block', padding: '2px 9px', borderRadius: 20, fontWeight: 700, color: 'var(--red)', background: 'rgba(220,38,38,.12)', border: '1px solid rgba(220,38,38,.35)', whiteSpace: 'nowrap' }}>{children}</span>;
-export const monthCols = (rows, onPending) => { const ps = periodsOf(rows); return ps.map((p, i) => ({ k: p, h: i === 0 ? <span style={{ color: 'var(--red)' }}>{periodLabel(p)}</span> : periodLabel(p), align: 'right', r: r => <span>{r.buckets?.[p] ? (i === 0 ? <OldestPill>{money(r.buckets[p])}</OldestPill> : money(r.buckets[p])) : <span style={{ color: 'var(--t3)' }}>–</span>}{i === 0 && (r.pendingApproval > 0 || r.pendingRecorded > 0) ? <div><PendingChip amount={r.pendingApproval} recorded={r.pendingRecorded} onClick={onPending} /></div> : null}</span> })); };
+export const monthCols = (rows, onPending) => { const ps = periodsOf(rows); return ps.map((p, i) => ({ k: p, h: i === 0 ? <span style={{ color: 'var(--red)' }}>{periodLabel(p)}</span> : periodLabel(p), align: 'right', r: r => <span>{r.buckets?.[p] ? (i === 0 ? <OldestPill>{money(r.buckets[p])}</OldestPill> : money(r.buckets[p])) : <span style={{ color: 'var(--t3)' }}>–</span>}</span> })); };
 /** The same months for a phone card, with the total at the end. */
-export const MonthKVs = ({ row, rows, total, onPending }) => { const ps = periodsOf(rows || [row]); return <div className="col-months" style={{ display: 'grid', gridTemplateColumns: `repeat(${ps.length + 1}, minmax(0,1fr))`, gap: 6, margin: '8px 0 4px' }}>{ps.map((p, i) => <KV key={p} k={i === 0 ? <span style={{ color: 'var(--red)' }}>{periodLabel(p)}</span> : periodLabel(p)} v={<span>{row.buckets?.[p] ? (i === 0 ? <OldestPill>{money(row.buckets[p])}</OldestPill> : money(row.buckets[p])) : '–'}{i === 0 && (row.pendingApproval > 0 || row.pendingRecorded > 0) ? <div><PendingChip amount={row.pendingApproval} recorded={row.pendingRecorded} onClick={onPending} /></div> : null}</span>} />)}<KV k="Total" v={money(total ?? row.total)} big /></div>; };
+export const MonthKVs = ({ row, rows, total, onPending }) => { const ps = periodsOf(rows || [row]); return <div className="col-months" style={{ display: 'grid', gridTemplateColumns: `repeat(${ps.length + 1}, minmax(0,1fr))`, gap: 6, margin: '8px 0 4px' }}>{ps.map((p, i) => <KV key={p} k={i === 0 ? <span style={{ color: 'var(--red)' }}>{periodLabel(p)}</span> : periodLabel(p)} v={<span>{row.buckets?.[p] ? (i === 0 ? <OldestPill>{money(row.buckets[p])}</OldestPill> : money(row.buckets[p])) : '–'}</span>} />)}<KV k="Total" v={money(total ?? row.total)} big /></div>; };
 
 /** A follow-up date you can click: shows the date (or "set date") and opens the follow-up form on that dealer with the date field focused. */
 export function FollowupDate({ value, onOpen, prefix = '' }) {

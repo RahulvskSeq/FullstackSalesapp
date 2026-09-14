@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Check, X } from 'lucide-react';
 import { col } from './api';
-import { useLoad, Modal, Badge, Busy, ErrorBox, Empty, money, num, fmtDate, DealerLink, MonthKVs, useDealerCtx, userName } from './ui';
+import { useLoad, Modal, Badge, Busy, ErrorBox, Empty, money, num, fmtDate, DealerLink, MonthKVs, useDealerCtx, userName, PENDING_BG } from './ui';
 
 /**
  * Pending approvals — every statement decrease accounts has not yet decided
@@ -24,7 +24,7 @@ export default function ApprovalsModal({ onClose, onChanged }) {
       <div style={{ fontSize: 12.5, fontWeight: 700, margin: '4px 0 6px' }}>Payments recorded by salesmen — confirm {rec.data ? <span className="chip">{num(rec.data.total)}</span> : null}</div>
       {rec.busy && !rec.data ? <Busy /> : !rec.data?.items?.length ? <div style={{ fontSize: 12, color: 'var(--t3)', marginBottom: 12 }}>None waiting.</div> :
         <div style={{ display: 'grid', gap: 8, marginBottom: 16 }}>
-          {rec.data.items.map(p => <div key={p._id} style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--bg2)', border: '1px solid var(--b1)' }}>
+          {rec.data.items.map(p => <div key={p._id} style={{ padding: '10px 12px', borderRadius: 10, background: PENDING_BG, border: '1px solid rgba(245,158,11,.45)', boxShadow: 'inset 3px 0 0 #f59e0b' }}>
             <div className="row" style={{ justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
               <DealerLink id={p.dealerId} name={p.dealer?.name || String(p.dealerId)} code={p.dealer?.code} />
               <span style={{ fontSize: 11.5, color: 'var(--t2)' }}>#{p.paymentNo} · {fmtDate(p.date)} · {p.mode}{p.reference ? ' · ' + p.reference : ''} · by {userName(users, p.enteredBy)}</span>
@@ -45,7 +45,7 @@ export default function ApprovalsModal({ onClose, onChanged }) {
       <div style={{ fontSize: 12, color: 'var(--t2)', marginBottom: 8 }}>The statement showed these dealers owing less than before, with no confirmed payment behind it. Tick what actually happened.</div>
       {busy && !data ? <Busy /> : !data?.items?.length ? <Empty>Nothing waiting — every decrease is explained.</Empty> :
         <div style={{ display: 'grid', gap: 8 }}>
-          {data.items.map(e => <div key={e._id} style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--bg2)', border: '1px solid var(--b1)' }}>
+          {data.items.map(e => <div key={e._id} style={{ padding: '10px 12px', borderRadius: 10, background: PENDING_BG, border: '1px solid rgba(245,158,11,.45)', boxShadow: 'inset 3px 0 0 #f59e0b' }}>
             <div className="row" style={{ justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
               <DealerLink id={e.dealerId} name={e.dealer?.name || String(e.dealerId)} code={e.dealer?.code} />
               <span style={{ fontSize: 11.5, color: 'var(--t2)' }}>statement {fmtDate(e.meta?.to)} · was {money(e.meta?.observed != null ? (e.after ?? 0) + e.meta.observed : e.before)} → now {money(e.balanceTotal ?? e.after)}</span>
