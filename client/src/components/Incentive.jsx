@@ -1278,7 +1278,7 @@ const DAY_LOOK = {
   future:          { bg: 'transparent',          fg: 'var(--t3)',         line: 'transparent' },
 };
 
-function Coverage({ month, onUploadToday }) {
+function Coverage({ month, onUploadToday, onUploadFor }) {
   const [d, setD]     = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -1347,9 +1347,11 @@ function Coverage({ month, onUploadToday }) {
           <AlertTriangle size={14} color="var(--red)" style={{ flexShrink: 0, marginTop: 1 }} />
           <div style={{ fontSize: 11.5, color: 'var(--t2)', lineHeight: 1.55 }}>
             <b>{missing} {missing === 1 ? 'day has' : 'days have'} no billing and no upload</b> —{' '}
-            {d.missing.map(x => x.slice(8)).join(', ')}.
-            Upload {missing === 1 ? 'it' : 'them'}, or click the day to mark it a holiday so it stops
-            being counted as missed.
+            <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap', verticalAlign: 'middle' }}>
+              {d.missing.map(x => <button key={x} className="btn" disabled={!onUploadFor} onClick={() => onUploadFor?.(x)}
+                title={'Upload the sheet for ' + x} style={{ fontSize: 10.5, padding: '1px 7px' }}>{x.slice(8)}/{x.slice(5, 7)}</button>)}
+            </span>
+            {' '}— click a date to upload its sheet, or click the day in the calendar to mark it a holiday so it stops being counted as missed.
           </div>
         </div>
       )}
@@ -1429,8 +1431,17 @@ function Upload() {
   // The daily action, as one button. It is the same file picker, with the
   // seed tick cleared — uploading the day's sheet with "load every month" left
   // on from a previous visit would refile months nobody meant to touch.
+  // Which day the sheet is filed under. Today by default; any earlier day can
+  // be picked, so a missed day's export can be uploaded later — only that
+  // day's rows are taken from it.
+  const [forDay, setForDay] = useState('');
+  const [more, setMore] = useState(false);          // month override + history seed, rarely needed
   const uploadToday = () => {
-    setSeed(false);
+    setSeed(false); setForDay(todayKey);
+    if (fileRef.current) { fileRef.current.value = ''; fileRef.current.click(); }
+  };
+  const uploadFor = (day) => {
+    setSeed(false); setForDay(day);
     if (fileRef.current) { fileRef.current.value = ''; fileRef.current.click(); }
   };
   const [prev, setPrev]       = useState(null);
@@ -1447,10 +1458,10 @@ function Upload() {
   }, []);
   useEffect(loadPeriods, [loadPeriods]);
 
-  const run = useCallback((f, m, commit, all) => {
+  const run = useCallback((f, m, commit, all, day = '') => {
     if (!f) return;
     setBusy(true); setErr(''); setSaved(''); setPct(0);
-    api.ptxIncentiveUpload(f, { month: m, commit, all }, setPct)
+    api.ptxIncentiveUpload(f, { month: m, commit, all, day }, setPct)
       .then(r => {
         setPrev(r);
         if (r.saved) {
@@ -1462,7 +1473,7 @@ function Upload() {
       .finally(() => { setBusy(false); setPct(0); });
   }, [loadPeriods]);
 
-  const pick = (f) => { setFile(f); setPrev(null); setSaved(''); setErr(''); if (f) run(f, month, false, seed); };
+  const pick = (f) => { setFile(f); setPrev(null); setSaved(''); setErr(''); if (f) run(f, month, false, seed, seed ? '' : forDay); };
 
   const t = prev?.totals;
 
@@ -1475,15 +1486,23 @@ function Upload() {
 
       <div className="card" style={{ padding: '16px 18px', marginBottom: 14 }}>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-          <button className="btn btn-primary" onClick={uploadToday} disabled={busy}
+          {/* One question, one button: which day is this sheet for? Today unless
+              changed; then the file picker. Everything else lives under "More". */}
+          <span style={{ fontSize: 12.5, color: 'var(--t2)' }}>Sheet for</span>
+          <input type="date" value={forDay || todayKey} max={todayKey} disabled={busy}
+                 onChange={e => setForDay(e.target.value)}
+                 style={{ fontSize: 13, padding: '6px 9px', borderRadius: 7,
+                          border: '1px solid var(--b1)', background: 'var(--bg1)', color: 'var(--t1)' }} />
+          <button className="btn btn-primary" onClick={() => uploadFor(forDay || todayKey)} disabled={busy}
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5 }}>
-            <CalendarClock size={13} /> Upload today
+            <UploadIcon size={13} /> {(forDay || todayKey) === todayKey ? 'Upload today\'s sheet' : `Upload sheet for ${(forDay || todayKey).slice(8)}/${(forDay || todayKey).slice(5, 7)}`}
           </button>
-
+          <button className="btn" onClick={() => setMore(m => !m)} style={{ fontSize: 11.5 }}>{more ? 'Less' : 'More…'}</button>
+          {more && <>
           <label className="btn" style={{ display: 'inline-flex', alignItems: 'center',
                   gap: 6, fontSize: 12.5, cursor: busy ? 'default' : 'pointer' }}>
             <UploadIcon size={13} />
-            {file ? 'Choose another file' : 'Choose sheet'}
+            {file ? 'Choose another file' : 'Choose sheet (any day)'}
             <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" disabled={busy} style={{ display: 'none' }}
                    onChange={e => pick(e.target.files?.[0] || null)} />
           </label>
@@ -1507,6 +1526,7 @@ function Upload() {
                    onChange={e => { setSeed(e.target.checked); if (file) run(file, month, false, e.target.checked); }} />
             Load every month in this sheet
           </label>
+          </>}
 
           {file && <div style={{ fontSize: 11.5, color: 'var(--t2)' }}>{file.name}</div>}
           {busy && <div style={{ fontSize: 11.5, color: 'var(--t3)' }}>
@@ -1529,7 +1549,7 @@ function Upload() {
         <AlertTriangle size={13} style={{ verticalAlign: -2, marginRight: 5 }} />{err}
       </div>}
 
-      <Coverage month={prev?.month || ''} onUploadToday={uploadToday} />
+      <Coverage month={prev?.month || ''} onUploadToday={uploadToday} onUploadFor={uploadFor} />
 
       {saved && <div className="card" style={{ color: 'var(--grn)', fontSize: 12.5, marginBottom: 14 }}>
         {saved}
@@ -1559,7 +1579,14 @@ function Upload() {
             {/* "Upload today" is only true if the sheet reaches today. A
                 daily export run before the day's invoices are raised will
                 not, and that is worth saying before it is saved. */}
-            {prev.coversDays?.length > 0 && !prev.coversDays.includes(todayKey) && (
+            {prev.forcedDay && (
+              <div style={{ fontSize: 11.5, color: 'var(--t2)', marginTop: 8 }}>
+                <CalendarClock size={12} style={{ verticalAlign: -2, marginRight: 4 }} />
+                Filed under <b>{prev.forcedDay}</b>
+                {prev.otherDayRows ? <> — {num(prev.otherDayRows)} rows from other days ({num(prev.otherDayUnits)} units) are left out</> : null}.
+              </div>
+            )}
+            {!prev.forcedDay && prev.coversDays?.length > 0 && !prev.coversDays.includes(todayKey) && (
               <div style={{ fontSize: 11.5, color: 'var(--yel,#ca8a04)', marginTop: 8 }}>
                 <AlertTriangle size={12} style={{ verticalAlign: -2, marginRight: 4 }} />
                 This sheet does not reach today ({todayKey}) — its last day is{' '}

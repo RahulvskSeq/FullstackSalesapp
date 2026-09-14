@@ -2206,10 +2206,11 @@ export const api = {
   // something to do on a guessed column mapping.
   // `all` is the history-seed mode: file every month the sheet contains, not
   // just the main one. That is how the six-month report goes in.
-  ptxIncentiveUpload: (file, { month = '', commit = false, all = false } = {}, onProgress) => {
+  ptxIncentiveUpload: (file, { month = '', commit = false, all = false, day = '' } = {}, onProgress) => {
     const fd = new FormData();
     fd.append('file', file);
     if (month) fd.append('month', month);
+    if (day) fd.append('day', day);          // file the sheet under this one day
     const qs = new URLSearchParams({ ...(commit?{commit:'1'}:{}), ...(all?{all:'1'}:{}) }).toString();
     return postForm(`${BASE}/producttx/incentive/upload${qs?'?'+qs:''}`, fd, onProgress);
   },

@@ -578,7 +578,13 @@ router.post('/incentive/upload', protect, adminOnly, upload.single('file'), asyn
     // The month may be stated, derived from a date column, or forced by the
     // caller. Whichever it is, every row must agree — a sheet spanning two
     // months would otherwise be filed under one of them silently.
-    const forced = /^\d{4}-\d{2}$/.test(String(req.body?.month || '')) ? String(req.body.month) : '';
+    // A sheet can be filed under one chosen day: rows with no date take it,
+    // rows dated another day are left out (and counted), so yesterday's
+    // export can be uploaded today without the rest of its window coming
+    // along. The month follows the day unless one was picked outright.
+    const forcedDay = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body?.day || '')) ? String(req.body.day) : '';
+    const forced = /^\d{4}-\d{2}$/.test(String(req.body?.month || '')) ? String(req.body.month) : (forcedDay ? forcedDay.slice(0, 7) : '');
+    let otherDayRows = 0, otherDayUnits = 0;
     const monthTally = new Map();
     const spellings = new Map();
     const usable = [];
@@ -593,7 +599,8 @@ router.post('/incentive/upload', protect, adminOnly, upload.single('file'), asyn
       // The row's OWN month, never the forced one: forcing a month says which
       // month to work out, not that every row belongs to it. Stamping `forced`
       // here would make every row match and nothing could be excluded.
-      const day = cDate ? dayOf(r[cDate]) : '';
+      const day = (cDate ? dayOf(r[cDate]) : '') || forcedDay;
+      if (forcedDay && day !== forcedDay) { otherDayRows++; otherDayUnits += Number.isFinite(qty) ? qty : 0; continue; }
       // day is YYYY-MM-DD; the month is its first seven characters. Letting the
       // day fall through here filed a whole sheet under "2026-09-07".
       const m = (cMonth ? monthOf(r[cMonth]) : '')
@@ -713,6 +720,9 @@ router.post('/incentive/upload', protect, adminOnly, upload.single('file'), asyn
       headers,
       rowsRead: rows.length,
       skipped,
+      // Filed under one chosen day, and how many rows belonged to other days and were left out.
+      forcedDay: forcedDay || null,
+      otherDayRows, otherDayUnits: Math.round(otherDayUnits),
       // Which raw spellings were folded into each name. An unfamiliar one
       // showing up here is the cue to add an alias, before the figures are
       // stored rather than after somebody has been paid on them.
