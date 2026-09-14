@@ -16389,7 +16389,7 @@ export default function App(){
         {id:'colOutstanding',    label:'Outstanding',   icon:BadgeIndianRupee, flag:'collections'},
         {id:'colPayments',       label:'Payments',   icon:HandCoins,        flag:'collections'},
         {id:'colFollowups',      label:'Follow-ups',    icon:PhoneCall,        flag:'collections'},
-        {id:'colTasks',          label:isStaff ? 'Team tasks'       : 'My tasks',         icon:ClipboardCheck,   flag:'collections'},
+        // Tasks are switched off for now (Collections runs on follow-ups and promises); the screen and API stay, the nav entry is just not shown.
         {id:'colImports',        label:'Upload statement',                                 icon:UploadCloud,     flag:'collections', staff:true},
         {id:'colReconciliation', label:'Reconciliation',                                   icon:Scale,           flag:'collections', staff:true},
         {id:'colReports',        label:'Reports',       icon:FileBarChart2,    flag:'collections'},

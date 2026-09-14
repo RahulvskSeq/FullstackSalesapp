@@ -250,7 +250,7 @@ router.put('/users/:id', protect, async (req, res) => {
 // ── POST /api/auth/users ───────────────────────────────────────────────────
 // Admin can create salesmen only. Superadmin can create any role.
 router.post('/users', protect, adminOnly, requireFeature('manageUsers'), async (req, res) => {
-  const { id, name, pass, role, color, ini, permissions, email } = req.body;
+  const { id, name, pass, role, color, ini, permissions, email, url } = req.body;
   if(!id||!name||!pass) return res.status(400).json({ error:'id, name, pass required' });
   const exists = await User.findOne({ id });
   if(exists) return res.status(400).json({ error:'User already exists' });
@@ -278,6 +278,7 @@ router.post('/users', protect, adminOnly, requireFeature('manageUsers'), async (
     email: cleanEmail,
     color: color || '#818cf8',
     ini: ini || name.slice(0, 2).toUpperCase(),
+    ...(url ? { url: String(url).trim() } : {}),
   };
   // Only superadmin can attach data permissions at creation time.
   if (req.user.role === 'superadmin' && permissions && typeof permissions === 'object') {

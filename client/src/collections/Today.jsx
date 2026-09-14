@@ -96,10 +96,9 @@ export default function Today() {
         {isStaff && <select className="sel" value={emp} onChange={e => setEmp(e.target.value)}><option value="">Everyone</option>{(users || []).filter(u => u.role === 'salesman').map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select>}
         <button className="btn" data-tip="Record a call or visit" onClick={() => setForm({ kind: 'followup' })}><NotebookPen size={12} /> Follow-up</button>
         <button className="btn" data-tip="Record money received" onClick={() => setForm({ kind: 'payment' })}><Banknote size={12} /> Payment</button>
-        <button className="btnp" data-tip="Create a task for someone" onClick={() => setForm({ kind: 'task' })}><ClipboardList size={12} /> Task</button>
+
       </>} />
-      <div className="stat-grid">
-        <div className="stat-card"><div style={{ fontSize: 10.5, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase' }}>Tasks</div><div style={{ fontSize: 19, fontWeight: 800 }}>{num(d.tasksToday.length)} <span style={{ fontSize: 12, color: 'var(--red)' }}>{d.tasksOverdue.length ? `+${d.tasksOverdue.length} overdue` : ''}</span></div></div>
+      <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
         <div className="stat-card"><div style={{ fontSize: 10.5, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase' }}>Follow-ups</div><div style={{ fontSize: 19, fontWeight: 800 }}>{num(d.followupsDue.length)} <span style={{ fontSize: 12, color: 'var(--red)' }}>{d.followupsOverdue.length ? `+${d.followupsOverdue.length} overdue` : ''}</span></div></div>
         <div className="stat-card"><div style={{ fontSize: 10.5, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase' }}>Promises today</div><div style={{ fontSize: 19, fontWeight: 800 }}>{money(d.promisesToday.reduce((s, p) => s + (p.amount - (p.received || 0)), 0))}</div></div>
         <div className="stat-card"><div style={{ fontSize: 10.5, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase' }}>Broken promises</div><div style={{ fontSize: 19, fontWeight: 800, color: d.promisesBroken.length ? 'var(--red)' : undefined }}>{num(d.promisesBroken.length)}</div></div>
@@ -108,8 +107,6 @@ export default function Today() {
       {d.followupsOverdue.length > 0 && <Section t="Overdue follow-ups" n={d.followupsOverdue.length} tone="var(--red)"><Table dense cols={balCols} rows={d.followupsOverdue} keyOf={r => r.dealerId} card={balCard} onRow={r => openDealer(r.dealerId)} /></Section>}
       <Section t="Promises due today" n={d.promisesToday.length}><Table dense cols={promCols} rows={d.promisesToday} empty="No promises fall due today." card={promCard} onRow={r => openRecord('promise', r, reload)} /></Section>
       {d.promisesBroken.length > 0 && <Section t="Broken promises" n={d.promisesBroken.length} tone="var(--red)"><Table dense cols={promCols} rows={d.promisesBroken} card={promCard} onRow={r => openRecord('promise', r, reload)} /></Section>}
-      <Section t="Tasks due today" n={d.tasksToday.length}><Table dense cols={taskCols} rows={d.tasksToday} empty="No tasks due today." card={taskCard} onRow={r => openRecord('task', r, reload)} /></Section>
-      {d.tasksOverdue.length > 0 && <Section t="Overdue tasks" n={d.tasksOverdue.length} tone="var(--red)"><Table dense cols={taskCols} rows={d.tasksOverdue} card={taskCard} onRow={r => openRecord('task', r, reload)} /></Section>}
       <Section t="High-priority dealers" n={d.highPriority.length}><Table dense cols={balCols} rows={d.highPriority} keyOf={r => r.dealerId} empty="Nobody is flagged high priority." card={balCard} onRow={r => openDealer(r.dealerId)} /></Section>
       {form?.kind === 'followup' && <FollowupForm dealer={form.dealer} focusDate={form.focusDate} onClose={() => setForm(null)} onDone={reload} />}
       {form?.kind === 'payment' && <PaymentForm dealer={form.dealer} onClose={() => setForm(null)} onDone={reload} />}

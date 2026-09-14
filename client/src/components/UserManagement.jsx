@@ -39,6 +39,8 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
   const [allZones,     setAllZones]     = useState([]);
   const [createStates, setCreateStates] = useState(new Set());
   const [createCities, setCreateCities] = useState(new Set());
+  const [createPages, setCreatePages] = useState(new Set());       // sections the new user may open
+  const [createFeatures, setCreateFeatures] = useState(new Set()); // actions the new user may perform
   useEffect(() => {
     // Case-insensitive de-dup so ALUVA / Aluva / aluva collapse into one
     // canonical entry. Keeps the first occurrence's original casing.
@@ -76,8 +78,8 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
     setBusy(true);
     try {
       const ini = name.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
-      const permissions = { states: [...createStates], cities: [...createCities], zones: [], salesmen: [] };
-      const newUser = await api.createUser({ id: idC, name, pass, role, color, ini, permissions, email: email.trim() });
+      const permissions = { states: [...createStates], cities: [...createCities], zones: [], salesmen: [], pages: [...createPages], features: [...createFeatures] };
+      const newUser = await api.createUser({ id: idC, name, pass, role, color, ini, permissions, email: email.trim(), url: url.trim() || null });
       // Optimistically update local cache for instant feedback…
       const cached = { id: idC, name, pass, role, color, ini, email: email.trim(), url: url.trim() || null, active:true, permissions };
       setUsers({ ...users, [idC]: cached });
@@ -86,7 +88,7 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
       // server-side fields and persists across page reloads + other devices.
       onUsersChanged?.();
       refreshAll();
-      setName(''); setId(''); setPass(''); setUrl(''); setEmail(''); setRole('salesman'); setCreateStates(new Set()); setCreateCities(new Set());
+      setName(''); setId(''); setPass(''); setUrl(''); setEmail(''); setRole('salesman'); setCreateStates(new Set()); setCreateCities(new Set()); setCreatePages(new Set()); setCreateFeatures(new Set());
       // Close on success so the new row is visible underneath. A failure
       // leaves the modal open with the typed values still there.
       setAddOpen(false);
@@ -646,7 +648,7 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
             The form runs the full height of the panel, which buried the user
             list underneath it. Same fields and the same create(), relocated. */}
         {addOpen && (
-          <div className="overlay" style={{zIndex:70}}
+          <div className="overlay"
             onClick={e=>e.target===e.currentTarget&&setAddOpen(false)}>
           <div className="modal" style={{maxWidth:640}}>
           <div>
@@ -745,6 +747,46 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
               )}
             </div>
           </div>
+            {/* ── Sections and actions — set at creation so nobody has to come back for a second pass ── */}
+            {isSuperAdmin && (
+              <div className="field full">
+                <label style={{display:'flex', alignItems:'center', gap:6}}>
+                  Sections this user can see
+                  <span style={{color:'var(--t3)', fontSize:10, fontWeight:400}}>(none ticked = role default)</span>
+                  <span className="spacer"/>
+                  <button type="button" className="btn" style={{fontSize:10, padding:'2px 8px'}} onClick={()=>setCreatePages(new Set(NAV_PAGES.map(p=>p.id)))}>All</button>
+                  <button type="button" className="btn" style={{fontSize:10, padding:'2px 8px'}} onClick={()=>setCreatePages(new Set())}>None</button>
+                </label>
+                <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(150px, 1fr))', gap:6, marginTop:6, padding:8, background:'var(--bg2)', borderRadius:6, maxHeight:160, overflowY:'auto'}}>
+                  {NAV_PAGES.map(pg => { const on = createPages.has(pg.id); return (
+                    <label key={pg.id} style={{fontSize:11, display:'flex', alignItems:'center', gap:6, cursor:'pointer', padding:'4px 6px', borderRadius:5, background: on ? 'rgba(99,102,241,0.10)' : 'transparent', border:'1px solid ' + (on ? 'rgba(99,102,241,0.40)' : 'var(--b2)')}}>
+                      <input type="checkbox" checked={on} onChange={()=>{ const next = new Set(createPages); on ? next.delete(pg.id) : next.add(pg.id); setCreatePages(next); }} style={{margin:0}}/>
+                      <span style={{color: on ? '#a5b4fc' : 'var(--t2)', fontWeight:600}}>{pg.label}</span>
+                    </label>); })}
+                </div>
+              </div>
+            )}
+            {isSuperAdmin && actionGroups.length > 0 && (
+              <div className="field full">
+                <label style={{display:'flex', alignItems:'center', gap:6}}>
+                  Actions this user may perform
+                  <span style={{color:'var(--t3)', fontSize:10, fontWeight:400}}>(none ticked = role default)</span>
+                  <span className="spacer"/>
+                  <button type="button" className="btn" style={{fontSize:10, padding:'2px 8px'}} onClick={()=>setCreateFeatures(new Set(allActionKeys))}>All</button>
+                  <button type="button" className="btn" style={{fontSize:10, padding:'2px 8px'}} onClick={()=>setCreateFeatures(new Set())}>None</button>
+                </label>
+                <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(190px, 1fr))', gap:6, marginTop:6, padding:8, background:'var(--bg2)', borderRadius:6, maxHeight:200, overflowY:'auto'}}>
+                  {actionGroups.flatMap(g => g.items).map(opt => { const on = createFeatures.has(opt.key); return (
+                    <label key={opt.key} title={opt.desc} style={{fontSize:11, display:'flex', alignItems:'center', gap:6, cursor:'pointer', padding:'4px 6px', borderRadius:5, background: on ? 'rgba(99,102,241,0.10)' : 'transparent', border:'1px solid ' + (on ? 'rgba(99,102,241,0.40)' : 'var(--b2)')}}>
+                      <input type="checkbox" checked={on} onChange={()=>{ const next = new Set(createFeatures); on ? next.delete(opt.key) : next.add(opt.key); setCreateFeatures(next); }} style={{margin:0}}/>
+                      <span style={{color: on ? '#a5b4fc' : 'var(--t2)', fontWeight:600}}>{opt.group === 'Collections' ? 'Collections · ' : ''}{opt.label}</span>
+                    </label>); })}
+                </div>
+              </div>
+            )}
+            {!isSuperAdmin && (
+              <div className="field full" style={{fontSize:11, color:'var(--t3)'}}>Only a superadmin can set sections, actions and data scope; the new user gets the role default until then.</div>
+            )}
           <button className="btnp" onClick={create} disabled={busy} style={{marginTop:10, display:'flex', alignItems:'center', gap:6}}>
             <UserPlus size={13}/> {busy ? 'Creating…' : 'Create Account'}
           </button>
@@ -755,7 +797,7 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
 
       {/* ── Permissions modal (Edit existing user's data scope) ────────── */}
       {permsForUid && (
-        <div className="overlay" style={{zIndex: 60}} onClick={e => e.target === e.currentTarget && setPermsForUid(null)}>
+        <div className="overlay" onClick={e => e.target === e.currentTarget && setPermsForUid(null)}>
           <div className="modal" style={{
             maxWidth: 1100,           // was 480 — much wider so admins can scan hundreds of cities
             width: '95vw',

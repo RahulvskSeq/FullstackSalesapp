@@ -68,10 +68,10 @@ export default function Dashboard({ go }) {
         <Table dense cols={[
           { k: 'name', h: 'Employee' },
           { k: 'followups', h: 'Follow-ups', align: 'right' }, { k: 'calls', h: 'Calls', align: 'right' }, { k: 'visits', h: 'Visits', align: 'right' },
-          { k: 'tasksDone', h: 'Tasks done', align: 'right' }, { k: 'promisesKept', h: 'Kept', align: 'right' }, { k: 'promisesBroken', h: 'Broken', align: 'right' },
+          { k: 'promisesKept', h: 'Kept', align: 'right' }, { k: 'promisesBroken', h: 'Broken', align: 'right' },
           { k: 'collected', h: 'Collected', align: 'right', r: r => money(r.collected) }, { k: 'points', h: 'Points', align: 'right' },
         ]} rows={data.activity30d} keyOf={r => r.employeeId} empty="No activity recorded in the last 30 days." onRow={() => go('colEmployees')}
-        card={r => <><CardRow><b>{r.name}</b><span className="chip">{num(r.points)} pts</span></CardRow><div style={{ fontSize: 11.5, color: 'var(--t2)' }}>{num(r.followups)} follow-ups · {num(r.calls)} calls · {num(r.visits)} visits · {num(r.tasksDone)} tasks · collected {money(r.collected)}</div></>} />
+        card={r => <><CardRow><b>{r.name}</b><span className="chip">{num(r.points)} pts</span></CardRow><div style={{ fontSize: 11.5, color: 'var(--t2)' }}>{num(r.followups)} follow-ups · {num(r.calls)} calls · {num(r.visits)} visits · collected {money(r.collected)}</div></>} />
       </Card>
     </div>);
 }
