@@ -30,7 +30,8 @@ router.get('/', async (req, res) => {
   try {
     const f = { ...scopeFilter(req.scope) };
     if (req.query.dealerId) { if (!ensureInScope(req, res, req.query.dealerId)) return; f.dealerId = req.query.dealerId; }
-    if (req.query.status) f.status = String(req.query.status);
+    if (req.query.status) f.status = String(req.query.status).includes(',') ? { $in: String(req.query.status).split(',') } : String(req.query.status);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(String(req.query.recordedOn || ''))) { const d0 = new Date(req.query.recordedOn + 'T00:00:00'); f.createdAt = { $gte: d0, $lt: new Date(d0.getTime() + 86400000) }; f.source = 'manual'; }   // entries a person made that day
     if (req.query.from || req.query.to) f.date = { ...(req.query.from ? { $gte: String(req.query.from) } : {}), ...(req.query.to ? { $lte: String(req.query.to) } : {}) };
     res.json(await listPayments(f, paging(req.query)));
   } catch (e) { fail(res, e); }

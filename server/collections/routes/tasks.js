@@ -1,6 +1,6 @@
 import express from 'express';
 import { protect } from '../../middleware/auth.js';
-import { ColTask, ColPromise, ColBalance, ColPayment, ColEvent } from '../models/index.js';
+import { ColTask, ColPromise, ColBalance, ColPayment, ColEvent, ColImport } from '../models/index.js';
 import { createTask, completeTask, cancelTask, addComment, listTasks } from '../services/tasks.js';
 import { withScope, ensureInScope, paging, fail, scopeFilter, isStaff } from '../lib/http.js';
 import { todayYmd } from '../lib/periods.js';
@@ -61,7 +61,13 @@ router.get('/today', async (req, res) => {
       ColEvent.aggregate([{ $match: { ...sf, type: 'RECONCILIATION_DIFFERENCE', amount: { $gt: 0 }, 'meta.approved': { $exists: false } } }, { $group: { _id: null, sum: { $sum: '$amount' }, n: { $sum: 1 } } }]),
       ColPayment.aggregate([{ $match: { ...sf, status: 'RECORDED' } }, { $group: { _id: null, sum: { $sum: '$amount' }, n: { $sum: 1 } } }])]);
     const pendAll = { sum: (decAll[0]?.sum || 0) + (recAll[0]?.sum || 0), n: (decAll[0]?.n || 0) + (recAll[0]?.n || 0), decreases: decAll[0]?.n || 0, recorded: recAll[0]?.n || 0 };
-    res.json({ today, employeeId: me, pendingApprovals: pendAll.sum, pendingApprovalsCount: pendAll.n, pendingDecreases: pendAll.decreases, pendingRecorded: pendAll.recorded, tasksToday: named(tasksToday), tasksOverdue: named(tasksOverdue), followupsDue, followupsOverdue, promisesToday: named(promisesToday).filter(p => (p.balanceTotal ?? 1) > 0), promisesBroken: named(promisesBroken).filter(p => (p.balanceTotal ?? 1) > 0), followupsDue: named(followupsDue), followupsOverdue: named(followupsOverdue), highPriority: named(highPriority), recentPayments: named(recentPayments), newOutstanding: named(newOutstanding), recentlyCleared: named(recentlyCleared) });
+    // Payments the latest statement brought in (auto-confirmed or written from the statement) — what every salesman wants to see first.
+    const latest = await ColImport.findOne({ status: 'APPLIED' }, 'asOn fileName').sort({ asOn: -1, appliedAt: -1 }).lean();
+    const came = latest ? await ColPayment.find({ ...sf, ...(mine.employeeId ? { salesmanId: mine.employeeId } : {}), status: 'CONFIRMED', $or: [{ source: 'statement', date: latest.asOn }, { confirmedBy: 'statement', remarks: new RegExp('statement of ' + latest.asOn) }] }).sort({ amount: -1 }).limit(200).lean() : [];
+    const cameIds = [...new Set(came.map(p => String(p.dealerId)))].filter(i => !names.has(i));
+    for (const d of await Dealer.find({ _id: { $in: cameIds } }, 'name code phone').lean()) names.set(String(d._id), d);
+    res.json({ today, employeeId: me, latestStatement: latest ? { asOn: latest.asOn, fileName: latest.fileName } : null, paymentsCame: named(came), paymentsCameSum: came.reduce((a, p) => a + p.amount, 0),
+      pendingApprovals: pendAll.sum, pendingApprovalsCount: pendAll.n, pendingDecreases: pendAll.decreases, pendingRecorded: pendAll.recorded, tasksToday: named(tasksToday), tasksOverdue: named(tasksOverdue), followupsDue, followupsOverdue, promisesToday: named(promisesToday).filter(p => (p.balanceTotal ?? 1) > 0), promisesBroken: named(promisesBroken).filter(p => (p.balanceTotal ?? 1) > 0), followupsDue: named(followupsDue), followupsOverdue: named(followupsOverdue), highPriority: named(highPriority), recentPayments: named(recentPayments), newOutstanding: named(newOutstanding), recentlyCleared: named(recentlyCleared) });
   } catch (e) { fail(res, e); }
 });
 

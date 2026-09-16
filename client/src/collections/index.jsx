@@ -13,6 +13,7 @@ import Employees from './Employees';
 import Settings from './Settings';
 import Dealer360 from './Dealer360';
 import RecordModal from './RecordModal';
+import ApprovalsModal from './Approvals';
 
 /**
  * Collections — the Outstanding + Collection CRM.
@@ -27,6 +28,7 @@ export const COL_SCREENS = new Set(['colDashboard', 'colToday', 'colOutstanding'
 export default function Collections({ view, currentUser, users, hasFeature, navigate }) {
   const [dealerId, setDealerId] = useState(null);
   const [rec, setRec] = useState(null);             // { kind, record, onChanged }
+  const [pendingFor, setPendingFor] = useState(null); // dealerId whose pending entries to show
   const [bump, setBump] = useState(0);             // screens re-fetch after a modal action
   const [params, setParams] = useState({});
   const go = useCallback((target, p) => { setParams(p || {}); navigate(target); }, [navigate]);
@@ -34,6 +36,9 @@ export default function Collections({ view, currentUser, users, hasFeature, navi
   const ctx = useMemo(() => ({
     open: id => setDealerId(String(id)),
     openRecord: (kind, record, onChanged) => setRec({ kind, record, onChanged }),
+    openPending: dealerId => setPendingFor(String(dealerId)),
+    // an amber row is a pending entry: open that, otherwise the dealer
+    openRow: r => (r?.pendingRecorded > 0 || r?.pendingApproval > 0) ? setPendingFor(String(r.dealerId)) : setDealerId(String(r.dealerId)),
     users: list, currentUser,
     isStaff: ['admin', 'superadmin', 'employee'].includes(currentUser?.role),
     features: { has: key => !!hasFeature?.(key) },
@@ -46,6 +51,7 @@ export default function Collections({ view, currentUser, users, hasFeature, navi
           these override with !important — one place, instead of a media query
           per component. */}
       <style>{`
+        .overlay .modal { max-height: 85vh; }
         @media (max-width: 768px) {
           /* grid children default to min-width:auto and get pushed wide by a long figure or a table */
           .col-2 > *, .stat-grid > *, .col-stats > *, .card, .stat-card { min-width: 0; max-width: 100%; }
@@ -56,8 +62,8 @@ export default function Collections({ view, currentUser, users, hasFeature, navi
           .col-rule { grid-template-columns: 24px 1fr !important; }
           .col-rule > *:nth-child(n+3) { grid-column: 2; }
           .col-phone { grid-template-columns: 1fr !important; }
-          .col-drawer { padding: 12px !important; width: 100vw !important; max-width: 100vw !important; max-height: 94vh !important; margin: 0 !important; border-radius: 14px 14px 0 0 !important; }
-          .overlay .modal { box-sizing: border-box; width: 100vw; max-width: 100vw; }   /* padding must not push the sheet past the screen edge */
+          .col-drawer { padding: 12px !important; width: 94vw !important; max-width: 94vw !important; max-height: 88vh !important; margin: 0 !important; border-radius: 14px !important; }
+          .overlay .modal { box-sizing: border-box; }
           .col-head > div:first-child { min-width: 0; }
           .col-head .page-title, .col-head div { overflow-wrap: anywhere; }
           .col-head { flex-direction: column; }
@@ -70,8 +76,8 @@ export default function Collections({ view, currentUser, users, hasFeature, navi
           .page-head .row button { padding: 6px 10px; font-size: 12px; }
           .tabs { gap: 0; }
           .tab { padding: 8px 10px; font-size: 12px; }
-          .overlay { padding: 0 !important; align-items: flex-end !important; }
-          .overlay .modal:not(.col-drawer) { max-height: 94vh; border-radius: 14px 14px 0 0; }
+          .overlay { padding: 12px !important; align-items: center !important; }
+          .overlay .modal:not(.col-drawer) { max-height: 86vh; border-radius: 14px; width: 94vw; max-width: 94vw; }
         }
         @media (max-width: 480px) {
           .col-months { grid-template-columns: repeat(2, minmax(0,1fr)) !important; row-gap: 8px !important; }
@@ -93,6 +99,7 @@ export default function Collections({ view, currentUser, users, hasFeature, navi
       {view === 'colEmployees' && <Employees />}
       {view === 'colSettings' && <Settings />}
       {dealerId && <Dealer360 dealerId={dealerId} onClose={() => setDealerId(null)} />}
+      {pendingFor && <ApprovalsModal dealerId={pendingFor} onClose={() => setPendingFor(null)} onChanged={() => setBump(b => b + 1)} />}
       {rec && <RecordModal kind={rec.kind} record={rec.record} onClose={() => setRec(null)} onChanged={() => { rec.onChanged?.(); setBump(b => b + 1); }} />}
     </DealerCtx.Provider>);
 }

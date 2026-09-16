@@ -1,68 +1,56 @@
 import React, { useState } from 'react';
-import { Check, X } from 'lucide-react';
+import { X, Paperclip } from 'lucide-react';
 import { col } from './api';
-import { useLoad, Modal, Badge, Busy, ErrorBox, Empty, money, num, fmtDate, DealerLink, MonthKVs, useDealerCtx, userName, PENDING_BG } from './ui';
+import { useLoad, Modal, Busy, ErrorBox, Empty, money, num, fmtDate, DealerLink, useDealerCtx, userName, PENDING_BG, periodsOf, periodLabel, OldestPill } from './ui';
+
+const Num = ({ k, v, c }) => <div style={{ minWidth: 0 }}><div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--t3)' }}>{k}</div><div style={{ fontSize: 15, fontWeight: 800, color: c, fontVariantNumeric: 'tabular-nums', overflowWrap: 'anywhere', lineHeight: 1.2 }}>{v}</div></div>;
 
 /**
- * Pending approvals — every statement decrease accounts has not yet decided
- * on. Approve = money received (a confirmed payment is written, promises are
- * credited); Not a payment = credit note / return / correction. The balance
- * is already what the statement says; only the story behind it is decided here.
+ * Pending — what salesmen have recorded that no statement has shown yet.
+ * Nothing to approve here: the morning sheet confirms these on its own and
+ * they drop off the list. Only a wrong entry needs a hand (Cancel).
  */
-export default function ApprovalsModal({ onClose, onChanged }) {
-  const { features, users } = useDealerCtx();
-  const can = features.has('collections.payments');
-  const { data, busy, err, reload } = useLoad(() => col.pendingApprovals({ limit: 200 }), []);
-  const rec = useLoad(() => col.payments({ status: 'RECORDED', limit: 200 }), []);
-  const reloadAll = () => { reload(); rec.reload(); };
+export default function ApprovalsModal({ onClose, onChanged, mode = 'waiting', dealerId = null }) {
+  const [q, setQ] = useState('');
+  const { users } = useDealerCtx();
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const rec = useLoad(() => mode === 'today' ? col.payments({ recordedOn: todayKey, status: 'RECORDED,CONFIRMED', limit: 200 }) : col.payments({ status: 'RECORDED', limit: 200 }), [mode]);
   const [acting, setActing] = useState('');
-  const [aerr, setAerr] = useState('');
-  const act = async (fn, id) => { setActing(id); setAerr(''); try { await fn(); reloadAll(); onChanged?.(); } catch (e) { setAerr(e.message); } finally { setActing(''); } };
+  const [err, setErr] = useState('');
+  const items = (rec.data?.items || []).filter(p => (!dealerId || String(p.dealerId) === dealerId) && (!q.trim() || (p.dealer?.name || '').toLowerCase().includes(q.trim().toLowerCase())));
+  const sum = items.reduce((a, p) => a + p.amount, 0);
   return (
-    <Modal title={<span>Pending approvals {data && rec.data ? <span className="chip">{num(data.total + rec.data.total)} · {money(data.sum + rec.data.items.reduce((a, p) => a + p.amount, 0))}</span> : null}</span>} onClose={onClose} width={860}>
-      <ErrorBox err={err || aerr || rec.err} onRetry={err ? reload : undefined} />
-      <div style={{ fontSize: 12.5, fontWeight: 700, margin: '4px 0 6px' }}>Payments recorded by salesmen — confirm {rec.data ? <span className="chip">{num(rec.data.total)}</span> : null}</div>
-      {rec.busy && !rec.data ? <Busy /> : !rec.data?.items?.length ? <div style={{ fontSize: 12, color: 'var(--t3)', marginBottom: 12 }}>None waiting.</div> :
-        <div style={{ display: 'grid', gap: 8, marginBottom: 16 }}>
-          {rec.data.items.map(p => <div key={p._id} style={{ padding: '10px 12px', borderRadius: 10, background: PENDING_BG, border: '1px solid rgba(245,158,11,.45)', boxShadow: 'inset 3px 0 0 #f59e0b' }}>
-            <div className="row" style={{ justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-              <DealerLink id={p.dealerId} name={p.dealer?.name || String(p.dealerId)} code={p.dealer?.code} />
-              <span style={{ fontSize: 11.5, color: 'var(--t2)' }}>#{p.paymentNo} · {fmtDate(p.date)} · {p.mode}{p.reference ? ' · ' + p.reference : ''} · by {userName(users, p.enteredBy)}</span>
+    <Modal title={<span>{mode === 'today' ? 'Recorded today' : 'Pending approval — told by salesmen'} {rec.data ? <span className="chip">{num(items.length)} · {money(sum)}</span> : null}</span>} onClose={onClose} width={760}>
+      {!dealerId && <input className="inp" value={q} onChange={e => setQ(e.target.value)} placeholder="Search dealer name…" style={{ marginBottom: 10 }} />}
+      <div style={{ fontSize: 11.5, color: 'var(--t2)', marginBottom: 8 }}>{mode === 'today' ? 'Entries made today — counted as collected once a morning statement shows the money.' : 'Money salesmen said is coming. It leaves this list on its own once a statement shows it. Cancel only a wrong entry.'}</div>
+      <ErrorBox err={rec.err || err} onRetry={rec.err ? rec.reload : undefined} />
+      {rec.busy && !rec.data ? <Busy /> : !items.length ? <Empty>{mode === 'today' ? 'No entries made today.' : 'Nothing waiting — every recorded payment has been seen in a statement.'}</Empty> :
+        <div style={{ display: 'grid', gap: 6 }}>
+          {items.map(p => { const done = p.status === 'CONFIRMED'; const came = done ? p.amount : (p.cameSoFar || 0); const ps = periodsOf([p]); return (
+          <div key={p._id} style={{ padding: '7px 10px', borderRadius: 9, background: done ? 'rgba(22,163,74,.10)' : PENDING_BG, border: '1px solid ' + (done ? 'rgba(22,163,74,.4)' : 'rgba(245,158,11,.45)'), boxShadow: `inset 3px 0 0 ${done ? '#16a34a' : '#f59e0b'}` }}>
+            {/* line 1: who · when · how · by whom, with cancel at the end */}
+            <div className="row" style={{ justifyContent: 'space-between', gap: 8, alignItems: 'flex-start', flexWrap: 'nowrap' }}>
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', gap: '2px 8px', alignItems: 'baseline', flexWrap: 'wrap' }}>
+                <DealerLink id={p.dealerId} name={p.dealer?.name || String(p.dealerId)} code={p.dealer?.code} />
+                <span style={{ fontSize: 11, color: 'var(--t2)', whiteSpace: 'nowrap' }}>{fmtDate(p.date)} · {p.mode}{p.reference ? ' · ' + p.reference : ''} · {userName(users, p.enteredBy)}</span>
+                {p.proofId && <a className="btn" href={col.proofUrl(p.proofId)} target="_blank" rel="noreferrer" style={{ fontSize: 10.5, padding: '1px 6px', display: 'inline-flex', gap: 3, alignItems: 'center' }}><Paperclip size={10} /> Proof</a>}
+              </div>
+              {done ? <span style={{ fontSize: 11.5, color: 'var(--grn)', fontWeight: 700, whiteSpace: 'nowrap' }}>✓ collected</span>
+                : <button className="btn" disabled={acting === p._id} data-tip="Wrong entry — remove it" style={{ fontSize: 11, padding: '2px 7px', flexShrink: 0 }} onClick={async () => { const r = window.prompt('Reason for cancelling?'); if (r === null) return; setActing(p._id); setErr(''); try { await col.cancelPayment(p._id, r); rec.reload(); onChanged?.(); } catch (e) { setErr(e.message); } finally { setActing(''); } }}><X size={11} /> Cancel</button>}
             </div>
-            <div className="row" style={{ gap: 12, alignItems: 'center', flexWrap: 'wrap', margin: '6px 0' }}>
-              <span style={{ fontSize: 20, fontWeight: 800, color: '#b45309' }}>{money(p.amount)}</span>
-              {p.proofId && <a className="btn" href={col.proofUrl(p.proofId)} target="_blank" rel="noreferrer" style={{ fontSize: 11 }}>Proof</a>}
-              {p.remarks && <span style={{ fontSize: 11.5, color: 'var(--t2)' }}>{p.remarks}</span>}
+            {/* line 2: told · came · still to come */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 6, margin: '5px 0 3px' }}>
+              <Num k="Told" v={money(p.amount)} c="#b45309" />
+              <Num k="Came" v={money(came)} c={came > 0 ? 'var(--grn)' : 'var(--t3)'} />
+              <Num k="Still to come" v={money(done ? 0 : p.amount - came)} c="var(--red)" />
             </div>
-            {p.buckets && Object.keys(p.buckets).length > 0 && <MonthKVs row={p} total={p.balanceTotal} />}
-            <div className="row" style={{ gap: 8, justifyContent: 'flex-end', marginTop: 8, flexWrap: 'wrap' }}>
-              <button className="btn" disabled={acting === p._id} data-tip="Wrong entry — remove it" onClick={() => { const r = window.prompt('Reason for cancelling?'); if (r === null) return; act(() => col.cancelPayment(p._id, r), p._id); }}><X size={12} /> Cancel</button>
-              <button className="btnp" disabled={!can || acting === p._id} data-tip="Money is in — the balance moves by this amount" onClick={() => act(() => col.confirmPayment(p._id), p._id)}><Check size={12} /> {acting === p._id ? 'Saving…' : 'Confirm'}</button>
-            </div>
-          </div>)}
+            {/* line 3: the months, in one line */}
+            {ps.length > 0 && <div style={{ display: 'flex', gap: '4px 12px', flexWrap: 'wrap', alignItems: 'center', fontSize: 11.5, color: 'var(--t2)', fontVariantNumeric: 'tabular-nums' }}>
+              {ps.map((m, i) => <span key={m} style={{ whiteSpace: 'nowrap' }}>{i === 0 ? <span style={{ color: 'var(--red)', fontWeight: 700 }}>{periodLabel(m)}</span> : periodLabel(m)} {p.buckets?.[m] ? (i === 0 ? <OldestPill>{money(p.buckets[m])}</OldestPill> : <b style={{ color: 'var(--t1)' }}>{money(p.buckets[m])}</b>) : '–'}</span>)}
+              <span style={{ whiteSpace: 'nowrap' }}>Total <b style={{ color: 'var(--t1)' }}>{money(p.balanceTotal ?? p.total)}</b></span>
+              {p.remarks && <span style={{ fontStyle: 'italic' }}>“{p.remarks}”</span>}
+            </div>}
+          </div>); })}
         </div>}
-      <div style={{ fontSize: 12.5, fontWeight: 700, margin: '4px 0 2px' }}>Statement decreases — approve {data ? <span className="chip">{num(data.total)}</span> : null}</div>
-      <div style={{ fontSize: 12, color: 'var(--t2)', marginBottom: 8 }}>The statement showed these dealers owing less than before, with no confirmed payment behind it. Tick what actually happened.</div>
-      {busy && !data ? <Busy /> : !data?.items?.length ? <Empty>Nothing waiting — every decrease is explained.</Empty> :
-        <div style={{ display: 'grid', gap: 8 }}>
-          {data.items.map(e => <div key={e._id} style={{ padding: '10px 12px', borderRadius: 10, background: PENDING_BG, border: '1px solid rgba(245,158,11,.45)', boxShadow: 'inset 3px 0 0 #f59e0b' }}>
-            <div className="row" style={{ justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-              <DealerLink id={e.dealerId} name={e.dealer?.name || String(e.dealerId)} code={e.dealer?.code} />
-              <span style={{ fontSize: 11.5, color: 'var(--t2)' }}>statement {fmtDate(e.meta?.to)} · was {money(e.meta?.observed != null ? (e.after ?? 0) + e.meta.observed : e.before)} → now {money(e.balanceTotal ?? e.after)}</span>
-            </div>
-            <div className="row" style={{ gap: 12, alignItems: 'center', flexWrap: 'wrap', margin: '6px 0' }}>
-              <span style={{ fontSize: 20, fontWeight: 800, color: '#b45309' }}>{money(e.amount)}</span>
-              <span style={{ fontSize: 11.5, color: 'var(--t2)' }}>decrease not explained by any confirmed payment{e.meta?.explained ? ` (${money(e.meta.explained)} was)` : ''}</span>
-              {e.priority && <Badge v={e.priority} />}
-            </div>
-            {e.buckets && Object.keys(e.buckets).length > 0 && <MonthKVs row={e} total={e.balanceTotal} />}
-            {e.promises?.length > 0 && <div style={{ fontSize: 11.5, color: 'var(--t2)', marginTop: 4 }}>Promises: {e.promises.map(p => `${money(p.amount - (p.received || 0))} by ${fmtDate(p.promiseDate)} (${p.status.toLowerCase()})`).join(' · ')}</div>}
-            <div className="row" style={{ gap: 8, justifyContent: 'flex-end', marginTop: 8, flexWrap: 'wrap' }}>
-              <button className="btn" disabled={!can || acting === e._id} data-tip="Credit note, return or correction — not money" onClick={() => { const r = window.prompt('What was it? (credit note, return, correction…)'); if (r === null) return; act(() => col.dismissDecrease(e._id, r), e._id); }}><X size={12} /> Not a payment</button>
-              <button className="btnp" disabled={!can || acting === e._id} data-tip="Money received — write it as a confirmed payment" onClick={() => act(() => col.approveDecrease(e._id), e._id)}><Check size={12} /> {acting === e._id ? 'Saving…' : 'Approve as payment'}</button>
-            </div>
-          </div>)}
-        </div>}
-      {!can && <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 8 }}>Only users with the "Confirm payments" permission can decide these.</div>}
     </Modal>);
 }

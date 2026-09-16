@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, ClipboardList, NotebookPen, Banknote } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { col } from './api';
@@ -18,6 +18,8 @@ export default function Dealer360({ dealerId, onClose }) {
   const d = data;
   const dealer = d ? { id: dealerId, name: d.dealer.name, code: d.dealer.code, total: d.balance?.total, phone: d.dealer.phone || '', whatsappOptOut: !!d.dealer.whatsappOptOut } : null;
   const both = () => { reload(); tl.reload(); };
+  // Escape closes the drawer only when no inner form is open (the form's own Modal handles its Escape)
+  useEffect(() => { const k = e => { if (e.key === 'Escape' && !form) onClose(); }; window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k); }, [onClose, form]);
   return (
     <div className="overlay" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal col-drawer" style={{ maxWidth: 900, width: '100%', maxHeight: '90vh', padding: 18, overflowY: 'auto' }}>

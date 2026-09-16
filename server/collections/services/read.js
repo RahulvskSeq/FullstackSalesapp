@@ -19,6 +19,7 @@ export async function listBalances(scopeF, q = {}) {
   if (q.salesmanId) f.salesmanId = String(q.salesmanId);
   if (q.minTotal) f.total = { ...(f.total || {}), $gte: +q.minTotal };
   if (q.owing === '1') f.total = { ...(f.total || {}), $gt: 0 };
+  if (q.pending === '1') f.dealerId = { $in: await ColPayment.distinct('dealerId', { ...scopeF, status: 'RECORDED' }) };   // a salesman's record no statement has shown yet
   if (q.q) { const rx = new RegExp(String(q.q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'); f.$or = [{ dealerName: rx }, { dealerCode: rx }]; }
   const sortKey = ['total', 'ageDays', 'dealerName', 'nextFollowupAt', 'lastPaymentAt', 'priority'].includes(q.sort) ? q.sort : 'total';
   const sort = { [sortKey]: q.dir === 'asc' ? 1 : -1, _id: 1 };
@@ -88,6 +89,11 @@ export async function dashboard(scopeF) {
   const [overdueDays, agingBuckets] = await Promise.all([getSetting('collections.overdueDays'), getSetting('collections.agingBuckets')]);
   const since7 = new Date(Date.now() - 7 * 86400000), since30 = new Date(Date.now() - 30 * 86400000);
   const pendingPay = (await ColPayment.aggregate([{ $match: { ...scopeF, status: 'RECORDED' } }, { $group: { _id: null, sum: { $sum: '$amount' }, n: { $sum: 1 } } }]))[0] || { sum: 0, n: 0 };
+  const latestImp = await ColImport.findOne({ status: 'APPLIED' }, 'asOn').sort({ asOn: -1, appliedAt: -1 }).lean();
+  const cameDay = latestImp ? (d => { d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0, 10); })(new Date(latestImp.asOn + 'T00:00:00Z')) : today;
+  const latestPay = (await ColPayment.aggregate([{ $match: { ...scopeF, status: 'CONFIRMED', date: cameDay } }, { $group: { _id: null, sum: { $sum: '$amount' }, n: { $sum: 1 } } }]))[0] || { sum: 0, n: 0 };
+  const dayStart = new Date(today + 'T00:00:00');
+  const recToday = (await ColPayment.aggregate([{ $match: { ...scopeF, source: 'manual', status: { $ne: 'CANCELLED' }, createdAt: { $gte: dayStart } } }, { $group: { _id: null, sum: { $sum: '$amount' }, n: { $sum: 1 } } }]))[0] || { sum: 0, n: 0 };
   const pendingDec = (await ColEvent.aggregate([{ $match: { ...scopeF, type: 'RECONCILIATION_DIFFERENCE', amount: { $gt: 0 }, 'meta.approved': { $exists: false } } }, { $group: { _id: null, sum: { $sum: '$amount' }, n: { $sum: 1 } } }]))[0] || { sum: 0, n: 0 };
   const [bal, todayPay, monthPay, fuToday, fuOverdue, prToday, prBroken, newOut, clearedToday, hi, bySm, act, imports] = await Promise.all([
     ColBalance.aggregate([{ $match: scopeF }, { $group: { _id: null, total: { $sum: '$total' }, owing: { $sum: { $cond: [{ $gt: ['$total', 0] }, 1, 0] } }, overdue: { $sum: { $cond: [{ $gt: ['$ageDays', overdueDays] }, '$total', 0] } }, overdueDealers: { $sum: { $cond: [{ $gt: ['$ageDays', overdueDays] }, 1, 0] } } } }]),
@@ -122,6 +128,8 @@ export async function dashboard(scopeF) {
       monthCollection: monthPay[0]?.sum || 0, monthPayments: monthPay[0]?.n || 0,
       pendingPayments: pendingPay.sum || 0, pendingPaymentsCount: pendingPay.n || 0,
       pendingApprovals: pendingDec.sum || 0, pendingApprovalsCount: pendingDec.n || 0,
+      recordedToday: recToday.sum || 0, recordedTodayCount: recToday.n || 0,
+      latestCollected: latestPay.sum || 0, latestCollectedCount: latestPay.n || 0, latestCollectedDate: cameDay, latestStatementDate: latestImp?.asOn || '',
       followupsToday: fuToday, followupsOverdue: fuOverdue,
       promisesToday: prToday[0]?.sum || 0, promisesTodayCount: prToday[0]?.n || 0,
       brokenPromises: prBroken[0]?.sum || 0, brokenPromisesCount: prBroken[0]?.n || 0,

@@ -66,3 +66,46 @@ UI: the dashboard tile "Statement decreases to approve", the banner + button on
 Today's work, and an amber "₹X came · pending approval" chip on any dealer row
 until accounts decides. Dealers that reached ₹0 drop out of the day's work
 list on their own. Test: `collections/tests/approvals.integration.test.mjs`.
+
+## The sheet as proof — automatic confirmation (15 Sep 2026)
+
+A payment a salesman **recorded** is confirmed on its own when a statement
+shows the dealer down by at least that amount (payment date ≤ statement
+date). Runs after every applied statement (hook `import.applied`) and again
+the moment a payment is recorded, in case the statement already showed the
+drop. Effect: payment → CONFIRMED (remarks note the statement), promises
+credited, cycle `paidTotal` moved, the decrease event's `amount` reduced by
+what it explains (fully explained → `meta.approved=true, auto:true`). The
+balance is never touched — the statement moved it. What the sheet cannot
+account for stays in Pending approvals: a bigger drop leaves the remainder;
+a recorded payment bigger than the drop stays RECORDED for accounts.
+Test: `collections/tests/autoconfirm.integration.test.mjs`.
+
+Promises count as proof too: an open (or broken) promise whose remaining
+amount is ≤ the unexplained decrease is written as a confirmed payment from
+the statement and marked kept. A drop smaller than the promise is not proof
+— it waits for accounts, and the promise stays open.
+
+## The statement is the record (15 Sep 2026, final rule)
+
+No buttons. After every applied statement, for each dealer whose figure
+dropped:
+1. recorded payments (dated ≤ statement) that fit the drop → CONFIRMED;
+2. open/broken promises that fit what is left → kept, written as a
+   `source:'statement'` payment;
+3. whatever is still left → written as a `source:'statement'` payment too
+   (`unmatched` = its amount), so it shows as collected everywhere.
+A salesman who records a payment *after* the sheet already counted it gets
+his record confirmed against those statement payments, which shrink by that
+amount (money counted once, collection credited to him). A record bigger
+than any drop stays RECORDED (amber row) until a sheet shows it.
+Today's work opens with **Payments came · statement of <date>**. The manual
+approval queue still exists behind `COLLECTIONS_APPROVALS=1` (tests cover
+both modes); the UI no longer shows Confirm/Bounce/Approve.
+
+Partial cover: a recorded entry bigger than any one day's drop shows
+"came so far ₹X · not yet ₹Y" in the Pending list (`cameSoFar` = statement
+payments for that dealer dated on/after the entry, still unmatched, capped
+at the entry). Once several days add up to the entry it is confirmed and
+takes over that much of the statement payments. What came is always in
+Payments; the entry itself is never counted until covered.

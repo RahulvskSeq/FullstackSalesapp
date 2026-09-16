@@ -10,12 +10,17 @@ import ApprovalsModal from './Approvals';
  * actions right on the rows so nothing needs a second screen.
  */
 export default function Today() {
-  const { users, isStaff, currentUser, openRecord, open: openDealer } = useDealerCtx();
+  const { users, isStaff, currentUser, openRecord, open: openDealer, openRow, openPending } = useDealerCtx();
+  // amber (money told, not yet in a statement) opens the Pending list; a plain promise opens its record
+  const openProm = r => (r?.pendingRecorded > 0 || r?.pendingApproval > 0) ? openPending(String(r.dealerId)) : openRecord('promise', r, reload);
   const [emp, setEmp] = useState('');
   const { data, busy, err, reload } = useLoad(() => col.today(emp ? { employeeId: emp } : {}), [emp]);
   const [form, setForm] = useState(null);   // { kind, dealer }
-  const [approvals, setApprovals] = useState(false);
   const [tileModal, setTileModal] = useState(null);   // 'followups' | 'promises' | 'broken'
+  const [mq, setMq] = useState('');
+  const byName = rows => mq.trim() ? rows.filter(r => (r.dealerName || '').toLowerCase().includes(mq.trim().toLowerCase())) : rows;
+  const searchBox = <input className="inp" value={mq} onChange={e => setMq(e.target.value)} placeholder="Search dealer name…" style={{ marginBottom: 10 }} autoFocus />;
+  const [pending, setPending] = useState(false);
   const [done, setDone] = useState(null);   // task being completed
   if (busy && !data) return <Busy />;
   if (err) return <ErrorBox err={err} onRetry={reload} />;
@@ -46,20 +51,20 @@ export default function Today() {
   </>;
   const balCard = r => <>
     <CardRow><DealerLink id={r.dealerId} name={r.dealerName} code={r.dealerCode} /><StatusBadge status={r.status} priority={r.priority} /></CardRow>
-    <MonthKVs row={r} rows={allRows} onPending={() => setApprovals(true)} />
+    <MonthKVs row={r} rows={allRows} />
     <div style={{ fontSize: 11.5, color: 'var(--t2)' }}>{r.ageDays != null ? `${r.ageDays} days · ` : ''}<FollowupDate value={r.nextFollowupAt} prefix="follow-up " onOpen={() => setForm({ kind: 'followup', dealer: dealerOf(r), focusDate: true })} /></div>
     {r.promise?.amount ? <div style={{ fontSize: 11.5, color: 'var(--t2)' }}>Promise {money(r.promise.amount)} by {fmtDate(r.promise.date)}</div> : null}
     {actBtns(r)}
   </>;
   const promCard = r => <>
     <CardRow><DealerLink id={r.dealerId} name={r.dealerName} code={r.dealerCode} /><Badge v={r.status} /></CardRow>
-    <MonthKVs row={r} rows={allRows} total={r.balanceTotal} onPending={() => setApprovals(true)} />
+    <MonthKVs row={r} rows={allRows} total={r.balanceTotal} />
     <div style={{ fontSize: 11.5, color: 'var(--t2)' }}>Promised {money(r.amount)} by {fmtDate(r.promiseDate)} · received {money(r.received)}</div>
     {isStaff && <div style={{ fontSize: 11.5, color: 'var(--t2)' }}>{userName(users, r.employeeId)}</div>}
     {actBtns(r)}
   </>;
   const allRows = [...d.tasksToday, ...d.tasksOverdue, ...d.followupsDue, ...d.followupsOverdue, ...d.promisesToday, ...d.promisesBroken, ...d.highPriority];
-  const months = monthCols(allRows, () => setApprovals(true));
+  const months = monthCols(allRows);
   const taskCols = [
     { k: 'taskNo', h: '#', r: r => <span className="chip">{r.taskNo}</span> },
     { k: 'type', h: 'Task', r: r => <span><Badge v={r.priority} /> <b style={{ marginLeft: 6 }}>{title(r.type)}</b>{r.description ? <div style={{ fontSize: 11.5, color: 'var(--t2)', whiteSpace: 'normal' }}>{r.description}</div> : null}</span>, wrap: true },
@@ -98,7 +103,6 @@ export default function Today() {
   const seen = new Set();
   const once = rows => rows.filter(r => { const k = String(r.dealerId); if (seen.has(k) || (r.balanceTotal ?? r.total ?? 1) <= 0) return false; seen.add(k); return true; });
   const promisesToday = once(d.promisesToday), followupsDue = once(d.followupsDue), promisesBroken = once(d.promisesBroken), followupsOverdue = once(d.followupsOverdue), highPriority = once(d.highPriority);
-  const Pend = r => (r.pendingApproval > 0 || r.pendingRecorded > 0) ? <div><PendingChip amount={r.pendingApproval} recorded={r.pendingRecorded} onClick={() => setApprovals(true)} /></div> : null;
   const Section = ({ t, n, children, tone }) => <Card title={<span>{t} <span className="chip" style={{ marginLeft: 6, color: tone }}>{num(n)}</span></span>} style={{ marginBottom: 12 }}>{children}</Card>;
   return (
     <div>
@@ -108,33 +112,36 @@ export default function Today() {
         <button className="btn" data-tip="Record money received" onClick={() => setForm({ kind: 'payment' })}><Banknote size={12} /> Payment</button>
 
       </>} />
-      {d.pendingApprovalsCount > 0 && <div className="row" style={{ gap: 10, padding: '10px 12px', borderRadius: 10, background: 'rgba(245,158,11,.12)', border: '1px solid rgba(245,158,11,.4)', marginBottom: 12, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 13 }}><b>{money(d.pendingApprovals)}</b> waiting for accounts — {d.pendingRecorded ? `${num(d.pendingRecorded)} payment${d.pendingRecorded === 1 ? '' : 's'} recorded by salesmen to confirm` : ''}{d.pendingRecorded && d.pendingDecreases ? ' · ' : ''}{d.pendingDecreases ? `${num(d.pendingDecreases)} statement decrease${d.pendingDecreases === 1 ? '' : 's'} to approve` : ''}</span>
+      {d.pendingRecorded > 0 && <div className="row" style={{ gap: 10, padding: '10px 12px', borderRadius: 10, background: 'rgba(245,158,11,.12)', border: '1px solid rgba(245,158,11,.4)', marginBottom: 12, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 13 }}><b>{num(d.pendingRecorded)}</b> payment{d.pendingRecorded === 1 ? '' : 's'} told by salesmen — pending until a statement shows the money</span>
         <span className="spacer" style={{ flex: 1 }} />
-        <button className="btnp" onClick={() => setApprovals(true)} data-tip="Open every decrease waiting for a decision">Pending approvals ({num(d.pendingApprovalsCount)})</button>
+        <button className="btnp" onClick={() => setPending(true)} data-tip="Told / came / still to come, for each entry">Pending approval ({num(d.pendingRecorded)})</button>
       </div>}
       <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
         <div className="stat-card" onClick={() => setTileModal('followups')} data-tip="Open all follow-ups due and overdue" style={{ cursor: 'pointer' }}><div style={{ fontSize: 10.5, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase' }}>Follow-ups</div><div style={{ fontSize: 19, fontWeight: 800 }}>{num(d.followupsDue.length)} <span style={{ fontSize: 12, color: 'var(--red)' }}>{d.followupsOverdue.length ? `+${d.followupsOverdue.length} overdue` : ''}</span></div></div>
         <div className="stat-card" onClick={() => setTileModal('promises')} data-tip="Open every promise falling due today" style={{ cursor: 'pointer' }}><div style={{ fontSize: 10.5, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase' }}>Promises today</div><div style={{ fontSize: 19, fontWeight: 800 }}>{money(d.promisesToday.reduce((s, p) => s + (p.amount - (p.received || 0)), 0))}</div></div>
         <div className="stat-card" onClick={() => setTileModal('broken')} data-tip="Open every broken promise" style={{ cursor: 'pointer' }}><div style={{ fontSize: 10.5, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase' }}>Broken promises</div><div style={{ fontSize: 19, fontWeight: 800, color: d.promisesBroken.length ? 'var(--red)' : undefined }}>{num(d.promisesBroken.length)}</div></div>
       </div>
-      <Section t="Promises due today" n={promisesToday.length}><Table dense cols={promCols} rows={promisesToday} empty="No promises fall due today." card={promCard} onRow={r => openRecord('promise', r, reload)} /></Section>
-      <Section t="Follow-ups due today" n={followupsDue.length}><Table dense cols={balCols} rows={followupsDue} keyOf={r => r.dealerId} empty="No follow-ups scheduled for today." card={balCard} onRow={r => openDealer(r.dealerId)} /></Section>
-      {promisesBroken.length > 0 && <Section t="Broken promises" n={promisesBroken.length} tone="var(--red)"><Table dense cols={promCols} rows={promisesBroken} card={promCard} onRow={r => openRecord('promise', r, reload)} /></Section>}
-      {followupsOverdue.length > 0 && <Section t="Overdue follow-ups" n={followupsOverdue.length} tone="var(--red)"><Table dense cols={balCols} rows={followupsOverdue} keyOf={r => r.dealerId} card={balCard} onRow={r => openDealer(r.dealerId)} /></Section>}
-      <Section t="High-priority dealers" n={highPriority.length}><Table dense cols={balCols} rows={highPriority} keyOf={r => r.dealerId} empty="Nobody else is flagged high priority." card={balCard} onRow={r => openDealer(r.dealerId)} /></Section>
-      {approvals && <ApprovalsModal onClose={() => setApprovals(false)} onChanged={reload} />}
-      {tileModal === 'followups' && <Modal title={<span>Follow-ups <span className="chip">{num(d.followupsDue.length)} today · {num(d.followupsOverdue.length)} overdue</span></span>} onClose={() => setTileModal(null)} width={1100}>
+      <Section t="Promises due today" n={promisesToday.length}><Table dense cols={promCols} rows={promisesToday} empty="No promises fall due today." card={promCard} onRow={openProm} /></Section>
+      <Section t="Follow-ups due today" n={followupsDue.length}><Table dense cols={balCols} rows={followupsDue} keyOf={r => r.dealerId} empty="No follow-ups scheduled for today." card={balCard} onRow={r => openRow(r)} /></Section>
+      {promisesBroken.length > 0 && <Section t="Broken promises" n={promisesBroken.length} tone="var(--red)"><Table dense cols={promCols} rows={promisesBroken} card={promCard} onRow={openProm} /></Section>}
+      {followupsOverdue.length > 0 && <Section t="Overdue follow-ups" n={followupsOverdue.length} tone="var(--red)"><Table dense cols={balCols} rows={followupsOverdue} keyOf={r => r.dealerId} card={balCard} onRow={r => openRow(r)} /></Section>}
+      <Section t="High-priority dealers" n={highPriority.length}><Table dense cols={balCols} rows={highPriority} keyOf={r => r.dealerId} empty="Nobody else is flagged high priority." card={balCard} onRow={r => openRow(r)} /></Section>
+      {pending && <ApprovalsModal onClose={() => setPending(false)} onChanged={reload} />}
+      {tileModal === 'followups' && <Modal title={<span>Follow-ups <span className="chip">{num(d.followupsDue.length)} today · {num(d.followupsOverdue.length)} overdue</span></span>} onClose={() => { setTileModal(null); setMq(''); }} width={960}>
+        {searchBox}
         <div style={{ fontSize: 12.5, fontWeight: 700, margin: '2px 0 6px' }}>Due today</div>
-        <Table dense cols={balCols} rows={d.followupsDue} keyOf={r => r.dealerId} empty="None due today." card={balCard} onRow={r => openDealer(r.dealerId)} />
+        <Table dense cols={balCols} rows={byName(d.followupsDue)} keyOf={r => r.dealerId} empty="None due today." card={balCard} onRow={r => openRow(r)} />
         <div style={{ fontSize: 12.5, fontWeight: 700, margin: '14px 0 6px', color: 'var(--red)' }}>Overdue</div>
-        <Table dense cols={balCols} rows={d.followupsOverdue} keyOf={r => r.dealerId} empty="Nothing overdue." card={balCard} onRow={r => openDealer(r.dealerId)} />
+        <Table dense cols={balCols} rows={byName(d.followupsOverdue)} keyOf={r => r.dealerId} empty="Nothing overdue." card={balCard} onRow={r => openRow(r)} />
       </Modal>}
-      {tileModal === 'promises' && <Modal title={<span>Promises due today <span className="chip">{num(d.promisesToday.length)} · {money(d.promisesToday.reduce((s, p) => s + (p.amount - (p.received || 0)), 0))}</span></span>} onClose={() => setTileModal(null)} width={1100}>
-        <Table dense cols={promCols} rows={d.promisesToday} empty="No promises fall due today." card={promCard} onRow={r => openRecord('promise', r, reload)} />
+      {tileModal === 'promises' && <Modal title={<span>Promises due today <span className="chip">{num(d.promisesToday.length)} · {money(d.promisesToday.reduce((s, p) => s + (p.amount - (p.received || 0)), 0))}</span></span>} onClose={() => { setTileModal(null); setMq(''); }} width={960}>
+        {searchBox}
+        <Table dense cols={promCols} rows={byName(d.promisesToday)} empty="No promises fall due today." card={promCard} onRow={openProm} />
       </Modal>}
-      {tileModal === 'broken' && <Modal title={<span>Broken promises <span className="chip">{num(d.promisesBroken.length)} · {money(d.promisesBroken.reduce((s, p) => s + (p.amount - (p.received || 0)), 0))}</span></span>} onClose={() => setTileModal(null)} width={1100}>
-        <Table dense cols={promCols} rows={d.promisesBroken} empty="No broken promises." card={promCard} onRow={r => openRecord('promise', r, reload)} />
+      {tileModal === 'broken' && <Modal title={<span>Broken promises <span className="chip">{num(d.promisesBroken.length)} · {money(d.promisesBroken.reduce((s, p) => s + (p.amount - (p.received || 0)), 0))}</span></span>} onClose={() => { setTileModal(null); setMq(''); }} width={960}>
+        {searchBox}
+        <Table dense cols={promCols} rows={byName(d.promisesBroken)} empty="No broken promises." card={promCard} onRow={openProm} />
       </Modal>}
       {form?.kind === 'followup' && <FollowupForm dealer={form.dealer} focusDate={form.focusDate} onClose={() => setForm(null)} onDone={reload} />}
       {form?.kind === 'payment' && <PaymentForm dealer={form.dealer} onClose={() => setForm(null)} onDone={reload} />}

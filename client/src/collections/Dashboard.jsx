@@ -8,25 +8,25 @@ import { useLoad, PageHead, Card, Tile, Table, Badge, Busy, ErrorBox, money, num
 const AGE_COLOURS = ['#22c55e', '#84cc16', '#eab308', '#f97316', '#ef4444', '#991b1b'];
 
 export default function Dashboard({ go }) {
-  const [approvals, setApprovals] = useState(false);
+  const [pending, setPending] = useState(false);
   const { data, busy, err, reload } = useLoad(() => col.dashboard(), []);
-  const { users, isStaff, open: openDealer } = useDealerCtx();
+  const { users, isStaff, open: openDealer, openRow } = useDealerCtx();
   if (busy && !data) return <Busy />;
   if (err) return <ErrorBox err={err} onRetry={reload} />;
   const t = data.tiles;
   const ageData = (data.aging || []).map(b => ({ name: b.label, value: b.total, dealers: b.dealers }));
   return (
     <div>
-      <PageHead icon={Gauge} tone="var(--acc)" title={isStaff ? "Collection dashboard" : "My dashboard"} sub={`As of ${fmtDate(data.today)} · figures in whole rupees`} right={<button className="btn" data-tip="Reload the figures" onClick={reload}>Refresh</button>} />
+      <PageHead icon={Gauge} tone="var(--acc)" title={isStaff ? "Collection dashboard" : "My dashboard"} sub={`As of ${fmtDate(data.today)} · outstanding = latest statement · collected = what statements showed coming in`} right={<button className="btn" data-tip="Reload the figures" onClick={reload}>Refresh</button>} />
       <div className="stat-grid">
         <Tile label="Total outstanding" value={money(t.totalOutstanding)} sub={`${num(t.owingDealers)} dealers owing`} tone="var(--acc)" onClick={() => go('colOutstanding')} />
-        <Tile label="Overdue" value={money(t.overdueOutstanding)} sub={`${num(t.overdueDealers)} dealers past the overdue mark`} tone="var(--red)" onClick={() => go('colOutstanding', { status: 'OVERDUE' })} />
-        <Tile label="Collected today" value={money(t.todayCollection)} sub={`${num(t.todayPayments)} confirmed payments`} tone="var(--grn)" onClick={() => go('colPayments')} />
-        <Tile label="Collected this month" value={money(t.monthCollection)} sub={`${num(t.monthPayments)} confirmed payments`} tone="var(--grn)" onClick={() => go('colPayments')} />
+        <Tile label="Recorded today" value={money(t.recordedToday)} sub={`${num(t.recordedTodayCount)} entries by salesmen · counted once a statement shows them`} tone="#f59e0b" onClick={() => setPending('today')} />
+        <Tile label={`Collected · ${fmtDate(t.latestCollectedDate)}`} value={money(t.latestCollected)} sub={`${num(t.latestCollectedCount)} payments · shown by the statement of ${fmtDate(t.latestStatementDate)}`} tone="var(--grn)" onClick={() => go('colPayments', { from: t.latestCollectedDate, to: t.latestCollectedDate, status: 'CONFIRMED' })} />
+        <Tile label="Collected this month" value={money(t.monthCollection)} sub={`${num(t.monthPayments)} payments came`} tone="var(--grn)" onClick={() => go('colPayments', { from: data.today.slice(0, 7) + '-01', to: data.today, status: 'CONFIRMED' })} />
         <Tile label="Follow-ups due today" value={num(t.followupsToday)} sub={`${num(t.followupsOverdue)} overdue`} tone="var(--yel)" onClick={() => go('colToday')} />
         <Tile label="Promises due today" value={money(t.promisesToday)} sub={`${num(t.promisesTodayCount)} promises`} tone="var(--pur)" onClick={() => go('colFollowups', { tab: 'promises' })} />
         <Tile label="Broken promises" value={money(t.brokenPromises)} sub={`${num(t.brokenPromisesCount)} still unpaid`} tone="var(--red)" onClick={() => go('colFollowups', { tab: 'promises', status: 'BROKEN' })} />
-        <Tile label="Pending approvals" value={money(t.pendingApprovals + t.pendingPayments)} sub={`${num(t.pendingPaymentsCount)} recorded to confirm · ${num(t.pendingApprovalsCount)} statement decreases to approve`} tone={t.pendingApprovalsCount + t.pendingPaymentsCount ? '#f59e0b' : 'var(--t3)'} onClick={() => setApprovals(true)} />
+        <Tile label="Pending approval" value={money(t.pendingPayments)} sub={`${num(t.pendingPaymentsCount)} entries told by salesmen · cleared by the next statement`} tone={t.pendingPaymentsCount ? '#f59e0b' : 'var(--t3)'} onClick={() => setPending(true)} />
       </div>
 
       <div className="col-2" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.1fr) minmax(0,1fr)', gap: 12, marginBottom: 12 }}>
@@ -51,7 +51,7 @@ export default function Dashboard({ go }) {
             { k: 'ageDays', h: 'Age', align: 'right', r: r => r.ageDays == null ? '—' : r.ageDays + 'd' },
             { k: 'priority', h: 'Priority', r: r => <Badge v={r.priority} /> },
             { k: 'salesmanName', h: 'Salesman' },
-          ]} rows={data.highPriority} keyOf={r => r.dealerId} empty="No high-priority dealers." onRow={r => openDealer(r.dealerId)}
+          ]} rows={data.highPriority} keyOf={r => r.dealerId} empty="No high-priority dealers." onRow={r => openRow(r)}
           card={r => <><CardRow><DealerLink id={r.dealerId} name={r.dealerName} code={r.dealerCode} /><Badge v={r.priority} /></CardRow><div style={{ fontSize: 11, color: 'var(--t2)' }}>{r.salesmanName}{r.ageDays != null ? ` · ${r.ageDays}d` : ''}</div><MonthKVs row={r} rows={data.highPriority} /></>} />
         </Card>
         <Card title="By salesman">
@@ -66,7 +66,7 @@ export default function Dashboard({ go }) {
         </Card>
       </div>
 
-      {approvals && <ApprovalsModal onClose={() => setApprovals(false)} onChanged={reload} />}
+      {pending && <ApprovalsModal mode={pending === 'today' ? 'today' : 'waiting'} onClose={() => setPending(false)} onChanged={reload} />}
       <Card title="Activity — last 30 days">
         <Table dense cols={[
           { k: 'name', h: 'Employee' },

@@ -103,7 +103,7 @@ export function useIsMobile(bp = 768) {
  * instead — a wide table squeezed into 375px is not readable. */
 export const PENDING_BG = 'rgba(245,158,11,.13)';
 export const isPending = r => (r?.pendingApproval > 0 || r?.pendingRecorded > 0);
-const pendingTip = r => isPending(r) ? `${money((r.pendingApproval || 0) + (r.pendingRecorded || 0))} pending approval` : undefined;
+const pendingTip = r => isPending(r) ? `${money((r.pendingApproval || 0) + (r.pendingRecorded || 0))} recorded · waiting for a statement to show it` : undefined;
 export function Table({ cols, rows, keyOf = r => r._id, onRow, empty = 'Nothing to show.', dense, card }) {
   const mobile = useIsMobile();
   if (!rows?.length) return <Empty>{empty}</Empty>;
@@ -187,7 +187,7 @@ export function DealerPicker({ value, onChange, placeholder = 'Search dealer by 
 }
 
 /* ── the Dealer 360 drawer is reachable from any screen ────────────── */
-export const DealerCtx = createContext({ open: () => {}, openRecord: () => {}, users: [], currentUser: null, isStaff: false, features: { has: () => false } });
+export const DealerCtx = createContext({ open: () => {}, openRecord: () => {}, openPending: () => {}, openRow: () => {}, users: [], currentUser: null, isStaff: false, features: { has: () => false } });
 export const useDealerCtx = () => useContext(DealerCtx);
 export function DealerLink({ id, name, code }) {
   const { open } = useDealerCtx();

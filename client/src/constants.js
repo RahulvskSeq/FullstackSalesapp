@@ -71,7 +71,7 @@ export const NAV_PAGES = [
   { id:'colDashboard',      label:'Collections — my dashboard' },
   { id:'colToday',          label:'Collections — today\'s work' },
   { id:'colOutstanding',    label:'Collections — outstanding' },
-  { id:'colPayments',       label:'Collections — payments' },
+  { id:'colPayments',       label:'Collections — payments collected' },
   { id:'colFollowups',      label:'Collections — follow-ups' },
   { id:'colTasks',          label:'Collections — my tasks' },
   { id:'colImports',        label:'Collections — upload statement' },

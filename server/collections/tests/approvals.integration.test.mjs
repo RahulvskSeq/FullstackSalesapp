@@ -24,6 +24,7 @@ async function statement(asOn, rows) {
   return applyImport(st.import._id, { by: user.id });
 }
 before(async () => {
+  process.env.COLLECTIONS_APPROVALS = '1';   // this suite covers the manual-approval mode
   await mongoose.connect(process.env.MONGO_URI, { dbName: DB });
   await mongoose.models.User.create({ id: 'sm1', name: 'Salesman One', pass: 'x', role: 'salesman' });
   D1 = await Dealer().create({ name: 'APPR ONE', code: 'SSL71001', salesman: 'sm1', status: 'ACTIVE' });

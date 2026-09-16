@@ -64,6 +64,13 @@ export async function recordPayment(input, { by }) {
   if (cleanAllocs.length) await ColPaymentAllocation.insertMany(cleanAllocs.map(a => ({ ...a, paymentId: p._id, dealerId, cycleId: p.cycleId, by })));
   await ColEvent.create({ dealerId, cycleId: p.cycleId, type: 'PAYMENT_RECORDED', amount, refType: 'payment', refId: p._id, by, at: new Date(input.date + 'T00:00:00'), note: `${mode} ${input.reference || ''}`.trim() });
   await writeAudit({ entity: 'payment', entityId: p._id, action: 'recorded', after: { paymentNo, dealer: dealer.name, amount, mode, date: input.date }, by });
+  // If a statement already showed this money going out, the record is confirmed right away —
+  // against a decrease still open, or against a payment the statement wrote on its own.
+  try {
+    const done = await autoConfirmFromStatements(dealerId, {});
+    if (done.some(id => String(id) === String(p._id))) return ColPayment.findById(p._id);
+    if (await absorbIntoStatementPayments(p._id, {})) return ColPayment.findById(p._id);
+  } catch (e) { console.warn('[COL AUTO-CONFIRM]', e.message); }
   return p;
 }
 
@@ -202,7 +209,8 @@ export async function listPayments(filter, { page = 1, limit = 50 } = {}) {
   const Dealer = mongoose.models.Dealer;
   const names = new Map((await Dealer.find({ _id: { $in: items.map(i => i.dealerId) } }, 'name code').lean()).map(d => [String(d._id), d]));
   const bm = new Map((await ColBalance.find({ dealerId: { $in: items.map(i => i.dealerId) } }, 'dealerId buckets total').lean()).map(b => [String(b.dealerId), b]));
-  return { items: items.map(i => ({ ...i, dealer: names.get(String(i.dealerId)) || null, buckets: asObj(bm.get(String(i.dealerId))?.buckets), balanceTotal: bm.get(String(i.dealerId))?.total ?? null })), total, page, limit };
+  const came = await cameSoFar(items);
+  return { items: items.map(i => ({ ...i, dealer: names.get(String(i.dealerId)) || null, buckets: asObj(bm.get(String(i.dealerId))?.buckets), balanceTotal: bm.get(String(i.dealerId))?.total ?? null, cameSoFar: came.get(String(i._id)) ?? null })), total, page, limit };
 }
 
 /* ─────────────────── statement decreases awaiting approval ───────────────────
@@ -214,6 +222,10 @@ export async function listPayments(filter, { page = 1, limit = 50 } = {}) {
  * note, return, correction). The balance itself is not touched either way —
  * the statement already moved it. */
 const PENDING = { type: 'RECONCILIATION_DIFFERENCE', amount: { $gt: 0 }, 'meta.approved': { $exists: false } };
+// Set COLLECTIONS_APPROVALS=1 to keep unexplained decreases for a person to approve. Off by default: the statement is the record.
+const needsApproval = () => process.env.COLLECTIONS_APPROVALS === '1';
+/** The statement is uploaded in the morning; whatever it shows as paid came in the day before. */
+const cameOn = asOn => { const d = new Date((asOn || todayYmd()) + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0, 10); };
 
 export async function listPendingApprovals(scopeF, { page = 1, limit = 50 } = {}) {
   const f = { ...scopeF, ...PENDING };
@@ -253,10 +265,10 @@ export async function approveDecrease(eventId, { by }) {
     const dealer = await Dealer.findById(e.dealerId, 'name salesman').session(session).lean();
     const balance = await ColBalance.findOne({ dealerId: e.dealerId }).session(session);
     const paymentNo = await Counter.next('col_payment');
-    const date = e.meta?.to || todayYmd();
+    const date = cameOn(e.meta?.to);
     const [p] = await ColPayment.create([{
       paymentNo, dealerId: e.dealerId, cycleId: e.cycleId || balance?.openCycleId || null, salesmanId: dealer?.salesman || '',
-      date, amount: e.amount, mode: 'OTHER', reference: `statement ${date}`, collectedBy: '', enteredBy: by, remarks: `Decrease in the statement of ${date}, approved as money received`,
+      date, amount: e.amount, mode: 'OTHER', reference: `statement ${e.meta?.to}`, collectedBy: '', enteredBy: by, remarks: `Decrease in the statement of ${e.meta?.to}, approved as money received`,
       status: 'CONFIRMED', allocated: 0, unallocated: e.amount, confirmedBy: by, confirmedAt: new Date(), source: 'statement',
     }], { session });
     // The same crediting a confirmed payment does — promises first, then the cycle — but the balance stays: the statement already moved it.
@@ -295,4 +307,163 @@ export async function dismissDecrease(eventId, { by, reason }) {
   e.set('meta', { ...(e.meta || {}), approved: false, dismissedBy: by, dismissedAt: new Date(), reason: String(reason || '').slice(0, 300) }); e.markModified('meta'); await e.save();
   await writeAudit({ entity: 'event', entityId: e._id, action: 'decrease-not-a-payment', after: { amount: e.amount, reason }, by });
   return e;
+}
+
+/* ───────────── the sheet as proof: recorded payments confirmed by a decrease ─────────────
+ * A salesman records ₹3,000. The next statement shows the dealer down by
+ * ₹3,000 (or more). The money is evidently in — nobody needs to click. The
+ * recorded payment is confirmed on its own (balance untouched: the statement
+ * already moved it), promises are credited, and the decrease is marked
+ * explained to that extent. Whatever the sheet cannot account for stays in
+ * the approval queue. Runs after every statement, and again whenever a
+ * payment is recorded (the sheet may already have shown the drop). */
+async function creditMoney(dealerId, amount, cycleId, by, session) {
+  let toCredit = amount;
+  const promises = [
+    ...await ColPromise.find({ dealerId, status: { $in: ['PENDING', 'PARTIALLY_FULFILLED'] } }).sort({ promiseDate: 1 }).session(session),
+    ...await ColPromise.find({ dealerId, status: 'BROKEN' }).sort({ promiseDate: 1 }).session(session)];
+  for (const pr of promises) {
+    if (toCredit <= 0) break;
+    const gap = Math.max(0, pr.amount - pr.received); const give = Math.min(gap, toCredit); if (give <= 0) continue;
+    pr.received += give; toCredit -= give;
+    if (pr.received >= pr.amount) { pr.status = 'FULFILLED'; pr.fulfilledAt = new Date(); } else pr.status = 'PARTIALLY_FULFILLED';
+    await pr.save({ session });
+    if (pr.status === 'FULFILLED') await ColEvent.create([{ dealerId, cycleId, type: 'PROMISE_KEPT', amount: pr.amount, refType: 'promise', refId: pr._id, by }], { session });
+  }
+  const cycle = cycleId ? await ColCycle.findById(cycleId).session(session) : null;
+  if (cycle) { cycle.paidTotal += amount; await cycle.save({ session }); }
+}
+
+export async function autoConfirmFromStatements(dealerId, { by = 'statement' } = {}) {
+  const did = [];
+  await withTxn(async session => {
+    const diffs = await ColEvent.find({ dealerId: oid(dealerId), ...PENDING }).sort({ at: 1 }).session(session);
+    if (!diffs.length) return;
+    const recorded = await ColPayment.find({ dealerId: oid(dealerId), status: 'RECORDED' }).sort({ date: 1, createdAt: 1 }).session(session);
+    for (const e of diffs) {
+      let left = e.amount; const used = [];
+      for (const p of recorded) {
+        if (p.status !== 'RECORDED' || p.date > (e.meta?.to || '9999')) continue;   // a payment dated after the statement cannot be in it
+        if (p.amount > left) continue;
+        p.status = 'CONFIRMED'; p.confirmedBy = by; p.confirmedAt = new Date();
+        p.set('remarks', [p.remarks, `auto-confirmed: statement of ${e.meta?.to} shows the decrease`].filter(Boolean).join(' · ').slice(0, 1000));
+        await p.save({ session });
+        await creditMoney(e.dealerId, p.amount, p.cycleId || e.cycleId, by, session);
+        await ColEvent.create([{ dealerId: e.dealerId, cycleId: p.cycleId || e.cycleId, type: 'PAYMENT_CONFIRMED', amount: p.amount, refType: 'payment', refId: p._id, by, note: `auto-confirmed by statement ${e.meta?.to}` }], { session });
+        await writeAudit({ entity: 'payment', entityId: p._id, action: 'auto-confirmed', after: { amount: p.amount, statement: e.meta?.to, eventId: e._id }, by });
+        left -= p.amount; used.push({ paymentId: p._id, amount: p.amount }); did.push(p._id);
+        if (left <= 0) break;
+      }
+      // A promise is proof too: the dealer said how much, the sheet shows that
+      // much (or more) went out. Written as a confirmed payment from the
+      // statement, the promise kept. Less than promised is left for a person.
+      if (left > 0) {
+        const open = [
+          ...await ColPromise.find({ dealerId: e.dealerId, status: { $in: ['PENDING', 'PARTIALLY_FULFILLED'] } }).sort({ promiseDate: 1 }).session(session),
+          ...await ColPromise.find({ dealerId: e.dealerId, status: 'BROKEN' }).sort({ promiseDate: 1 }).session(session)];
+        for (const pr of open) {
+          const due = Math.max(0, pr.amount - (pr.received || 0));
+          if (due <= 0 || due > left) continue;
+          const paymentNo = await Counter.next('col_payment');
+          const date = cameOn(e.meta?.to);
+          const [p] = await ColPayment.create([{ paymentNo, dealerId: e.dealerId, cycleId: e.cycleId, salesmanId: pr.employeeId || '', date, amount: due, mode: 'OTHER', reference: `statement ${e.meta?.to}`, enteredBy: by, remarks: `Promised ${pr.amount.toLocaleString('en-IN')} by ${pr.promiseDate}; the statement of ${e.meta?.to} shows it came`, status: 'CONFIRMED', allocated: 0, unallocated: due, confirmedBy: by, confirmedAt: new Date(), source: 'statement' }], { session });
+          pr.received = pr.amount; pr.status = 'FULFILLED'; pr.fulfilledAt = new Date(); await pr.save({ session });
+          await ColEvent.create([{ dealerId: e.dealerId, cycleId: e.cycleId, type: 'PROMISE_KEPT', amount: pr.amount, refType: 'promise', refId: pr._id, by, note: `statement ${date}` },
+                                 { dealerId: e.dealerId, cycleId: e.cycleId, type: 'PAYMENT_CONFIRMED', amount: due, refType: 'payment', refId: p._id, by, note: `promise kept · statement ${date}` }], { session, ordered: true });
+          const cycle = e.cycleId ? await ColCycle.findById(e.cycleId).session(session) : null;
+          if (cycle) { cycle.paidTotal += due; await cycle.save({ session }); }
+          await writeAudit({ entity: 'payment', entityId: p._id, action: 'auto-confirmed-promise', after: { amount: due, promiseId: pr._id, statement: date, eventId: e._id }, by });
+          left -= due; used.push({ paymentId: p._id, promiseId: pr._id, amount: due }); did.push(p._id);
+          if (left <= 0) break;
+        }
+      }
+      // The rest is money too. The statement is the book of record: a dealer
+      // owing less is a dealer who paid. Written as a confirmed payment from
+      // the statement so it shows as collected — for the salesman, the
+      // dashboard and the reports — with no one having to press anything.
+      if (left > 0 && !needsApproval()) {
+        const Dealer = mongoose.models.Dealer;
+        const dealer = await Dealer.findById(e.dealerId, 'salesman').session(session).lean();
+        const paymentNo = await Counter.next('col_payment');
+        const date = cameOn(e.meta?.to);
+        const [p] = await ColPayment.create([{ paymentNo, dealerId: e.dealerId, cycleId: e.cycleId, salesmanId: dealer?.salesman || '', date, amount: left, mode: 'OTHER', reference: `statement ${e.meta?.to}`, enteredBy: by, remarks: `Statement of ${e.meta?.to} shows ${left.toLocaleString('en-IN')} less owed`, status: 'CONFIRMED', allocated: 0, unallocated: left, confirmedBy: by, confirmedAt: new Date(), source: 'statement' }], { session });
+        p.set('unmatched', left, { strict: false }); await p.save({ session });   // how much of it no record or promise has claimed yet
+        await creditMoney(e.dealerId, left, e.cycleId, by, session);
+        await ColEvent.create([{ dealerId: e.dealerId, cycleId: e.cycleId, type: 'PAYMENT_CONFIRMED', amount: left, refType: 'payment', refId: p._id, by, note: `from statement ${date}` }], { session });
+        await writeAudit({ entity: 'payment', entityId: p._id, action: 'from-statement', after: { amount: left, statement: date, eventId: e._id }, by });
+        used.push({ paymentId: p._id, amount: left, unmatched: true }); did.push(p._id); left = 0;
+      }
+      if (used.length) {
+        const meta = { ...(e.meta || {}), autoConfirmed: [...(e.meta?.autoConfirmed || []), ...used], explained: (e.meta?.explained || 0) + (e.amount - left) };
+        if (left <= 0) Object.assign(meta, { approved: true, approvedBy: by, approvedAt: new Date(), auto: true });
+        e.amount = left; e.set('meta', meta); e.markModified('meta'); await e.save({ session });
+      }
+    }
+    const balance = await ColBalance.findOne({ dealerId: oid(dealerId) }).session(session);
+    if (balance && did.length) {
+      const next = await ColPromise.findOne({ dealerId: oid(dealerId), status: { $in: ['PENDING', 'PARTIALLY_FULFILLED'] } }).sort({ promiseDate: 1 }).session(session).lean();
+      balance.promise = next ? { id: next._id, amount: next.amount - next.received, date: next.promiseDate } : undefined;
+      balance.brokenPromises = await ColPromise.countDocuments({ dealerId: oid(dealerId), status: 'BROKEN' }).session(session);
+      const lastPaid = await ColPayment.findOne({ dealerId: oid(dealerId), status: 'CONFIRMED' }, 'date').sort({ date: -1 }).session(session).lean();
+      if (lastPaid) balance.lastPaymentAt = new Date(lastPaid.date + 'T00:00:00');
+      await balance.save({ session });
+    }
+  });
+  if (did.length) await refreshBalance(dealerId);
+  return did;
+}
+
+// After a statement: every dealer it left a decrease on gets the check.
+hooks.on('import.applied', async ({ importId }) => {
+  const dealers = await ColEvent.distinct('dealerId', { importId: oid(importId), ...PENDING });
+  let n = 0, m = 0;
+  for (const d of dealers) {
+    try { n += (await autoConfirmFromStatements(d)).length; } catch (e) { console.warn('[COL AUTO-CONFIRM]', String(d), e.message); }
+    // A record bigger than any single day's drop is covered once enough days add up.
+    for (const r of await ColPayment.find({ dealerId: d, status: 'RECORDED' }).sort({ date: 1 }).lean()) {
+      try { if (await absorbIntoStatementPayments(r._id, {})) m++; } catch (e) { console.warn('[COL AUTO-CONFIRM]', String(r._id), e.message); }
+    }
+  }
+  if (n || m) console.log('[COL AUTO-CONFIRM]', n + m, 'recorded payment(s) confirmed by the statement');
+});
+
+/** For a RECORDED entry: how much the statements have shown coming in since it was recorded (capped at the entry). */
+export async function cameSoFar(items) {
+  const rec = items.filter(p => p.status === 'RECORDED'); if (!rec.length) return new Map();
+  const pool = await ColPayment.find({ dealerId: { $in: rec.map(p => p.dealerId) }, source: 'statement', status: 'CONFIRMED', unmatched: { $gt: 0 } }, 'dealerId date unmatched').lean();
+  const out = new Map();
+  for (const p of rec) { const avail = pool.filter(x => String(x.dealerId) === String(p.dealerId) && x.date >= p.date).reduce((a, x) => a + (x.unmatched || 0), 0); out.set(String(p._id), Math.min(p.amount, avail)); }
+  return out;
+}
+
+/**
+ * A salesman records a payment the statement has already written on its own
+ * (the drop showed up before he got to the app). His record is confirmed
+ * against those statement payments and takes over that much of them, so the
+ * money is counted once and the collection is his. Needs statement payments
+ * dated on/after his payment adding up to at least his amount.
+ */
+export async function absorbIntoStatementPayments(paymentId, { by = 'statement' } = {}) {
+  return withTxn(async session => {
+    const p = await ColPayment.findById(paymentId).session(session);
+    if (!p || p.status !== 'RECORDED') return null;
+    const pool = await ColPayment.find({ dealerId: p.dealerId, source: 'statement', status: 'CONFIRMED', date: { $gte: p.date }, unmatched: { $gt: 0 } }).sort({ date: 1 }).session(session);
+    const available = pool.reduce((a, x) => a + (x.get('unmatched') || 0), 0);
+    if (available < p.amount) return null;
+    let need = p.amount; const took = [];
+    for (const x of pool) {
+      if (need <= 0) break;
+      const u = x.get('unmatched') || 0; const take = Math.min(u, need); if (take <= 0) continue;
+      x.amount -= take; x.unallocated = Math.max(0, (x.unallocated || 0) - take); x.set('unmatched', u - take, { strict: false });
+      if (x.amount <= 0) { await ColEvent.deleteMany({ refType: 'payment', refId: x._id }).session(session); await ColPayment.deleteOne({ _id: x._id }).session(session); }
+      else await x.save({ session });
+      need -= take; took.push({ paymentId: x._id, amount: take, date: x.date });
+    }
+    p.status = 'CONFIRMED'; p.confirmedBy = by; p.confirmedAt = new Date();
+    p.set('remarks', [p.remarks, `confirmed: statement of ${took[took.length - 1].date} already showed it`].filter(Boolean).join(' · ').slice(0, 1000));
+    await p.save({ session });
+    await ColEvent.create([{ dealerId: p.dealerId, cycleId: p.cycleId, type: 'PAYMENT_CONFIRMED', amount: p.amount, refType: 'payment', refId: p._id, by, note: `matches statement ${took[took.length - 1].date}` }], { session });
+    await writeAudit({ entity: 'payment', entityId: p._id, action: 'confirmed-against-statement', after: { amount: p.amount, took }, by });
+    return p;
+  });
 }

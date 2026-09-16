@@ -9,8 +9,8 @@ const PRIORITIES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
 
 /** The current book: one row per dealer, the server's figure, never a sheet. */
 export default function Outstanding({ params }) {
-  const { users, isStaff, open: openDealer } = useDealerCtx();
-  const [q, setQ] = useState({ page: 1, limit: 50, sort: 'total', dir: 'desc', owing: '1', status: params?.status || '', priority: params?.priority || '', salesmanId: params?.salesmanId || '', q: '' });
+  const { users, isStaff, open: openDealer, openRow } = useDealerCtx();
+  const [q, setQ] = useState({ page: 1, limit: 50, sort: 'total', dir: 'desc', owing: '1', status: params?.status || '', priority: params?.priority || '', salesmanId: params?.salesmanId || '', pending: params?.pending || '', q: '' });
   const [text, setText] = useState('');
   const { data, busy, err, reload } = useLoad(() => col.outstanding(q), [JSON.stringify(q)]);
   const [form, setForm] = useState(null);
@@ -34,6 +34,7 @@ export default function Outstanding({ params }) {
           <select className="sel" value={q.priority} onChange={e => set({ priority: e.target.value })}><option value="">Any priority</option>{PRIORITIES.map(s => <option key={s} value={s}>{s}</option>)}<option value="HIGH,CRITICAL">High + Critical</option></select>
           {isStaff && <select className="sel" value={q.salesmanId} onChange={e => set({ salesmanId: e.target.value })}><option value="">All salesmen</option>{(users || []).filter(u => u.role === 'salesman').map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select>}
           <label className="row" style={{ fontSize: 12, gap: 5 }}><input type="checkbox" checked={q.owing === '1'} onChange={e => set({ owing: e.target.checked ? '1' : '' })} /> owing only</label>
+          <label className="row" style={{ fontSize: 12, gap: 5, color: '#b45309' }} data-tip="Dealers with a payment a salesman recorded that no statement has shown yet"><input type="checkbox" checked={q.pending === '1'} onChange={e => set({ pending: e.target.checked ? '1' : '' })} /> recorded, not in statement</label>
           <input className="inp" type="number" style={{ maxWidth: 140 }} placeholder="Min ₹" value={q.minTotal || ''} onChange={e => set({ minTotal: e.target.value })} />
         </div>
       </Card>
@@ -55,7 +56,7 @@ export default function Outstanding({ params }) {
                 <button className="btn" style={{ padding: '3px 8px', color: 'var(--pur)', display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5 }} data-tip="Write down a follow-up" onClick={e => { e.stopPropagation(); setForm({ kind: 'followup', dealer: dealerOf(r) }); }}><NotebookPen size={12} /><span className="col-lbl">Follow-up</span></button>
                 <button className="btn" style={{ padding: '3px 8px', color: 'var(--grn)', display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5 }} data-tip="Record a payment" onClick={e => { e.stopPropagation(); setForm({ kind: 'payment', dealer: dealerOf(r) }); }}><Banknote size={12} /><span className="col-lbl">Payment</span></button>
                 <button className="btn" style={{ padding: '3px 8px', color: '#25D366', display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5 }} data-tip="WhatsApp" onClick={e => { e.stopPropagation(); setForm({ kind: 'wa', dealer: dealerOf(r) }); }}><WhatsAppIcon size={13} /><span className="col-lbl">WhatsApp</span></button></div> },
-          ]} rows={data?.items} keyOf={r => r.dealerId} onRow={r => openDealer(r.dealerId)} empty="No dealers match. Import a statement first if the module is new."
+          ]} rows={data?.items} keyOf={r => r.dealerId} onRow={r => openRow(r)} empty="No dealers match. Import a statement first if the module is new."
           card={r => <>
             <CardRow><DealerLink id={r.dealerId} name={r.dealerName} code={r.dealerCode} /><StatusBadge status={r.status} priority={r.priority} /></CardRow>
             <div style={{ fontSize: 11.5, color: 'var(--t2)', margin: '2px 0 8px' }}>{r.salesmanName}{r.ageDays != null ? ` · ${r.ageDays} days` : ''}</div>
