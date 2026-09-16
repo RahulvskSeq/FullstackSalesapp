@@ -45,7 +45,8 @@ export default function SalesByBrand({ monthLabel, salesman }) {
   const [q, setQ] = useState('');
   const [selected, setSelected] = useState([]);   // empty = show the top few
   const [showAll, setShowAll] = useState(false);
-  const [showParent, setShowParent] = useState(false);
+  const [mapOpen, setMapOpen] = useState(false);      // private-label mapping modal
+  const [reloadKey, setReloadKey] = useState(0);
   // Narrow the catalogues to one or more app categories (LAMINATE, LINER…).
   const [cats, setCats] = useState([]);
   // Full drill-down for one catalogue, opened from a card.
@@ -65,13 +66,12 @@ export default function SalesByBrand({ monthLabel, salesman }) {
     setLoading(true);
     const p = { month };
     if (salesman) p.salesman = salesman;
-    if (showParent) p.showParent = '1';
     if (cats.length) p.category = cats.join(',');
     api.salesByBrand(p)
       .then(setData)
       .catch(() => setData(null))
       .finally(() => setLoading(false));
-  }, [month, salesman, showParent, cats]);
+  }, [month, salesman, cats, reloadKey]);
 
   useEffect(() => {
     if (!expanded || !month) { setDetail(null); return; }
@@ -249,6 +249,10 @@ export default function SalesByBrand({ monthLabel, salesman }) {
         </div>
       </div>
 
+      {mapOpen && (
+        <MapLabelsModal month={month} onClose={() => setMapOpen(false)} onSaved={() => { setMapOpen(false); setReloadKey(k => k + 1); }} />
+      )}
+
       {modalBrand && (
         <CatalogueModal
           brand={modalBrand}
@@ -341,17 +345,17 @@ export default function SalesByBrand({ monthLabel, salesman }) {
 
             {/* Hidden catalogues are stated, never silently dropped: a report
                 that quietly omits sales is worse than one that shows clutter. */}
-            {(data?.hiddenParent?.length > 0 || showParent) && (
+            {/* Parent families and dealer labels never show as cards; what could not
+                be placed in a child catalogue is counted here instead. */}
+            {(data?.ownName?.length > 0) && (
               <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                {showParent
-                  ? <span>Showing parent catalogues too.</span>
-                  : <span>
-                      Child catalogues only ·{' '}
-                      <b style={{ color: 'var(--t2)' }}>{data.hiddenParent.length}</b> parent catalogue
-                      {data.hiddenParent.length === 1 ? '' : 's'} hidden ({n(data.hiddenParentQty)} units)
-                    </span>}
-                <button className="btn" style={{ padding: '2px 8px', fontSize: 10.5 }} onClick={() => setShowParent(v => !v)}>
-                  {showParent ? 'Child only' : 'Show parent too'}
+                <span>Child catalogues only ·</span>
+                <span title={data.ownName.map(h => `${h.brand} ${n(h.qty)}`).join(' · ')}>
+                  <b style={{ color: 'var(--t2)' }}>{n(data.ownNameQty)}</b> units in {data.ownName.length} parent / dealer-name catalogue{data.ownName.length === 1 ? '' : 's'} not shown — no child listing exists for them in the product master
+                </span>
+                <button className="btn" style={{ padding: '2px 8px', fontSize: 10.5 }} onClick={() => setMapOpen(true)}
+                  title="Force a dealer private label onto a catalogue">
+                  Map private labels
                 </button>
               </div>
             )}
@@ -377,6 +381,8 @@ export default function SalesByBrand({ monthLabel, salesman }) {
                         fontSize: 12.5, fontWeight: 600, flex: 1, minWidth: 0,
                         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                       }}>{r.brand}</span>
+                      {r.kind === 'parent' && <span className="chip" title="Parent family — no child listing in the master, so it is shown as itself" style={{ fontSize: 9, padding: '0 5px', color: 'var(--t3)' }}>family</span>}
+                      {r.kind === 'label' && <span className="chip" title="Dealer private label that could not be placed — use Map private labels" style={{ fontSize: 9, padding: '0 5px', color: '#b45309' }}>label</span>}
                       <b style={{ fontSize: 14, fontVariantNumeric: 'tabular-nums' }}>{n(r.qty)}</b>
                     </div>
 
@@ -385,7 +391,7 @@ export default function SalesByBrand({ monthLabel, salesman }) {
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: 'var(--t3)' }}>
-                      <span>{r.dealers} dealer{r.dealers === 1 ? '' : 's'}</span>
+                      <span>{r.dealers} dealer{r.dealers === 1 ? '' : 's'}{r.fromLabels > 0 && <span title={`${n(r.fromLabels)} units came in under dealer private labels mapped to this catalogue`}> · {n(r.fromLabels)} via labels</span>}</span>
                       <span>{share.toFixed(1)}% of total</span>
                     </div>
 
@@ -464,6 +470,85 @@ export default function SalesByBrand({ monthLabel, salesman }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Which catalogue is each dealer private label really? The ERP calls a
+ * dealer's own-name catalogue ("INNERSPACE") a catalogue; the admin maps it to
+ * the real one once and every report folds it in from then on.
+ */
+function MapLabelsModal({ month, onClose, onSaved }) {
+  const [d, setD] = useState(null);
+  const [draft, setDraft] = useState({});
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  useEffect(() => {
+    api.catalogueAliases(month ? { month } : {})
+      .then(r => { setD(r); setDraft(r.aliases || {}); })
+      .catch(e => setErr(e.message || 'Could not load'));
+  }, [month]);
+  const set = (label, target) => setDraft(x => { const y = { ...x }; if (target.trim()) y[label] = target.trim(); else delete y[label]; return y; });
+  const save = async () => {
+    setBusy(true); setErr('');
+    try { await api.catalogueAliasesSave(draft, month ? { month } : {}); onSaved(); }
+    catch (e) { setErr(e.message || 'Save failed'); setBusy(false); }
+  };
+  const labels = d?.labels || [];
+  return (
+    <div className="overlay" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal" style={{ maxWidth: 640, width: '100%', maxHeight: '85vh', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
+        <div style={{ padding: '14px 18px 10px', borderBottom: '1px solid var(--b1)', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 15, fontWeight: 800 }}>Dealer private labels</div>
+            <div style={{ fontSize: 11.5, color: 'var(--t2)', marginTop: 2 }}>These catalogue names are dealers' own labels. Each product is placed automatically in the real catalogue it belongs to (from the product master). Type a catalogue here only to force a whole label somewhere else.</div>
+          </div>
+          <button className="btn" onClick={onClose} style={{ marginLeft: 'auto', padding: '4px 7px' }}><X size={14} /></button>
+        </div>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '10px 18px' }}>
+          {err && <div style={{ fontSize: 12, color: 'var(--red)', marginBottom: 8 }}>{err}</div>}
+          {!d && !err && <div style={{ fontSize: 12, color: 'var(--t3)' }}>Loading…</div>}
+          {d && labels.length === 0 && <div style={{ fontSize: 12, color: 'var(--t3)' }}>No dealer-named catalogues this month.</div>}
+          {labels.length > 0 && (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+              <thead><tr style={{ fontSize: 10, color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: '.07em' }}>
+                <th style={{ textAlign: 'left', padding: '4px 0' }}>Label (dealer)</th>
+                <th style={{ textAlign: 'right', padding: '4px 8px' }}>Units</th>
+                <th style={{ textAlign: 'left', padding: '4px 0' }}>Placed automatically</th>
+                <th style={{ textAlign: 'left', padding: '4px 0 4px 8px' }}>Force to (optional)</th>
+              </tr></thead>
+              <tbody>
+                {labels.map(l => {
+                  const v = draft[l.brand] || '';
+                  const known = !v || d.targets.includes(v);
+                  return (
+                    <tr key={l.brand} style={{ borderTop: '1px solid var(--b1)' }}>
+                      <td style={{ padding: '6px 0', fontWeight: 600 }}>{l.brand}</td>
+                      <td style={{ padding: '6px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--t2)' }}>{n(l.qty)}</td>
+                      <td style={{ padding: '6px 0', fontSize: 11.5, color: 'var(--t2)' }}>
+                        {(l.auto || []).length === 0 ? <span style={{ color: 'var(--t3)' }}>—</span>
+                          : (l.auto || []).map(a => <div key={a.catalogue || '_'} style={{ whiteSpace: 'nowrap' }}>{a.catalogue ? <b style={{ color: 'var(--t1)' }}>{a.catalogue}</b> : <span style={{ color: 'var(--yel)' }}>not resolved · hidden</span>} <span style={{ fontVariantNumeric: 'tabular-nums' }}>{n(a.qty)}</span></div>)}
+                      </td>
+                      <td style={{ padding: '6px 0 6px 8px' }}>
+                        <input className="inp" list="col-alias-targets" value={v} onChange={e => set(l.brand, e.target.value)} placeholder="automatic"
+                          style={{ width: '100%', fontSize: 12, borderColor: v ? (known ? 'var(--grn)' : 'var(--yel)') : undefined }} />
+                        {v && !known && <div style={{ fontSize: 10, color: 'var(--yel)' }}>not a known child catalogue — it will still be shown as a card</div>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+          <datalist id="col-alias-targets">{(d?.targets || []).map(t => <option key={t} value={t} />)}</datalist>
+        </div>
+        <div style={{ padding: '10px 18px', borderTop: '1px solid var(--b1)', display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center' }}>
+          <span style={{ fontSize: 11, color: 'var(--t3)', marginRight: 'auto' }}>{Object.keys(draft).length} forced · {labels.filter(l => !draft[l.brand]).length} automatic</span>
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btnp" onClick={save} disabled={busy || !d}>{busy ? 'Saving…' : 'Save'}</button>
+        </div>
+      </div>
     </div>
   );
 }

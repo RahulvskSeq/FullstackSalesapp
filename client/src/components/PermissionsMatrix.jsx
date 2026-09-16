@@ -24,6 +24,13 @@ import { notify } from './Toast';
  */
 
 const EMPTY = { pages: [], features: [], states: [], cities: [], zones: [], salesmen: [] };
+// Roles a default can be set for. Superadmin is never restricted. Keyed as
+// "role:<name>" in the draft so the same cell logic serves users and roles.
+const ROLE_COLS = [
+  { id: 'role:salesman', role: 'salesman', name: 'Salesman', hint: 'built-in: sales screens, no admin actions' },
+  { id: 'role:employee', role: 'employee', name: 'Employee', hint: 'built-in: staff screens, actions only when granted' },
+  { id: 'role:admin',    role: 'admin',    name: 'Admin',    hint: 'built-in: everything' },
+];
 
 export default function PermissionsMatrix({ setUsers, currentUser }) {
   // Own copy of the roster: the map App passes around is for display and does
@@ -33,6 +40,8 @@ export default function PermissionsMatrix({ setUsers, currentUser }) {
   const [globalOff, setGlobalOff] = useState([]);
   const [draft, setDraft]       = useState({});     // uid → { pages:Set, features:Set }
   const [view, setView]         = useState('pages');
+  const [mode, setMode]         = useState('users');    // 'users' | 'roles'
+  const [roleStored, setRoleStored] = useState({});     // role → { pages:[], features:[] } as saved
   const [q, setQ]               = useState('');
   const [busy, setBusy]         = useState(false);
 
@@ -42,6 +51,7 @@ export default function PermissionsMatrix({ setUsers, currentUser }) {
     api.actionPermissions().then(r => setActions(r?.actions || [])).catch(() => setActions([]));
     api.featuresGet().then(r => setGlobalOff(r?.disabled || [])).catch(() => {});
     api.getUsersAll().then(r => setLocalUsers(r || {})).catch(() => setLocalUsers({}));
+    api.rolePermissions().then(r => setRoleStored(r?.permissions || {})).catch(() => {});
   }, []);
 
   // Seed the draft from what is stored. Kept as Sets so a cell toggle is cheap.
@@ -54,11 +64,16 @@ export default function PermissionsMatrix({ setUsers, currentUser }) {
         features: new Set(Array.isArray(p.features) ? p.features : []),
       };
     }
+    for (const rc of ROLE_COLS) {
+      const p = roleStored[rc.role] || EMPTY;
+      d[rc.id] = { pages: new Set(p.pages || []), features: new Set(p.features || []) };
+    }
     setDraft(d);
   };
-  useEffect(seed, [users]);
+  useEffect(seed, [users, roleStored]);
 
   const rows = useMemo(() => {
+    if (mode === 'roles') return ROLE_COLS;
     const list = Object.values(users || {})
       // A superadmin ignores every restriction, so a row of checkboxes for one
       // would be a lie. They are listed, greyed, and not editable.
@@ -68,7 +83,7 @@ export default function PermissionsMatrix({ setUsers, currentUser }) {
     return needle
       ? list.filter(u => (u.name || '').toLowerCase().includes(needle) || (u.id || '').toLowerCase().includes(needle))
       : list;
-  }, [users, q]);
+  }, [users, q, mode]);
 
   const cols = view === 'pages'
     ? NAV_PAGES.map(p => ({ key: p.id, label: p.label }))
@@ -76,31 +91,64 @@ export default function PermissionsMatrix({ setUsers, currentUser }) {
 
   const field = view === 'pages' ? 'pages' : 'features';
 
-  const has = (uid, key) => !!draft[uid]?.[field]?.has(key);
-  const setCell = (uid, key, on) => {
+  // What a user or role actually has when no list is stored — the built-in
+  // rules the app applies (mirrors pageVisible / hasFeature in App.jsx).
+  // Pages: three are superadmin-only, a few need staff; everything else is
+  // open. Actions: an admin may do everything, others nothing until granted.
+  const SUPER_ONLY = new Set(['upload', 'entry', 'months']);
+  const STAFF_ONLY = new Set(['colImports', 'colReconciliation', 'colSettings', 'reports', 'admin']);
+  const builtIn = (role) => field === 'pages'
+    ? new Set(NAV_PAGES.map(p => p.id).filter(id => !SUPER_ONLY.has(id) && (!STAFF_ONLY.has(id) || role === 'admin' || (role === 'employee' && id !== 'admin'))))
+    : new Set(role === 'admin' ? actions.map(a => a.key) : []);
+  // user list → role list → built-in
+  const baseFor = (u) => {
+    if (u.role === 'superadmin') return new Set(cols.map(c => c.key));
+    if (!String(u.id).startsWith('role:')) {
+      const rl = roleStored[u.role]?.[field] || [];
+      if (rl.length) return new Set(rl);
+    }
+    return builtIn(u.role);
+  };
+  const stored = (uid) => draft[uid]?.[field] || new Set();
+  const isDefault = (u) => stored(u.id).size === 0;
+  // ticks show the EFFECTIVE permission: the stored list, or the default it falls back to
+  const shown = (u, key) => isDefault(u) ? baseFor(u).has(key) : stored(u.id).has(key);
+  // first click on a default column copies the default into a list of its own, then changes it
+  const setCell = (u, key, on) => {
+    const base = isDefault(u) ? baseFor(u) : null;
     setDraft(d => {
-      const cur = d[uid] || { pages: new Set(), features: new Set() };
-      const next = new Set(cur[field]);
+      const cur = d[u.id] || { pages: new Set(), features: new Set() };
+      const next = new Set(base || cur[field]);
       on ? next.add(key) : next.delete(key);
-      return { ...d, [uid]: { ...cur, [field]: next } };
+      return { ...d, [u.id]: { ...cur, [field]: next } };
     });
   };
+  const clearList = (u) => setDraft(d => ({ ...d, [u.id]: { ...(d[u.id] || { pages: new Set(), features: new Set() }), [field]: new Set() } }));
   const editable = (u) => isSuperAdmin && u.role !== 'superadmin';
 
-  const toggleCell   = (uid, key) => setCell(uid, key, !has(uid, key));
-  const toggleRow    = (uid) => {
-    const all = cols.every(c => has(uid, c.key));
-    cols.forEach(c => setCell(uid, c.key, !all));
+  const toggleCell   = (u, key) => setCell(u, key, !shown(u, key));
+  const toggleRow    = (u) => {
+    const all = cols.every(c => shown(u, c.key));
+    cols.forEach(c => setCell(u, c.key, !all));
   };
   const toggleColumn = (key) => {
     const targets = rows.filter(editable);
-    const all = targets.every(u => has(u.id, key));
-    targets.forEach(u => setCell(u.id, key, !all));
+    const all = targets.every(u => shown(u, key));
+    targets.forEach(u => setCell(u, key, !all));
   };
 
   // What actually differs from what is stored — only those users get written.
   const changed = useMemo(() => {
     const out = [];
+    if (mode === 'roles') {
+      for (const rc of ROLE_COLS) {
+        const d = draft[rc.id]; if (!d) continue;
+        const p = roleStored[rc.role] || EMPTY;
+        const same = (setA, arr) => setA.size === (arr || []).length && (arr || []).every(x => setA.has(x));
+        if (!same(d.pages, p.pages) || !same(d.features, p.features)) out.push(rc.id);
+      }
+      return out;
+    }
     for (const u of Object.values(users || {})) {
       const d = draft[u.id]; if (!d) continue;
       const p = u.permissions || EMPTY;
@@ -108,11 +156,19 @@ export default function PermissionsMatrix({ setUsers, currentUser }) {
       if (!same(d.pages, p.pages) || !same(d.features, p.features)) out.push(u.id);
     }
     return out;
-  }, [draft, users]);
+  }, [draft, users, roleStored, mode]);
 
   const save = async () => {
     if (!changed.length) return;
     setBusy(true);
+    if (mode === 'roles') {
+      const permissions = {};
+      for (const rc of ROLE_COLS) permissions[rc.role] = { pages: [...(draft[rc.id]?.pages || [])], features: [...(draft[rc.id]?.features || [])] };
+      try { const r = await api.rolePermissionsSave(permissions); setRoleStored(r?.permissions || permissions); notify.success('Role defaults saved — applies to everyone on those roles without a list of their own'); }
+      catch (e) { notify.error(e?.message || 'Not saved'); }
+      setBusy(false);
+      return;
+    }
     let ok = 0, failed = [];
     const nextUsers = { ...users };
     for (const uid of changed) {
@@ -168,8 +224,8 @@ export default function PermissionsMatrix({ setUsers, currentUser }) {
   const [hoverCol, setHoverCol] = useState('');
   const toggleGroup = (g) => {
     const targets = rows.filter(editable);
-    const all = targets.every(u => g.cols.every(c => has(u.id, c.key)));
-    targets.forEach(u => g.cols.forEach(c => setCell(u.id, c.key, !all)));
+    const all = targets.every(u => g.cols.every(c => shown(u, c.key)));
+    targets.forEach(u => g.cols.forEach(c => setCell(u, c.key, !all)));
   };
   const GROUP_TINT = ['transparent', 'rgba(99,102,241,.05)'];
 
@@ -177,11 +233,12 @@ export default function PermissionsMatrix({ setUsers, currentUser }) {
   const CELL = 30;   // column width — wide enough for a real tick target, narrow enough for 40 columns
 
   /** One tick cell: a filled square when on, an outline when off, green when the user is unrestricted. */
-  const Tick = ({ on, free, dim }) => (
+  // soft = inherited from the role / built-in default (hollow tick); solid = the user's own list
+  const Tick = ({ on, free, dim, soft }) => (
     <span style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', width:17, height:17, borderRadius:5,
-      background: free ? 'rgba(34,197,94,.18)' : on ? 'var(--acc)' : 'var(--bg1)',
+      background: free ? 'rgba(34,197,94,.18)' : on ? (soft ? 'rgba(99,102,241,.16)' : 'var(--acc)') : 'var(--bg1)',
       border: free ? '1px solid rgba(34,197,94,.45)' : on ? '1px solid var(--acc)' : '1.5px solid var(--b2)',
-      color: free ? 'var(--grn)' : '#fff', opacity: dim ? .35 : 1, transition:'background .1s' }}>
+      color: free ? 'var(--grn)' : (soft ? 'var(--acc)' : '#fff'), opacity: dim ? .35 : 1, transition:'background .1s' }}>
       {(on || free) && <Check size={12} strokeWidth={3}/>}
     </span>
   );
@@ -197,11 +254,20 @@ export default function PermissionsMatrix({ setUsers, currentUser }) {
               style={{fontSize:11.5, padding:'4px 10px'}}>{label}</button>
           ))}
         </div>
-        <div style={{position:'relative', marginLeft:'auto'}}>
+        {/* per user, or the default for a whole role */}
+        <div style={{display:'inline-flex', border:'1px solid var(--b2)', borderRadius:6, overflow:'hidden'}}>
+          {[['users','By user'], ['roles','By role']].map(([m, label]) => (
+            <button key={m} onClick={()=>{ if (changed.length && !window.confirm('Discard unsaved changes?')) return; seed(); setMode(m); }}
+              style={{fontSize:11.5, padding:'4px 10px', border:'none', cursor:'pointer',
+                      background: mode===m ? 'var(--acc)' : 'var(--bg1)', color: mode===m ? '#fff' : 'var(--t2)', fontWeight: mode===m ? 700 : 500}}>{label}</button>
+          ))}
+        </div>
+        {mode === 'users' && <div style={{position:'relative', marginLeft:'auto'}}>
           <Search size={12} style={{position:'absolute', left:8, top:8, color:'var(--t3)'}}/>
           <input className="sel" value={q} onChange={e=>setQ(e.target.value)} placeholder="Find a user…"
             style={{fontSize:12, width:170, paddingLeft:24, cursor:'text'}}/>
-        </div>
+        </div>}
+        {mode === 'roles' && <div style={{marginLeft:'auto'}}/>}
         {changed.length > 0 && (
           <button className="btn" onClick={seed} disabled={busy}
             style={{display:'inline-flex', alignItems:'center', gap:5, fontSize:12}}>
@@ -211,14 +277,15 @@ export default function PermissionsMatrix({ setUsers, currentUser }) {
         <button className="btnp" onClick={save} disabled={!changed.length || busy}
           style={{display:'inline-flex', alignItems:'center', gap:5, fontSize:12,
                   opacity:(!changed.length||busy)?0.5:1, cursor:(!changed.length||busy)?'not-allowed':'pointer'}}>
-          <Save size={12}/> {busy ? 'Saving…' : changed.length ? `Save ${changed.length} user${changed.length===1?'':'s'}` : 'Save'}
+          <Save size={12}/> {busy ? 'Saving…' : changed.length ? (mode === 'roles' ? `Save ${changed.length} role${changed.length===1?'':'s'}` : `Save ${changed.length} user${changed.length===1?'':'s'}`) : 'Save'}
         </button>
       </div>
 
       <div style={{fontSize:11.5, color:'var(--t3)', lineHeight:1.6, marginBottom:12}}>
-        {view === 'pages'
-          ? <>A row with <b>nothing ticked</b> means role defaults — that user sees everything their role normally does. Tick anything and they see <b>only</b> what is ticked.</>
-          : <>A row with <b>nothing ticked</b> means role defaults — admins may do everything, salesmen may do no admin actions. Tick anything and they may do <b>only</b> what is ticked.</>}
+        {mode === 'roles' ? <>
+          The default for everyone on a role who has no list of their own. A role column with <b>nothing ticked</b> keeps the built-in default; tick anything and that role gets <b>only</b> what is ticked.
+          A user's own list (By user) always overrides their role. Superadmins are never restricted.
+        </> : <>The ticks show what each user has <b>right now</b>. A hollow tick comes from their role; change any tick and the user gets a list of their own (solid ticks) that overrides the role. <b>↺ follow role</b> drops that list again.</>}
         {' '}Click a permission name to set it for everyone; click a user's name to set everything for them.
         {!isSuperAdmin && <> <b style={{color:'var(--yel)'}}>Read-only — only a superadmin can change permissions.</b></>}
       </div>
@@ -241,21 +308,27 @@ export default function PermissionsMatrix({ setUsers, currentUser }) {
               </th>
               {rows.map(u => {
                 const free = u.role === 'superadmin';
-                const n = cols.filter(c=>has(u.id,c.key)).length;
+                const n = cols.filter(c=>shown(u,c.key)).length;
+                const dflt = isDefault(u);
                 const canEdit = editable(u);
                 return (
-                  <th key={u.id} className={'u' + (hoverCol === u.id ? ' hc' : '')} onClick={()=>canEdit && toggleRow(u.id)}
+                  <th key={u.id} className={'u' + (hoverCol === u.id ? ' hc' : '')} onClick={()=>canEdit && toggleRow(u)}
                     onMouseEnter={()=>setHoverCol(u.id)} onMouseLeave={()=>setHoverCol('')}
                     title={canEdit ? `Tick / untick everything for ${u.name || u.id}` : free ? 'Superadmin — always everything' : ''}
-                    style={{...thBase, top:0, zIndex:3, padding:'8px 6px 6px', minWidth:76, maxWidth:96, textAlign:'center',
+                    style={{...thBase, top:0, zIndex:3, padding:'8px 6px 6px', minWidth: mode === 'roles' ? 160 : 76, maxWidth: mode === 'roles' ? 200 : 96, textAlign:'center',
                             borderLeft:'1px solid var(--b1)', borderBottom:'1px solid var(--b1)', cursor:canEdit?'pointer':'default', verticalAlign:'bottom'}}>
                     <div style={{fontSize:11.5, fontWeight:700, color:'var(--t1)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>{u.name || u.id}</div>
-                    <div style={{fontSize:9.5, fontWeight:500, color:'var(--t3)', textTransform:'capitalize'}}>{u.role}</div>
-                    <span style={{display:'inline-block', marginTop:4, fontSize:9.5, fontWeight:700, padding:'1px 7px', borderRadius:10, whiteSpace:'nowrap',
-                      background: free ? 'rgba(34,197,94,.14)' : n ? 'rgba(99,102,241,.14)' : 'var(--bg2)',
-                      color: free ? 'var(--grn)' : n ? 'var(--acc)' : 'var(--t3)', border:'1px solid ' + (free ? 'rgba(34,197,94,.35)' : n ? 'rgba(99,102,241,.35)' : 'var(--b1)')}}>
-                      {free ? 'all' : n ? `${n} of ${cols.length}` : 'role default'}
+                    <div style={{fontSize:9.5, fontWeight:500, color:'var(--t3)', textTransform: u.hint ? 'none' : 'capitalize', whiteSpace:'normal', maxWidth:150}}>{u.hint || u.role}</div>
+                    <span title={free ? '' : dflt ? 'No list of its own — the ticks are what the role gives. Change any tick to make an own list.' : 'Own list'}
+                      style={{display:'inline-block', marginTop:4, fontSize:9.5, fontWeight:700, padding:'1px 7px', borderRadius:10, whiteSpace:'nowrap',
+                      background: free ? 'rgba(34,197,94,.14)' : dflt ? 'var(--bg2)' : 'rgba(99,102,241,.14)',
+                      color: free ? 'var(--grn)' : dflt ? 'var(--t3)' : 'var(--acc)', border:'1px solid ' + (free ? 'rgba(34,197,94,.35)' : dflt ? 'var(--b1)' : 'rgba(99,102,241,.35)')}}>
+                      {free ? 'all' : `${n} of ${cols.length}`}{!free && dflt ? (mode === 'roles' ? ' · built-in' : ' · from role') : ''}
                     </span>
+                    {!free && !dflt && canEdit && (
+                      <div><button className="btn" onClick={e => { e.stopPropagation(); clearList(u); }} title="Drop the own list and follow the role again"
+                        style={{fontSize:9, padding:'0 6px', marginTop:3}}>↺ follow role</button></div>
+                    )}
                   </th>
                 );
               })}
@@ -287,14 +360,14 @@ export default function PermissionsMatrix({ setUsers, currentUser }) {
                         {c.desc && <div style={{fontSize:10, color:'var(--t3)', whiteSpace:'normal', maxWidth:230}}>{c.desc}</div>}
                       </td>
                       {rows.map(u => {
-                        const on = has(u.id, c.key);
+                        const on = shown(u, c.key);
                         const free = u.role === 'superadmin';
                         const canEdit = editable(u);
                         return (
-                          <td key={u.id} onClick={()=>canEdit && toggleCell(u.id, c.key)} className={hoverCol === u.id ? 'hc' : ''}
+                          <td key={u.id} onClick={()=>canEdit && toggleCell(u, c.key)} className={hoverCol === u.id ? 'hc' : ''}
                             onMouseEnter={()=>setHoverCol(u.id)} onMouseLeave={()=>setHoverCol('')}
                             style={{textAlign:'center', padding:'5px 0', cursor:canEdit?'pointer':'default', borderLeft:'1px solid var(--b1)', borderTop:'1px solid var(--b1)'}}>
-                            <Tick on={on} free={free} dim={off}/>
+                            <Tick on={on} free={free} dim={off} soft={!free && isDefault(u)}/>
                           </td>
                         );
                       })}
@@ -313,8 +386,9 @@ export default function PermissionsMatrix({ setUsers, currentUser }) {
       </div>
 
       <div style={{display:'flex', gap:14, alignItems:'center', flexWrap:'wrap', fontSize:10.5, color:'var(--t3)', marginTop:8}}>
-        <span style={{display:'inline-flex', alignItems:'center', gap:5}}><Tick on/> allowed</span>
-        <span style={{display:'inline-flex', alignItems:'center', gap:5}}><Tick/> not ticked</span>
+        <span style={{display:'inline-flex', alignItems:'center', gap:5}}><Tick on/> allowed (own list)</span>
+        <span style={{display:'inline-flex', alignItems:'center', gap:5}}><Tick on soft/> allowed (from role / built-in)</span>
+        <span style={{display:'inline-flex', alignItems:'center', gap:5}}><Tick/> not allowed</span>
         <span style={{display:'inline-flex', alignItems:'center', gap:5}}><Tick free/> superadmin, always everything</span>
         <span style={{display:'inline-flex', alignItems:'center', gap:5}}><Tick on dim/> <span style={{textDecoration:'line-through', color:'var(--red)'}}>column</span> switched off for the whole company under Features</span>
       </div>

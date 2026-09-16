@@ -36,9 +36,17 @@ export const requireFeature = (featureKey) => async (req, res, next) => {
     const User = (await import('../models/User.js')).default;
     const u = await User.findOne({ id: req.user.id }, 'permissions role').lean();
     const features = Array.isArray(u?.permissions?.features) ? u.permissions.features : [];
-    // Legacy default: an admin with NO explicit features list keeps full
-    // access. A salesman with NO list has none of these write features.
     if (features.length === 0) {
+      // No per-user list: the role's own list decides when one is set
+      // (Settings → Permissions → Roles) …
+      const { loadRolePermissions } = await import('../lib/rolePermissions.js');
+      const roleFeatures = (await loadRolePermissions())[role]?.features || [];
+      if (roleFeatures.length) {
+        if (roleFeatures.includes(featureKey)) return next();
+        return res.status(403).json({ error: `Feature "${featureKey}" not granted to role ${role}` });
+      }
+      // … else the built-in default: an admin keeps full access, a salesman
+      // has none of these write features.
       if (role === 'admin') return next();
       return res.status(403).json({ error: `Feature "${featureKey}" not granted` });
     }

@@ -9,6 +9,8 @@ import { protect, adminOnly, superAdminOnly, requireFeature } from '../middlewar
 import { todayStr } from '../lib/commitments.js';
 import ExcelJS from 'exceljs';
 import { normalizeAccountStatus, ACCOUNT_STATUSES } from '../lib/accountStatus.js';
+import { privateLabels, loadAliases, saveAliases, recomputeCatalogues } from '../lib/catalogueAliases.js';
+import ProductTxn from '../models/ProductTxn.js';
 
 // Mirrors DEALER_TYPES in client/src/constants.js — the only values the
 // Dealer Type dropdown offers, and so the only ones the sheet may set.
@@ -931,7 +933,9 @@ router.get('/brand-detail', protect, async (req, res) => {
   const brand = String(req.query.brand || '').trim();
   if (!brand) return res.status(400).json({ error: 'brand required' });
 
-  const filter = { ...(await monthFilter(req)), brand };
+  // A catalogue's detail includes the dealer private labels mapped onto it.
+  const { brandsFor } = await privateLabels();
+  const filter = { ...(await monthFilter(req)), brand: { $in: brandsFor(brand) } };
   const rows = await Sale.aggregate([
     { $match: filter },
     { $group: {
@@ -1039,32 +1043,55 @@ router.get('/by-brand', protect, async (req, res) => {
         qty: { $sum: '$qty' },
         dealers: { $addToSet: '$dealerName' },
     } },
-    { $project: {
-        _id: 0, brand: '$_id.brand', category: '$_id.category',
-        qty: 1, dealers: { $size: '$dealers' },
-    } },
+    { $project: { _id: 0, brand: '$_id.brand', category: '$_id.category', qty: 1, dealers: 1 } },
     { $sort: { qty: -1 } },
   ]);
-  // Collapse to one entry per brand, keeping the category split underneath.
+
+  // Dealer private labels ("INNERSPACE") fold into the catalogue the admin
+  // mapped them to; unmapped ones are set aside and reported, never shown as
+  // catalogues of their own. Dealer sets are merged here so a dealer buying
+  // the same catalogue under two labels is counted once.
+  const { aliases, isPrivateLabel } = await privateLabels();
+  const labelQty = new Map();                       // unmapped label -> qty
+  const foldedQty = new Map();                      // target -> qty that came from labels
   const byBrand = new Map();
   for (const r of rows) {
-    const key = r.brand || '';
-    const e = byBrand.get(key) || { brand: key, qty: 0, categories: [], dealers: 0 };
+    let key = r.brand || '';
+    if (key && isPrivateLabel(key)) {
+      const target = aliases[key];
+      if (!target) { labelQty.set(key, (labelQty.get(key) || 0) + r.qty); }   // stays under its own name, tagged
+      else {
+      foldedQty.set(target, (foldedQty.get(target) || 0) + r.qty);
+      key = target;
+      }
+    }
+    const e = byBrand.get(key) || { brand: key, qty: 0, categories: new Map(), dealerSet: new Set() };
     e.qty += r.qty;
-    e.dealers = Math.max(e.dealers, r.dealers);
-    e.categories.push({ category: r.category, qty: r.qty });
+    for (const d of r.dealers || []) e.dealerSet.add(d);
+    e.categories.set(r.category, (e.categories.get(r.category) || 0) + r.qty);
     byBrand.set(key, e);
   }
-  let out = [...byBrand.values()].sort((a, b) => b.qty - a.qty);
+  let out = [...byBrand.values()].map(e => ({
+    brand: e.brand, qty: e.qty, dealers: e.dealerSet.size,
+    categories: [...e.categories].map(([category, qty]) => ({ category, qty })),
+    fromLabels: foldedQty.get(e.brand) || 0,
+  })).sort((a, b) => b.qty - a.qty);
 
   // Overview shows CHILD catalogues. Parent ones are set aside rather than
   // dropped: the caller is told what was hidden and can ask for it back.
+  // A catalogue the admin mapped a label onto is always shown.
+  // Only child catalogues are shown. Lines the resolver could place already
+  // carry one; what is left — a family with no child listing anywhere, or a
+  // dealer label nothing matched — is set aside and counted in the note,
+  // never shown as a catalogue of its own.
   const kinds = await catalogueKinds();
   const active = kinds.child.size > 0 || kinds.parent.size > 0;
-  const hidden = active ? out.filter(r => r.brand && !kinds.child.has(r.brand)) : [];
-  if (String(req.query.showParent || '') !== '1' && hidden.length) {
-    out = out.filter(r => r.brand && kinds.child.has(r.brand));
-  }
+  const mappedTargets = new Set(Object.values(aliases));
+  const isChildCat = r => r.brand && (kinds.child.has(r.brand) || mappedTargets.has(r.brand));
+  out = out.filter(r => r.brand);
+  for (const r of out) r.kind = !active ? 'child' : isChildCat(r) ? 'child' : isPrivateLabel(r.brand) ? 'label' : 'parent';
+  const hidden = out.filter(r => r.kind !== 'child');
+  out = out.filter(r => r.kind === 'child');
 
   res.json({
     rows: out,
@@ -1072,10 +1099,60 @@ router.get('/by-brand', protect, async (req, res) => {
     unbranded: byBrand.get('')?.qty || 0,
     categories: catTotals.filter(c => c._id).map(c => ({ category: c._id, qty: c.qty })),
     categoryFilter: wanted,
-    hiddenParent: hidden.map(r => ({ brand: r.brand, qty: r.qty })),
-    hiddenParentQty: hidden.reduce((a, r) => a + r.qty, 0),
+    // set aside: parent families / dealer labels with no child listing to place them in
+    ownName: hidden.map(r => ({ brand: r.brand, qty: r.qty, kind: r.kind })),
+    ownNameQty: hidden.reduce((a, r) => a + r.qty, 0),
+    hiddenLabels: [...labelQty].map(([brand, qty]) => ({ brand, qty })).sort((a, b) => b.qty - a.qty),
+    hiddenLabelsQty: [...labelQty.values()].reduce((a, q) => a + q, 0),
     catalogueFilterActive: active,
   });
+});
+
+// GET /api/sales/catalogue-aliases  →  the private-label mapping plus what
+// needs mapping this month and which catalogues it may be mapped onto.
+router.get('/catalogue-aliases', protect, adminOnly, async (req, res) => {
+  try {
+    const base = await monthFilter(req);
+    const { aliases, isPrivateLabel } = await privateLabels();
+    const kinds = await catalogueKinds();
+    const rows = await Sale.aggregate([
+      { $match: base },
+      { $group: { _id: '$brand', qty: { $sum: '$qty' } } },
+      { $sort: { qty: -1 } },
+    ]);
+    // what the resolver did with each label this month, so the admin sees
+    // the automatic answer before deciding to override it
+    const txnMatch = {}; if (base.month) txnMatch.month = base.month;
+    const auto = await ProductTxn.aggregate([
+      { $match: txnMatch },
+      { $group: { _id: { brand: '$brand', catalogue: { $ifNull: ['$catalogue', ''] } }, qty: { $sum: '$qty' } } },
+    ]);
+    const autoByLabel = new Map();
+    for (const a of auto) { if (!isPrivateLabel(a._id.brand)) continue; const m = autoByLabel.get(a._id.brand) || []; m.push({ catalogue: a._id.catalogue, qty: a.qty }); autoByLabel.set(a._id.brand, m); }
+    const labels = [...new Set([...rows.filter(r => r._id && isPrivateLabel(r._id)).map(r => r._id), ...autoByLabel.keys()])]
+      .map(b => ({ brand: b, qty: (autoByLabel.get(b) || []).reduce((x, y) => x + y.qty, 0) || (rows.find(r => r._id === b)?.qty || 0), target: aliases[b] || '',
+                   auto: (autoByLabel.get(b) || []).sort((x, y) => y.qty - x.qty) }))
+      .sort((a, b) => b.qty - a.qty);
+    // labels mapped earlier but not sold this month still belong in the list
+    for (const k of Object.keys(aliases)) if (!labels.some(l => l.brand === k)) labels.push({ brand: k, qty: 0, target: aliases[k] });
+    res.json({
+      aliases, labels,
+      targets: [...kinds.child].filter(b => !isPrivateLabel(b)).sort((a, b) => a.localeCompare(b)),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/sales/catalogue-aliases  { aliases: { label: catalogue } }
+router.put('/catalogue-aliases', protect, adminOnly, async (req, res) => {
+  try {
+    const saved = await saveAliases(req.body?.aliases || {});
+    // the mapping only matters once the lines and Sale rows carry it
+    const months = req.query.month ? [String(req.query.month)] : await ProductTxn.distinct('month');
+    const r = await recomputeCatalogues(months);
+    const { applySalesSync } = await import('./producttx.js');
+    await applySalesSync(months, req.user?.id || '');
+    res.json({ ok: true, aliases: saved, recomputed: r, months });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // GET /api/sales/by-dealer  →  [{ dealer, byCategory:{cat:{sub:qty}}, total }]

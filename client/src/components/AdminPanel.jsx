@@ -387,6 +387,8 @@ const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,sync
   const [adminSec, setAdminSec] = useState('users');
   const isSuperAdmin = currentUser?.role === 'superadmin';
   const isStaff      = isSuperAdmin || currentUser?.role === 'admin';
+  // "Login as" is for superadmins and for anyone explicitly granted the action
+  const canLoginAs   = isSuperAdmin || (Array.isArray(currentUser?.permissions?.features) && currentUser.permissions.features.includes('loginAs'));
   const [laOpen, setLaOpen]   = useState(false);
   const [laBusy, setLaBusy]   = useState(false);
   const [laErr,  setLaErr]    = useState(null);
@@ -405,7 +407,7 @@ const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,sync
     // Sort: salesman first (most common), then admin, then superadmin
     const order = { salesman:0, admin:1, superadmin:2 };
     return all
-      .filter(u => u.id !== currentUser?.id)
+      .filter(u => u.id !== currentUser?.id && (isSuperAdmin || u.role !== 'superadmin'))
       .sort((a,b)=>{
         const r = (order[a.role]??9) - (order[b.role]??9);
         if(r !== 0) return r;
@@ -494,8 +496,8 @@ const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,sync
           <div style={{fontSize:22,fontWeight:700}}>Control Panel</div>
           <div className="spacer"/>
 
-          {/* ── Login as ▼ — superadmin only ──────────────────────────── */}
-          {isSuperAdmin && (
+          {/* ── Login as ▼ — superadmin or granted the loginAs action ── */}
+          {canLoginAs && (
             <div ref={laRef} style={{position:'relative'}}>
               <button onClick={()=>setLaOpen(o=>!o)} className="btn"
                 style={{

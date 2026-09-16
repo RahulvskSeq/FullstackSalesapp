@@ -10,6 +10,7 @@ import User from '../models/User.js';
 import { protect, adminOnly, superAdminOnly, requireFeature } from '../middleware/auth.js';
 import Setting from '../models/Setting.js';
 import IncentivePeriod from '../models/IncentivePeriod.js';
+import { privateLabels, buildCatalogueResolver, recomputeCatalogues } from '../lib/catalogueAliases.js';
 import { incentiveFor, nextThreshold, billingPersonFor, lookbackMonthsFor,
          bandsFor, canonicalPerson, onRoster, personFor, normaliseConfig,
          DEFAULT_CONFIG } from '../lib/incentive.js';
@@ -1220,6 +1221,8 @@ router.post('/upload', protect, adminOnly, requireFeature('uploadData'), upload.
       return (!b || b.includes(',')) ? '' : b;
     };
 
+    const catalogueResolver = await buildCatalogueResolver();
+
     const dealers = await Dealer.find({}).select('name salesman salesmanHistory').lean();
     const dealerIndex = new Map(), dealerList = [];
     for (const d of dealers) {
@@ -1327,6 +1330,8 @@ router.post('/upload', protect, adminOnly, requireFeature('uploadData'), upload.
              || S(r['Category']) || m?.brand || '',
         parentBrand: S(r['Category']) || '',
         masterBrand: m?.brand || '',
+        // a dealer private label re-routed to the catalogue it really is
+        catalogue: (() => { const b = childCatalogueFor(S(r['Product']), productId) || S(r['Category']) || m?.brand || ''; return catalogueResolver.needsRouting(b) ? catalogueResolver.resolve(b, productId) : ''; })(),
         categoryType: rawCatType || m?.categoryType || '',
         productType: rawProdType || m?.productType || '',
         // Use the values derived above, which already prefer the sheet's own
@@ -1601,7 +1606,9 @@ router.get('/catalogue-detail', protect, async (req, res) => {
     const brand = S(req.query.brand);
     if (!brand) return res.status(400).json({ error: 'brand required' });
 
-    const match = { ...(await scopeFor(req)), brand };
+    // the catalogue plus every dealer private label the admin mapped onto it
+    // lines sold under this catalogue, plus private-label lines resolved onto it
+    const match = { ...(await scopeFor(req)), $or: [{ catalogue: brand }, { brand, catalogue: { $in: ['', null] } }] };
     if (S(req.query.month)) match.month = S(req.query.month);
     if (S(req.query.from) || S(req.query.to)) {
       match.dateStr = {};
@@ -1744,7 +1751,9 @@ async function buildSalesSync(monthList) {
           // to whichever line the database happened to return first.
           _id: {
             dealerName: '$dealerName', category: '$category',
-            subCategory: '$subCategory', brand: '$brand',
+            subCategory: '$subCategory',
+            // the resolved catalogue when a private label was re-routed, else the sold brand
+            brand: { $cond: [{ $gt: [{ $ifNull: ['$catalogue', ''] }, ''] }, '$catalogue', '$brand'] },
             salesmanId: '$salesmanId',
           },
           qty: { $sum: '$qty' },
@@ -2027,6 +2036,18 @@ router.delete('/all', protect, superAdminOnly, requireFeature('wipeData'), async
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// POST /api/producttx/catalogues/recompute?month=YYYY-MM  →  re-resolve dealer
+// private labels onto real catalogues and rebuild that month's Sale rows.
+router.post('/catalogues/recompute', protect, adminOnly, async (req, res) => {
+  try {
+    const months = S(req.query.month) ? [S(req.query.month)] : await ProductTxn.distinct('month');
+    const r = await recomputeCatalogues(months);
+    const synced = await applySalesSync(months, req.user?.id || '');
+    res.json({ ok: true, ...r, months, synced: { deleted: synced.deleted, inserted: synced.inserted } });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+export { applySalesSync };
 export default router;
 
 // Shared with the key-authenticated read API (routes/incentiveApi.js) so an

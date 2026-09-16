@@ -405,10 +405,20 @@ router.delete('/users/:id', protect, adminOnly, requireFeature('manageUsers'), a
 // Superadmin-only: issues a JWT for the target user. The token embeds the
 // original superadmin's id under `impersonatedBy` so the client can show a
 // banner and offer one-click return.
-router.post('/impersonate/:id', protect, superAdminOnly, async (req, res) => {
+// Also open to any user explicitly granted the `loginAs` action — checked
+// against the stored record, not the token, so revoking it takes effect at
+// once. A grantee can never enter a superadmin's account.
+const canLoginAs = async (user) => {
+  if (user?.role === 'superadmin') return true;
+  const u = await User.findOne({ id: user?.id }, 'permissions').lean();
+  return Array.isArray(u?.permissions?.features) && u.permissions.features.includes('loginAs');
+};
+router.post('/impersonate/:id', protect, async (req, res) => {
+  if(!(await canLoginAs(req.user))) return res.status(403).json({ error:'Login as is not granted to you' });
   const target = await User.findOne({ id: req.params.id });
   if(!target) return res.status(404).json({ error:'User not found' });
   if(target.id === req.user.id) return res.status(400).json({ error:'Already logged in as this user' });
+  if(target.role === 'superadmin' && req.user.role !== 'superadmin') return res.status(403).json({ error:'Only a superadmin can log in as a superadmin' });
   res.json(buildLoginResponse(target, { impersonatedBy: req.user.id, impersonatedByName: req.user.name }));
 });
 
@@ -419,7 +429,7 @@ router.post('/return-to-self', protect, async (req, res) => {
   if(!req.user.impersonatedBy) return res.status(400).json({ error:'Not currently impersonating' });
   const original = await User.findOne({ id: req.user.impersonatedBy });
   if(!original) return res.status(404).json({ error:'Original user not found' });
-  if(original.role !== 'superadmin') return res.status(403).json({ error:'Original user is no longer superadmin' });
+  if(!(await canLoginAs(original))) return res.status(403).json({ error:'Original user may no longer log in as others' });
   res.json(buildLoginResponse(original));
 });
 

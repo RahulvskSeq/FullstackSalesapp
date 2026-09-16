@@ -81,6 +81,8 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
 
   const isSuperAdmin = currentUser?.role === 'superadmin';
   const isAdmin      = currentUser?.role === 'admin';
+  // "Login as" a user: superadmin always; others only when granted the action, and never into a superadmin
+  const canLoginAsUser = (u) => u && u.id !== currentUser?.id && (isSuperAdmin || ((Array.isArray(currentUser?.permissions?.features) && currentUser.permissions.features.includes('loginAs')) && u.role !== 'superadmin'));
 
   const flash = (type, text, ms = 3000) => { setMsg({type, text}); setTimeout(()=>setMsg(null), ms); };
 
@@ -564,7 +566,7 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
                     <option value="superadmin">Superadmin</option>
                   </select>
                 )}
-                {isSuperAdmin && !isSelf && (
+                {canLoginAsUser(u) && (
                   <button onClick={()=>loginAs(u.id)} title={'Log in as ' + u.name}
                     style={{
                       display:'flex', alignItems:'center', gap:4,

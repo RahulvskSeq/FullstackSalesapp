@@ -3,6 +3,8 @@ import Setting from '../models/Setting.js';
 import { protect, adminOnly, requireFeature } from '../middleware/auth.js';
 import { TOGGLEABLE, getDisabled, setDisabled } from '../lib/featureFlags.js';
 import { ACTION_PERMISSIONS, groupedActions } from '../lib/actionPermissions.js';
+import { loadRolePermissions, saveRolePermissions, ROLES } from '../lib/rolePermissions.js';
+import { superAdminOnly } from '../middleware/auth.js';
 import AuditLog from '../models/AuditLog.js';
 
 const router = express.Router();
@@ -44,6 +46,17 @@ router.post('/months', protect, adminOnly, requireFeature('manageMonths'), async
 // exactly what the server enforces instead of keeping its own copy.
 router.get('/action-permissions', protect, (req, res) => {
   res.json({ actions: ACTION_PERMISSIONS, groups: groupedActions() });
+});
+
+// Role-level page / action defaults. Any signed-in user may read them (the
+// client builds its menu from them); only a superadmin may change them.
+router.get('/role-permissions', protect, async (req, res) => {
+  try { res.json({ roles: ROLES, permissions: await loadRolePermissions() }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+router.put('/role-permissions', protect, superAdminOnly, async (req, res) => {
+  try { res.json({ ok: true, permissions: await saveRolePermissions(req.body?.permissions) }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 router.get('/features', protect, async (req, res) => {

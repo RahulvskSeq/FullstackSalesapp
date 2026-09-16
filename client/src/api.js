@@ -2157,6 +2157,9 @@ export const api = {
   salesByBrand:      (q={})     => fetch(`${BASE}/sales/by-brand?${new URLSearchParams(q)}`,{headers:authHeaders()}).then(handle),
   // Dealers + salesmen behind one transaction category. {month, brand, salesman?}
   salesBrandDetail:  (q={})     => fetch(`${BASE}/sales/brand-detail?${new URLSearchParams(q)}`,{headers:authHeaders()}).then(handle),
+  catalogueAliases:     (q={})  => fetch(`${BASE}/sales/catalogue-aliases?${new URLSearchParams(q)}`,{headers:authHeaders()}).then(handle),
+  catalogueAliasesSave: (aliases, q={}) => fetch(`${BASE}/sales/catalogue-aliases?${new URLSearchParams(q)}`,{ method:'PUT', headers:authHeaders(), body:JSON.stringify({ aliases }) }).then(handle),
+  cataloguesRecompute:  (q={}) => fetch(`${BASE}/producttx/catalogues/recompute?${new URLSearchParams(q)}`,{ method:'POST', headers:authHeaders() }).then(handle),
   // Everything behind one catalogue: products (with names), dealers,
   // salesmen, category split and the daily breakdown. {brand, month}
   ptxCatalogueDetail:(q={})     => fetch(`${BASE}/producttx/catalogue-detail?${new URLSearchParams(q)}`,{headers:authHeaders()}).then(handle),
@@ -2243,6 +2246,8 @@ export const api = {
   salesIncentiveConfigSave: (c) => fetch(`${BASE}/sales-incentive/config`,{
     method:'PUT', headers:{...authHeaders(),'Content-Type':'application/json'}, body:JSON.stringify(c),
   }).then(handle),
+  rolePermissions:     () => fetch(`${BASE}/settings/role-permissions`,{headers:authHeaders()}).then(handle),
+  rolePermissionsSave: (permissions) => fetch(`${BASE}/settings/role-permissions`,{ method:'PUT', headers:{...authHeaders(),'Content-Type':'application/json'}, body:JSON.stringify({ permissions }) }).then(handle),
   featuresGet: () => fetch(`${BASE}/settings/features`,{headers:authHeaders()}).then(handle),
   featuresSet: (disabled) => fetch(`${BASE}/settings/features`,{
     method:'PUT', headers:{...authHeaders(),'Content-Type':'application/json'},

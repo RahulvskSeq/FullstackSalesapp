@@ -1,4 +1,5 @@
 // // // // // // // import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 // // // // // // // import { LayoutDashboard, Users, TrendingUp, Settings, LogOut, Bell, GitCompare, Menu, RefreshCw, Map, AlertTriangle, Upload } from 'lucide-react';
 // // // // // // // import { DEFAULT_USERS, MO as MO_DEFAULT, CURRENT_MONTH_IDX as CURRENT_MONTH_IDX_DEFAULT, CURRENT_MONTH_LABEL as CURRENT_MONTH_LABEL_DEFAULT, CURRENT_MONTH_SHORT as CURRENT_MONTH_SHORT_DEFAULT } from './constants';
 // // // // // // // import { pct, spct, pclr, uid, isoNow, storage, parseCSV, fetchCSV, parseOutstandingCSV } from './utils';
@@ -15473,6 +15474,8 @@ export default function App(){
   const [loginAsPos,  setLoginAsPos]  = useState({ top: 60, right: 12 });
   const loginAsRef = useRef(null);
   const loginAsBtnRef = useRef(null);
+  const loginAsMenuRef = useRef(null);   // the menu is portalled to body, so click-outside checks it too
+  const [loginAsQ, setLoginAsQ] = useState('');
   const [dealers,setDealers]=useState([]);
   const [bootedFromSheets,setBootedFromSheets]=useState(false);
   const [notes,setNotes]=useState([]);
@@ -15739,7 +15742,7 @@ export default function App(){
   // ── Close global Login-as dropdown on outside click ─────────────────────
   useEffect(()=>{
     if(!loginAsOpen) return;
-    const onDoc = (e) => { if(loginAsRef.current && !loginAsRef.current.contains(e.target)) setLoginAsOpen(false); };
+    const onDoc = (e) => { if(loginAsRef.current && !loginAsRef.current.contains(e.target) && !(loginAsMenuRef.current && loginAsMenuRef.current.contains(e.target))) setLoginAsOpen(false); };
     document.addEventListener('mousedown', onDoc);
     return ()=>document.removeEventListener('mousedown', onDoc);
   },[loginAsOpen]);
@@ -16273,11 +16276,15 @@ export default function App(){
   // every render, and anything after that return is skipped while the login
   // screen shows — so signing in changed the hook count and React threw.
   const [disabledFeatures, setDisabledFeatures] = React.useState([]);
+  // Role-level page / action defaults (Settings → Permissions → Roles). A
+  // user with no list of their own falls back to these; an empty role list
+  // means the built-in default, so nothing changes until someone sets one.
+  const [rolePerms, setRolePerms] = React.useState({});
   React.useEffect(() => {
     if (!currentUser) return;          // endpoint needs a session
     let dead = false;
-    const load = () => api.featuresGet()
-      .then(r => { if (!dead) setDisabledFeatures(r?.disabled || []); })
+    const load = () => Promise.all([api.featuresGet(), api.rolePermissions().catch(() => null)])
+      .then(([r, rp]) => { if (dead) return; setDisabledFeatures(r?.disabled || []); if (rp?.permissions) setRolePerms(rp.permissions); })
       .catch(() => {});
     load();
     // Another admin switching something off should reach this tab without a
@@ -16314,11 +16321,15 @@ export default function App(){
   const isSuperAdmin = currentUser?.role === 'superadmin';
   const userFeatures = Array.isArray(currentUser?.permissions?.features)
     ? new Set(currentUser.permissions.features) : new Set();
+  const roleFeatures = rolePerms[currentUser?.role]?.features || [];
+  const rolePages    = rolePerms[currentUser?.role]?.pages || [];
   const hasFeature = (key) => {
     if (!key) return true;                // no feature gate
     if (isSuperAdmin) return true;
-    if (userFeatures.size === 0)          // legacy fallback
-      return currentUser?.role === 'admin';
+    if (userFeatures.size === 0) {
+      if (roleFeatures.length) return roleFeatures.includes(key);   // the role's own list
+      return currentUser?.role === 'admin';                          // built-in default
+    }
     return userFeatures.has(key);
   };
 
@@ -16335,7 +16346,8 @@ export default function App(){
     if (item.flag && disabledFeatures.includes(item.flag)) return false;
     if (isSuperAdmin) return true;
     if (hasPagePerms) return pagePerms.includes(item.id);   // explicit grant wins
-    // Default gates when no explicit page allowlist:
+    if (rolePages.length) return rolePages.includes(item.id); // then the role's own list
+    // Built-in gates when neither is set:
     if (item.superAdmin) return false;
     if (item.staff && !isStaff) return false;
     return hasFeature(item.feature);
@@ -16493,8 +16505,8 @@ export default function App(){
               <Settings size={13}/>
             </button>
 
-            {/* ── Login as ▼ — superadmin only, visible on every screen ── */}
-            {currentUser?.role==='superadmin' && (
+            {/* ── Login as ▼ — superadmin, or anyone granted the loginAs action ── */}
+            {(currentUser?.role==='superadmin' || userFeatures.has('loginAs')) && (
               <div ref={loginAsRef} style={{flexShrink:0}}>
                 <button ref={loginAsBtnRef} className="btn"
                   onClick={()=>{
@@ -16521,99 +16533,67 @@ export default function App(){
                   <span className="hide-sm">Login as</span>
                   <ChevronDown size={11} style={{transform:loginAsOpen?'rotate(180deg)':'rotate(0)', transition:'transform .15s'}}/>
                 </button>
-                {loginAsOpen && (
+                {loginAsOpen && createPortal(
                   <>
-                    {/* Mobile backdrop — full-screen dim + tap-to-close.
-                        On desktop the small popover is enough; this gives
-                        phones a clear way to dismiss. */}
-                    <div
-                      onClick={()=>setLoginAsOpen(false)}
-                      style={{
-                        position:'fixed', inset:0, zIndex:9998,
-                        background:'rgba(0,0,0,0.55)',
-                      }}/>
-                    <div style={(()=>{
+                    {/* Rendered on <body>, not inside #topbar: the Material
+                        palette recolours the bar (blue surfaces, white accent)
+                        and a menu inheriting that was unreadable. On the body
+                        it takes the page palette in every theme. */}
+                    <div onClick={()=>setLoginAsOpen(false)} style={{position:'fixed', inset:0, zIndex:9998, background:'rgba(0,0,0,0.45)'}}/>
+                    <div ref={loginAsMenuRef} className="login-as-menu" style={(()=>{
                       const isMobile = typeof window !== 'undefined' && window.innerWidth <= 640;
-                      return isMobile ? {
-                        // Full-width bottom-sheet style on phones
-                        position:'fixed', left:8, right:8, bottom:8, zIndex:9999,
-                        background:'var(--bg2)', border:'1px solid var(--b2)',
-                        borderRadius:12, maxHeight:'70vh', overflowY:'auto',
-                        boxShadow:'0 -10px 30px rgba(0,0,0,0.55)', padding:8,
-                      } : {
-                        position:'fixed', top:loginAsPos.top, right:loginAsPos.right, zIndex:9999,
-                        background:'var(--bg2)', border:'1px solid var(--b2)',
-                        borderRadius:8, minWidth:260, maxHeight:380, overflowY:'auto',
-                        boxShadow:'0 10px 30px rgba(0,0,0,0.45)', padding:6,
-                      };
+                      const base = { zIndex:9999, background:'var(--bg1)', border:'1px solid var(--b2)', color:'var(--t1)', display:'flex', flexDirection:'column', overflow:'hidden', boxShadow:'0 16px 40px rgba(0,0,0,0.35)' };
+                      return isMobile
+                        ? { ...base, position:'fixed', left:8, right:8, bottom:8, borderRadius:14, maxHeight:'75vh' }
+                        : { ...base, position:'fixed', top:loginAsPos.top, right:loginAsPos.right, borderRadius:10, width:320, maxHeight:'min(70vh, 520px)' };
                     })()}>
-                    <div style={{
-                      display:'flex', alignItems:'center', justifyContent:'space-between',
-                      padding:'8px 10px 6px',
-                    }}>
-                      <div style={{fontSize:10, color:'var(--t3)', letterSpacing:'.12em', textTransform:'uppercase'}}>
-                        Pick a user
+                      <div style={{padding:'10px 12px 8px', borderBottom:'1px solid var(--b1)'}}>
+                        <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8}}>
+                          <div style={{fontSize:12.5, fontWeight:800, display:'flex', alignItems:'center', gap:6}}><LogIn size={13} style={{color:'var(--acc)'}}/> Login as</div>
+                          <button onClick={()=>setLoginAsOpen(false)} className="btn" style={{padding:'2px 6px', fontSize:12}}>✕</button>
+                        </div>
+                        <input className="inp" autoFocus value={loginAsQ} onChange={e=>setLoginAsQ(e.target.value)} placeholder="Search user…" style={{width:'100%', fontSize:12.5}}/>
                       </div>
-                      <button onClick={()=>setLoginAsOpen(false)}
-                        style={{background:'none', border:'none', color:'var(--t3)', cursor:'pointer', padding:4}}>
-                        ✕
-                      </button>
+                      {loginAsErr && (
+                        <div style={{fontSize:11, color:'var(--red)', padding:'6px 10px', background:'rgba(220,38,38,0.08)', borderBottom:'1px solid rgba(220,38,38,0.3)'}}>{loginAsErr}</div>
+                      )}
+                      <div style={{overflowY:'auto', padding:6, flex:1, minHeight:0}}>
+                        {(()=>{
+                          const q = loginAsQ.trim().toLowerCase();
+                          const list = Object.values(users||{})
+                            .filter(u => u.id !== currentUser?.id && (currentUser?.role==='superadmin' || u.role !== 'superadmin'))
+                            .filter(u => !q || (u.name||'').toLowerCase().includes(q) || (u.id||'').toLowerCase().includes(q))
+                            .sort((a,b)=>{
+                              const order = { superadmin:0, admin:1, employee:2, salesman:3 };
+                              const r = (order[a.role]??9) - (order[b.role]??9);
+                              if(r !== 0) return r;
+                              return (a.name||'').localeCompare(b.name||'');
+                            });
+                          if(!list.length) return <div style={{fontSize:11.5, color:'var(--t3)', padding:'12px 10px', textAlign:'center'}}>{q ? `No user matches “${loginAsQ.trim()}”` : 'No other users yet.'}</div>;
+                          const ROLE = { superadmin:['Superadmins','var(--yel)'], admin:['Admins','var(--acc)'], employee:['Employees','#0891b2'], salesman:['Salesmen','var(--grn)'] };
+                          let lastRole = null;
+                          return list.map(u => {
+                            const head = u.role !== lastRole; lastRole = u.role;
+                            const [rl, rc] = ROLE[u.role] || [u.role, 'var(--t3)'];
+                            return (
+                              <React.Fragment key={u.id}>
+                                {head && <div style={{fontSize:9.5, fontWeight:800, letterSpacing:'.1em', textTransform:'uppercase', color:'var(--t3)', padding:'8px 8px 4px'}}>{rl}</div>}
+                                <div onClick={()=>!loginAsBusy && doLoginAs(u.id, u.name)} className="login-as-row"
+                                  style={{display:'flex', alignItems:'center', gap:10, padding:'7px 8px', borderRadius:8, cursor: loginAsBusy?'wait':'pointer', opacity: loginAsBusy?0.6:1}}>
+                                  <Avatar user={u} size={30}/>
+                                  <div style={{flex:1, minWidth:0}}>
+                                    <div style={{fontSize:13, fontWeight:600, color:'var(--t1)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>{u.name}</div>
+                                    <div style={{fontSize:10.5, color:'var(--t3)'}}>{u.id} · <span style={{color:rc, fontWeight:600}}>{u.role}</span>{u.active===false && <span style={{color:'var(--red)'}}> · inactive</span>}</div>
+                                  </div>
+                                  <span className="chip" style={{fontSize:10.5, fontWeight:700, color:'var(--acc)', display:'inline-flex', alignItems:'center', gap:4}}><LogIn size={11}/> Login</span>
+                                </div>
+                              </React.Fragment>
+                            );
+                          });
+                        })()}
+                      </div>
                     </div>
-                    {loginAsErr && (
-                      <div style={{
-                        fontSize:11, color:'#fca5a5', padding:'6px 10px',
-                        background:'rgba(248,113,113,0.10)', border:'1px solid #7f1d1d',
-                        borderRadius:6, margin:'4px 6px',
-                      }}>{loginAsErr}</div>
-                    )}
-                    {Object.values(users||{})
-                      .filter(u => u.id !== currentUser?.id)
-                      .sort((a,b)=>{
-                        const order = { salesman:0, admin:1, superadmin:2 };
-                        const r = (order[a.role]??9) - (order[b.role]??9);
-                        if(r !== 0) return r;
-                        return (a.name||'').localeCompare(b.name||'');
-                      })
-                      .map(u => {
-                        const isSA = u.role === 'superadmin';
-                        const isAd = u.role === 'admin';
-                        const RoleIcon = isSA ? ShieldCheck : isAd ? Shield : null;
-                        const roleColor = isSA ? '#fbbf24' : isAd ? '#a5b4fc' : '#86efac';
-                        return (
-                          <div key={u.id}
-                            onClick={()=>!loginAsBusy && doLoginAs(u.id, u.name)}
-                            style={{
-                              display:'flex', alignItems:'center', gap:10,
-                              padding:'12px 12px', borderRadius:8,
-                              cursor: loginAsBusy?'wait':'pointer',
-                              opacity: loginAsBusy?0.6:1,
-                              background:'var(--bg1)', marginBottom:6,
-                            }}>
-                            <Avatar user={u} size={32}/>
-                            <div style={{flex:1, minWidth:0}}>
-                              <div style={{fontSize:13, fontWeight:600, display:'flex', alignItems:'center', gap:6}}>
-                                <span style={{whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>{u.name}</span>
-                                {RoleIcon && <RoleIcon size={11} style={{color:roleColor, flexShrink:0}}/>}
-                              </div>
-                              <div style={{fontSize:10, color:'var(--t3)'}}>{u.id} · <span style={{color:roleColor}}>{u.role}</span></div>
-                            </div>
-                            <div style={{
-                              display:'inline-flex', alignItems:'center', gap:4,
-                              fontSize:10, fontWeight:700, padding:'5px 9px', borderRadius:6,
-                              background:'rgba(251,191,36,0.15)', color:'var(--yel)',
-                              border:'1px solid rgba(251,191,36,0.35)',
-                            }}>
-                              <LogIn size={11}/> Login
-                            </div>
-                          </div>
-                        );
-                      })}
-                    {Object.values(users||{}).filter(u=>u.id!==currentUser?.id).length === 0 && (
-                      <div style={{fontSize:11, color:'var(--t3)', padding:'10px'}}>No other users yet.</div>
-                    )}
-                    </div>
-                  </>
-                )}
+                  </>, document.body)}
               </div>
             )}
 

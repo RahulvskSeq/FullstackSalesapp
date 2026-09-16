@@ -45,6 +45,8 @@ export const ACTION_PERMISSIONS = [
   { key:'manageVisits',      group:'CRM',         label:'Manage visits',        desc:'Delete or force-close other people’s visits' },
 
   { key:'manageUsers',       group:'Administration', label:'Manage users',      desc:'Create users, set permissions, reassign work' },
+  // Granted explicitly only — never by the admin "no list = everything" default.
+  { key:'loginAs',           group:'Administration', label:'Login as another user', desc:'Switch into another account without their password. Never into a superadmin.' },
   { key:'wipeData',          group:'Administration', label:'Delete in bulk',    desc:'Remove upload batches and wipe data. Destructive.' },
 ];
 

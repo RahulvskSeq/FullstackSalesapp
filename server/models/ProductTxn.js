@@ -34,6 +34,11 @@ const ProductTxnSchema = new mongoose.Schema({
   // The parent catalogue the ERP printed on the line. Kept when `brand` was
   // re-routed to a child listing, so the original attribution is recoverable.
   parentBrand:  { type: String, trim: true },
+  // Where a line filed under a dealer private label really belongs — the
+  // catalogue resolved from the master (see lib/catalogueAliases.js). Empty
+  // for ordinary lines and for labels nothing could be resolved for; reports
+  // read `catalogue` when set and `brand` otherwise.
+  catalogue:    { type: String, trim: true, default: '', index: true },
   categoryType: { type: String, trim: true, index: true },
   productType:  { type: String, trim: true, index: true },
   category:     { type: String, trim: true, index: true }, // normalised to app Category

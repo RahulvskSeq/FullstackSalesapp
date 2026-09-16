@@ -439,6 +439,7 @@ export default function Styles({theme}){
        it flips every child that uses them (labels, buttons, inputs) to light
        automatically, while explicitly-coloured items (green/amber figures)
        keep their own colour. */
+    .login-as-row:hover{background:var(--bg2)}
     [data-palette="material"] #topbar{
       background:#2f4162;border-bottom:none;box-shadow:0 2px 10px rgba(20,30,60,.28);
       --t1:#ffffff; --t2:#d3dcec; --t3:#a2b2cc;
