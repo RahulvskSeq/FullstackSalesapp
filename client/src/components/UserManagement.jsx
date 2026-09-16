@@ -56,7 +56,8 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
   const [createCities, setCreateCities] = useState(new Set());
   const [createPages, setCreatePages] = useState(new Set());       // sections the new user may open
   const [createFeatures, setCreateFeatures] = useState(new Set()); // actions the new user may perform
-  useEffect(() => {
+  const [scopeErr, setScopeErr] = useState('');   // why the state/city/zone lists are empty, if a call failed
+  const loadScopes = () => {
     // Case-insensitive de-dup so ALUVA / Aluva / aluva collapse into one
     // canonical entry. Keeps the first occurrence's original casing.
     const dedupCI = (arr) => {
@@ -68,10 +69,13 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
       }
       return [...seen.values()].sort((a,b) => String(a).localeCompare(String(b)));
     };
-    api.dealerDistinctStates().then(r => setAllStates(dedupCI(r?.states))).catch(() => {});
-    api.dealerDistinctCities().then(r => setAllCities(dedupCI(r?.cities))).catch(() => {});
-    api.dealerDistinctZones().then(r => setAllZones(dedupCI(r?.zones))).catch(() => {});
-  }, []);
+    setScopeErr('');
+    // a failed call used to be swallowed, so the modal said "no states found" when the server had 11
+    api.dealerDistinctStates().then(r => setAllStates(dedupCI(r?.states))).catch(e => setScopeErr(e.message || 'could not load states'));
+    api.dealerDistinctCities().then(r => setAllCities(dedupCI(r?.cities))).catch(e => setScopeErr(e.message || 'could not load cities'));
+    api.dealerDistinctZones().then(r => setAllZones(dedupCI(r?.zones))).catch(e => setScopeErr(e.message || 'could not load zones'));
+  };
+  useEffect(() => { loadScopes(); }, []);
 
   const colors = ['#818cf8','#34d399','#f472b6','#fb923c','#fbbf24','#22d3ee','#e879f9','#a78bfa','#f87171','#4ade80'];
 
@@ -502,13 +506,13 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
             const RoleIcon = rb.icon;
             return (
               <div key={u.id} style={{
-                display:'flex', alignItems:'center', gap:10,
+                display:'flex', alignItems:'center', gap:10, flexWrap:'wrap',
                 padding:'10px 12px', background:'var(--bg2)', borderRadius:8,
                 border: isSelf ? '1px solid var(--acc)' : '1px solid transparent',
                 opacity: u.active === false ? 0.55 : 1,
               }}>
                 <Avatar user={u} size={32}/>
-                <div style={{flex:1, minWidth:0}}>
+                <div style={{flex:'1 1 260px', minWidth:0}}>
                   <div style={{display:'flex', alignItems:'center', gap:6, flexWrap:'wrap'}}>
                     <div style={{fontSize:13, fontWeight:600}}>{u.name}</div>
                     <span style={{
@@ -549,7 +553,8 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
                   </div>
                 </div>
 
-                {/* Action buttons */}
+                {/* Action buttons — icon + a word each, wrapping onto a second line on narrow screens */}
+                <div style={{display:'flex', gap:6, flexWrap:'wrap', justifyContent:'flex-end', alignItems:'center', flex:'0 1 auto', maxWidth:'100%', marginLeft:'auto'}}>
                 {isSuperAdmin && !isSelf && (
                   <select value={u.role} onChange={e=>changeRole(u.id, e.target.value)} title="Change role"
                     style={{fontSize:11, padding:'4px 6px', borderRadius:5, background:'var(--bg1)', color:'var(--t1)', border:'1px solid var(--b2)', cursor:'pointer'}}>
@@ -572,8 +577,8 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
                 )}
                 {canManage(u) && (
                   <>
-                    <button className="btn" style={{fontSize:11, padding:'4px 8px'}} onClick={()=>renameUser(u.id)} title="Rename user">
-                      ✎
+                    <button className="btn" style={{fontSize:11, padding:'4px 8px', display:'inline-flex', alignItems:'center', gap:4, whiteSpace:'nowrap'}} onClick={()=>renameUser(u.id)} title="Rename user">
+                      ✎ Rename
                     </button>
                     {(u.role === 'salesman' || u.role === 'employee') && (
                       <button className="btn" style={{fontSize:11, padding:'4px 8px', color:'var(--yel)', border:'1px solid rgba(251,191,36,0.35)'}}
@@ -581,32 +586,32 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
                         ⇄ Reassign
                       </button>
                     )}
-                    <button className="btn" style={{fontSize:11, padding:'4px 8px'}} onClick={()=>reset(u.id)} title="Reset password">
-                      <KeyRound size={11}/>
+                    <button className="btn" style={{fontSize:11, padding:'4px 8px', display:'inline-flex', alignItems:'center', gap:4, whiteSpace:'nowrap'}} onClick={()=>reset(u.id)} title="Reset password">
+                      <KeyRound size={11}/> Password
                     </button>
-                    <button className="btn" style={{fontSize:11, padding:'4px 8px'}} onClick={()=>editEmail(u.id)}
+                    <button className="btn" style={{fontSize:11, padding:'4px 8px', display:'inline-flex', alignItems:'center', gap:4, whiteSpace:'nowrap'}} onClick={()=>editEmail(u.id)}
                       title={u.email ? `Email: ${u.email}` : 'Add an email address'}>
-                      <Mail size={11} style={{color: u.email ? 'var(--acc)' : undefined}}/>
+                      <Mail size={11} style={{color: u.email ? 'var(--acc)' : undefined}}/> Email
                     </button>
-                    <button className="btn" style={{fontSize:11, padding:'4px 8px'}} onClick={()=>editUrl(u.id)} title="Edit sheet URL">
-                      <LinkIcon size={11}/>
+                    <button className="btn" style={{fontSize:11, padding:'4px 8px', display:'inline-flex', alignItems:'center', gap:4, whiteSpace:'nowrap'}} onClick={()=>editUrl(u.id)} title="Edit sheet URL">
+                      <LinkIcon size={11}/> Sheet
                     </button>
                     {u.role === 'salesman' && (
-                      <button className="btn" style={{fontSize:11, padding:'4px 8px'}} onClick={()=>editApprover(u.id)} title="Set leave / visit approver">
-                        <Shield size={11}/>
+                      <button className="btn" style={{fontSize:11, padding:'4px 8px', display:'inline-flex', alignItems:'center', gap:4, whiteSpace:'nowrap'}} onClick={()=>editApprover(u.id)} title="Set leave / visit approver">
+                        <Shield size={11}/> Approver
                       </button>
                     )}
                     {/* Only SUPERADMIN can view/grant data permissions */}
                     {isSuperAdmin && (u.role === 'admin' || u.role === 'salesman' || u.role === 'employee') && (
                       <>
-                        <button className="btn" style={{fontSize:11, padding:'4px 8px'}} onClick={()=>openPermissions(u.id)}
+                        <button className="btn" style={{fontSize:11, padding:'4px 8px', display:'inline-flex', alignItems:'center', gap:4, whiteSpace:'nowrap'}} onClick={()=>openPermissions(u.id)}
                           title="Data permissions & sections this user can use">
-                          <MapPin size={11}/>
+                          <MapPin size={11}/> Permissions
                         </button>
-                        <button className="btn" style={{fontSize:11, padding:'4px 8px'}} onClick={()=>debugPermissions(u.id)}
+                        <button className="btn" style={{fontSize:11, padding:'4px 8px', display:'inline-flex', alignItems:'center', gap:4, whiteSpace:'nowrap'}} onClick={()=>debugPermissions(u.id)}
                           title="Diagnostic: show what's actually saved on the server + how many dealers match"
                           aria-label="Debug permissions">
-                          ?
+                          ? Check
                         </button>
                       </>
                     )}
@@ -633,17 +638,18 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
                             border:'1px solid rgba(251,191,36,0.35)',
                             padding:'4px 8px', borderRadius:5, fontSize:11, fontWeight:700, cursor:'pointer',
                           }}>
-                          <PowerOff size={11}/>
+                          <PowerOff size={11}/> Deactivate
                         </button>
                       )
                     )}
                     {!isSelf && (
-                      <button className="btnd" style={{fontSize:11, padding:'4px 8px'}} onClick={()=>remove(u.id)} title="Remove user (permanent)">
-                        <Trash2 size={11}/>
+                      <button className="btnd" style={{fontSize:11, padding:'4px 8px', display:'inline-flex', alignItems:'center', gap:4, whiteSpace:'nowrap'}} onClick={()=>remove(u.id)} title="Remove user (permanent)">
+                        <Trash2 size={11}/> Delete
                       </button>
                     )}
                   </>
                 )}
+                </div>
               </div>
             );
           })}
@@ -804,22 +810,36 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
       {permsForUid && (
         <div className="overlay" onClick={e => e.target === e.currentTarget && setPermsForUid(null)}>
           <div className="modal" style={{
-            maxWidth: 1100,           // was 480 — much wider so admins can scan hundreds of cities
+            maxWidth: 980,
             width: '95vw',
-            maxHeight: '92vh',        // taller too, so the checkbox grid gets real screen
+            maxHeight: '90vh',
             display: 'flex',
             flexDirection: 'column',
+            padding: 0,
+            overflow: 'hidden',
           }}>
-            <div className="row" style={{marginBottom: 12}}>
-              <div style={{fontSize:15, fontWeight:700, display:'flex', alignItems:'center', gap:8}}>
-                <MapPin size={14}/> Data Permissions
+            {/* header stays put; only the body scrolls — the lists used to be flex
+                children of the modal and collapsed to a 30px strip when the
+                content overflowed (every checkbox row showed cut in half) */}
+            <div className="row" style={{padding:'14px 18px 10px', borderBottom:'1px solid var(--b1)', flexShrink:0}}>
+              <div style={{minWidth:0}}>
+                <div style={{fontSize:15, fontWeight:700, display:'flex', alignItems:'center', gap:8}}>
+                  <MapPin size={14}/> Data Permissions · {allUsers[permsForUid]?.name}
+                </div>
+                <div style={{fontSize:11.5, color:'var(--t2)', marginTop:2}}>
+                  Territory, pages and actions this user gets. Leave a list empty for no restriction on it.
+                </div>
               </div>
               <div className="spacer"/>
-              <button onClick={() => setPermsForUid(null)} className="btn"><X size={14}/></button>
+              <button onClick={() => setPermsForUid(null)} className="btn" style={{padding:'4px 7px'}}><X size={14}/></button>
             </div>
-            <div style={{fontSize:12, color:'var(--t2)', marginBottom:10}}>
-              Restrict <b>{allUsers[permsForUid]?.name}</b> to specific states. Leave everything unchecked to give full access.
-            </div>
+            <div style={{flex:1, minHeight:0, overflowY:'auto', padding:'12px 18px'}}>
+            {scopeErr && (
+              <div style={{fontSize:12, padding:'8px 10px', borderRadius:6, marginBottom:10, background:'rgba(220,38,38,.08)', border:'1px solid rgba(220,38,38,.35)', color:'var(--red)', display:'flex', gap:10, alignItems:'center', flexWrap:'wrap'}}>
+                <span style={{flex:1}}>States / cities / zones could not be loaded: {scopeErr}</span>
+                <button className="btn" style={{fontSize:11, padding:'3px 9px'}} onClick={loadScopes}>Retry</button>
+              </div>
+            )}
 
             {/* ── Bulk-upload city/state permissions via Excel ─────────
                 Server scans EVERY cell in EVERY sheet of the uploaded file
@@ -882,9 +902,12 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
               </span>
             </div>
 
+            <div style={{fontSize:11, color:'var(--t3)', textTransform:'uppercase', letterSpacing:'.08em', marginBottom:6}}>
+              States <span style={{textTransform:'none', fontWeight:400}}>(dealers in any ticked state are visible)</span>
+            </div>
             {allStates.length === 0 ? (
-              <div style={{fontSize:12, color:'var(--t3)', padding:'12px 0'}}>
-                No states found in dealer data yet.
+              <div style={{fontSize:12, color:'var(--t3)', padding:'6px 0 12px'}}>
+                {scopeErr ? 'Not loaded — use Retry above.' : 'No states found in dealer data yet.'}
               </div>
             ) : (
               <>
@@ -1192,7 +1215,7 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
                 <div key={g.group} style={{marginBottom:10}}>
                   <div style={{fontSize:10, color:'var(--t3)', textTransform:'uppercase',
                                letterSpacing:'.08em', fontWeight:700, marginBottom:4}}>{g.group}</div>
-                  <div style={{display:'flex', flexDirection:'column', gap:4}}>
+                  <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(250px, 1fr))', gap:4}}>
                     {g.items.map(opt => {
                       const on = permsFeatures.has(opt.key);
                       return (
@@ -1226,8 +1249,12 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
               </div>
             </div>
 
-            <div style={{display:'flex', gap:8, justifyContent:'flex-end'}}>
-              <button className="btn" onClick={() => { setPermsStates(new Set()); setPermsCities(new Set()); setPermsFeatures(new Set()); setPermsPages(new Set()); }}>Clear all</button>
+            </div>
+            <div style={{display:'flex', gap:8, justifyContent:'flex-end', alignItems:'center', flexWrap:'wrap', padding:'10px 18px', borderTop:'1px solid var(--b1)', flexShrink:0, background:'var(--bg1)'}}>
+              <span style={{fontSize:11, color:'var(--t3)', marginRight:'auto'}}>
+                {[permsStates.size && `${permsStates.size} states`, permsCities.size && `${permsCities.size} cities`, permsZones.size && `${permsZones.size} zones`, permsSalesmen.size && `${permsSalesmen.size} salesmen`, permsPages.size && `${permsPages.size} pages`, permsFeatures.size && `${permsFeatures.size} actions`].filter(Boolean).join(' · ') || 'No restriction — role default'}
+              </span>
+              <button className="btn" onClick={() => { setPermsStates(new Set()); setPermsCities(new Set()); setPermsZones(new Set()); setPermsSalesmen(new Set()); setPermsFeatures(new Set()); setPermsPages(new Set()); }}>Clear all</button>
               <button className="btn" onClick={() => setPermsForUid(null)}>Cancel</button>
               <button className="btnp" onClick={savePermissions} disabled={permsSaving}>
                 {permsSaving ? 'Saving…' : 'Save permissions'}

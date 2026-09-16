@@ -2028,3 +2028,8 @@ router.delete('/all', protect, superAdminOnly, requireFeature('wipeData'), async
 });
 
 export default router;
+
+// Shared with the key-authenticated read API (routes/incentiveApi.js) so an
+// outside system gets exactly the figures the Incentive page shows — same
+// roster, same lookback, same bands — never a second implementation.
+export { getIncentiveConfig, allIncentiveMonths, unitsByMonth, unitsBetween, scoreMonth };
