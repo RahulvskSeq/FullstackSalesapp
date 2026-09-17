@@ -16293,11 +16293,45 @@ export default function App(){
     return () => { dead = true; window.removeEventListener('focus', load); };
   }, [currentUser]);
 
-  // Someone sitting on a screen when it gets switched off — or arriving by a
-  // saved URL — lands back on Overview rather than on a dead page.
+  // A permission change made by an admin used to reach a signed-in user only
+  // at their next login. Re-read the profile on focus and every minute, and
+  // fold the parts that gate the UI (role, permissions, active) into the
+  // session — so a page or action granted or withdrawn applies within a
+  // minute, in the app too, without signing out.
   React.useEffect(() => {
-    if (screen && disabledFeatures.includes(screen)) setScreen('overview');
-  }, [disabledFeatures, screen]);
+    if (!currentUser) return;
+    let dead = false;
+    const refresh = async () => {
+      try {
+        const t = localStorage.getItem('stp_jwt'); if (!t) return;
+        const BASE = import.meta.env?.VITE_API_URL || 'http://localhost:5000/api';
+        const me = await fetch(`${BASE}/auth/me`, { headers: { Authorization: `Bearer ${t}` }, signal: AbortSignal.timeout(8000) }).then(r => r.ok ? r.json() : null).catch(() => null);
+        if (dead || !me || !me.id || me.id !== currentUser.id) return;
+        const same = JSON.stringify(me.permissions || {}) === JSON.stringify(currentUser.permissions || {}) && me.role === currentUser.role && (me.active !== false) === (currentUser.active !== false);
+        if (!same) setCurrentUser(prev => ({ ...prev, role: me.role, permissions: me.permissions || {}, active: me.active }));
+      } catch {}
+    };
+    const onFocus = () => refresh();
+    window.addEventListener('focus', onFocus);
+    const iv = setInterval(refresh, 60_000);
+    return () => { dead = true; window.removeEventListener('focus', onFocus); clearInterval(iv); };
+  }, [currentUser?.id, currentUser?.role, JSON.stringify(currentUser?.permissions || {})]);
+
+  // Someone sitting on a screen when it gets switched off, or that their
+  // pages / role no longer include — or arriving by a saved URL — lands back
+  // on the first page they may see rather than on a dead page.
+  React.useEffect(() => {
+    if (!screen || !currentUser) return;
+    if (disabledFeatures.includes(screen)) { setScreen('overview'); return; }
+    if (currentUser.role === 'superadmin') return;
+    const own = Array.isArray(currentUser.permissions?.pages) ? currentUser.permissions.pages : [];
+    const list = own.length ? own : (rolePerms[currentUser.role]?.pages || []);
+    if (!list.length) return;                       // built-in defaults: nothing to enforce here
+    if (list.includes(screen)) return;
+    if (screen === 'admin' && list.includes('admin')) return;
+    const first = list.find(id => !disabledFeatures.includes(id)) || 'overview';
+    setScreen(first);
+  }, [disabledFeatures, screen, currentUser, rolePerms]);
 
 
   if(!currentUser){
@@ -16897,7 +16931,7 @@ export default function App(){
                   {screen==='incentiveUpload'  && <Incentive view="upload"/>}
                   {screen==='tasks'   && <TasksPage   users={users} currentUser={currentUser}/>}
                   {screen==='tickets' && <TicketsPage users={users} currentUser={currentUser}/>}
-                  {screen==='admin'&&isStaff&&<AdminPanel dealers={dealersGloballyFiltered} users={users} setUsers={setUsers} setShowUM={setShowUM} onSync={syncSheets} syncing={syncing} lastSync={lastSync} syncErrs={syncErrs} onNavigate={navigate} onOpenDealer={setEditingId} monthConfig={monthConfig} saveMonthConfig={saveMonthConfig} currentUser={currentUser} onLoginAs={(token, user, impersonatedBy)=>{
+                  {screen==='admin'&&isStaff&&<AdminPanel dealers={dealersGloballyFiltered} users={users} setUsers={setUsers} setShowUM={setShowUM} onSync={syncSheets} syncing={syncing} lastSync={lastSync} syncErrs={syncErrs} onNavigate={navigate} onOpenDealer={setEditingId} monthConfig={monthConfig} saveMonthConfig={saveMonthConfig} currentUser={currentUser} hasFeature={hasFeature} onLoginAs={(token, user, impersonatedBy)=>{
                     saveToken(token);
                     localStorage.setItem('stp_jwt', token);
                     if(impersonatedBy){

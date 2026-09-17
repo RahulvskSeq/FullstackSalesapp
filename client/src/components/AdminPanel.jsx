@@ -369,7 +369,11 @@ function FeatureSwitches() {
   );
 }
 
-const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,syncErrs,onNavigate,onOpenDealer,monthConfig,saveMonthConfig,currentUser,onLoginAs})=>{
+const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,syncErrs,onNavigate,onOpenDealer,monthConfig,saveMonthConfig,currentUser,onLoginAs,hasFeature})=>{
+  // Each admin area is an action in Permissions; a tab shows only when the
+  // person may actually do what is behind it (falls back to staff-only when
+  // App has not passed the check, e.g. older mounts).
+  const can = (k) => hasFeature ? !!hasFeature(k) : (currentUser?.role === 'admin' || currentUser?.role === 'superadmin');
   const {selectedMonthIdx, MO:ctxMO}=useMonth();
   const MO = monthConfig?.MO || ctxMO || MO_CONST;
   const selMoLabel=(MO[selectedMonthIdx]||MO[MO.length-1]||'').slice(0,3);
@@ -385,6 +389,14 @@ const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,sync
   // ── Login-as dropdown (superadmin only) ─────────────────────────────────
   // Which section of the Permissions hub is open.
   const [adminSec, setAdminSec] = useState('users');
+  // land on the first section the person may open, not on a blank one
+  const SEC_NEEDS = { users:'manageUsers', perms:'manageUsers', features:'manageFeatures', activity:'manageUsers', months:'manageMonths' };
+  useEffect(() => {
+    if (tab !== 'features') return;
+    if (can(SEC_NEEDS[adminSec])) return;
+    const first = Object.keys(SEC_NEEDS).find(k => can(SEC_NEEDS[k]));
+    if (first) setAdminSec(first);
+  }, [tab, adminSec, hasFeature]);
   const isSuperAdmin = currentUser?.role === 'superadmin';
   const isStaff      = isSuperAdmin || currentUser?.role === 'admin';
   // "Login as" is for superadmins and for anyone explicitly granted the action
@@ -589,9 +601,9 @@ const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,sync
         <button className={`tab ${tab==='summary'?'active':''}`} onClick={()=>setTab('summary')}>Summary</button>
         <button className={`tab ${tab==='compare'?'active':''}`} onClick={()=>setTab('compare')}>Salesman Compare</button>
         <button className={`tab ${tab==='category'?'active':''}`} onClick={()=>setTab('category')}>Categories</button>
-        <button className={`tab ${tab==='samples'?'active':''}`} onClick={()=>setTab('samples')} style={{color:tab==='samples'?'var(--acc)':'var(--t3)'}}>📦 Sample Master</button>
-        <button className={`tab ${tab==='cats'?'active':''}`} onClick={()=>setTab('cats')} style={{color:tab==='cats'?'var(--acc)':'var(--t3)'}}>🏷️ Categories</button>
-        {isStaff && <button className={`tab ${tab==='features'?'active':''}`} onClick={()=>setTab('features')} style={{color:tab==='features'?'var(--acc)':'var(--t3)'}}>⚙️ Settings</button>}
+        {can('manageSamples') && <button className={`tab ${tab==='samples'?'active':''}`} onClick={()=>setTab('samples')} style={{color:tab==='samples'?'var(--acc)':'var(--t3)'}}>📦 Sample Master</button>}
+        {can('manageCategories') && <button className={`tab ${tab==='cats'?'active':''}`} onClick={()=>setTab('cats')} style={{color:tab==='cats'?'var(--acc)':'var(--t3)'}}>🏷️ Categories</button>}
+        {isStaff && (can('manageUsers') || can('manageFeatures') || can('manageMonths')) && <button className={`tab ${tab==='features'?'active':''}`} onClick={()=>setTab('features')} style={{color:tab==='features'?'var(--acc)':'var(--t3)'}}>⚙️ Settings</button>}
       </div>
       {tab==='summary'&&(
         <>
@@ -712,35 +724,35 @@ const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,sync
           <div style={{display:'flex', gap:6, flexWrap:'wrap', marginBottom:18,
                        borderBottom:'1px solid var(--b1)', paddingBottom:10}}>
             {[
-              ['users',    'Users',       'Accounts, passwords, region scope'],
-              ['perms',    'Permissions', 'Which screens and actions each person gets'],
-              ['features', 'Features',    'Switch parts of the app on or off for everyone'],
-              ['activity', 'Activity',    'Who changed what'],
-              ['months',   'Months',      'Which months the app shows, and which is current'],
-            ].map(([id,label,desc])=>(
+              ['users',    'Users',       'Accounts, passwords, region scope',                    can('manageUsers')],
+              ['perms',    'Permissions', 'Which screens and actions each person gets',            can('manageUsers')],
+              ['features', 'Features',    'Switch parts of the app on or off for everyone',        can('manageFeatures')],
+              ['activity', 'Activity',    'Who changed what',                                      can('manageUsers')],
+              ['months',   'Months',      'Which months the app shows, and which is current',      can('manageMonths')],
+            ].filter(x => x[3]).map(([id,label,desc])=>(
               <button key={id} onClick={()=>setAdminSec(id)} title={desc}
                 className={adminSec===id ? 'btnp' : 'btn'}
                 style={{fontSize:12, padding:'6px 12px'}}>{label}</button>
             ))}
           </div>
 
-          {adminSec==='users' && (
+          {adminSec==='users' && can('manageUsers') && (
             <UserManagement users={users} setUsers={setUsers} currentUser={currentUser}
               onClose={()=>{}} onLoginAs={onLoginAs} inline/>
           )}
-          {adminSec==='perms' && (
+          {adminSec==='perms' && can('manageUsers') && (
             <PermissionsMatrix setUsers={setUsers} currentUser={currentUser}/>
           )}
-          {adminSec==='features' && (
+          {adminSec==='features' && can('manageFeatures') && (
             <div>
               <div style={{fontSize:14, fontWeight:700, marginBottom:4}}>Available features</div>
               <FeatureSwitches/>
             </div>
           )}
-          {adminSec==='activity' && <ActivityLog/>}
+          {adminSec==='activity' && can('manageUsers') && <ActivityLog/>}
         </div>
       )}
-      {tab==='features'&&isStaff&&adminSec==='months'&&(
+      {tab==='features'&&isStaff&&can('manageMonths')&&adminSec==='months'&&(
         <div className="fade">
           <div style={{fontSize:13,color:'var(--t3)',marginBottom:14}}>Control which months appear in the app. Changes apply instantly — no code editing needed.</div>
 
