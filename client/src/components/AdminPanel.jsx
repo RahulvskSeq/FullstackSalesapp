@@ -419,7 +419,7 @@ const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,sync
     // Sort: salesman first (most common), then admin, then superadmin
     const order = { salesman:0, admin:1, superadmin:2 };
     return all
-      .filter(u => u.id !== currentUser?.id && (isSuperAdmin || u.role !== 'superadmin'))
+      .filter(u => u.id !== currentUser?.id && u.active !== false && (isSuperAdmin || u.role !== 'superadmin'))
       .sort((a,b)=>{
         const r = (order[a.role]??9) - (order[b.role]??9);
         if(r !== 0) return r;

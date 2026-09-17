@@ -290,7 +290,9 @@ function Dashboard({ month, setMonth, currentUser }) {
       {err && <div className="card" style={{ color: 'var(--red)', fontSize: 12.5 }}>{err}</div>}
       {busy && !d && <div style={{ fontSize: 12.5, color: 'var(--t3)' }}>Loading…</div>}
 
-      {d && d.month && (
+      {d && d.month && d.mine && <MyBilling d={d} />}
+
+      {d && d.month && !d.mine && (
         <>
           <Controls d={d} onSaved={() => setKey(k => k + 1)} />
 
@@ -1783,6 +1785,82 @@ function Upload() {
 }
 
 /* ── entry point ──────────────────────────────────────────────────── */
+/**
+ * One billing person's own month — what a roster member sees on login. The
+ * server already cut the data down to them; this only lays it out: points
+ * first, then how they were reached, then the last six months.
+ */
+function MyBilling({ d }) {
+  const p = d.people?.[0];
+  const ppr = d.config?.pointsPerRupee || 4;
+  const trend = (d.trend || []).map(t => ({ m: t.month.slice(5) + '/' + t.month.slice(2, 4), points: t.points || 0, cur: t.month === d.month }));
+  if (!p) return (
+    <div className="card" style={{ padding: 18, fontSize: 13, color: 'var(--t2)' }}>
+      No billing lines under your name in {d.month} yet. Points appear once the day's sheet is uploaded.
+    </div>
+  );
+  const Cell2 = ({ label, value, sub, tone }) => (
+    <div style={{ padding: '12px 14px', borderRadius: 10, background: 'var(--bg2)', border: '1px solid var(--b1)', minWidth: 0 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--t3)' }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 800, marginTop: 2, color: tone || 'var(--t1)', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+      {sub && <div style={{ fontSize: 10.5, color: 'var(--t3)', marginTop: 2 }}>{sub}</div>}
+    </div>
+  );
+  const bandText = { base: 'below target — low rate', mid: 'above target — high rate on the extra', top: 'above the top threshold — high rate on every unit' }[p.band] || '';
+  return (
+    <div style={{ display: 'grid', gap: 12 }}>
+      <div className="card" style={{ padding: '20px 22px', display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ width: 52, height: 52, borderRadius: 14, display: 'grid', placeItems: 'center', background: 'rgba(99,102,241,.14)', color: 'var(--acc)', flexShrink: 0 }}><Trophy size={24} /></div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 11.5, color: 'var(--t2)', fontWeight: 650 }}>My points · {d.month}</div>
+          <div style={{ fontSize: 36, fontWeight: 850, color: 'var(--acc)', letterSpacing: '-.02em', lineHeight: 1.1, fontVariantNumeric: 'tabular-nums' }}>{points(p.points)}</div>
+          <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 3 }}>
+            {p.grossPoints > p.points ? <>{points(p.grossPoints)} earned − {points(p.grossPoints - p.points)} deduction · </> : null}{ppr} points = ₹1
+            {d.previous && <> · last month {points(d.previous.points)}</>}
+          </div>
+        </div>
+        <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
+          <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', padding: '4px 10px', borderRadius: 20,
+                         color: p.band === 'base' ? 'var(--t2)' : 'var(--grn)', background: p.band === 'base' ? 'var(--bg2)' : 'rgba(22,163,74,.14)' }}>
+            {p.band === 'base' ? 'Below target' : p.band === 'mid' ? 'Above target' : 'Top band'}
+          </span>
+          <div style={{ fontSize: 10.5, color: 'var(--t3)', marginTop: 4 }}>{bandText}</div>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>
+        <Cell2 label="Units billed" value={num(p.units)} sub={`${num(p.invoices)} invoices`} />
+        <Cell2 label="Target" value={num(p.target)} sub={p.averageSource === 'none' ? 'no history yet' : `${num(p.average)} avg · ${p.monthsOfHistory} mo`} />
+        <Cell2 label="Still to target" value={p.units >= p.target ? '✓ crossed' : num(p.target - p.units)} tone={p.units >= p.target ? 'var(--grn)' : 'var(--red)'} sub={p.units >= p.target ? `${num(p.units - p.target)} above` : 'units to go'} />
+        <Cell2 label="Top band from" value={num(p.top)} sub="every unit at the high rate" />
+      </div>
+
+      <div className="card" style={{ padding: '14px 16px' }}>
+        <div style={{ fontSize: 12.5, fontWeight: 800, marginBottom: 4 }}>How the points were reached</div>
+        <div style={{ fontSize: 12, color: 'var(--t2)', lineHeight: 1.7 }}>
+          {p.detail} → {points(p.grossPoints)} points{p.deduction > 0 ? <>, less {Math.round((p.deductionPct || 0) * 100)}% deduction = <b style={{ color: 'var(--t1)' }}>{points(p.points)} points</b></> : null}.
+          <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 4 }}>Low rate {Math.round((d.config?.rateLow || 0) * ppr)} pts/unit up to target · high rate {Math.round((d.config?.rateHigh || 0) * ppr)} pts/unit above it</div>
+        </div>
+      </div>
+
+      <div className="card" style={{ padding: '14px 16px' }}>
+        <div style={{ fontSize: 12.5, fontWeight: 800, marginBottom: 8 }}>My points by month</div>
+        <div style={{ height: 160 }}>
+          <ResponsiveContainer>
+            <ComposedChart data={trend} margin={{ top: 4, right: 4, left: -18, bottom: 0 }}>
+              <CartesianGrid vertical={false} stroke="var(--b1)" />
+              <XAxis dataKey="m" tick={{ fontSize: 11, fill: 'var(--t3)' }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 10, fill: 'var(--t3)' }} axisLine={false} tickLine={false} tickFormatter={v => num(v)} />
+              <Tooltip formatter={v => [num(v) + ' pts', 'Points']} contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid var(--b1)', background: 'var(--bg1)', color: 'var(--t1)' }} />
+              <Area type="monotone" dataKey="points" stroke="var(--acc)" fill="rgba(99,102,241,.18)" strokeWidth={2} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Incentive({ view = 'month', currentUser }) {
   // Month is held here so switching between This month and History keeps the
   // month you were looking at.

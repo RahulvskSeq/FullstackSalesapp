@@ -38,7 +38,7 @@ export default function Payments({ params }) {
         </div>
       </Card>
       <Card pad={false}>
-        {err ? <ErrorBox err={err} onRetry={reload} /> : busy && !data ? <Busy /> : <Table cols={[
+        {err ? <ErrorBox err={err} onRetry={reload} /> : busy && !data ? <Busy kind="table" /> : <Table cols={[
           { k: 'date', h: 'Date', r: r => fmtDate(r.date) },
           { k: 'paymentNo', h: '#', r: r => <span className="chip">{r.paymentNo}</span> },
           { k: 'dealer', h: 'Dealer', r: r => <DealerLink id={r.dealerId} name={r.dealer?.name || String(r.dealerId)} code={r.dealer?.code} /> },

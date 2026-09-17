@@ -94,8 +94,9 @@ export default function SalesIncentiveRule() {
       }
       return { amount, rate: null };
     }
-    const blocks = Math.floor(excess / cfg.retroBlock);
-    const rate = Math.min(cfg.retroCap, cfg.retroBase + cfg.retroStep * (blocks - 1));
+    // rate steps up on entering the next block: 1,000–2,000 base, 2,001+ base+step
+    const steps = Math.max(0, Math.floor((excess - 1) / cfg.retroBlock) - 1);
+    const rate = Math.min(cfg.retroCap, cfg.retroBase + cfg.retroStep * steps);
     return { amount: excess * rate, rate };
   };
 
@@ -113,20 +114,16 @@ export default function SalesIncentiveRule() {
       <div className="card" style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>The gate</div>
         <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 11, lineHeight: 1.7 }}>
-          Miss this category's basic target and the month pays nothing at all — not on it, not on any
-          other product, not on display. Everything else on this page only matters once it is cleared.
+          Laminate incentive starts only after crossing this category's basic target. Other products pay
+          on units above their own targets (set per salesman under Sales by Category); switch on the
+          option below to make a missed basic zero the whole month instead.
         </div>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, marginBottom: 11, cursor: 'pointer' }}>
+          <input type="checkbox" checked={!!cfg.gateAll} onChange={e => set('gateAll', e.target.checked)} />
+          <span><b>Gate everything</b> — a missed laminate basic also zeroes other products and display</span>
+        </label>
         {/* Read-only: the deduction is changed on the dashboard, against the
             month's figures. Shown here so the rule reads in one place. */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 11,
-                      padding: '8px 12px', borderRadius: 9, background: 'var(--bg2)' }}>
-          <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.06em',
-                         textTransform: 'uppercase', color: 'var(--t3)' }}>Deduction</span>
-          <b style={{ fontSize: 13 }}>{Math.round((cfg.deductionPct ?? 0) * 1000) / 10}%</b>
-          <span style={{ fontSize: 11, color: 'var(--t3)' }}>
-            taken off after the bad-debt recovery — change it on the Dashboard
-          </span>
-        </div>
 
         <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))' }}>
           <div>
@@ -142,6 +139,9 @@ export default function SalesIncentiveRule() {
           <Field label="Display %" value={Math.round((cfg.displayPct || 0) * 1000) / 10}
                  onChange={v => set('displayPct', n(v) / 100)} step="0.5" suffix="%"
                  hint="of the value of display material sold to dealers" />
+          <Field label="Deduction %" value={Math.round((cfg.deductionPct || 0) * 1000) / 10}
+                 onChange={v => set('deductionPct', n(v) / 100)} step="5" suffix="%"
+                 hint="taken off before payment; 0 = pay the scheme in full" />
           <Field label="Project-sale credit %" value={Math.round((cfg.projectCredit || 0) * 1000) / 10}
                  onChange={v => set('projectCredit', n(v) / 100)} step="5" suffix="%"
                  hint="how much of a discounted sale counts toward target" />
@@ -209,13 +209,13 @@ export default function SalesIncentiveRule() {
           <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase',
                         color: 'var(--t3)', marginBottom: 7 }}>What that pays</div>
           <div style={{ display: 'grid', gap: 6, gridTemplateColumns: 'repeat(auto-fit,minmax(130px,1fr))' }}>
-            {[500, 1000, 2000, 3000, 4000, 6000].map(x => {
+            {[500, 1000, 2000, 2001, 3001, 4001].map(x => {
               const r = rampAt(x);
               return (
                 <div key={x} style={{ fontSize: 11.5 }}>
                   <span style={{ color: 'var(--t3)' }}>{num(x)} above → </span>
-                  <b>{money(r.amount)}</b>
-                  <span style={{ color: 'var(--t3)' }}>{r.rate ? ` (₹${r.rate}/sheet)` : ' (tiers)'}</span>
+                  <b>{num(Math.round(r.amount * (cfg.pointsPerRupee || 4)))} pts</b>
+                  <span style={{ color: 'var(--t3)' }}>{r.rate ? ` (${num(r.rate * (cfg.pointsPerRupee || 4))} pts/sheet)` : ' (tiers)'} · {money(r.amount)}</span>
                 </div>
               );
             })}
@@ -227,9 +227,9 @@ export default function SalesIncentiveRule() {
       <div className="card" style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>Other products</div>
         <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 11, lineHeight: 1.7 }}>
-          Each target is derived from the gate target, so a salesman only has one number to remember.
-          Only units <b>above</b> the derived target earn — hitting it exactly earns nothing. Leave the
-          percentage blank and set a fixed target instead where the target is a flat count.
+          A salesman's own target for the category (Sales by Category → Salesman-wise) is used when set;
+          the share of the gate target or the fixed count below is only the fallback. Only units
+          <b>above</b> the target earn — hitting it exactly earns nothing.
         </div>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 620 }}>

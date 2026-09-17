@@ -24,7 +24,7 @@ export default function ApprovalsModal({ onClose, onChanged, mode = 'waiting', d
       {!dealerId && <input className="inp" value={q} onChange={e => setQ(e.target.value)} placeholder="Search dealer name…" style={{ marginBottom: 10 }} />}
       <div style={{ fontSize: 11.5, color: 'var(--t2)', marginBottom: 8 }}>{mode === 'today' ? 'Entries made today — counted as collected once a morning statement shows the money.' : 'Money salesmen said is coming. It leaves this list on its own once a statement shows it. Cancel only a wrong entry.'}</div>
       <ErrorBox err={rec.err || err} onRetry={rec.err ? rec.reload : undefined} />
-      {rec.busy && !rec.data ? <Busy /> : !items.length ? <Empty>{mode === 'today' ? 'No entries made today.' : 'Nothing waiting — every recorded payment has been seen in a statement.'}</Empty> :
+      {rec.busy && !rec.data ? <Busy kind="table" rows={3} /> : !items.length ? <Empty>{mode === 'today' ? 'No entries made today.' : 'Nothing waiting — every recorded payment has been seen in a statement.'}</Empty> :
         <div style={{ display: 'grid', gap: 6 }}>
           {items.map(p => { const done = p.status === 'CONFIRMED'; const came = done ? p.amount : (p.cameSoFar || 0); const ps = periodsOf([p]); return (
           <div key={p._id} style={{ padding: '7px 10px', borderRadius: 9, background: done ? 'rgba(22,163,74,.10)' : PENDING_BG, border: '1px solid ' + (done ? 'rgba(22,163,74,.4)' : 'rgba(245,158,11,.45)'), boxShadow: `inset 3px 0 0 ${done ? '#16a34a' : '#f59e0b'}` }}>

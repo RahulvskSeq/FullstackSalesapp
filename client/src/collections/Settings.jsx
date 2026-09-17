@@ -90,10 +90,10 @@ function WhatsApp({ canEdit }) {
     <PhoneManual canEdit={canEdit} />
     <PhoneUpload canEdit={canEdit} />
     <Card title="Templates" style={{ marginBottom: 12 }}>
-      {tpl.busy && !tpl.data ? <Busy /> : <Table dense cols={[{ k: 'key', h: 'Key' }, { k: 'metaName', h: 'Meta template' }, { k: 'language', h: 'Lang' }, { k: 'category', h: 'Category' }, { k: 'body', h: 'Body', wrap: true, max: 460 }, { k: 'active', h: '', r: r => r.active === false ? <Badge v="CANCELLED" label="off" /> : <Badge v="CONFIRMED" label="on" /> }, { k: 'act', h: '', r: r => canEdit ? <button className="btn" data-tip="Edit the message text" style={{ fontSize: 11 }} onClick={() => setEdit({ ...r })}>Edit</button> : null }]} rows={tpl.data} keyOf={r => r.key} />}
+      {tpl.busy && !tpl.data ? <Busy kind="table" rows={3} /> : <Table dense cols={[{ k: 'key', h: 'Key' }, { k: 'metaName', h: 'Meta template' }, { k: 'language', h: 'Lang' }, { k: 'category', h: 'Category' }, { k: 'body', h: 'Body', wrap: true, max: 460 }, { k: 'active', h: '', r: r => r.active === false ? <Badge v="CANCELLED" label="off" /> : <Badge v="CONFIRMED" label="on" /> }, { k: 'act', h: '', r: r => canEdit ? <button className="btn" data-tip="Edit the message text" style={{ fontSize: 11 }} onClick={() => setEdit({ ...r })}>Edit</button> : null }]} rows={tpl.data} keyOf={r => r.key} />}
     </Card>
     <Card title="Recent messages" pad={false}>
-      {msgs.busy && !msgs.data ? <Busy /> : <Table dense cols={[{ k: 'createdAt', h: 'When', r: r => fmtWhen(r.createdAt) }, { k: 'templateKey', h: 'Template' }, { k: 'to', h: 'To' }, { k: 'status', h: 'Status', r: r => <Badge v={r.status} /> }, { k: 'error', h: 'Error', wrap: true }]} rows={msgs.data?.items} empty="No messages yet." />}
+      {msgs.busy && !msgs.data ? <Busy kind="table" rows={3} /> : <Table dense cols={[{ k: 'createdAt', h: 'When', r: r => fmtWhen(r.createdAt) }, { k: 'templateKey', h: 'Template' }, { k: 'to', h: 'To' }, { k: 'status', h: 'Status', r: r => <Badge v={r.status} /> }, { k: 'error', h: 'Error', wrap: true }]} rows={msgs.data?.items} empty="No messages yet." />}
     </Card>
     {edit && <div className="overlay" onMouseDown={e => { if (e.target === e.currentTarget) setEdit(null); }}><div className="modal" style={{ maxWidth: 560 }}>
       <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 12 }}>Template · {edit.key}</div>

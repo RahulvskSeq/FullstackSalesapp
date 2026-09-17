@@ -216,6 +216,10 @@ export default function Styles({theme}){
     @keyframes spin{to{transform:rotate(360deg)}}
     /* Used by the update button's dot — a quiet nudge that a build is waiting. */
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+    @keyframes skel{0%{background-position:200% 0}100%{background-position:-200% 0}}
+    .skel{background:linear-gradient(90deg,var(--bg2) 25%,var(--bg3) 50%,var(--bg2) 75%);background-size:200% 100%;animation:skel 1.4s ease-in-out infinite}
+    .skel-wrap{animation:fadeIn .2s ease}
+    @media (prefers-reduced-motion:reduce){.skel{animation:none}}
     @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
     @keyframes popIn{0%{opacity:0;transform:scale(.94)}100%{opacity:1;transform:scale(1)}}
     @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
@@ -249,13 +253,19 @@ export default function Styles({theme}){
     #body{display:flex;flex:1;overflow:hidden;position:relative}
 
     #sidebar{
-      padding-bottom:env(safe-area-inset-bottom);
-      width:200px;min-width:200px;background:var(--bg1);border-right:1px solid var(--b1);
+      padding-bottom:env(safe-area-inset-bottom);position:relative;
+      width:var(--sbw,240px);min-width:var(--sbw,240px);background:var(--bg1);border-right:1px solid var(--b1);
       display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;
-      transition:transform .25s ease,min-width .25s ease,width .25s ease;
+      transition:transform .25s ease;
       z-index:1100;
     }
     #sidebar.closed{width:0;min-width:0;overflow:hidden;border:none}
+    /* drag handle on the sidebar's right edge (desktop) — the width is remembered */
+    .sb-resizer{position:fixed;top:0;bottom:0;width:7px;cursor:col-resize;z-index:1200;background:transparent;transition:background .15s}
+    .sb-resizer:hover,.sb-resizer.dragging{background:var(--accL)}
+    .sb-resizer::after{content:'';position:absolute;top:50%;left:2px;width:3px;height:36px;margin-top:-18px;border-radius:2px;background:var(--b2);opacity:0;transition:opacity .15s}
+    .sb-resizer:hover::after,.sb-resizer.dragging::after{opacity:1;background:var(--acc)}
+    @media (max-width:768px){.sb-resizer{display:none}}
 
     #sb-overlay{
       display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);
@@ -269,6 +279,19 @@ export default function Styles({theme}){
     .nav-item{padding:11px 14px;font-size:14px;font-weight:600;cursor:pointer;color:var(--t2);border-left:2px solid transparent;display:flex;align-items:center;gap:10px;transition:all .15s;user-select:none;white-space:nowrap;letter-spacing:.01em}
     .nav-item:hover{color:var(--t2);background:rgba(255,255,255,.03)}
     .nav-item.active{color:var(--acc);border-left-color:var(--acc);background:var(--accL);font-weight:700}
+    /* group header: the section. When one of its pages is open the HEADER
+       carries the filled style; the page itself sits under it, indented and
+       lightly tinted, so section and sub-section read as two levels. */
+    .nav-group{font-size:12.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--t2)}
+    .nav-group.open{color:var(--t1)}
+    .nav-group.has-active{color:#fff;border-left-color:var(--acc);background:var(--acc);font-weight:800;border-radius:6px;margin:2px 8px}
+    /* sub-items: one unbroken guide line down the group, items indented inside it */
+    .nav-children{margin:2px 0 6px 25px;border-left:2px solid var(--b2)}
+    .nav-child{font-size:13.5px;padding:9px 12px 9px 14px;border-left:none;color:var(--t2);font-weight:500;margin:0}
+    .nav-child:hover{color:var(--t1);background:rgba(255,255,255,.03)}
+    .nav-child.active{color:var(--acc);background:transparent;font-weight:700;border-left:none}
+    /* the open page: accent text, a soft tint, no underline */
+    .nav-child.active{background:var(--accL);border-radius:6px;margin:1px 8px 1px 0}
     .nav-sec{padding:15px 14px 6px;font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.14em}
 
     /* ── Cards ──
@@ -456,6 +479,11 @@ export default function Styles({theme}){
     [data-palette="material"] .nav-item:hover{background:var(--bg2);color:var(--t1)}
     [data-palette="material"] .nav-item.active{
       background:var(--acc);color:#fff;font-weight:600;box-shadow:0 3px 9px rgba(52,71,103,.40)}
+    [data-palette="material"] .nav-group.has-active{
+      background:var(--acc);color:#fff;box-shadow:0 3px 9px rgba(52,71,103,.40)}
+    [data-palette="material"] .nav-children{margin:2px 10px 6px 30px;border-left:2px solid var(--b2)}
+    [data-palette="material"] .nav-child{margin:2px 0 2px 6px;border-radius:5px;border-left:none;color:var(--t2)}
+    [data-palette="material"] .nav-child.active{background:var(--accL);color:var(--acc);box-shadow:none}
     [data-palette="material"] th{
       background:#eaeef4;border-bottom:1px solid #cfd7e2;color:var(--t2);font-size:10.5px}
     [data-palette="material"] td{border-bottom:1px solid #e3e8ef}

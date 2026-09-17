@@ -61,10 +61,21 @@ async function getIncentiveConfig({ fresh = false } = {}) {
  *  month's totals, the same month last time for comparison, a six-     *
  *  month trend and the split across the three bands.                   *
  * ------------------------------------------------------------------ */
-router.get('/incentive/dashboard', protect, adminOnly, async (req, res) => {
+router.get('/incentive/dashboard', protect, async (req, res) => {
   try {
     const config = await getIncentiveConfig();
     const months = await allIncentiveMonths();
+    // Admins see the whole team. Anyone else sees their own figures if they
+    // are on the billing roster — matched by the roster entry's userId, or by
+    // the user's name against the roster's names and aliases.
+    const isAdminUser = req.user?.role === 'admin' || req.user?.role === 'superadmin';
+    let mineKey = null;
+    if (!isAdminUser) {
+      const me = (config.roster || []).find(r => r.userId && r.userId === req.user.id)
+        || personFor(req.user.name, config) || personFor(req.user.id, config);
+      if (!me) return res.status(403).json({ error: 'You are not on the billing incentive roster' });
+      mineKey = me.key;
+    }
     // A date range answers "what happened between these dates". The bands and
     // the target still come from the month the range ends in — the rule is
     // monthly, and pretending a five-day window has its own target would
@@ -109,6 +120,18 @@ router.get('/incentive/dashboard', protect, adminOnly, async (req, res) => {
     }
 
     const scored = new Map(trendMonths.map(m => [m, scoreMonth(m, byMonth, config)]));
+    if (mineKey) {
+      // keep one person in every month: list, totals and trend alike
+      for (const [m, sc] of scored) {
+        const only = sc.people.filter(p => p.name === mineKey);
+        const r2 = n => Math.round(n * 100) / 100;
+        scored.set(m, { people: only, totals: {
+          people: only.length, units: only.reduce((a, p) => a + p.units, 0),
+          grossAmount: r2(only.reduce((a, p) => a + p.grossAmount, 0)), deduction: r2(only.reduce((a, p) => a + p.deduction, 0)),
+          amount: r2(only.reduce((a, p) => a + p.amount, 0)), grossPoints: only.reduce((a, p) => a + p.grossPoints, 0), points: only.reduce((a, p) => a + p.points, 0),
+        } });
+      }
+    }
     const cur  = scored.get(month);
     const prevMonth = trendMonths[trendMonths.length - 2] || '';
     const prev = prevMonth ? scored.get(prevMonth) : null;
@@ -133,7 +156,8 @@ router.get('/incentive/dashboard', protect, adminOnly, async (req, res) => {
     const orphans = unassigned.filter(u => u.month === month);
 
     res.json({
-      month, months, config,
+      month, months, config: mineKey ? { pointsPerRupee: config.pointsPerRupee, rateLow: config.rateLow, rateHigh: config.rateHigh, deductionPct: config.deductionPct } : config,
+      mine: !!mineKey,
       // Present only when a date range was asked for, so the UI can say what
       // window the figures cover instead of implying a whole month.
       range: rangeInfo,
@@ -156,12 +180,12 @@ router.get('/incentive/dashboard', protect, adminOnly, async (req, res) => {
       // People still measured against nothing pay the top rate on every unit,
       // which is the single biggest thing that can be wrong on this screen.
       noHistory: cur.people.filter(p => p.averageSource === 'none').map(p => p.name),
-      unassigned: {
+      unassigned: mineKey ? { units: 0, salesmen: [] } : {
         units: orphans.reduce((a, u) => a + u.units, 0),
         salesmen: orphans.sort((a, b) => b.units - a.units),
       },
       // Billed under a name that is not on the roster: stored, not paid.
-      offRoster: offRoster.filter(u => u.month === month).sort((a, b) => b.units - a.units),
+      offRoster: mineKey ? [] : offRoster.filter(u => u.month === month).sort((a, b) => b.units - a.units),
       roster: config.roster,
     });
   } catch (e) {

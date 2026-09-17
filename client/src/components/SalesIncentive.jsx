@@ -1,20 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Lock, Unlock, AlertTriangle, RefreshCw, IndianRupee, Pencil, X,
-         ArrowUpRight, ArrowDownRight, Package, Monitor, Layers, Award, Percent } from 'lucide-react';
-import { PieChart, Pie, Cell, ComposedChart, Area, Line, XAxis, YAxis,
-         CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { Lock, Unlock, AlertTriangle, RefreshCw, Pencil, X, ChevronDown, ChevronRight,
+         ArrowUpRight, ArrowDownRight, Trophy, Users, Layers, Package, Monitor, Star, Calculator } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { api } from '../api';
 
 /**
- * Salesman incentive — the laminate-gated scheme.
+ * Salesman incentive — the laminate scheme, shown in POINTS only.
  *
- * Deliberately a separate screen from the billing incentive: they share the
- * word and nothing else. This one pays rupees per sheet, has no points, and
- * everything hangs off one rule — clear the laminate basic target, or the
- * month pays nothing at all.
- *
- * The gate is the loudest thing on the screen because it is the only thing
- * that decides whether anything else on the row matters.
+ * The rule is defined in rupees per sheet (Rule & setup), but salesmen are
+ * told points, never money: everything on this screen is converted with the
+ * scheme's pointsPerRupee (4 points = ₹1). Laminate pays on slabs above the
+ * basic target; every other product pays on units above its own target.
  */
 
 const money = v => '₹' + Number(v || 0).toLocaleString('en-IN',
@@ -143,47 +139,174 @@ function AdjustModal({ person, month, onClose, onSaved }) {
   );
 }
 
+
+/* ── the scheme, computed in the browser for what-if questions ─────────── */
+function laminatePay(excess, c) {
+  const x = Math.max(0, Math.round(Number(excess) || 0));
+  if (x <= 0) return { amount: 0, rate: null, bands: [] };
+  const tiers = c.starterTiers || [];
+  if (x < (c.retroFrom || 1000)) {
+    let amount = 0, prev = 0; const bands = [];
+    for (const t of tiers) { const inBand = Math.min(x, t.upTo) - prev; if (inBand > 0) { amount += inBand * t.rate; bands.push({ sheets: inBand, rate: t.rate }); } prev = t.upTo; if (x <= t.upTo) break; }
+    return { amount, rate: null, bands };
+  }
+  const steps = Math.max(0, Math.floor((x - 1) / (c.retroBlock || 1000)) - 1);
+  const rate = Math.min(c.retroCap, c.retroBase + c.retroStep * steps);
+  return { amount: x * rate, rate, bands: [{ sheets: x, rate }] };
+}
+function estimate(c, basic, targets, f) {
+  const ppr = Number(c.pointsPerRupee) || 4;
+  const lam = Math.max(0, Math.round(Number(f.LAMINATE) || 0));
+  const gateOpen = basic > 0 && lam >= basic;
+  const excess = gateOpen ? lam - basic : 0;
+  const L = laminatePay(excess, c);
+  const products = (c.products || []).map(p => {
+    const target = Number(targets[p.category]) || 0;
+    const actual = Math.max(0, Math.round(Number(f[p.category]) || 0));
+    const over = target > 0 ? Math.max(0, actual - target) : 0;
+    const open = c.gateAll ? gateOpen : true;
+    return { ...p, target, actual, over, amount: open && target > 0 ? over * p.rate : 0 };
+  });
+  const displayValue = Math.max(0, Number(f.display) || 0);
+  const display = (c.gateAll ? gateOpen : true) ? displayValue * (c.displayPct || 0) : 0;
+  const earned = L.amount + products.reduce((a, p) => a + p.amount, 0) + display;
+  const deduction = earned * (c.deductionPct || 0);
+  const payable = earned - deduction;
+  return { gateOpen, excess, L, products, display, earned, deduction, payable, points: Math.round(payable * ppr), grossPoints: Math.round(earned * ppr), ppr };
+}
+
 /**
- * The deduction, editable against the month's figures rather than buried in
- * the scheme. It is not part of the published rule — it is what is withheld
- * before payment — so it belongs where the payout is being read.
+ * "What if I sell this much?" — a salesman types expected units and sees the
+ * points the scheme would pay, using the same rule and their own targets.
  */
-function DeductionControl({ d, onSaved }) {
-  const pct = Math.round((d.config?.deductionPct ?? 0) * 1000) / 10;
-  const [draft, setDraft] = useState(String(pct));
-  const [busy, setBusy] = useState(false);
-  const [err, setErr]   = useState('');
-  useEffect(() => { setDraft(String(pct)); }, [pct]);
-
-  const commit = async () => {
-    const n = Number(draft);
-    if (!Number.isFinite(n)) { setDraft(String(pct)); return; }
-    const v = Math.min(100, Math.max(0, n)) / 100;
-    if (Math.abs(v - (d.config?.deductionPct ?? 0)) < 1e-9) return;
-    setBusy(true); setErr('');
-    try {
-      await api.salesIncentiveConfigSave({ ...d.config, deductionPct: v });
-      onSaved();
-    } catch (e) { setErr(e?.message || 'Could not save'); setDraft(String(pct)); }
-    finally { setBusy(false); }
+function EstimateModal({ d, person, onClose }) {
+  const c = d.config || {};
+  const ppr = Number(c.pointsPerRupee) || 4;
+  const basic = person?.basic || 0;
+  const targets = Object.fromEntries((person?.products || []).map(p => [p.category, p.target]));
+  const now = { LAMINATE: person?.credited || 0, display: person?.displayValue || 0, ...Object.fromEntries((person?.products || []).map(p => [p.category, p.actual])) };
+  const [f, setF] = useState({ ...now });
+  const set = (k, v) => setF(x => ({ ...x, [k]: v }));
+  const e = estimate(c, basic, targets, f);
+  const cur = estimate(c, basic, targets, now);
+  const rows = [
+    { key: 'LAMINATE', label: 'Laminate', target: basic, actual: now.LAMINATE, unit: 'sheets', note: 'basic target — points start above it' },
+    ...(c.products || []).map(p => ({ key: p.category, label: p.label, target: targets[p.category] || 0, actual: now[p.category] || 0, unit: p.key === 'rolls' ? 'rolls' : 'sheets', note: `${num(Math.round(p.rate * ppr))} pts per ${p.key === 'rolls' ? 'roll' : 'sheet'} above target` })),
+  ];
+  // digits only, so typing feels like a calculator; Enter jumps to the next box
+  const clean = v => String(v ?? '').replace(/[^\d]/g, '');
+  const onKey = ev => { if (ev.key === 'Enter') { ev.preventDefault(); const all = [...ev.currentTarget.closest('.est-body').querySelectorAll('input')]; const i = all.indexOf(ev.currentTarget); (all[i + 1] || all[0]).focus(); } };
+  // a plain render function, not a component: a component declared inside the
+  // modal is a new type every render, so React remounted the row and the box
+  // lost focus after every keystroke
+  const renderRow = (r) => {
+    const v = f[r.key]; const n = Number(v) || 0; const over = r.target > 0 && n > r.target;
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(120px,1.3fr) 90px 1fr', gap: 10, alignItems: 'center', padding: '9px 0', borderTop: '1px solid var(--b1)' }}>
+        <div><div style={{ fontWeight: 700, fontSize: 13 }}>{r.label}</div><div style={{ fontSize: 10.5, color: 'var(--t3)' }}>{r.note}</div></div>
+        <div style={{ fontSize: 11, color: 'var(--t3)', lineHeight: 1.5 }}>target <b style={{ color: 'var(--t1)' }}>{r.target ? num(r.target) : '—'}</b><br />now <b style={{ color: 'var(--t1)' }}>{num(r.actual)}</b></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <button className="btn" style={{ padding: '4px 9px', fontSize: 14 }} onClick={() => set(r.key, Math.max(0, n - (r.unit === 'rolls' ? 1 : 50)))}>−</button>
+          <input type="text" inputMode="numeric" value={v} onChange={ev => set(r.key, clean(ev.target.value))} onFocus={ev => ev.target.select()} onKeyDown={onKey}
+                 style={{ width: '100%', minWidth: 80, fontSize: 17, padding: '8px 10px', borderRadius: 9, textAlign: 'right', fontWeight: 800, fontVariantNumeric: 'tabular-nums',
+                          border: '2px solid ' + (over ? 'var(--grn)' : 'var(--acc)'), background: 'var(--bg1)', color: over ? 'var(--grn)' : 'var(--t1)', outline: 'none' }} />
+          <button className="btn" style={{ padding: '4px 9px', fontSize: 14 }} onClick={() => set(r.key, n + (r.unit === 'rolls' ? 1 : 50))}>+</button>
+        </div>
+        {over && <div style={{ gridColumn: '1 / -1', fontSize: 10.5, color: 'var(--grn)', marginTop: -4 }}>+{num(n - r.target)} above target</div>}
+      </div>
+    );
   };
-
+  // what the laminate slabs would pay at a few round excesses — the fastest answer to "how much if I push"
+  const scen = [250, 500, 1000, 2000, 3000].map(x => ({ x, pts: Math.round(laminatePay(x, c).amount * ppr * (1 - (c.deductionPct || 0))) }));
+  const lamNow = Number(f.LAMINATE) || 0;
   return (
-    <div className="card" style={{ padding: '11px 15px', marginBottom: 14,
-          display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em',
-                     textTransform: 'uppercase', color: 'var(--t3)' }}>Deduction</span>
-      <input type="number" min="0" max="100" step="1" value={draft} disabled={busy}
-             onChange={e => setDraft(e.target.value)} onBlur={commit}
-             onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-             style={{ width: 64, fontSize: 13, padding: '5px 8px', borderRadius: 7,
-                      border: '1px solid var(--b1)', background: 'var(--bg1)', color: 'var(--t1)' }} />
-      <span style={{ fontSize: 12, color: 'var(--t3)' }}>%</span>
-      <span style={{ fontSize: 11, color: 'var(--t3)' }}>
-        taken off after the bad-debt recovery
-      </span>
-      {busy && <span style={{ fontSize: 11, color: 'var(--t3)' }}>Saving…</span>}
-      {err && <span style={{ fontSize: 11, color: 'var(--red)' }}>{err}</span>}
+    <div onMouseDown={ev => { if (ev.target === ev.currentTarget) onClose(); }}
+         style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 900, display: 'grid', placeItems: 'center', padding: 16 }}>
+      <style>{`
+        .est-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(300px, .95fr); gap: 0; }
+        .est-left { padding: 12px 20px 16px; border-right: 1px solid var(--b1); }
+        .est-right { padding: 14px 20px 16px; background: var(--bg2); }
+        @media (max-width: 860px) { .est-grid { grid-template-columns: 1fr; } .est-left { border-right: none; border-bottom: 1px solid var(--b1); } }
+      `}</style>
+      <div className="card" style={{ width: 'min(960px, 100%)', maxHeight: '92vh', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
+        <div style={{ padding: '14px 20px 12px', borderBottom: '1px solid var(--b1)', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, display: 'grid', placeItems: 'center', background: 'rgba(99,102,241,.14)', color: 'var(--acc)', flexShrink: 0 }}><Calculator size={17} /></div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 16, fontWeight: 800 }}>Calculate my incentive</div>
+            <div style={{ fontSize: 11.5, color: 'var(--t3)' }}>Type what you expect to sell this month — your own targets are used. {ppr} points = ₹1.</div>
+          </div>
+          <button className="btn" onClick={onClose} style={{ marginLeft: 'auto', padding: '5px 8px' }}><X size={15} /></button>
+        </div>
+
+        <div className="est-grid est-body" style={{ overflowY: 'auto', minHeight: 0 }}>
+          {/* ── left: what I expect to sell ── */}
+          <div className="est-left">
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(120px,1.3fr) 100px 1fr', gap: 10, padding: '6px 0 4px', fontSize: 10, fontWeight: 800, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--t3)' }}>
+              <span>Product</span><span>Target · now</span><span style={{ textAlign: 'right' }}>I expect to sell</span>
+            </div>
+            {rows.map(r => <React.Fragment key={r.key}>{renderRow(r)}</React.Fragment>)}
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(120px,1.3fr) 100px 1fr', gap: 10, alignItems: 'center', padding: '9px 0', borderTop: '1px solid var(--b1)' }}>
+              <div><div style={{ fontWeight: 700, fontSize: 13 }}>Display</div><div style={{ fontSize: 10.5, color: 'var(--t3)' }}>{Math.round((c.displayPct || 0) * 100)}% of value sold</div></div>
+              <div style={{ fontSize: 11, color: 'var(--t3)' }}>now <b style={{ color: 'var(--t1)' }}>{num(now.display || 0)}</b></div>
+              <input type="text" inputMode="numeric" value={f.display} onChange={ev => set('display', clean(ev.target.value))} onFocus={ev => ev.target.select()} onKeyDown={onKey} placeholder="value sold"
+                     style={{ width: '100%', fontSize: 17, padding: '8px 10px', borderRadius: 9, textAlign: 'right', fontWeight: 800, border: '2px solid var(--acc)', background: 'var(--bg1)', color: 'var(--t1)', outline: 'none' }} />
+            </div>
+
+            {basic > 0 && (
+              <div style={{ marginTop: 12, fontSize: 11.5, color: 'var(--t2)' }}>
+                <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--t3)', marginBottom: 6 }}>Quick try — laminate at</div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {scen.map(sc => {
+                    const on = lamNow === basic + sc.x;
+                    return (
+                      <button key={sc.x} className="btn" onClick={() => set('LAMINATE', basic + sc.x)} title={`Set laminate to ${num(basic + sc.x)} sheets`}
+                              style={{ fontSize: 11, padding: '5px 10px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1, borderColor: on ? 'var(--acc)' : undefined, background: on ? 'rgba(99,102,241,.12)' : undefined }}>
+                        <span style={{ color: 'var(--t3)' }}>{num(basic + sc.x)} sheets</span>
+                        <b style={{ color: 'var(--grn)' }}>{num(sc.pts)} pts</b>
+                      </button>
+                    );
+                  })}
+                  <button className="btn" onClick={() => setF({ ...now })} style={{ fontSize: 11, padding: '5px 10px', alignSelf: 'stretch' }} title="Back to this month's actual sales">↺ today's sales</button>
+                </div>
+                <div style={{ fontSize: 10.5, color: 'var(--t3)', marginTop: 5 }}>Basic {num(basic)} + 250 / 500 / 1,000 / 2,000 / 3,000 sheets — laminate points only.</div>
+              </div>
+            )}
+          </div>
+
+          {/* ── right: the answer ── */}
+          <div className="est-right">
+            <div style={{ padding: '14px 16px', borderRadius: 12, background: 'rgba(22,163,74,.10)', border: '1px solid rgba(22,163,74,.35)' }}>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--t3)' }}>Calculated points</div>
+              <div style={{ fontSize: 40, fontWeight: 850, color: 'var(--grn)', lineHeight: 1.05, letterSpacing: '-.02em', fontVariantNumeric: 'tabular-nums' }}>{num(e.points)}</div>
+              <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 4 }}>{e.deduction > 0 ? `${num(e.grossPoints)} earned − ${Math.round((c.deductionPct || 0) * 100)}% deduction` : 'no deduction'}</div>
+              <div style={{ display: 'flex', gap: 10, marginTop: 10, paddingTop: 10, borderTop: '1px dashed rgba(22,163,74,.35)', fontSize: 12 }}>
+                <span style={{ color: 'var(--t3)' }}>At today's sales <b style={{ color: 'var(--t1)' }}>{num(cur.points)}</b></span>
+                <span style={{ marginLeft: 'auto', fontWeight: 800, color: e.points - cur.points >= 0 ? 'var(--grn)' : 'var(--red)' }}>{e.points - cur.points >= 0 ? '+' : ''}{num(e.points - cur.points)}</span>
+              </div>
+            </div>
+
+            <div style={{ fontSize: 11.5, padding: '9px 11px', borderRadius: 9, margin: '10px 0', lineHeight: 1.5, background: e.gateOpen ? 'rgba(22,163,74,.08)' : 'rgba(220,38,38,.07)', color: e.gateOpen ? 'var(--grn)' : 'var(--red)', border: '1px solid ' + (e.gateOpen ? 'rgba(22,163,74,.3)' : 'rgba(220,38,38,.25)') }}>
+              {basic <= 0 ? 'No laminate target is set for you this month, so laminate cannot earn.'
+                : e.gateOpen ? <>Laminate basic crossed by <b>{num(e.excess)}</b> → {e.L.rate ? `${num(Math.round(e.L.rate * ppr))} pts on every sheet above basic` : e.L.bands.map(b => `${num(Math.round(b.rate * ppr))} pts × ${num(b.sheets)}`).join(' + ')} = <b>{num(Math.round(e.L.amount * ppr))} pts</b></>
+                : <><b>{num(basic - lamNow)}</b> more laminate sheets to reach basic ({num(basic)}). Laminate earns nothing until then; other products still earn above their targets.</>}
+            </div>
+
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--t3)', marginBottom: 6 }}>Where the points come from</div>
+            <div style={{ background: 'var(--bg1)', border: '1px solid var(--b1)', borderRadius: 10, padding: '4px 12px', fontSize: 12.5 }}>
+              {[['Laminate', e.L.amount, e.excess ? `+${num(e.excess)} above basic` : ''], ...e.products.map(p => [p.label, p.amount, p.over ? `+${num(p.over)} above target` : '']), ['Display', e.display, '']].map(([l, a, sub]) => (
+                <div key={l} style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '6px 0', borderTop: '1px solid var(--b1)' }}>
+                  <span style={{ color: 'var(--t1)', fontWeight: 600 }}>{l}</span>
+                  {sub && <span style={{ fontSize: 10.5, color: 'var(--grn)' }}>{sub}</span>}
+                  <b style={{ marginLeft: 'auto', fontVariantNumeric: 'tabular-nums', color: a > 0 ? 'var(--grn)' : 'var(--t3)' }}>{num(Math.round(a * ppr))}</b>
+                </div>
+              ))}
+              <div style={{ display: 'flex', gap: 8, padding: '8px 0 6px', borderTop: '2px solid var(--b2)', fontWeight: 800 }}>
+                <span>Total</span><span style={{ marginLeft: 'auto', color: 'var(--grn)' }}>{num(e.points)} pts</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -201,6 +324,7 @@ export default function SalesIncentive() {
   const [key, setKey] = useState(0);
   const [editing, setEditing] = useState(null);
   const [open, setOpen] = useState({});
+  const [calc, setCalc] = useState(false);
 
   useEffect(() => {
     let dead = false;
@@ -213,37 +337,77 @@ export default function SalesIncentive() {
   }, [month, key, ranged, from, to]);
 
   const reload = useCallback(() => setKey(k => k + 1), []);
-  const noTarget = (d?.people || []).filter(p => !p.basic);
+  const mine = !!d?.mine;                                     // a salesman looking at their own month
+  useEffect(() => { if (mine && d?.people?.[0]) setOpen({ [d.people[0].salesmanId]: true }); }, [mine, d?.month]);
+  const ppr = Number(d?.config?.pointsPerRupee) || 4;
+  const pts = v => Math.round((Number(v) || 0) * ppr);          // rupees → points
+  const P = v => num(pts(v)) + ' pts';
+  const rateP = v => num(pts(v)) + ' pts';                       // per-unit rate in points
+  // Only salesmen who are IN the scheme this month — those with a laminate
+  // target set. Someone with no target (left, joined mid-month, not on the
+  // scheme) is kept out of the list and named in Needs attention instead.
+  const everyone = [...(d?.people || [])].sort((a, b) => b.payable - a.payable || b.credited - a.credited);
+  const people = everyone.filter(p => p.basic > 0);
+  const noTarget = everyone.filter(p => !p.basic);
+  const cleared = people.filter(p => p.gateOpen);
+  const t = d?.totals || {};
+  const PRODUCT_ICON = { decorative: Package, louvres: Layers, rolls: Package, liner: Layers };
+
+  const monthLabel = m => { if (!m) return ''; const [y, mm] = m.split('-'); return new Date(Date.UTC(+y, +mm - 1, 1)).toLocaleDateString('en-IN', { month: 'short', year: '2-digit', timeZone: 'UTC' }); };
+  const input = { fontSize: 12.5, padding: '6px 9px', borderRadius: 8, border: '1px solid var(--b1)', background: 'var(--bg1)', color: 'var(--t1)' };
+
+  /** progress bar: actual against target, coloured by whether it is crossed */
+  const Progress = ({ actual, target, tone }) => {
+    const pct = target > 0 ? Math.min(100, (actual / target) * 100) : 0;
+    const over = target > 0 && actual > target;
+    return (
+      <div style={{ height: 6, borderRadius: 3, background: 'var(--b1)', overflow: 'hidden' }}>
+        <div style={{ width: pct + '%', height: '100%', borderRadius: 3, background: over ? 'var(--grn)' : (tone || 'var(--acc)'), transition: 'width .3s' }} />
+      </div>
+    );
+  };
+  const Chip = ({ children, tone = 'var(--t3)', bg = 'var(--bg2)' }) => (
+    <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '.05em', textTransform: 'uppercase', padding: '2px 8px', borderRadius: 20, color: tone, background: bg, whiteSpace: 'nowrap' }}>{children}</span>
+  );
+  const Tile = ({ icon: Icon, label, value, sub, tone = 'var(--acc)', big }) => (
+    <div className="card" style={{ padding: '14px 16px', display: 'flex', gap: 12, alignItems: 'flex-start', minWidth: 0 }}>
+      <div style={{ width: 36, height: 36, borderRadius: 10, flexShrink: 0, display: 'grid', placeItems: 'center', background: tone + '22', color: tone }}><Icon size={17} /></div>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--t3)', whiteSpace: 'nowrap' }}>{label}</div>
+        <div style={{ fontSize: big ? 26 : 20, fontWeight: 850, lineHeight: 1.15, margin: '2px 0', color: big ? tone : 'var(--t1)', fontVariantNumeric: 'tabular-nums', overflowWrap: 'anywhere' }}>{value}</div>
+        {sub && <div style={{ fontSize: 11, color: 'var(--t3)' }}>{sub}</div>}
+      </div>
+    </div>
+  );
 
   return (
     <div className="fade">
-      <div className="page-head" style={{ marginBottom: 14 }}>
-        <div className="page-eyebrow">Salesman incentive</div>
-        <div className="page-title">Laminate-gated scheme</div>
-      </div>
+      <style>{`
+        .si-row:hover { background: var(--bg2); }
+        @media (max-width: 720px) { .si-hide-sm { display: none !important; } .si-grid { grid-template-columns: 1fr !important; } }
+      `}</style>
 
-      <div className="row" style={{ marginBottom: 14, gap: 8, alignItems: 'center' }}>
-        <select value={d?.month || ''} onChange={e => setMonth(e.target.value)}
-                style={{ fontSize: 12.5, padding: '6px 9px', borderRadius: 8,
-                         border: '1px solid var(--b1)', background: 'var(--bg1)', color: 'var(--t1)' }}>
-          {(d?.months || []).map(m => <option key={m} value={m}>{m}</option>)}
-        </select>
-        <button className="btn" onClick={reload} disabled={busy}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12 }}>
-          <RefreshCw size={12} className={busy ? 'spin' : ''} /> Refresh
-        </button>
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginLeft: 'auto' }}>
-          <input type="date" value={from} onChange={e => setFrom(e.target.value)}
-                 style={{ fontSize: 12, padding: '5px 7px', borderRadius: 7,
-                          border: '1px solid var(--b1)', background: 'var(--bg1)', color: 'var(--t1)' }} />
-          <span style={{ fontSize: 11, color: 'var(--t3)' }}>to</span>
-          <input type="date" value={to} onChange={e => setTo(e.target.value)}
-                 style={{ fontSize: 12, padding: '5px 7px', borderRadius: 7,
-                          border: '1px solid var(--b1)', background: 'var(--bg1)', color: 'var(--t1)' }} />
-          {(from || to) && (
-            <button className="btn" title="Back to the whole month" style={{ fontSize: 11 }}
-                    onClick={() => { setFrom(''); setTo(''); }}><X size={11} /></button>
-          )}
+      {/* ── head ─────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+        <div>
+          <div className="page-eyebrow">{mine ? 'My incentive' : 'Salesman incentive'}</div>
+          <div className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {mine ? 'My points' : 'Points earned'} <Chip tone="var(--acc)" bg="rgba(99,102,241,.12)">{ppr} points = ₹1</Chip>
+          </div>
+        </div>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <select value={d?.month || ''} onChange={e => setMonth(e.target.value)} style={input}>
+            {(d?.months || []).map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
+          </select>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ ...input, padding: '5px 7px' }} />
+            <span style={{ fontSize: 11, color: 'var(--t3)' }}>to</span>
+            <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ ...input, padding: '5px 7px' }} />
+            {(from || to) && <button className="btn" title="Back to the whole month" style={{ fontSize: 11 }} onClick={() => { setFrom(''); setTo(''); }}><X size={11} /></button>}
+          </span>
+          <button className="btn" onClick={reload} disabled={busy} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12 }}>
+            <RefreshCw size={12} className={busy ? 'spin' : ''} /> Refresh
+          </button>
         </div>
       </div>
 
@@ -252,401 +416,213 @@ export default function SalesIncentive() {
 
       {d && d.month && (
         <>
-          <DeductionControl d={d} onSaved={reload} />
-
           {d.range && (
-            <div className="card" style={{ padding: '10px 15px', marginBottom: 14,
-                  display: 'flex', gap: 9, alignItems: 'flex-start' }}>
-              <AlertTriangle size={14} color={d.range.days ? 'var(--acc)' : 'var(--yel,#ca8a04)'}
-                             style={{ flexShrink: 0, marginTop: 1 }} />
+            <div className="card" style={{ padding: '10px 15px', marginBottom: 14, display: 'flex', gap: 9, alignItems: 'flex-start' }}>
+              <AlertTriangle size={14} color={d.range.days ? 'var(--acc)' : 'var(--yel,#ca8a04)'} style={{ flexShrink: 0, marginTop: 1 }} />
               <div style={{ fontSize: 11.5, color: 'var(--t2)', lineHeight: 1.55 }}>
-                {d.range.days > 0 ? (
-                  <>Showing <b>{d.range.from} to {d.range.to}</b> — {num(d.range.days)}
-                    {d.range.days === 1 ? ' day' : ' days'} of invoice lines. Targets stay monthly,
-                    so the gate is still measured against the whole {d.month} basic — expect it to
-                    be shut for a short window.</>
-                ) : (
-                  <><b>No invoice lines between {d.range.from} and {d.range.to}.</b> A date window is
-                    read from the ERP lines, which carry a date; the monthly rollup does not. Only
-                    months whose lines were imported can be sliced by date.</>
-                )}
+                {d.range.days > 0
+                  ? <>Showing <b>{d.range.from} to {d.range.to}</b> — {num(d.range.days)} {d.range.days === 1 ? 'day' : 'days'} of invoice lines. Targets stay monthly, so laminate is still measured against the whole {monthLabel(d.month)} basic.</>
+                  : <><b>No invoice lines between {d.range.from} and {d.range.to}.</b> Only months whose ERP lines were imported can be sliced by date.</>}
               </div>
             </div>
           )}
 
-          {/* ── headline ──────────────────────────────────────────── */}
-          <div style={{ display: 'grid', gap: 12, marginBottom: 14,
-                        gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))' }}>
-
-            <div className="card" style={{ padding: '18px 20px', textAlign: 'center' }}>
-              <div style={{ fontSize: 11.5, color: 'var(--t2)', fontWeight: 650 }}>Payable this month</div>
-              <div style={{ fontSize: 32, fontWeight: 850, color: 'var(--grn)', letterSpacing: '-.02em',
-                            margin: '2px 0 4px', fontVariantNumeric: 'tabular-nums' }}>
-                {money(d.totals.payable)}
-              </div>
-              {d.range
-                ? <div style={{ fontSize: 10.5, color: 'var(--t3)' }}>{d.range.from} to {d.range.to}</div>
-                : <Delta pct={d.change?.payable} />}
-              {/* Every step shown, so a payout can be checked against the
-                  scheme rather than taken on trust. */}
-              <div style={{ marginTop: 10, fontSize: 11.5, textAlign: 'left' }}>
-                {[
-                  ['Earned by the scheme', money(d.totals.earned), 'var(--t2)'],
-                  ...(d.totals.clawback > 0
-                    ? [['Bad-debt recovery', '−' + money(d.totals.clawback), 'var(--red)']] : []),
-                  ...(d.totals.deduction > 0
-                    ? [[`Deduction ${Math.round((d.config?.deductionPct || 0) * 100)}%`,
-                        '−' + money(d.totals.deduction), 'var(--red)']] : []),
-                ].map(([label, value, tone]) => (
-                  <div key={label} style={{ display: 'flex', gap: 8, padding: '3px 0' }}>
-                    <span style={{ color: 'var(--t3)' }}>{label}</span>
-                    <b style={{ marginLeft: 'auto', color: tone,
-                                fontVariantNumeric: 'tabular-nums' }}>{value}</b>
-                  </div>
-                ))}
-              </div>
-              <div style={{ height: 1, background: 'var(--b1)', margin: '12px 0' }} />
-              <div style={{ display: 'grid', gap: 10, gridTemplateColumns: '1fr 1fr' }}>
-                <div>
-                  <div style={{ fontSize: 10.5, color: 'var(--t3)' }}>Points payable</div>
-                  <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--acc)',
-                                fontVariantNumeric: 'tabular-nums' }}>
-                    {points(d.totals.points)}
-                  </div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 10.5, color: 'var(--t3)' }}>Last month</div>
-                  <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--t2)',
-                                fontVariantNumeric: 'tabular-nums' }}>
-                    {d.previous ? money(d.previous.payable) : '—'}
-                  </div>
-                </div>
-              </div>
-              <div style={{ fontSize: 10, color: 'var(--t3)', marginTop: 9 }}>
-                {d.config?.pointsPerRupee ? `${d.config.pointsPerRupee} points = ₹1` : ''}
-              </div>
-            </div>
-
-            {/* who is through the gate — the only thing that decides whether
-                anything else on this screen pays out */}
-            <div className="card" style={{ padding: '15px 17px' }}>
-              <div style={{ fontSize: 12.5, fontWeight: 750 }}>The laminate gate</div>
-              <div style={{ fontSize: 10.5, color: 'var(--t3)', marginBottom: 6 }}>
-                Miss it and the month pays nothing at all
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ width: 118, height: 118, position: 'relative', flexShrink: 0 }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie dataKey="value" nameKey="name" innerRadius={40} outerRadius={56}
-                           paddingAngle={2} stroke="none"
-                           data={[{ name: 'open', value: d.totals.gateOpen },
-                                  { name: 'shut', value: Math.max(0, d.totals.people - d.totals.gateOpen) }]
-                                 .filter(x => x.value > 0)}>
-                        {[{ c: '#16a34a' }, { c: '#dc2626' }]
-                          .slice(0, (d.totals.gateOpen > 0 ? 1 : 0) + (d.totals.people - d.totals.gateOpen > 0 ? 1 : 0))
-                          .map((x, i) => <Cell key={i} fill={d.totals.gateOpen > 0 ? (i === 0 ? '#16a34a' : '#dc2626') : '#dc2626'} />)}
-                      </Pie>
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div style={{ position: 'absolute', inset: 0, display: 'grid',
-                                placeItems: 'center', pointerEvents: 'none' }}>
-                    <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: 19, fontWeight: 850,
-                                    color: d.totals.gateOpen ? 'var(--grn)' : 'var(--red)' }}>
-                        {d.totals.gateOpen}
-                      </div>
-                      <div style={{ fontSize: 9.5, color: 'var(--t3)' }}>of {d.totals.people}</div>
-                    </div>
-                  </div>
-                </div>
-                <div style={{ minWidth: 0, flex: 1, fontSize: 11.5 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 7 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: 9, background: '#16a34a' }} />
-                    <span style={{ color: 'var(--t2)' }}>Cleared</span>
-                    <b style={{ marginLeft: 'auto' }}>{d.totals.gateOpen}</b>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: 9, background: '#dc2626' }} />
-                    <span style={{ color: 'var(--t2)' }}>Shut</span>
-                    <b style={{ marginLeft: 'auto' }}>{d.totals.people - d.totals.gateOpen}</b>
-                  </div>
-                  <div style={{ fontSize: 10.5, color: 'var(--t3)', marginTop: 9, lineHeight: 1.5 }}>
-                    Everyone behind a shut gate earns zero — on laminate, other products and display alike.
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* what needs doing */}
-            <div className="card" style={{ padding: '15px 17px' }}>
-              <div style={{ fontSize: 12.5, fontWeight: 750, marginBottom: 10 }}>Needs attention</div>
-              {noTarget.length > 0 && (
-                <div style={{ display: 'flex', gap: 9, padding: '7px 0' }}>
-                  <AlertTriangle size={14} color="var(--red)" style={{ flexShrink: 0, marginTop: 1 }} />
-                  <div style={{ fontSize: 11.5, lineHeight: 1.5 }}>
-                    <b>{noTarget.length} with no {d.config?.gateCategory?.toLowerCase()} target</b> —{' '}
-                    {noTarget.map(p => p.name).join(', ')}. The gate cannot open without one, so they
-                    earn nothing. Set targets in Sales by Category → Salesman-wise.
-                  </div>
-                </div>
-              )}
-              {d.totals.gateOpen === 0 && (
-                <div style={{ display: 'flex', gap: 9, padding: '7px 0',
-                              borderTop: noTarget.length ? '1px solid var(--b1)' : 'none' }}>
-                  <Lock size={14} color="var(--red)" style={{ flexShrink: 0, marginTop: 1 }} />
-                  <div style={{ fontSize: 11.5, lineHeight: 1.5 }}>
-                    <b>Nobody has cleared the gate yet.</b> Part way through a month that is expected —
-                    the target is a whole month's worth.
-                  </div>
-                </div>
-              )}
-              {d.totals.clawback > 0 && (
-                <div style={{ display: 'flex', gap: 9, padding: '7px 0', borderTop: '1px solid var(--b1)' }}>
-                  <AlertTriangle size={14} color="var(--yel,#ca8a04)" style={{ flexShrink: 0, marginTop: 1 }} />
-                  <div style={{ fontSize: 11.5, lineHeight: 1.5 }}>
-                    <b>{money(d.totals.clawback)} held back</b> against bad debt this month.
-                  </div>
-                </div>
-              )}
-              {!noTarget.length && d.totals.gateOpen > 0 && !d.totals.clawback && (
-                <div style={{ fontSize: 11.5, color: 'var(--t3)' }}>Nothing to flag.</div>
-              )}
-            </div>
+          {/* ── headline tiles ────────────────────────────────── */}
+          <div style={{ display: 'grid', gap: 10, marginBottom: 14, gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}>
+            <Tile icon={Trophy} label={`${mine ? 'My points' : 'Points'} · ${monthLabel(d.month)}`} value={num(t.points)} big tone="var(--grn)"
+                  sub={d.previous ? <>last month {num(pts(d.previous.payable))} {d.change?.payable != null && <Delta pct={d.change.payable} />}</> : ' '} />
+            {mine
+              ? <Tile icon={people[0]?.gateOpen ? Unlock : Lock} label="Laminate basic" value={people[0] ? `${num(people[0].credited)} of ${num(people[0].basic)}` : '—'}
+                      sub={people[0]?.gateOpen ? `crossed · ${num(people[0].laminate.excess)} above` : people[0]?.basic ? `${num(people[0].shortfall)} sheets to go` : 'no target set'} tone={people[0]?.gateOpen ? 'var(--grn)' : 'var(--red)'} />
+              : <Tile icon={Users} label="Cleared laminate basic" value={`${cleared.length} of ${people.length}`}
+                      sub={cleared.length ? cleared.map(p => p.name).join(', ') : 'nobody yet this month'} tone={cleared.length ? 'var(--grn)' : 'var(--red)'} />}
+            <Tile icon={Layers} label="Laminate points" value={num(pts(t.laminate))} sub="slabs above basic" tone="var(--acc)" />
+            <Tile icon={Package} label="Other products" value={num(pts(t.products))} sub="above each product's target" tone="#0891b2" />
+            <Tile icon={Monitor} label="Display" value={num(pts(t.display))} sub="3% of display value" tone="#b45309" />
           </div>
 
-          {/* ── KPI row ───────────────────────────────────────────── */}
-          <div style={{ fontSize: 17, fontWeight: 800, margin: '18px 0 11px' }}>Where it comes from</div>
-          <div style={{ display: 'grid', gap: 12, marginBottom: 14,
-                        gridTemplateColumns: 'repeat(auto-fit,minmax(290px,1fr))' }}>
-            <div className="card" style={{ padding: '15px 17px' }}>
-              <div style={{ fontSize: 12.5, fontWeight: 750 }}>Breakdown</div>
-              <div style={{ fontSize: 10.5, color: 'var(--t3)', marginBottom: 12 }}>
-                {d.month} against {d.previous?.month || 'nothing yet'}
-              </div>
-              <div style={{ display: 'grid', gap: 15, gridTemplateColumns: 'repeat(2,minmax(0,1fr))' }}>
-                <KpiTile icon={Layers}      tint="#0891b2" label={d.config?.gateCategory || 'Laminate'}
-                         value={money(d.totals.laminate)} />
-                <KpiTile icon={Package}     tint="#ca8a04" label="Other products"
-                         value={money(d.totals.products)} />
-                <KpiTile icon={Monitor}     tint="#7c3aed" label="Display"
-                         value={money(d.totals.display)} />
-                <KpiTile icon={IndianRupee} tint="#16a34a" label="Units billed"
-                         value={num(d.totals.units)} pct={d.range ? null : d.change?.units} />
-                <KpiTile icon={Award}       tint="#4f46e5" label="Points payable"
-                         value={points(d.totals.points)} />
-                <KpiTile icon={Percent}     tint="#dc2626" label="Deducted"
-                         value={money(d.totals.deduction)} />
-              </div>
-            </div>
-
-            <div className="card" style={{ padding: '15px 17px', gridColumn: 'span 2', minWidth: 0 }}>
-              <div style={{ fontSize: 12.5, fontWeight: 750 }}>Six-month trend</div>
-              <div style={{ fontSize: 10.5, color: 'var(--t3)', marginBottom: 6 }}>
-                Units billed and what they paid
-              </div>
-              <div style={{ height: 172 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={d.trend} margin={{ top: 6, right: 0, left: -6, bottom: 0 }}>
-                    <CartesianGrid stroke="var(--b1)" vertical={false} />
-                    <XAxis dataKey="month" tick={{ fontSize: 10, fill: 'var(--t3)' }}
-                           tickFormatter={m => m.slice(5) + '/' + m.slice(2, 4)}
-                           axisLine={false} tickLine={false} />
-                    <YAxis yAxisId="u" tick={{ fontSize: 10, fill: 'var(--t3)' }}
-                           axisLine={false} tickLine={false} width={46} />
-                    <YAxis yAxisId="p" orientation="right" tick={{ fontSize: 10, fill: 'var(--t3)' }}
-                           axisLine={false} tickLine={false} width={52} />
-                    <Tooltip contentStyle={{ background: 'var(--bg1)', border: '1px solid var(--b1)',
-                                             borderRadius: 8, fontSize: 11.5 }}
-                             formatter={(v, n) => n === 'payable' ? [money(v), 'Payable'] : [num(v), 'Units']} />
-                    <Area yAxisId="u" type="monotone" dataKey="units" stroke="#2563eb" strokeWidth={2}
-                          fill="#2563eb" fillOpacity={0.14} />
-                    <Line yAxisId="p" type="monotone" dataKey="payable" stroke="#16a34a" strokeWidth={2}
-                          dot={{ r: 2.5 }} />
-                  </ComposedChart>
+          {/* ── trend + attention ─────────────────────────────── */}
+          <div className="si-grid" style={{ display: 'grid', gap: 12, gridTemplateColumns: mine ? '1fr' : '2fr 1fr', marginBottom: 14 }}>
+            <div className="card" style={{ padding: '14px 16px' }}>
+              <div style={{ fontSize: 12.5, fontWeight: 800, marginBottom: 2 }}>{mine ? 'My points by month' : 'Points by month'}</div>
+              <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 8 }}>{mine ? 'last six months' : 'everyone together, last six months'}</div>
+              <div style={{ height: 170 }}>
+                <ResponsiveContainer>
+                  <BarChart data={(d.trend || []).map(x => ({ m: monthLabel(x.month), points: pts(x.payable), cur: x.month === d.month }))} margin={{ top: 4, right: 4, left: -18, bottom: 0 }}>
+                    <CartesianGrid vertical={false} stroke="var(--b1)" />
+                    <XAxis dataKey="m" tick={{ fontSize: 11, fill: 'var(--t3)' }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 10, fill: 'var(--t3)' }} axisLine={false} tickLine={false} tickFormatter={v => num(v)} />
+                    <Tooltip formatter={v => [num(v) + ' pts', 'Points']} contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid var(--b1)', background: 'var(--bg1)', color: 'var(--t1)' }} />
+                    <Bar dataKey="points" radius={[6, 6, 0, 0]}>
+                      {(d.trend || []).map((x, i) => <Cell key={i} fill={x.month === d.month ? 'var(--acc)' : 'rgba(99,102,241,.35)'} />)}
+                    </Bar>
+                  </BarChart>
                 </ResponsiveContainer>
               </div>
-              <div style={{ display: 'flex', gap: 14, fontSize: 10.5, color: 'var(--t3)', marginTop: 4 }}>
-                <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 9,
-                                     background: '#2563eb', marginRight: 4 }} />Units</span>
-                <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 9,
-                                     background: '#16a34a', marginRight: 4 }} />Payable</span>
-              </div>
             </div>
+            {!mine && <div className="card" style={{ padding: '14px 16px' }}>
+              <div style={{ fontSize: 12.5, fontWeight: 800, marginBottom: 8 }}>Needs attention</div>
+              <div style={{ display: 'grid', gap: 8, fontSize: 11.5, color: 'var(--t2)', lineHeight: 1.5 }}>
+                {noTarget.length > 0 && <div style={{ display: 'flex', gap: 8 }}><AlertTriangle size={14} color="var(--yel,#ca8a04)" style={{ flexShrink: 0, marginTop: 2 }} /><span><b>Not in this month's scheme:</b> {noTarget.map(p => `${p.name}${p.credited ? ` (${num(p.credited)} laminate)` : ''}`).join(', ')} — no laminate target set, so they are hidden from the list. Set a target in Sales by Category → Salesman-wise to include them.</span></div>}
+                {cleared.length === 0 && <div style={{ display: 'flex', gap: 8 }}><Lock size={14} color="var(--red)" style={{ flexShrink: 0, marginTop: 2 }} /><span><b>Nobody has crossed laminate basic yet.</b> Laminate points start only above it; other products keep earning above their own targets.</span></div>}
+                {(() => { const close = people.filter(p => !p.gateOpen && p.basic > 0 && p.credited / p.basic >= 0.8); return close.length ? <div style={{ display: 'flex', gap: 8 }}><Star size={14} color="var(--acc)" style={{ flexShrink: 0, marginTop: 2 }} /><span><b>Close to basic:</b> {close.map(p => `${p.name} (${Math.round(p.credited / p.basic * 100)}%)`).join(', ')}</span></div> : null; })()}
+                {noTarget.length === 0 && cleared.length > 0 && <div style={{ display: 'flex', gap: 8 }}><Unlock size={14} color="var(--grn)" style={{ flexShrink: 0, marginTop: 2 }} /><span>All targets set. {cleared.length} salesm{cleared.length === 1 ? 'an is' : 'en are'} earning laminate points.</span></div>}
+              </div>
+            </div>}
           </div>
 
-          <div style={{ fontSize: 17, fontWeight: 800, margin: '18px 0 11px' }}>Every salesman</div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-            {d.people.map(p => {
-              const other = p.products.reduce((a, x) => a + x.amount, 0);
-              const isOpen = !!open[p.salesmanId];
-              return (
-                <div key={p.salesmanId} className="card" style={{ padding: '13px 16px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                    {p.gateOpen
-                      ? <Unlock size={15} color="var(--grn)" />
-                      : <Lock size={15} color="var(--red)" />}
-                    <div style={{ fontSize: 14.5, fontWeight: 750 }}>{p.name}</div>
-                    <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '.06em',
-                                   padding: '2px 7px', borderRadius: 5,
-                                   color: p.gateOpen ? 'var(--grn)' : 'var(--red)',
-                                   background: p.gateOpen ? 'rgba(22,163,74,.14)' : 'rgba(220,38,38,.12)' }}>
-                      {p.gateOpen ? 'GATE OPEN' : p.basic ? `SHORT BY ${num(p.shortfall)}` : 'NO TARGET'}
-                    </span>
-                    <span style={{ fontSize: 11.5, color: 'var(--t3)' }}>
-                      laminate {num(p.credited)} / {num(p.basic)}
-                    </span>
-
-                    <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: 18, fontWeight: 850,
-                                      color: p.payable > 0 ? 'var(--grn)' : 'var(--t3)',
-                                      fontVariantNumeric: 'tabular-nums' }}>{money(p.payable)}</div>
-                        <div style={{ fontSize: 10, color: 'var(--t3)' }}>
-                          {p.points > 0 ? points(p.points) + ' pts' : ''}
-                        </div>
-                        {p.clawback > 0 && (
-                          <div style={{ fontSize: 10, color: 'var(--red)' }}>
-                            −{money(p.clawback)} bad debt
-                          </div>
-                        )}
-
-                      </div>
-                      <button className="btn" title="Display, project sales, late payment, bad debt"
-                              onClick={() => setEditing(p)}
-                              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
-                        <Pencil size={11} />
-                      </button>
-                      <button className="btn" style={{ fontSize: 11 }}
-                              onClick={() => setOpen(o => ({ ...o, [p.salesmanId]: !isOpen }))}>
-                        {isOpen ? 'Hide' : 'Detail'}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* progress toward the gate — the only thing that matters until it opens */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
-                    <div style={{ flex: 1, height: 7, borderRadius: 4, background: 'var(--bg2)',
-                                  overflow: 'hidden' }}>
-                      <div style={{ height: '100%', borderRadius: 4, transition: 'width .3s',
-                                    width: Math.min(100, p.basic ? (p.credited / p.basic) * 100 : 0) + '%',
-                                    background: p.gateOpen ? 'var(--grn)' : 'var(--red)' }} />
-                    </div>
-                    {p.gateOpen && (
-                      <span style={{ fontSize: 11, color: 'var(--t2)', whiteSpace: 'nowrap' }}>
-                        {num(p.laminate.excess)} above basic
-                        {p.laminate.rate ? ` · ₹${p.laminate.rate}/sheet on all of it` : ' · starter tiers'}
-                      </span>
-                    )}
-                  </div>
-
-                  {isOpen && (
-                    <div style={{ marginTop: 12, borderTop: '1px solid var(--b1)', paddingTop: 11 }}>
-                      {(p.project > 0 || p.late > 0) && (
-                        <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 9, lineHeight: 1.6 }}>
-                          {num(p.gross)} sheets billed
-                          {p.project > 0 && <> · {num(p.project)} project sales at half credit</>}
-                          {p.late > 0 && <> · {num(p.late)} sheets forfeited for late payment</>}
-                          {' '}→ <b>{num(p.credited)}</b> counted.
-                        </div>
-                      )}
-
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                        <thead>
-                          <tr style={{ textAlign: 'left', color: 'var(--t3)', fontSize: 9.5,
-                                       letterSpacing: '.07em', textTransform: 'uppercase' }}>
-                            <th style={{ padding: '4px 0' }}>Product</th>
-                            <th style={{ padding: '4px 8px', textAlign: 'right' }}>Target</th>
-                            <th style={{ padding: '4px 8px', textAlign: 'right' }}>Actual</th>
-                            <th style={{ padding: '4px 8px', textAlign: 'right' }}>Above</th>
-                            <th style={{ padding: '4px 8px', textAlign: 'right' }}>Rate</th>
-                            <th style={{ padding: '4px 0', textAlign: 'right' }}>Earns</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr style={{ borderTop: '1px solid var(--b1)' }}>
-                            <td style={{ padding: '5px 0', fontWeight: 650 }}>Laminate</td>
-                            <td style={{ padding: '5px 8px', textAlign: 'right' }}>{num(p.basic)}</td>
-                            <td style={{ padding: '5px 8px', textAlign: 'right' }}>{num(p.credited)}</td>
-                            <td style={{ padding: '5px 8px', textAlign: 'right' }}>{num(p.laminate.excess)}</td>
-                            <td style={{ padding: '5px 8px', textAlign: 'right', color: 'var(--t3)' }}>
-                              {p.laminate.rate ? '₹' + p.laminate.rate : (p.gateOpen ? 'tiers' : '—')}
-                            </td>
-                            <td style={{ padding: '5px 0', textAlign: 'right', fontWeight: 700 }}>
-                              {money(p.laminate.amount)}
-                            </td>
-                          </tr>
-                          {p.products.map(x => (
-                            <tr key={x.key} style={{ borderTop: '1px solid var(--b1)' }}>
-                              <td style={{ padding: '5px 0' }}>
-                                {x.label}
-                                <span style={{ color: 'var(--t3)', fontSize: 10 }}> · {x.category}</span>
-                              </td>
-                              <td style={{ padding: '5px 8px', textAlign: 'right' }}>{num(x.target)}</td>
-                              <td style={{ padding: '5px 8px', textAlign: 'right' }}>{num(x.actual)}</td>
-                              <td style={{ padding: '5px 8px', textAlign: 'right' }}>{num(x.excess)}</td>
-                              <td style={{ padding: '5px 8px', textAlign: 'right', color: 'var(--t3)' }}>₹{x.rate}</td>
-                              <td style={{ padding: '5px 0', textAlign: 'right', fontWeight: 700 }}>
-                                {money(x.amount)}
-                              </td>
-                            </tr>
-                          ))}
-                          <tr style={{ borderTop: '1px solid var(--b1)' }}>
-                            <td style={{ padding: '5px 0' }}>Display <span style={{ color: 'var(--t3)', fontSize: 10 }}>· 3% of value</span></td>
-                            <td style={{ padding: '5px 8px', textAlign: 'right', color: 'var(--t3)' }}>—</td>
-                            <td style={{ padding: '5px 8px', textAlign: 'right' }}>{money(p.displayValue)}</td>
-                            <td style={{ padding: '5px 8px', textAlign: 'right', color: 'var(--t3)' }}>—</td>
-                            <td style={{ padding: '5px 8px', textAlign: 'right', color: 'var(--t3)' }}>3%</td>
-                            <td style={{ padding: '5px 0', textAlign: 'right', fontWeight: 700 }}>{money(p.display)}</td>
-                          </tr>
-                        </tbody>
-                      </table>
-
-                      {p.gateOpen && (
-                        <div style={{ marginTop: 10, paddingTop: 9, borderTop: '1px solid var(--b1)',
-                                      fontSize: 11.5 }}>
-                          {[
-                            ['Earned', money(p.earned), 'var(--t2)'],
-                            ...(p.clawback > 0 ? [['Bad-debt recovery', '−' + money(p.clawback), 'var(--red)']] : []),
-                            ...(p.deduction > 0 ? [[`Deduction ${Math.round((p.deductionPct || 0) * 100)}%`,
-                                                    '−' + money(p.deduction), 'var(--red)']] : []),
-                            ['Payable', money(p.payable) + '  ·  ' + points(p.points) + ' pts', 'var(--grn)'],
-                          ].map(([l, v, tone]) => (
-                            <div key={l} style={{ display: 'flex', gap: 8, padding: '2px 0' }}>
-                              <span style={{ color: 'var(--t3)' }}>{l}</span>
-                              <b style={{ marginLeft: 'auto', color: tone,
-                                          fontVariantNumeric: 'tabular-nums' }}>{v}</b>
+          {/* ── leaderboard ───────────────────────────────────── */}
+          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--b1)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ fontSize: 12.5, fontWeight: 800 }}>{mine ? 'My working' : 'Every salesman'}</div>
+              <div style={{ fontSize: 11, color: 'var(--t3)' }}>{mine ? 'target, actual and points for each product' : 'click a row for the full working'}</div>
+              {mine && (
+                <button className="btnp" onClick={() => setCalc(true)} title="Type what you expect to sell and see the points"
+                        style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, padding: '7px 14px' }}>
+                  <Calculator size={14} /> Calculate my incentive
+                </button>
+              )}
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 640 }}>
+                <thead>
+                  <tr style={{ fontSize: 10, color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: '.07em' }}>
+                    <th style={{ textAlign: 'left', padding: '8px 16px', width: 32 }}>#</th>
+                    <th style={{ textAlign: 'left', padding: '8px 6px' }}>Salesman</th>
+                    <th style={{ textAlign: 'left', padding: '8px 6px', minWidth: 220 }}>Laminate vs basic</th>
+                    <th className="si-hide-sm" style={{ textAlign: 'left', padding: '8px 6px' }}>Other products</th>
+                    <th style={{ textAlign: 'right', padding: '8px 16px' }}>Points</th>
+                    <th style={{ width: 70 }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {people.map((p, i) => {
+                    const isOpen = !!open[p.salesmanId];
+                    const pct = p.basic > 0 ? Math.round(p.credited / p.basic * 100) : 0;
+                    const earningProducts = p.products.filter(x => x.amount > 0);
+                    return (
+                      <React.Fragment key={p.salesmanId}>
+                        <tr className="si-row" onClick={() => setOpen(o => ({ ...o, [p.salesmanId]: !isOpen }))}
+                            style={{ borderTop: '1px solid var(--b1)', cursor: 'pointer', background: isOpen ? 'var(--bg2)' : undefined }}>
+                          <td style={{ padding: '10px 16px', color: 'var(--t3)', fontWeight: 700 }}>{i + 1}</td>
+                          <td style={{ padding: '10px 6px' }}>
+                            <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                              {p.gateOpen ? <Unlock size={12} color="var(--grn)" /> : <Lock size={12} color={p.basic ? 'var(--red)' : 'var(--t3)'} />}{p.name}
                             </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {!p.gateOpen && (
-                        <div style={{ fontSize: 11, color: 'var(--red)', marginTop: 9, lineHeight: 1.55 }}>
-                          The gate is shut, so every figure above earns nothing this month — laminate,
-                          other products and display alike. There is no partial credit below basic.
-                        </div>
-                      )}
-                      {p.adjustments?.note && (
-                        <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 8 }}>
-                          Note: {p.adjustments.note}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                            <div style={{ marginTop: 3 }}>
+                              {p.gateOpen ? <Chip tone="var(--grn)" bg="rgba(22,163,74,.14)">basic cleared</Chip>
+                                : p.basic ? <Chip tone="var(--red)" bg="rgba(220,38,38,.12)">short by {num(p.shortfall)}</Chip>
+                                : <Chip>no target</Chip>}
+                            </div>
+                          </td>
+                          <td style={{ padding: '10px 6px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4 }}>
+                              <span><b>{num(p.credited)}</b> <span style={{ color: 'var(--t3)' }}>of {num(p.basic)}</span></span>
+                              <span style={{ color: p.gateOpen ? 'var(--grn)' : 'var(--t3)', fontWeight: 700 }}>{p.basic ? pct + '%' : '—'}{p.gateOpen && p.laminate.excess ? ` · +${num(p.laminate.excess)} above` : ''}</span>
+                            </div>
+                            <Progress actual={p.credited} target={p.basic} />
+                          </td>
+                          <td className="si-hide-sm" style={{ padding: '10px 6px' }}>
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                              {p.products.map(x => {
+                                const over = x.target > 0 && x.actual > x.target;
+                                return <span key={x.key} title={`${x.label}: ${num(x.actual)} of ${num(x.target)}${over ? ` · +${num(x.excess)} above → ${P(x.amount)}` : ''}`}
+                                  style={{ fontSize: 10.5, padding: '2px 7px', borderRadius: 6, whiteSpace: 'nowrap', fontWeight: over ? 800 : 500,
+                                           color: over ? 'var(--grn)' : 'var(--t3)', background: over ? 'rgba(22,163,74,.12)' : 'var(--bg2)', border: '1px solid ' + (over ? 'rgba(22,163,74,.35)' : 'var(--b1)') }}>
+                                  {x.label} {x.target ? Math.min(999, Math.round(x.actual / x.target * 100)) + '%' : '—'}
+                                </span>;
+                              })}
+                            </div>
+                          </td>
+                          <td style={{ padding: '10px 16px', textAlign: 'right' }}>
+                            <div style={{ fontSize: 17, fontWeight: 850, color: p.points > 0 ? 'var(--grn)' : 'var(--t3)', fontVariantNumeric: 'tabular-nums' }}>{num(p.points)}</div>
+                            {earningProducts.length > 0 && <div style={{ fontSize: 10, color: 'var(--t3)' }}>{earningProducts.map(x => x.label).join(' + ')}{p.laminate.amount > 0 ? ' + laminate' : ''}</div>}
+                          </td>
+                          <td style={{ padding: '10px 10px 10px 0', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                            {!mine && <button className="btn" title="Display value, project sheets, late payment, bad debt" onClick={e => { e.stopPropagation(); setEditing(p); }} style={{ padding: '3px 6px' }}><Pencil size={11} /></button>}
+                            <span style={{ display: 'inline-block', marginLeft: 6, color: 'var(--t3)', verticalAlign: 'middle' }}>{isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
+                          </td>
+                        </tr>
+                        {isOpen && (
+                          <tr style={{ background: 'var(--bg2)' }}>
+                            <td colSpan={6} style={{ padding: '4px 16px 14px' }}>
+                              <div style={{ background: 'var(--bg1)', border: '1px solid var(--b1)', borderRadius: 10, padding: '10px 14px' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                                  <thead>
+                                    <tr style={{ fontSize: 10, color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: '.06em' }}>
+                                      <th style={{ textAlign: 'left', padding: '4px 0' }}>Product</th>
+                                      <th style={{ textAlign: 'right', padding: '4px 8px' }}>Target</th>
+                                      <th style={{ textAlign: 'right', padding: '4px 8px' }}>Actual</th>
+                                      <th style={{ textAlign: 'right', padding: '4px 8px' }}>Above</th>
+                                      <th style={{ textAlign: 'right', padding: '4px 8px' }}>Rate</th>
+                                      <th style={{ textAlign: 'right', padding: '4px 0' }}>Points</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    <tr style={{ borderTop: '1px solid var(--b1)' }}>
+                                      <td style={{ padding: '6px 0', fontWeight: 700 }}>Laminate <span style={{ fontSize: 10, color: 'var(--t3)', fontWeight: 500 }}>· gate</span></td>
+                                      <td style={{ padding: '6px 8px', textAlign: 'right' }}>{num(p.basic)}</td>
+                                      <td style={{ padding: '6px 8px', textAlign: 'right' }}>{num(p.credited)}</td>
+                                      <td style={{ padding: '6px 8px', textAlign: 'right' }}>{num(p.laminate.excess)}</td>
+                                      <td style={{ padding: '6px 8px', textAlign: 'right', color: 'var(--t3)', whiteSpace: 'nowrap' }}
+                                          title={(() => { const c = d.config || {}; const tt = c.starterTiers || []; return tt.length ? `Excess 1–${num(tt[0].upTo)} ${rateP(tt[0].rate)}` + tt.slice(1).map((x, k) => `, ${num(tt[k].upTo + 1)}–${num(x.upTo)} ${rateP(x.rate)}`).join('') + `; from ${num(c.retroFrom)} one rate on all: ${rateP(c.retroBase)}, +${rateP(c.retroStep)} per ${num(c.retroBlock)}, max ${rateP(c.retroCap)} — per sheet` : ''; })()}>
+                                        {p.laminate.rate ? rateP(p.laminate.rate) + '/sheet on all'
+                                          : p.laminate.bands?.length ? p.laminate.bands.map(b => `${rateP(b.rate)}×${num(b.sheets)}`).join(' + ')
+                                          : (() => { const c = d.config || {}; const tt = c.starterTiers || []; return tt.length ? `${num(pts(tt[0].rate))}–${num(pts(c.retroCap))} pts/sheet by slab` : '—'; })()}
+                                      </td>
+                                      <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 800, color: p.laminate.amount > 0 ? 'var(--grn)' : undefined }}>{num(pts(p.laminate.amount))}</td>
+                                    </tr>
+                                    {p.products.map(x => (
+                                      <tr key={x.key} style={{ borderTop: '1px solid var(--b1)' }}>
+                                        <td style={{ padding: '6px 0' }}>{x.label} <span style={{ fontSize: 10, color: 'var(--t3)' }}>· {x.category}{x.targetSource === 'derived' ? ' · derived target' : ''}</span></td>
+                                        <td style={{ padding: '6px 8px', textAlign: 'right' }}>{x.target ? num(x.target) : <span style={{ color: 'var(--t3)' }}>none</span>}</td>
+                                        <td style={{ padding: '6px 8px', textAlign: 'right' }}>{num(x.actual)}</td>
+                                        <td style={{ padding: '6px 8px', textAlign: 'right', color: x.excess > 0 ? 'var(--grn)' : undefined, fontWeight: x.excess > 0 ? 700 : 400 }}>{num(x.excess)}</td>
+                                        <td style={{ padding: '6px 8px', textAlign: 'right', color: 'var(--t3)', whiteSpace: 'nowrap' }}>{rateP(x.rate)}/{x.key === 'rolls' ? 'roll' : 'sheet'}</td>
+                                        <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 800, color: x.amount > 0 ? 'var(--grn)' : undefined }}>{num(pts(x.amount))}</td>
+                                      </tr>
+                                    ))}
+                                    <tr style={{ borderTop: '1px solid var(--b1)' }}>
+                                      <td style={{ padding: '6px 0' }}>Display <span style={{ fontSize: 10, color: 'var(--t3)' }}>· {Math.round((d.config?.displayPct || 0) * 100)}% of value</span></td>
+                                      <td style={{ padding: '6px 8px', textAlign: 'right', color: 'var(--t3)' }}>—</td>
+                                      <td style={{ padding: '6px 8px', textAlign: 'right' }}>{p.displayValue ? num(pts(p.displayValue)) + ' pts value' : '—'}</td>
+                                      <td style={{ padding: '6px 8px', textAlign: 'right', color: 'var(--t3)' }}>—</td>
+                                      <td style={{ padding: '6px 8px', textAlign: 'right', color: 'var(--t3)' }}>{Math.round((d.config?.displayPct || 0) * 100)}%</td>
+                                      <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 800, color: p.display > 0 ? 'var(--grn)' : undefined }}>{num(pts(p.display))}</td>
+                                    </tr>
+                                  </tbody>
+                                </table>
+                                <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px dashed var(--b1)', display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 12 }}>
+                                  <span style={{ color: 'var(--t3)' }}>Earned <b style={{ color: 'var(--t1)' }}>{num(p.grossPoints)}</b></span>
+                                  {p.clawback > 0 && <span style={{ color: 'var(--t3)' }}>Bad-debt recovery <b style={{ color: 'var(--red)' }}>−{num(pts(p.clawback))}</b></span>}
+                                  {p.deduction > 0 && <span style={{ color: 'var(--t3)' }}>Deduction {Math.round((p.deductionPct || 0) * 100)}% <b style={{ color: 'var(--red)' }}>−{num(pts(p.deduction))}</b></span>}
+                                  <span style={{ marginLeft: 'auto', fontWeight: 800, color: 'var(--grn)', fontSize: 14 }}>{num(p.points)} pts</span>
+                                </div>
+                                {!p.gateOpen && (
+                                  <div style={{ fontSize: 11, color: 'var(--red)', marginTop: 8, lineHeight: 1.5 }}>
+                                    {p.gateAll
+                                      ? 'Laminate basic not crossed, so nothing earns this month — laminate, other products and display alike.'
+                                      : `Laminate is ${p.basic ? num(p.shortfall) + ' sheets' : 'without a target'} short of basic, so laminate earns nothing this month. Other products and display still earn above their own targets.`}
+                                  </div>
+                                )}
+                                {p.adjustments?.note && <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 6 }}>Note: {p.adjustments.note}</div>}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                  {people.length === 0 && <tr><td colSpan={6} style={{ padding: 20, textAlign: 'center', color: 'var(--t3)' }}>{mine ? 'No laminate target is set for you this month yet — ask your admin to set it under Sales by Category.' : 'No salesman has a laminate target this month.'}</td></tr>}
+                </tbody>
+              </table>
+            </div>
           </div>
         </>
       )}
 
-      {editing && (
-        <AdjustModal person={editing} month={d.month}
-                     onClose={() => setEditing(null)}
-                     onSaved={() => { setEditing(null); reload(); }} />
-      )}
+      {editing && <AdjustModal person={editing} month={d?.month} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); reload(); }} />}
+      {calc && d && <EstimateModal d={d} person={people[0] || everyone[0]} onClose={() => setCalc(false)} />}
     </div>
   );
 }

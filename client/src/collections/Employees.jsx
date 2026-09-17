@@ -28,7 +28,7 @@ export default function Employees() {
           {canReview && <button className="btnp" data-tip="Score every salesman from this month's activity" disabled={busy} onClick={gen}>{busy ? 'Generating…' : 'Generate / refresh for all salesmen'}</button>}
         </div></Card>
         <Card pad={false}>
-          {reviews.err ? <ErrorBox err={reviews.err} onRetry={reviews.reload} /> : reviews.busy && !reviews.data ? <Busy /> : <Table cols={[
+          {reviews.err ? <ErrorBox err={reviews.err} onRetry={reviews.reload} /> : reviews.busy && !reviews.data ? <Busy kind="table" rows={4} /> : <Table cols={[
             { k: 'employeeId', h: 'Employee', r: r => <b>{userName(users, r.employeeId)}</b> },
             { k: 'score', h: 'Score', align: 'right', r: r => <b style={{ color: r.score >= 70 ? 'var(--grn)' : r.score >= 40 ? 'var(--yel)' : 'var(--red)' }}>{Number(r.score || 0).toFixed(1)}</b> },
             ...METRICS.map(m => ({ k: m, h: title(m), align: 'right', r: r => r.metrics?.[m] == null ? '—' : Number(r.metrics[m]).toFixed(0) })),
@@ -44,7 +44,7 @@ export default function Employees() {
           {canReview && <button className="btn" data-tip="Recount activity from the records for this range" onClick={async () => { await col.rebuildActivity(range.from, range.to).catch(e => alert(e.message)); activity.reload(); }}>Rebuild from records</button>}
         </div></Card>
         <Card pad={false}>
-          {activity.err ? <ErrorBox err={activity.err} onRetry={activity.reload} /> : activity.busy && !activity.data ? <Busy /> : <Table cols={[
+          {activity.err ? <ErrorBox err={activity.err} onRetry={activity.reload} /> : activity.busy && !activity.data ? <Busy kind="table" rows={4} /> : <Table cols={[
             { k: 'employeeId', h: 'Employee', r: r => <b>{userName(users, r.employeeId)}</b> }, { k: 'days', h: 'Active days', align: 'right' },
             { k: 'followups', h: 'Follow-ups', align: 'right' }, { k: 'calls', h: 'Calls', align: 'right' }, { k: 'visits', h: 'Visits', align: 'right' },
             { k: 'tasksDone', h: 'Tasks done', align: 'right' }, { k: 'promisesTaken', h: 'Promises', align: 'right' }, { k: 'promisesKept', h: 'Kept', align: 'right' }, { k: 'promisesBroken', h: 'Broken', align: 'right' },

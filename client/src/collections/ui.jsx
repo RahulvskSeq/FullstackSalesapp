@@ -89,7 +89,45 @@ export function ErrorBox({ err, onRetry }) {
   return <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 8, background: 'rgba(220,38,38,.1)', border: '1px solid rgba(220,38,38,.3)', color: 'var(--red)', fontSize: 12.5, margin: '8px 0' }}>
     <AlertTriangle size={14} /><span style={{ flex: 1 }}>{err}</span>{onRetry && <button className="btn" onClick={onRetry} style={{ fontSize: 11 }}><RefreshCw size={11} /> Retry</button>}</div>;
 }
-export function Busy() { return <div style={{ padding: 20, color: 'var(--t3)', fontSize: 12.5 }}><span className="spin" style={{ display: 'inline-block', marginRight: 6 }}><RefreshCw size={12} /></span>Loading…</div>; }
+/**
+ * Loading placeholder. A skeleton in the shape of what is coming (tiles, a
+ * card, table rows) rather than the word "Loading" — the eye reads the page
+ * as already there and only waits for the numbers.
+ *   kind: 'page' (default — tiles + card + rows), 'table' (rows only), 'inline' (one line)
+ */
+const Bone = ({ w = '100%', h = 12, r = 6, style }) => <div className="skel" style={{ width: w, height: h, borderRadius: r, ...style }} />;
+export function Busy({ kind = 'page', rows = 6 }) {
+  if (kind === 'inline') return <div style={{ padding: '10px 0', display: 'flex', gap: 8, alignItems: 'center' }}><Bone w={16} h={16} r={8} /><Bone w={140} /></div>;
+  const table = (
+    <div style={{ display: 'grid', gap: 0 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: 14, padding: '8px 10px', borderBottom: '1px solid var(--b1)' }}>
+        {[0, 1, 2, 3, 4].map(i => <Bone key={i} h={9} w={i === 0 ? '55%' : '70%'} />)}
+      </div>
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: 14, padding: '11px 10px', borderBottom: '1px solid var(--b1)', alignItems: 'center' }}>
+          <Bone h={12} w={`${55 + ((i * 17) % 35)}%`} />
+          <Bone h={11} w="60%" /><Bone h={11} w="60%" /><Bone h={18} w="70%" r={9} /><Bone h={11} w="50%" />
+        </div>
+      ))}
+    </div>
+  );
+  if (kind === 'table') return <div className="skel-wrap" aria-busy="true">{table}</div>;
+  return (
+    <div className="skel-wrap" aria-busy="true">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+        <Bone w={40} h={40} r={11} />
+        <div style={{ flex: 1 }}><Bone w={180} h={16} style={{ marginBottom: 7 }} /><Bone w={120} h={10} /></div>
+        <Bone w={90} h={30} r={8} /><Bone w={90} h={30} r={8} />
+      </div>
+      <div className="stat-grid" style={{ marginBottom: 14 }}>
+        {[0, 1, 2, 3].map(i => (
+          <div key={i} className="stat-card"><Bone w="55%" h={9} style={{ marginBottom: 10 }} /><Bone w="70%" h={22} style={{ marginBottom: 8 }} /><Bone w="45%" h={9} /></div>
+        ))}
+      </div>
+      <div className="card"><Bone w={150} h={13} style={{ marginBottom: 12 }} />{table}</div>
+    </div>
+  );
+}
 
 /** True below the app's phone breakpoint; re-evaluated on resize. */
 export function useIsMobile(bp = 768) {

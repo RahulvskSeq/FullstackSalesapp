@@ -39,7 +39,7 @@ export default function Outstanding({ params }) {
         </div>
       </Card>
       <Card pad={false}>
-        {err ? <ErrorBox err={err} onRetry={reload} /> : busy && !data ? <Busy /> : (
+        {err ? <ErrorBox err={err} onRetry={reload} /> : busy && !data ? <Busy kind="table" rows={8} /> : (
           <Table cols={[
             { k: 'dealer', h: H('dealerName', 'Dealer'), r: r => <DealerLink id={r.dealerId} name={r.dealerName} code={r.dealerCode} /> },
             { k: 'salesmanName', h: 'Salesman' },

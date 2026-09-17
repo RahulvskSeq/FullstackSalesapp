@@ -43,9 +43,10 @@ function monthsEndingAt(month, n) {
  * Pure so the trend can reuse it for five earlier months without another
  * round trip per month.
  */
-function scoreSalesMonth(month, qtyByMonth, targetsByMonth, adjByMonth, config) {
+function scoreSalesMonth(month, qtyByMonth, targetsByMonth, adjByMonth, config, catTargetsByMonth = {}) {
   const qty = qtyByMonth[month] || {};
   const basicOf = targetsByMonth[month] || {};
+  const catT = catTargetsByMonth[month] || {};
   const adj = adjByMonth[month] || {};
   const ids = [...new Set([...Object.keys(qty), ...Object.keys(basicOf)])];
   const people = ids.map(id => {
@@ -60,6 +61,7 @@ function scoreSalesMonth(month, qtyByMonth, targetsByMonth, adjByMonth, config) 
       ...salesIncentiveFor(basicOf[id] || 0, qty[id] || {}, {
         displayValue: a.displayValue, projectSheets: a.projectSheets,
         latePaymentSheets: a.latePaymentSheets, badDebtOutstanding: a.badDebtOutstanding,
+        categoryTargets: catT[id] || {},
       }, config),
     };
   });
@@ -88,8 +90,12 @@ function scoreSalesMonth(month, qtyByMonth, targetsByMonth, adjByMonth, config) 
  *  GET /api/sales-incentive?month=YYYY-MM                             *
  *  Every salesman's incentive for the month, fully worked out.        *
  * ------------------------------------------------------------------ */
-router.get('/', protect, adminOnly, async (req, res) => {
+router.get('/', protect, async (req, res) => {
   try {
+    // Admins see everyone; a salesman sees only their own row ("My incentive").
+    const role = req.user?.role;
+    const mineId = role === 'salesman' ? req.user.id : null;
+    if (!mineId && role !== 'admin' && role !== 'superadmin') return res.status(403).json({ error: 'Sales incentive is for salesmen and admins' });
     const config = await getConfig();
     const months = (await Sale.distinct('month')).filter(Boolean).sort().reverse();
 
@@ -130,7 +136,11 @@ router.get('/', protect, adminOnly, async (req, res) => {
       ((qtyByMonth[r._id.m] ||= {})[s] ||= {})[r._id.c] =
         ((qtyByMonth[r._id.m][s][r._id.c]) || 0) + (r.qty || 0);
     }
+    // every category's target, so other products use the salesman's own
+    // figure; the gate category's one is the basic
+    const catTargetsByMonth = {};
     for (const t of targets) {
+      ((catTargetsByMonth[t.month] ||= {})[t.salesmanId] ||= {})[t.category] = Number(t.target) || 0;
       if (t.category !== config.gateCategory) continue;
       (targetsByMonth[t.month] ||= {})[t.salesmanId] = Number(t.target) || 0;
     }
@@ -161,10 +171,27 @@ router.get('/', protect, adminOnly, async (req, res) => {
     }
 
     const scored = Object.fromEntries(trendMonths.map(m =>
-      [m, scoreSalesMonth(m, qtyByMonth, targetsByMonth, adjByMonth, config)]));
+      [m, scoreSalesMonth(m, qtyByMonth, targetsByMonth, adjByMonth, config, catTargetsByMonth)]));
     const cur = scored[month];
 
-    const people = cur.people
+    // "My incentive": keep one person everywhere — the list, the totals and
+    // the trend — so nothing about colleagues leaves the server.
+    if (mineId) {
+      for (const m of Object.keys(scored)) {
+        const only = scored[m].people.filter(p => p.salesmanId === mineId);
+        const sum = f => Math.round(only.reduce((x, p) => x + f(p), 0) * 100) / 100;
+        scored[m] = { people: only, totals: {
+          people: only.length, gateOpen: only.filter(p => p.gateOpen).length, gateShut: only.filter(p => !p.gateOpen).length,
+          laminate: sum(p => p.laminate.amount), products: sum(p => p.products.reduce((a, q) => a + q.amount, 0)),
+          display: sum(p => p.display), earned: sum(p => p.earned), clawback: sum(p => p.clawback), deduction: sum(p => p.deduction),
+          payable: sum(p => p.payable), points: only.reduce((a, p) => a + (p.points || 0), 0), grossPoints: only.reduce((a, p) => a + (p.grossPoints || 0), 0),
+          units: only.reduce((a, p) => a + p.credited, 0),
+        } };
+      }
+    }
+    const curScored = scored[month];
+
+    const people = curScored.people
       .map(p => ({ ...p, name: nameOf[p.salesmanId] || p.salesmanId }))
       .sort((x, y) => y.payable - x.payable || y.credited - x.credited);
 
@@ -177,16 +204,17 @@ router.get('/', protect, adminOnly, async (req, res) => {
 
     res.json({
       month, months, config,
+      mine: !!mineId,
       // Present only when a date window was asked for.
       range: rangeInfo,
       people,
-      totals: cur.totals,
+      totals: curScored.totals,
       previous: prev ? { month: prevMonth, ...prev.totals } : null,
       change: prev ? {
-        payable:  delta(cur.totals.payable,  prev.totals.payable),
-        earned:   delta(cur.totals.earned,   prev.totals.earned),
-        units:    delta(cur.totals.units,    prev.totals.units),
-        gateOpen: delta(cur.totals.gateOpen, prev.totals.gateOpen),
+        payable:  delta(curScored.totals.payable,  prev.totals.payable),
+        earned:   delta(curScored.totals.earned,   prev.totals.earned),
+        units:    delta(curScored.totals.units,    prev.totals.units),
+        gateOpen: delta(curScored.totals.gateOpen, prev.totals.gateOpen),
       } : null,
       trend: trendMonths.map(m => ({ month: m, ...scored[m].totals })),
       // Nobody can earn without a basic target, so an unset target is a

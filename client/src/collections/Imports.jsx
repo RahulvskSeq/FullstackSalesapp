@@ -43,7 +43,7 @@ export default function Imports() {
         <ErrorBox err={err} />
       </Card>
       <Card title="History" pad={false}>
-        {list.err ? <ErrorBox err={list.err} onRetry={list.reload} /> : list.busy && !list.data ? <Busy /> : <Table cols={[
+        {list.err ? <ErrorBox err={list.err} onRetry={list.reload} /> : list.busy && !list.data ? <Busy kind="table" /> : <Table cols={[
           { k: 'createdAt', h: 'Uploaded', r: r => fmtWhen(r.createdAt) },
           { k: 'fileName', h: 'File', max: 260 },
           { k: 'asOn', h: 'Statement', r: r => fmtDate(r.asOn) },
@@ -77,7 +77,7 @@ function Preview({ id, onClose }) {
     try { const r = await col.applyImport(id, {}); if (r.jobId) setJob({ _id: r.jobId, status: 'QUEUED' }); else reload(); }
     catch (e) { setAerr(e.message); } finally { setApplying(false); }
   };
-  if (busy && !data) return <Modal title="Import" onClose={onClose}><Busy /></Modal>;
+  if (busy && !data) return <Modal title="Import" onClose={onClose}><Busy kind="inline" /></Modal>;
   if (err) return <Modal title="Import" onClose={onClose}><ErrorBox err={err} onRetry={reload} /></Modal>;
   const imp = data.import, st = imp.stats || {};
   const canApply = ['VALIDATED', 'PREVIEWED', 'FAILED'].includes(imp.status) && st.matched > 0 && !job;

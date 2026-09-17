@@ -24,7 +24,7 @@ export default function Reconciliation() {
       </div>
       <Card style={{ marginBottom: 12 }}><div className="row" style={{ gap: 8 }}><input type="date" className="inp" style={{ maxWidth: 160 }} value={q.from} onChange={e => set({ from: e.target.value })} /><span style={{ color: 'var(--t3)' }}>to</span><input type="date" className="inp" style={{ maxWidth: 160 }} value={q.to} onChange={e => set({ to: e.target.value })} /></div></Card>
       <Card pad={false}>
-        {err ? <ErrorBox err={err} onRetry={reload} /> : busy && !data ? <Busy /> : <Table cols={[
+        {err ? <ErrorBox err={err} onRetry={reload} /> : busy && !data ? <Busy kind="table" /> : <Table cols={[
           { k: 'at', h: 'Statement', r: r => fmtWhen(r.at) },
           { k: 'dealer', h: 'Dealer', r: r => <DealerLink id={r.dealerId} name={r.dealer?.name || String(r.dealerId)} code={r.dealer?.code} /> },
           { k: 'before', h: 'Was', align: 'right', r: r => money(r.before) },

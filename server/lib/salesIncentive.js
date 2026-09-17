@@ -44,13 +44,19 @@ export const DEFAULT_SALES_CONFIG = {
     { key: 'liner',      label: 'Liner',      category: 'LINER',         targetPct: 1.00, rate: 3 },
   ],
 
-  displayPct:      0.03,   // 3% of display value sold
-  projectCredit:   0.50,   // a project sale counts half toward target
-  badDebtClawback: 0.25,   // 25% of a month's incentive, until recovered
+  // The basic target gates LAMINATE only, as the published table reads:
+  // "Laminate incentive starts only after crossing your basic target", and
+  // the other products pay "above target only" on their own targets. Set
+  // gateAll to make a missed laminate basic zero the whole month instead.
+  gateAll:         false,
 
-  // Taken off what is left after the bad-debt recovery, as the last step
-  // before payment. Its own step rather than folded into the rates, so the
-  // screens can show what the scheme earned and what was deducted separately.
+  displayPct:      0.03,   // 3% of display value sold
+  // The published table has no adjustments: a project sale counts in full,
+  // nothing is clawed back and nothing is deducted. Each can be switched on
+  // under Rule & setup if the company decides otherwise.
+  projectCredit:   1.00,
+  badDebtClawback: 0,
+  // The same 30% deduction the billing scheme applies, taken before payment.
   deductionPct:    0.30,
 
   // Points are not part of the published sales scheme; they are here so the
@@ -93,8 +99,12 @@ export function laminateExcessPay(excess, config = DEFAULT_SALES_CONFIG) {
     return { excess: x, rate: null, amount: r2(amount), mode: 'starter', bands };
   }
 
-  const blocks = Math.floor(x / c.retroBlock);
-  const rate = Math.min(c.retroCap, c.retroBase + c.retroStep * (blocks - 1));
+  // Slabs as the table reads them: 1,000–2,000 pays the base rate, and the
+  // rate steps up when the NEXT block is entered — 2,001 pays base + step,
+  // 3,001 base + 2 steps — so an exact 2,000 still sits in the first slab.
+  // (1,000 itself is retroactive, as the scheme's own worked example shows.)
+  const steps = Math.max(0, Math.floor((x - 1) / c.retroBlock) - 1);
+  const rate = Math.min(c.retroCap, c.retroBase + c.retroStep * steps);
   return { excess: x, rate, amount: r2(x * rate), mode: 'retroactive', bands: [{ sheets: x, rate }] };
 }
 
@@ -132,20 +142,29 @@ export function salesIncentiveFor(basic, qty = {}, opts = {}, config = DEFAULT_S
   const lam = gateOpen ? laminateExcessPay(excess, c)
                        : { excess: 0, rate: 0, amount: 0, mode: 'gate-closed', bands: [] };
 
+  // Other products earn above their own target whether or not laminate made
+  // basic — unless the scheme is configured to gate everything.
+  const othersOpen = c.gateAll ? gateOpen : true;
+  const own = opts.categoryTargets || {};
   const products = c.products.map(p => {
-    const target = targetFor(p, b);
+    // the salesman's own target for that category (Sales by Category →
+    // Salesman-wise) wins; the derived share of basic is only a fallback
+    const ownT = Math.round(Number(own[p.category]) || 0);
+    const target = ownT > 0 ? ownT : targetFor(p, b);
     const actual = Math.max(0, Math.round(Number(qty[p.category]) || 0));
-    const over = Math.max(0, actual - target);
+    // no target at all (none set, and no basic to derive one from) → nothing
+    // to be above, so nothing earns; a zero target must not pay on every unit
+    const over = target > 0 ? Math.max(0, actual - target) : 0;
     return {
       key: p.key, label: p.label, category: p.category,
-      target, actual, excess: over,
+      target, targetSource: ownT > 0 ? 'own' : (target > 0 ? 'derived' : 'none'), actual, excess: over,
       rate: p.rate,
-      amount: gateOpen ? r2(over * p.rate) : 0,
+      amount: othersOpen && target > 0 ? r2(over * p.rate) : 0,
     };
   });
 
   const displayValue = Math.max(0, Number(opts.displayValue) || 0);
-  const display = gateOpen ? r2(displayValue * c.displayPct) : 0;
+  const display = othersOpen ? r2(displayValue * c.displayPct) : 0;
 
   const earned = r2(lam.amount + products.reduce((a, p) => a + p.amount, 0) + display);
 
@@ -167,7 +186,7 @@ export function salesIncentiveFor(basic, qty = {}, opts = {}, config = DEFAULT_S
   return {
     basic: b,
     gross, project, late, credited,
-    gateOpen,
+    gateOpen, gateAll: !!c.gateAll,
     shortfall: gateOpen ? 0 : Math.max(0, b - credited),
     laminate: lam,
     products,

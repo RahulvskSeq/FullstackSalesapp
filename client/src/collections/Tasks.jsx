@@ -23,7 +23,7 @@ export default function Tasks({ params }) {
         {q.status === 'DONE' && <span className="chip">points on this page: {num(points)}</span>}
       </div></Card>
       <Card pad={false}>
-        {err ? <ErrorBox err={err} onRetry={reload} /> : busy && !data ? <Busy /> : <Table cols={[
+        {err ? <ErrorBox err={err} onRetry={reload} /> : busy && !data ? <Busy kind="table" /> : <Table cols={[
           { k: 'taskNo', h: '#', r: r => <span className="chip">{r.taskNo}</span> },
           { k: 'type', h: 'Task', r: r => <b>{title(r.type)}</b> },
           { k: 'priority', h: 'Priority', r: r => <Badge v={r.priority} /> },

@@ -21,7 +21,7 @@ export default function FollowUps({ params }) {
         {tab === 'promises' && <select className="sel" value={q.status} onChange={e => set({ status: e.target.value })}><option value="">Any status</option>{['PENDING', 'PARTIALLY_FULFILLED', 'FULFILLED', 'BROKEN', 'CANCELLED'].map(s => <option key={s} value={s}>{title(s)}</option>)}<option value="PENDING,PARTIALLY_FULFILLED">Open</option></select>}
       </div></Card>
       <Card pad={false}>
-        {err ? <ErrorBox err={err} onRetry={reload} /> : busy && !data ? <Busy /> : tab === 'followups' ? <Table cols={[
+        {err ? <ErrorBox err={err} onRetry={reload} /> : busy && !data ? <Busy kind="table" /> : tab === 'followups' ? <Table cols={[
           { k: 'date', h: 'Date', r: r => fmtDate(r.date) + (r.time ? ' ' + r.time : '') },
           { k: 'dealer', h: 'Dealer', r: r => <DealerLink id={r.dealerId} name={r.dealerName || r.dealer?.name || String(r.dealerId)} code={r.dealerCode || r.dealer?.code} /> },
           ...monthCols(data?.items), { k: 'balanceTotal', h: 'Outstanding', align: 'right', r: r => r.balanceTotal == null ? '—' : <b>{money(r.balanceTotal)}</b> },

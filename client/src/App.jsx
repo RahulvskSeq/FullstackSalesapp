@@ -15487,6 +15487,10 @@ export default function App(){
   const [selected,setSelected]=useState([]);
   const [bulkAction,setBulkAction]=useState(null);
   const [sidebarOpen,setSidebarOpen]=useState(typeof window!=='undefined'&&window.innerWidth>768);
+  // Sidebar width, dragged by the user and remembered per browser (180–400px).
+  const [sbWidth,setSbWidthRaw]=useState(()=>{ try{ const v=parseInt(localStorage.getItem('stp_sidebar_w')||'',10); return v>=180&&v<=400?v:240; }catch{ return 240; } });
+  const [sbDragging,setSbDragging]=useState(false);
+  const setSbWidth=(w)=>{ setSbWidthRaw(w); try{ localStorage.setItem('stp_sidebar_w',String(w)); }catch{} };
   const [syncing,setSyncing]=useState(false);
   const [reloadingDB, setReloadingDB] = useState(false);
   const [showApiSettings, setShowApiSettings] = useState(false);
@@ -16379,14 +16383,18 @@ export default function App(){
     // A module's screens share one switch in Features (e.g. 'collections').
     if (item.flag && disabledFeatures.includes(item.flag)) return false;
     if (isSuperAdmin) return true;
+    // Hard limits first: pages the server only serves to certain roles cannot
+    // be granted by a page list — showing them would only lead to a 403.
+    if (item.superAdmin) return false;
+    if (Array.isArray(item.roles) && !item.roles.includes(currentUser?.role)) return false;
     if (hasPagePerms) return pagePerms.includes(item.id);   // explicit grant wins
     if (rolePages.length) return rolePages.includes(item.id); // then the role's own list
     // Built-in gates when neither is set:
-    if (item.superAdmin) return false;
     if (item.staff && !isStaff) return false;
     return hasFeature(item.feature);
   };
 
+  const isAdminRole = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
   const navItemsRaw=[
     {id:'overview',label:'Overview',icon:LayoutDashboard},
     {id:'dealers',label:'All Dealers',icon:Users},
@@ -16413,16 +16421,19 @@ export default function App(){
     // points against their own recent average, the sales team earns rupees
     // per sheet behind a laminate gate. Split so nobody reads one screen and
     // assumes it governs the other.
+    // Billing staff (employees) get "My incentive"; admins get the team view.
+    // Salesmen are not on the billing roster, so the group is staff-only.
     { group:'incentiveBilling', label:'Billing incentive', icon:IndianRupee, children:[
-        {id:'incentiveHome',    label:'Dashboard',    icon:LayoutDashboard},
-        {id:'incentive',        label:'This month',   icon:Trophy},
-        {id:'incentiveUpload',  label:'Upload sheet', icon:UploadCloud},
-        {id:'incentiveHistory', label:'History',      icon:TrendingUp},
-        {id:'incentiveRule',    label:'Rule & setup', icon:Settings},
+        {id:'incentiveHome',    label: isAdminRole ? 'Dashboard' : 'My incentive', icon:LayoutDashboard, staff:true},
+        {id:'incentive',        label:'This month',   icon:Trophy,       roles:['admin','superadmin']},
+        {id:'incentiveUpload',  label:'Upload sheet', icon:UploadCloud,  roles:['admin','superadmin']},
+        {id:'incentiveHistory', label:'History',      icon:TrendingUp,   roles:['admin','superadmin']},
+        {id:'incentiveRule',    label:'Rule & setup', icon:Settings,     roles:['admin','superadmin']},
     ]},
+    // Salesmen see their own month as "My incentive"; admins see everyone.
     { group:'incentiveSales', label:'Sales incentive', icon:Briefcase, children:[
-        {id:'salesIncentive',     label:'Dashboard',    icon:LayoutDashboard},
-        {id:'salesIncentiveRule', label:'Rule & setup', icon:Settings},
+        {id:'salesIncentive',     label: isAdminRole ? 'Dashboard' : 'My incentive', icon:LayoutDashboard, roles:['salesman','admin','superadmin']},
+        {id:'salesIncentiveRule', label:'Rule & setup', icon:Settings, roles:['admin','superadmin']},
     ]},
     // Outstanding + Collection CRM. Every screen carries flag:'collections' so
     // the one Features switch hides the whole group; the server applies scope
@@ -16595,7 +16606,7 @@ export default function App(){
                         {(()=>{
                           const q = loginAsQ.trim().toLowerCase();
                           const list = Object.values(users||{})
-                            .filter(u => u.id !== currentUser?.id && (currentUser?.role==='superadmin' || u.role !== 'superadmin'))
+                            .filter(u => u.id !== currentUser?.id && u.active !== false && (currentUser?.role==='superadmin' || u.role !== 'superadmin'))
                             .filter(u => !q || (u.name||'').toLowerCase().includes(q) || (u.id||'').toLowerCase().includes(q))
                             .sort((a,b)=>{
                               const order = { superadmin:0, admin:1, employee:2, salesman:3 };
@@ -16803,7 +16814,20 @@ export default function App(){
 
           <div id="body">
             {sidebarOpen&&window.innerWidth<=768&&<div id="sb-overlay" className="open" onClick={()=>setSidebarOpen(false)}/>}
-            <div id="sidebar" className={sidebarOpen?'open':'closed'}>
+            {/* drag the sidebar edge to make it wider or narrower; the choice sticks per browser */}
+            {sidebarOpen&&window.innerWidth>768&&(
+              <div className={'sb-resizer'+(sbDragging?' dragging':'')} title="Drag to resize the menu · double-click to reset" style={{left: sbWidth-3}}
+                onMouseDown={e=>{ e.preventDefault(); setSbDragging(true); const startX=e.clientX, startW=sbWidth; let w=startW;
+                  // While dragging, write the width straight to the DOM. Going
+                  // through state re-rendered the whole app on every pixel and
+                  // froze the tab on heavy screens; state is set once, on release.
+                  const sb=document.getElementById('sidebar'), handle=e.currentTarget;
+                  const move=ev=>{ w=Math.min(400, Math.max(180, startW + ev.clientX - startX)); if(sb) sb.style.setProperty('--sbw', w+'px'); handle.style.left=(w-3)+'px'; };
+                  const up=()=>{ window.removeEventListener('mousemove',move); window.removeEventListener('mouseup',up); setSbDragging(false); setSbWidth(w); };
+                  window.addEventListener('mousemove',move); window.addEventListener('mouseup',up); }}
+                onDoubleClick={()=>setSbWidth(240)} />
+            )}
+            <div id="sidebar" className={sidebarOpen?'open':'closed'} style={window.innerWidth>768 ? {'--sbw': sbWidth+'px'} : undefined}>
               <div className="nav-sec">Navigation</div>
               {navItems.filter(n=>!n.adminOnly||isStaff).map((n, idx)=>{
                 // Render a collapsible group (parent header + children)
@@ -16813,25 +16837,31 @@ export default function App(){
                   const anyChildActive = (n.children||[]).some(c => c.id === screen);
                   return (
                     <React.Fragment key={'g-'+n.group}>
-                      <div className={`nav-item ${anyChildActive?'active':''}`}
+                      {/* a section header is never "active" itself — it only shows that
+                          one of its pages is, so the page (child) reads as the selection */}
+                      <div className={`nav-item nav-group ${anyChildActive?'has-active':''} ${isOpen?'open':''}`}
                         onClick={()=>toggleNavGroup(n.group)}>
-                        <GIcon size={14}/>
-                        <span style={{flex:1}}>{n.label}</span>
-                        <ChevronDown size={12}
-                          style={{transform: isOpen?'rotate(180deg)':'rotate(0)', transition:'transform .15s', color:'var(--t3)'}}/>
+                        <GIcon size={15} strokeWidth={2.2} style={{flexShrink:0}}/>
+                        <span style={{flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis'}}>{n.label}</span>
+                        <ChevronDown size={14} strokeWidth={2.4}
+                          style={{flexShrink:0, transform: isOpen?'rotate(180deg)':'rotate(0)', transition:'transform .15s', opacity:.75}}/>
                       </div>
-                      {isOpen && (n.children||[]).map(c => {
-                        const CIcon = c.icon;
-                        return (
-                          <div key={c.id}
-                            className={`nav-item ${screen===c.id?'active':''}`}
-                            style={{paddingLeft:32}}
-                            onClick={()=>navigate(c.id)}>
-                            {/* the icon must never shrink — a long label used to squeeze it to nothing */}
-                            <CIcon size={13} style={{flexShrink:0}}/><span style={{flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis'}}>{c.label}</span>
-                          </div>
-                        );
-                      })}
+                      {/* one wrapper per group so the guide line runs unbroken down the sub-items */}
+                      {isOpen && (
+                        <div className="nav-children">
+                          {(n.children||[]).map(c => {
+                            const CIcon = c.icon;
+                            return (
+                              <div key={c.id}
+                                className={`nav-item nav-child ${screen===c.id?'active':''}`}
+                                onClick={()=>navigate(c.id)}>
+                                {/* the icon must never shrink — a long label used to squeeze it to nothing */}
+                                <CIcon size={15} style={{flexShrink:0}}/><span style={{flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis'}}>{c.label}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </React.Fragment>
                   );
                 }
