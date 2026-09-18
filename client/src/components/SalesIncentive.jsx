@@ -400,7 +400,6 @@ function EstimateModal({ d, person, onClose }) {
             <div style={{ padding: '14px 16px', borderRadius: 12, background: 'rgba(22,163,74,.10)', border: '1px solid rgba(22,163,74,.35)' }}>
               <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--t3)' }}>Calculated points</div>
               <div style={{ fontSize: 40, fontWeight: 850, color: 'var(--grn)', lineHeight: 1.05, letterSpacing: '-.02em', fontVariantNumeric: 'tabular-nums' }}>{num(e.points)} <span style={{ fontSize: 18, fontWeight: 700 }}>pts</span></div>
-              <div style={{ fontSize: 13, color: 'var(--t2)', marginTop: 4, fontWeight: 700 }}>= ₹{num(Math.round(e.points / ppr))}</div>
 
               <div style={{ display: 'flex', gap: 10, marginTop: 10, paddingTop: 10, borderTop: '1px dashed rgba(22,163,74,.35)', fontSize: 12 }}>
                 <span style={{ color: 'var(--t3)' }}>At today's sales <b style={{ color: 'var(--t1)' }}>{num(cur.points)}</b></span>
