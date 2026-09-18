@@ -369,7 +369,7 @@ function FeatureSwitches() {
   );
 }
 
-const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,syncErrs,onNavigate,onOpenDealer,monthConfig,saveMonthConfig,currentUser,onLoginAs,hasFeature})=>{
+const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,syncErrs,onNavigate,onOpenDealer,monthConfig,saveMonthConfig,currentUser,onLoginAs,hasFeature,canLoginAs:canLoginAsProp})=>{
   // Each admin area is an action in Permissions; a tab shows only when the
   // person may actually do what is behind it (falls back to staff-only when
   // App has not passed the check, e.g. older mounts).
@@ -400,7 +400,7 @@ const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,sync
   const isSuperAdmin = currentUser?.role === 'superadmin';
   const isStaff      = isSuperAdmin || currentUser?.role === 'admin';
   // "Login as" is for superadmins and for anyone explicitly granted the action
-  const canLoginAs   = isSuperAdmin || (Array.isArray(currentUser?.permissions?.features) && currentUser.permissions.features.includes('loginAs'));
+  const canLoginAs   = canLoginAsProp !== undefined ? !!canLoginAsProp : (isSuperAdmin || (Array.isArray(currentUser?.permissions?.features) && currentUser.permissions.features.includes('loginAs')));
   const [laOpen, setLaOpen]   = useState(false);
   const [laBusy, setLaBusy]   = useState(false);
   const [laErr,  setLaErr]    = useState(null);
@@ -738,7 +738,7 @@ const AdminPanel=({dealers,users,setUsers,setShowUM,onSync,syncing,lastSync,sync
 
           {adminSec==='users' && can('manageUsers') && (
             <UserManagement users={users} setUsers={setUsers} currentUser={currentUser}
-              onClose={()=>{}} onLoginAs={onLoginAs} inline/>
+              onClose={()=>{}} onLoginAs={onLoginAs} canLoginAs={canLoginAs} inline/>
           )}
           {adminSec==='perms' && can('manageUsers') && (
             <PermissionsMatrix setUsers={setUsers} currentUser={currentUser}/>

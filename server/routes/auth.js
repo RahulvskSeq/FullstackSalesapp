@@ -410,8 +410,12 @@ router.delete('/users/:id', protect, adminOnly, requireFeature('manageUsers'), a
 // once. A grantee can never enter a superadmin's account.
 const canLoginAs = async (user) => {
   if (user?.role === 'superadmin') return true;
-  const u = await User.findOne({ id: user?.id }, 'permissions').lean();
-  return Array.isArray(u?.permissions?.features) && u.permissions.features.includes('loginAs');
+  const u = await User.findOne({ id: user?.id }, 'permissions role').lean();
+  const own = Array.isArray(u?.permissions?.features) ? u.permissions.features : [];
+  if (own.length) return own.includes('loginAs');
+  // no list of their own → the role's list (Settings → Permissions → By role)
+  const { loadRolePermissions } = await import('../lib/rolePermissions.js');
+  return ((await loadRolePermissions())[u?.role]?.features || []).includes('loginAs');
 };
 router.post('/impersonate/:id', protect, async (req, res) => {
   if(!(await canLoginAs(req.user))) return res.status(403).json({ error:'Login as is not granted to you' });

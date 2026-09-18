@@ -27,7 +27,7 @@ function Shell({ inline, onClose, children }) {
     );
 }
 
-const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUsersChanged, inline = false }) => {
+const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUsersChanged, inline = false, canLoginAs: canLoginAsProp }) => {
   // Full user map including inactive — used for display in this modal only.
   const [allUsers, setAllUsers] = useState(users || {});
   // The create form lives in a modal now — see the Add user button above it.
@@ -82,7 +82,8 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
   const isSuperAdmin = currentUser?.role === 'superadmin';
   const isAdmin      = currentUser?.role === 'admin';
   // "Login as" a user: superadmin always; others only when granted the action, and never into a superadmin
-  const canLoginAsUser = (u) => u && u.id !== currentUser?.id && u.active !== false && (isSuperAdmin || ((Array.isArray(currentUser?.permissions?.features) && currentUser.permissions.features.includes('loginAs')) && u.role !== 'superadmin'));
+  const granted = canLoginAsProp !== undefined ? !!canLoginAsProp : (Array.isArray(currentUser?.permissions?.features) && currentUser.permissions.features.includes('loginAs'));
+  const canLoginAsUser = (u) => u && u.id !== currentUser?.id && u.active !== false && (isSuperAdmin || (granted && u.role !== 'superadmin'));
 
   const flash = (type, text, ms = 3000) => { setMsg({type, text}); setTimeout(()=>setMsg(null), ms); };
 

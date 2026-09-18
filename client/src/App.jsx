@@ -448,7 +448,7 @@ import { createPortal } from 'react-dom';
 
 // // // // // // //         {editing&&<DealerModal dealer={editing} users={users} currentUser={currentUser} onSave={saveDealer} onDelete={deleteDealer} onClose={()=>setEditingId(null)} notes={notes} onAddNote={addNote} onUpdateNote={updateNote} onDeleteNote={deleteNote} onLog={addLog} outstandingData={outstandingData}/>}
 // // // // // // //         {showAdd&&<AddDealerModal users={users} currentUser={currentUser} onAdd={addDealer} onClose={()=>setShowAdd(false)}/>}
-// // // // // // //         {showUM&&<UserManagement users={users} setUsers={setUsers} onClose={()=>setShowUM(false)}/>}
+// // // // // // //         {showUM&&<UserManagement users={users} setUsers={setUsers} onClose={()=>setShowUM(false)} canLoginAs={canLoginAs}/>}
 // // // // // // //         {bulkAction&&<BulkActionModal action={bulkAction} selected={selected} dealers={dealers} users={users} onApply={applyBulk} onClose={()=>setBulkAction(null)}/>}
 // // // // // // //       </>
 // // // // // // //     </MonthContext.Provider>
@@ -16361,6 +16361,9 @@ export default function App(){
     ? new Set(currentUser.permissions.features) : new Set();
   const roleFeatures = rolePerms[currentUser?.role]?.features || [];
   const rolePages    = rolePerms[currentUser?.role]?.pages || [];
+  // "Login as" is never implied by being an admin — it needs an explicit tick,
+  // on the user or on their role.
+  const canLoginAs = isSuperAdmin || userFeatures.has('loginAs') || (userFeatures.size === 0 && roleFeatures.includes('loginAs'));
   const hasFeature = (key) => {
     if (!key) return true;                // no feature gate
     if (isSuperAdmin) return true;
@@ -16551,7 +16554,7 @@ export default function App(){
             </button>
 
             {/* ── Login as ▼ — superadmin, or anyone granted the loginAs action ── */}
-            {(currentUser?.role==='superadmin' || userFeatures.has('loginAs')) && (
+            {canLoginAs && (
               <div ref={loginAsRef} style={{flexShrink:0}}>
                 <button ref={loginAsBtnRef} className="btn"
                   onClick={()=>{
@@ -16961,7 +16964,7 @@ export default function App(){
                   {screen==='incentiveUpload'  && <Incentive view="upload"/>}
                   {screen==='tasks'   && <TasksPage   users={users} currentUser={currentUser}/>}
                   {screen==='tickets' && <TicketsPage users={users} currentUser={currentUser}/>}
-                  {screen==='admin'&&isStaff&&<AdminPanel dealers={dealersGloballyFiltered} users={users} setUsers={setUsers} setShowUM={setShowUM} onSync={syncSheets} syncing={syncing} lastSync={lastSync} syncErrs={syncErrs} onNavigate={navigate} onOpenDealer={setEditingId} monthConfig={monthConfig} saveMonthConfig={saveMonthConfig} currentUser={currentUser} hasFeature={hasFeature} onLoginAs={(token, user, impersonatedBy)=>{
+                  {screen==='admin'&&isStaff&&<AdminPanel dealers={dealersGloballyFiltered} users={users} setUsers={setUsers} setShowUM={setShowUM} onSync={syncSheets} syncing={syncing} lastSync={lastSync} syncErrs={syncErrs} onNavigate={navigate} onOpenDealer={setEditingId} monthConfig={monthConfig} saveMonthConfig={saveMonthConfig} currentUser={currentUser} hasFeature={hasFeature} canLoginAs={canLoginAs} onLoginAs={(token, user, impersonatedBy)=>{
                     saveToken(token);
                     localStorage.setItem('stp_jwt', token);
                     if(impersonatedBy){

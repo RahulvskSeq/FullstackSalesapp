@@ -33,13 +33,17 @@ export async function recordPayment(input, { by }) {
     if (buf.length > 5 * 1024 * 1024) throw bad('proof is larger than 5 MB');
     const mime = String(input.proof.mime || 'image/jpeg');
     let att;
+    let up = null;
     if (cloudinaryReady()) {
-      // bytes go to Cloudinary; Mongo keeps the pointer only
-      const up = await uploadBuffer(buf, { mime });
-      att = await ColAttachment.create({ kind: 'payment_proof', mime, size: buf.length, url: up.url, publicId: up.publicId, resourceType: up.resourceType, provider: 'cloudinary', dealerId, uploadedBy: by });
-    } else {
-      att = await ColAttachment.create({ kind: 'payment_proof', mime, size: buf.length, data: buf, provider: 'mongo', dealerId, uploadedBy: by });
+      // bytes go to Cloudinary; Mongo keeps the pointer only. If Cloudinary
+      // refuses (wrong key, outage) the proof still lands in Mongo — a
+      // salesman's payment entry must never fail because of file storage.
+      try { up = await uploadBuffer(buf, { mime }); }
+      catch (e) { console.warn('[collections] Cloudinary upload failed, storing proof in Mongo:', e?.message || e); }
     }
+    att = up
+      ? await ColAttachment.create({ kind: 'payment_proof', mime, size: buf.length, url: up.url, publicId: up.publicId, resourceType: up.resourceType, provider: 'cloudinary', dealerId, uploadedBy: by })
+      : await ColAttachment.create({ kind: 'payment_proof', mime, size: buf.length, data: buf, provider: 'mongo', dealerId, uploadedBy: by });
     proofId = att._id;
   }
 

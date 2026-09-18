@@ -10,7 +10,10 @@ import { v2 as cloudinary } from 'cloudinary';
  * bytes stored in the document, so a missing key never blocks a payment.
  */
 export function cloudinaryReady() {
-  if (process.env.CLOUDINARY_URL) return true;
+  const url = String(process.env.CLOUDINARY_URL || '').trim();
+  // A real URL is cloudinary://<key>:<secret>@<cloud>; a placeholder left in
+  // the .env (PASTE_SECRET_HERE, <your_api_secret>) must not switch it on.
+  if (url) return /^cloudinary:\/\/\d+:[A-Za-z0-9_-]{8,}@[a-z0-9-]+$/i.test(url) && !/paste|secret_here|your_|<|>/i.test(url);
   return !!(process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET);
 }
 
