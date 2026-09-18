@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, X, RotateCcw, Save } from 'lucide-react';
 import { api } from '../api';
+import Skeleton from './Skeleton';
 
 /**
  * Sales incentive — rule & setup.
@@ -79,7 +80,7 @@ export default function SalesIncentiveRule() {
     finally { setBusy(false); }
   };
 
-  if (!cfg) return <div style={{ fontSize: 12.5, color: 'var(--t3)' }}>{err || 'Loading…'}</div>;
+  if (!cfg) return err ? <div style={{ fontSize: 12.5, color: 'var(--red)' }}>{err}</div> : <Skeleton kind="form" />;
 
   // The ramp, worked through with whatever is currently on screen.
   const rampAt = (excess) => {
@@ -94,8 +95,8 @@ export default function SalesIncentiveRule() {
       }
       return { amount, rate: null };
     }
-    // rate steps up on entering the next block: 1,000–2,000 base, 2,001+ base+step
-    const steps = Math.max(0, Math.floor((excess - 1) / cfg.retroBlock) - 1);
+    // rate steps up on reaching each block: 1,000–1,999 base, 2,000+ base+step
+    const steps = Math.max(0, Math.floor(excess / cfg.retroBlock) - 1);
     const rate = Math.min(cfg.retroCap, cfg.retroBase + cfg.retroStep * steps);
     return { amount: excess * rate, rate };
   };
@@ -209,7 +210,7 @@ export default function SalesIncentiveRule() {
           <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase',
                         color: 'var(--t3)', marginBottom: 7 }}>What that pays</div>
           <div style={{ display: 'grid', gap: 6, gridTemplateColumns: 'repeat(auto-fit,minmax(130px,1fr))' }}>
-            {[500, 1000, 2000, 2001, 3001, 4001].map(x => {
+            {[500, 1000, 1999, 2000, 3000, 4000].map(x => {
               const r = rampAt(x);
               return (
                 <div key={x} style={{ fontSize: 11.5 }}>
@@ -227,9 +228,9 @@ export default function SalesIncentiveRule() {
       <div className="card" style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>Other products</div>
         <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 11, lineHeight: 1.7 }}>
-          A salesman's own target for the category (Sales by Category → Salesman-wise) is used when set;
-          the share of the gate target or the fixed count below is only the fallback. Only units
-          <b>above</b> the target earn — hitting it exactly earns nothing.
+          The salesman's own target for the category (Sales by Category → Salesman-wise) is used when set —
+          rolls are "a fixed count set per rep". The fixed count or % of the gate target here is the fallback
+          for anyone without one. Only units <b>above</b> the target earn — hitting it exactly earns nothing.
         </div>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 620 }}>

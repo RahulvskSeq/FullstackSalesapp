@@ -3,6 +3,7 @@ import { Lock, Unlock, AlertTriangle, RefreshCw, Pencil, X, ChevronDown, Chevron
          ArrowUpRight, ArrowDownRight, Trophy, Users, Layers, Package, Monitor, Star, Calculator } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { api } from '../api';
+import Skeleton from './Skeleton';
 
 /**
  * Salesman incentive — the laminate scheme, shown in POINTS only.
@@ -102,7 +103,7 @@ function AdjustModal({ person, month, onClose, onSaved }) {
 
   return (
     <div onClick={onClose}
-         style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', zIndex: 900,
+         style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', zIndex: 2000,
                   display: 'grid', placeItems: 'center', padding: 18 }}>
       <div onClick={e => e.stopPropagation()} className="card"
            style={{ width: 'min(460px,100%)', maxHeight: '88vh', overflowY: 'auto', padding: '18px 20px' }}>
@@ -150,7 +151,7 @@ function laminatePay(excess, c) {
     for (const t of tiers) { const inBand = Math.min(x, t.upTo) - prev; if (inBand > 0) { amount += inBand * t.rate; bands.push({ sheets: inBand, rate: t.rate }); } prev = t.upTo; if (x <= t.upTo) break; }
     return { amount, rate: null, bands };
   }
-  const steps = Math.max(0, Math.floor((x - 1) / (c.retroBlock || 1000)) - 1);
+  const steps = Math.max(0, Math.floor(x / (c.retroBlock || 1000)) - 1);
   const rate = Math.min(c.retroCap, c.retroBase + c.retroStep * steps);
   return { amount: x * rate, rate, bands: [{ sheets: x, rate }] };
 }
@@ -185,9 +186,41 @@ function EstimateModal({ d, person, onClose }) {
   const basic = person?.basic || 0;
   const targets = Object.fromEntries((person?.products || []).map(p => [p.category, p.target]));
   const now = { LAMINATE: person?.credited || 0, display: person?.displayValue || 0, ...Object.fromEntries((person?.products || []).map(p => [p.category, p.actual])) };
-  const [f, setF] = useState({ ...now });
+  const [f, setF] = useState({ ...now });                       // "What will I earn" boxes
   const set = (k, v) => setF(x => ({ ...x, [k]: v }));
+  const [g, setG] = useState({ ...now });                       // "How much to sell" boxes — independent
+  const setg = (k, v) => setG(x => ({ ...x, [k]: v }));
   const e = estimate(c, basic, targets, f);
+  // "I want N points": the fewest laminate sheets that get there, with the
+  // other products as entered. Points only rise with laminate, so a plain
+  // upward scan (in 10s, then exact) finds the first sheet that clears it.
+  const netF = 1 - (c.deductionPct || 0);                    // shown figures are net of the deduction
+  const netPts = rs => Math.round(rs * ppr * netF);
+  const [goal, setGoal] = useState('');
+  const [mode, setMode] = useState('earn');   // 'earn' = what will I earn · 'goal' = how much to sell
+  // Entering the planner: fill every product's own target first (laminate
+  // basic is filled by the solver), so the plan starts from "hit all targets"
+  // and only the remainder is asked of laminate. Any box can then be edited.
+  const [seeded, setSeeded] = useState(false);
+  useEffect(() => {
+    if (mode !== 'goal' || seeded) return;
+    setG(x => { const y = { ...x }; for (const p of (c.products || [])) { const t = Number(targets[p.category]) || 0; if (t > (Number(y[p.category]) || 0)) y[p.category] = t; } return y; });
+    setSeeded(true);
+  }, [mode]);
+  const filledToTarget = key => seeded && (Number(g[key]) || 0) === (Number(targets[key]) || 0) && (Number(targets[key]) || 0) > (Number(now[key]) || 0);
+  const goalRs = Number(String(goal).replace(/[^\d]/g, '')) || 0;   // typed in rupees
+  const goalN = goalRs * ppr;                                          // searched in points
+  const plan = (() => {
+    if (!goalN || basic <= 0) return null;
+    const ptsAt = L => estimate(c, basic, targets, { ...g, LAMINATE: L }).points;
+    const cap = basic + 50000;
+    if (ptsAt(cap) < goalN) return { impossible: true, max: ptsAt(cap) };
+    let lo = basic, hi = cap;
+    while (lo < hi) { const mid = Math.floor((lo + hi) / 2); if (ptsAt(mid) >= goalN) hi = mid; else lo = mid + 1; }
+    const L = lo; const r = estimate(c, basic, targets, { ...g, LAMINATE: L });
+    const lamNet = netPts(r.L.amount);
+    return { L, excess: L - basic, more: L - (Number(now.LAMINATE) || 0), points: r.points, lamPts: lamNet, rate: r.L.rate, bands: r.L.bands, otherPts: r.points - lamNet, products: r.products, display: r.display };
+  })();
   const cur = estimate(c, basic, targets, now);
   const rows = [
     { key: 'LAMINATE', label: 'Laminate', target: basic, actual: now.LAMINATE, unit: 'sheets', note: 'basic target — points start above it' },
@@ -199,18 +232,18 @@ function EstimateModal({ d, person, onClose }) {
   // a plain render function, not a component: a component declared inside the
   // modal is a new type every render, so React remounted the row and the box
   // lost focus after every keystroke
-  const renderRow = (r) => {
-    const v = f[r.key]; const n = Number(v) || 0; const over = r.target > 0 && n > r.target;
+  const renderRow = (r, vals = f, setv = set) => {
+    const v = vals[r.key]; const n = Number(v) || 0; const over = r.target > 0 && n > r.target;
     return (
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(120px,1.3fr) 90px 1fr', gap: 10, alignItems: 'center', padding: '9px 0', borderTop: '1px solid var(--b1)' }}>
+      <div className="est-row" style={{ padding: '9px 0', borderTop: '1px solid var(--b1)' }}>
         <div><div style={{ fontWeight: 700, fontSize: 13 }}>{r.label}</div><div style={{ fontSize: 10.5, color: 'var(--t3)' }}>{r.note}</div></div>
         <div style={{ fontSize: 11, color: 'var(--t3)', lineHeight: 1.5 }}>target <b style={{ color: 'var(--t1)' }}>{r.target ? num(r.target) : '—'}</b><br />now <b style={{ color: 'var(--t1)' }}>{num(r.actual)}</b></div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <button className="btn" style={{ padding: '4px 9px', fontSize: 14 }} onClick={() => set(r.key, Math.max(0, n - (r.unit === 'rolls' ? 1 : 50)))}>−</button>
-          <input type="text" inputMode="numeric" value={v} onChange={ev => set(r.key, clean(ev.target.value))} onFocus={ev => ev.target.select()} onKeyDown={onKey}
+          <button className="btn" style={{ padding: '4px 9px', fontSize: 14 }} onClick={() => setv(r.key, Math.max(0, n - (r.unit === 'rolls' ? 1 : 50)))}>−</button>
+          <input type="text" inputMode="numeric" value={v} onChange={ev => setv(r.key, clean(ev.target.value))} onFocus={ev => ev.target.select()} onKeyDown={onKey}
                  style={{ width: '100%', minWidth: 80, fontSize: 17, padding: '8px 10px', borderRadius: 9, textAlign: 'right', fontWeight: 800, fontVariantNumeric: 'tabular-nums',
                           border: '2px solid ' + (over ? 'var(--grn)' : 'var(--acc)'), background: 'var(--bg1)', color: over ? 'var(--grn)' : 'var(--t1)', outline: 'none' }} />
-          <button className="btn" style={{ padding: '4px 9px', fontSize: 14 }} onClick={() => set(r.key, n + (r.unit === 'rolls' ? 1 : 50))}>+</button>
+          <button className="btn" style={{ padding: '4px 9px', fontSize: 14 }} onClick={() => setv(r.key, n + (r.unit === 'rolls' ? 1 : 50))}>+</button>
         </div>
         {over && <div style={{ gridColumn: '1 / -1', fontSize: 10.5, color: 'var(--grn)', marginTop: -4 }}>+{num(n - r.target)} above target</div>}
       </div>
@@ -221,31 +254,120 @@ function EstimateModal({ d, person, onClose }) {
   const lamNow = Number(f.LAMINATE) || 0;
   return (
     <div onMouseDown={ev => { if (ev.target === ev.currentTarget) onClose(); }}
-         style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 900, display: 'grid', placeItems: 'center', padding: 16 }}>
+         style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 2000, display: 'grid', placeItems: 'center', padding: 12, overflowY: 'auto' }}>
       <style>{`
         .est-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(300px, .95fr); gap: 0; }
         .est-left { padding: 12px 20px 16px; border-right: 1px solid var(--b1); }
         .est-right { padding: 14px 20px 16px; background: var(--bg2); }
-        @media (max-width: 860px) { .est-grid { grid-template-columns: 1fr; } .est-left { border-right: none; border-bottom: 1px solid var(--b1); } }
+        .est-row { display: grid; grid-template-columns: minmax(120px,1.3fr) 100px 1fr; gap: 10px; align-items: center; }
+        @media (max-width: 860px) { .est-grid { grid-template-columns: 1fr; } .est-left { border-right: none; border-bottom: 1px solid var(--b1); } .est-right { order: -1; } }
+        @media (max-width: 560px) {
+          .est-left, .est-right { padding: 10px 14px 14px; }
+          .est-row { grid-template-columns: 1fr auto; row-gap: 6px; }
+          .est-row > :first-child { grid-column: 1 / -1; }
+          .est-hd { display: none !important; }
+        }
       `}</style>
-      <div className="card" style={{ width: 'min(960px, 100%)', maxHeight: '92vh', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
+      <div className="card" style={{ width: 'min(960px, 100%)', maxHeight: 'calc(100vh - 24px)', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden', margin: 'auto' }}>
         <div style={{ padding: '14px 20px 12px', borderBottom: '1px solid var(--b1)', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
           <div style={{ width: 36, height: 36, borderRadius: 10, display: 'grid', placeItems: 'center', background: 'rgba(99,102,241,.14)', color: 'var(--acc)', flexShrink: 0 }}><Calculator size={17} /></div>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 16, fontWeight: 800 }}>Calculate my incentive</div>
             <div style={{ fontSize: 11.5, color: 'var(--t3)' }}>Type what you expect to sell this month — your own targets are used. {ppr} points = ₹1.</div>
           </div>
-          <button className="btn" onClick={onClose} style={{ marginLeft: 'auto', padding: '5px 8px' }}><X size={15} /></button>
+          <div style={{ marginLeft: 'auto', display: 'inline-flex', border: '1px solid var(--b2)', borderRadius: 8, overflow: 'hidden', flexShrink: 0 }}>
+            {[['earn', 'What will I earn'], ['goal', 'How much to sell']].map(([m, label]) => (
+              <button key={m} onClick={() => setMode(m)}
+                style={{ fontSize: 12, padding: '6px 12px', border: 'none', cursor: 'pointer', fontWeight: mode === m ? 800 : 500,
+                         background: mode === m ? 'var(--acc)' : 'var(--bg1)', color: mode === m ? '#fff' : 'var(--t2)' }}>{label}</button>
+            ))}
+          </div>
+          <button className="btn" onClick={onClose} style={{ padding: '5px 8px', flexShrink: 0 }}><X size={15} /></button>
         </div>
 
-        <div className="est-grid est-body" style={{ overflowY: 'auto', minHeight: 0 }}>
+        {mode === 'goal' && (
+          <div className="est-grid est-body" style={{ overflowY: 'auto', minHeight: 0 }}>
+            {/* ── left: the goal ── */}
+            <div className="est-left">
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--t3)', margin: '6px 0 8px' }}>I want to earn</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 22, fontWeight: 800, color: 'var(--t2)' }}>₹</span>
+                <input type="text" inputMode="numeric" value={goal} onChange={ev => setGoal(ev.target.value.replace(/[^\d]/g, ''))} onFocus={ev => ev.target.select()} placeholder="1,00,000" autoFocus
+                       style={{ flex: 1, minWidth: 0, fontSize: 26, padding: '10px 14px', borderRadius: 12, textAlign: 'right', fontWeight: 850, border: '2px solid var(--acc)', background: 'var(--bg1)', color: 'var(--t1)', outline: 'none', fontVariantNumeric: 'tabular-nums' }} />
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+                {[10000, 25000, 50000, 100000, 200000].map(g => (
+                  <button key={g} className="btn" onClick={() => setGoal(String(g))} style={{ fontSize: 11.5, padding: '5px 10px', fontWeight: goalRs === g ? 800 : 500, borderColor: goalRs === g ? 'var(--acc)' : undefined, background: goalRs === g ? 'rgba(99,102,241,.12)' : undefined }}>₹{num(g)}</button>
+                ))}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 6 }}>= <b style={{ color: 'var(--t1)' }}>{num(goalN)} pts</b> · {ppr} points = ₹1</div>
+
+              <div style={{ marginTop: 14 }}>
+                <div className="est-row est-hd" style={{ padding: '6px 0 4px', fontSize: 10, fontWeight: 800, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--t3)' }}>
+                  <span>Product</span><span>Target · now</span><span style={{ textAlign: 'right' }}>Sell</span>
+                </div>
+                {/* laminate first: the basic must be filled before anything pays, so the plan solves it */}
+                <div className="est-row" style={{ padding: '9px 0', borderTop: '1px solid var(--b1)', background: 'rgba(22,163,74,.06)', borderRadius: 8 }}>
+                  <div><div style={{ fontWeight: 700, fontSize: 13 }}>Laminate <span style={{ fontSize: 9.5, fontWeight: 800, color: 'var(--grn)', textTransform: 'uppercase', letterSpacing: '.05em', marginLeft: 4 }}>1st · basic first</span></div><div style={{ fontSize: 10.5, color: 'var(--t3)' }}>worked out by the plan — fill basic, then the rest</div></div>
+                  <div style={{ fontSize: 11, color: 'var(--t3)', lineHeight: 1.5 }}>basic <b style={{ color: 'var(--t1)' }}>{num(basic)}</b><br />now <b style={{ color: 'var(--t1)' }}>{num(now.LAMINATE || 0)}</b></div>
+                  <div style={{ textAlign: 'right', fontSize: 17, fontWeight: 850, color: 'var(--grn)', fontVariantNumeric: 'tabular-nums', paddingRight: 10 }}>{plan && !plan.impossible ? num(plan.L) : '—'}</div>
+                </div>
+                {rows.filter(r => r.key !== 'LAMINATE').map(r => <React.Fragment key={r.key}>{renderRow(r, g, setg)}{filledToTarget(r.key) && <div style={{ fontSize: 10.5, color: 'var(--acc)', marginTop: -4, marginBottom: 4 }}>2nd · raised to its target ({num(r.target)}) — edit to change</div>}</React.Fragment>)}
+                <div className="est-row" style={{ padding: '9px 0', borderTop: '1px solid var(--b1)' }}>
+                  <div><div style={{ fontWeight: 700, fontSize: 13 }}>Display</div><div style={{ fontSize: 10.5, color: 'var(--t3)' }}>{Math.round((c.displayPct || 0) * 100)}% of value sold</div></div>
+                  <div style={{ fontSize: 11, color: 'var(--t3)' }}>now <b style={{ color: 'var(--t1)' }}>{num(now.display || 0)}</b></div>
+                  <input type="text" inputMode="numeric" value={g.display} onChange={ev => setg('display', clean(ev.target.value))} onFocus={ev => ev.target.select()} onKeyDown={onKey} placeholder="value sold"
+                         style={{ width: '100%', fontSize: 17, padding: '8px 10px', borderRadius: 9, textAlign: 'right', fontWeight: 800, border: '2px solid var(--acc)', background: 'var(--bg1)', color: 'var(--t1)', outline: 'none' }} />
+                </div>
+                <div style={{ fontSize: 10.5, color: 'var(--t3)', marginTop: 6 }}>Order: laminate basic first, then each product to its own target, then the rest of the amount from laminate. Edit any box — the laminate needed and the points update as you type.</div>
+              </div>
+            </div>
+
+            {/* ── right: the plan ── */}
+            <div className="est-right">
+              {!goalN || basic <= 0 ? (
+                <div style={{ padding: '18px 14px', borderRadius: 12, background: 'var(--bg1)', border: '1px dashed var(--b2)', fontSize: 12.5, color: 'var(--t3)', textAlign: 'center' }}>
+                  {basic <= 0 ? 'No laminate target is set for you this month, so laminate cannot earn.' : 'Type the points you want, or tap a number on the left.'}
+                </div>
+              ) : plan?.impossible ? (
+                <div style={{ padding: '14px', borderRadius: 12, background: 'rgba(220,38,38,.08)', border: '1px solid rgba(220,38,38,.3)', fontSize: 12.5, color: 'var(--red)' }}>
+                  Even {num(basic + 50000)} laminate sheets would give {num(plan.max)} pts. Try a smaller number.
+                </div>
+              ) : (
+                <>
+                  <div style={{ padding: '14px 16px', borderRadius: 12, background: 'rgba(22,163,74,.10)', border: '1px solid rgba(22,163,74,.35)' }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--t3)' }}>Sell this much laminate</div>
+                    <div style={{ fontSize: 40, fontWeight: 850, color: 'var(--grn)', lineHeight: 1.05, letterSpacing: '-.02em', fontVariantNumeric: 'tabular-nums' }}>{num(plan.L)} <span style={{ fontSize: 16, fontWeight: 700 }}>sheets</span></div>
+                    <div style={{ fontSize: 12, color: 'var(--t2)', marginTop: 6 }}>
+                      <b>{num(plan.excess)}</b> above basic ({num(basic)}) · {plan.more > 0 ? <><b>{num(plan.more)}</b> more than today ({num(now.LAMINATE || 0)})</> : 'already there today'}
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10, paddingTop: 10, borderTop: '1px dashed rgba(22,163,74,.35)', fontSize: 11.5 }}>
+                      <div><div style={{ color: 'var(--t3)', fontSize: 10 }}>LAMINATE RATE</div><b>{plan.rate ? `${num(Math.round(plan.rate * ppr))} pts / sheet on all ${num(plan.excess)}` : plan.bands.map(b => `${num(Math.round(b.rate * ppr))} pts × ${num(b.sheets)}`).join(' + ')}</b></div>
+                      <div><div style={{ color: 'var(--t3)', fontSize: 10 }}>YOU WOULD GET</div><b style={{ color: 'var(--grn)', fontSize: 15 }}>{num(plan.points)} pts</b><div style={{ fontSize: 11.5, color: 'var(--t2)', fontWeight: 700 }}>= ₹{num(Math.round(plan.points / ppr))}</div></div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--t3)', margin: '12px 0 6px' }}>How it adds up</div>
+                  <div style={{ background: 'var(--bg1)', border: '1px solid var(--b1)', borderRadius: 10, padding: '4px 12px', fontSize: 12.5 }}>
+                    {[['Laminate', plan.lamPts, `+${num(plan.excess)} above basic`], ...plan.products.map(p => [p.label, netPts(p.amount), p.over ? `+${num(p.over)} above target` : '']), ['Display', netPts(plan.display), '']].map(([l, a, sub]) => (
+                      <div key={l} style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '6px 0', borderTop: '1px solid var(--b1)' }}><span style={{ fontWeight: 600 }}>{l}</span>{sub && <span style={{ fontSize: 10.5, color: 'var(--grn)' }}>{sub}</span>}<b style={{ marginLeft: 'auto', color: a > 0 ? 'var(--grn)' : 'var(--t3)', whiteSpace: 'nowrap' }}>₹{num(Math.round(a / ppr))} <span style={{ fontWeight: 600, color: 'var(--t3)' }}>· {num(a)} pts</span></b></div>
+                    ))}
+                    <div style={{ display: 'flex', gap: 8, padding: '8px 0 6px', borderTop: '2px solid var(--b2)', fontWeight: 800 }}><span>Total</span><span style={{ marginLeft: 'auto', color: 'var(--grn)' }}>₹{num(Math.round(plan.points / ppr))} <span style={{ fontWeight: 600, color: 'var(--t3)' }}>· {num(plan.points)} pts</span></span></div>
+                  </div>
+                  <button className="btnp" onClick={() => { setF({ ...g, LAMINATE: plan.L }); setMode('earn'); }} style={{ marginTop: 10, fontSize: 12, width: '100%' }}>Copy this plan to "What will I earn" →</button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {mode === 'earn' && <div className="est-grid est-body" style={{ overflowY: 'auto', minHeight: 0 }}>
           {/* ── left: what I expect to sell ── */}
           <div className="est-left">
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(120px,1.3fr) 100px 1fr', gap: 10, padding: '6px 0 4px', fontSize: 10, fontWeight: 800, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--t3)' }}>
+            <div className="est-row est-hd" style={{ padding: '6px 0 4px', fontSize: 10, fontWeight: 800, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--t3)' }}>
               <span>Product</span><span>Target · now</span><span style={{ textAlign: 'right' }}>I expect to sell</span>
             </div>
             {rows.map(r => <React.Fragment key={r.key}>{renderRow(r)}</React.Fragment>)}
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(120px,1.3fr) 100px 1fr', gap: 10, alignItems: 'center', padding: '9px 0', borderTop: '1px solid var(--b1)' }}>
+            <div className="est-row" style={{ padding: '9px 0', borderTop: '1px solid var(--b1)' }}>
               <div><div style={{ fontWeight: 700, fontSize: 13 }}>Display</div><div style={{ fontSize: 10.5, color: 'var(--t3)' }}>{Math.round((c.displayPct || 0) * 100)}% of value sold</div></div>
               <div style={{ fontSize: 11, color: 'var(--t3)' }}>now <b style={{ color: 'var(--t1)' }}>{num(now.display || 0)}</b></div>
               <input type="text" inputMode="numeric" value={f.display} onChange={ev => set('display', clean(ev.target.value))} onFocus={ev => ev.target.select()} onKeyDown={onKey} placeholder="value sold"
@@ -277,18 +399,47 @@ function EstimateModal({ d, person, onClose }) {
           <div className="est-right">
             <div style={{ padding: '14px 16px', borderRadius: 12, background: 'rgba(22,163,74,.10)', border: '1px solid rgba(22,163,74,.35)' }}>
               <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--t3)' }}>Calculated points</div>
-              <div style={{ fontSize: 40, fontWeight: 850, color: 'var(--grn)', lineHeight: 1.05, letterSpacing: '-.02em', fontVariantNumeric: 'tabular-nums' }}>{num(e.points)}</div>
-              <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 4 }}>{e.deduction > 0 ? `${num(e.grossPoints)} earned − ${Math.round((c.deductionPct || 0) * 100)}% deduction` : 'no deduction'}</div>
+              <div style={{ fontSize: 40, fontWeight: 850, color: 'var(--grn)', lineHeight: 1.05, letterSpacing: '-.02em', fontVariantNumeric: 'tabular-nums' }}>{num(e.points)} <span style={{ fontSize: 18, fontWeight: 700 }}>pts</span></div>
+
               <div style={{ display: 'flex', gap: 10, marginTop: 10, paddingTop: 10, borderTop: '1px dashed rgba(22,163,74,.35)', fontSize: 12 }}>
                 <span style={{ color: 'var(--t3)' }}>At today's sales <b style={{ color: 'var(--t1)' }}>{num(cur.points)}</b></span>
                 <span style={{ marginLeft: 'auto', fontWeight: 800, color: e.points - cur.points >= 0 ? 'var(--grn)' : 'var(--red)' }}>{e.points - cur.points >= 0 ? '+' : ''}{num(e.points - cur.points)}</span>
               </div>
             </div>
 
+            {/* the slab ladder, with the slab this excess sits in lit up */}
+            {basic > 0 && (() => {
+              const tiers = c.starterTiers || []; const rf = c.retroFrom || 1000, blk = c.retroBlock || 1000;
+              const slabs = []; let prev = 0;
+              for (const t of tiers) { slabs.push({ from: prev + 1, to: t.upTo, rate: t.rate, retro: false }); prev = t.upTo; }
+              for (let r = c.retroBase, f = rf; r <= c.retroCap; r += c.retroStep, f += blk) slabs.push({ from: f, to: r >= c.retroCap ? Infinity : f + blk - 1, rate: r, retro: true });
+              const x = e.gateOpen ? e.excess : 0;
+              const cur = x > 0 ? slabs.find(sl => x >= sl.from && x <= sl.to) : null;
+              return (
+                <div style={{ margin: '10px 0 0' }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--t3)', marginBottom: 6 }}>
+                    Laminate slab {cur ? <span style={{ color: 'var(--grn)' }}>· you are here</span> : <span>· none yet</span>}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(118px, 1fr))', gap: 5 }}>
+                    {slabs.map(sl => {
+                      const on = cur === sl;
+                      return (
+                        <div key={sl.from} style={{ padding: '6px 8px', borderRadius: 8, fontSize: 10.5, lineHeight: 1.35,
+                          background: on ? 'var(--grn)' : 'var(--bg1)', color: on ? '#fff' : 'var(--t2)', border: '1px solid ' + (on ? 'var(--grn)' : 'var(--b1)'), fontWeight: on ? 800 : 500 }}>
+                          <div>{num(sl.from)}{sl.to === Infinity ? '+' : '–' + num(sl.to)} above</div>
+                          <div style={{ fontSize: 12, fontWeight: 800 }}>{num(Math.round(sl.rate * ppr))} pts<span style={{ fontWeight: 500, fontSize: 9.5 }}>/sheet{sl.retro ? ' on all' : ''}</span></div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+
             <div style={{ fontSize: 11.5, padding: '9px 11px', borderRadius: 9, margin: '10px 0', lineHeight: 1.5, background: e.gateOpen ? 'rgba(22,163,74,.08)' : 'rgba(220,38,38,.07)', color: e.gateOpen ? 'var(--grn)' : 'var(--red)', border: '1px solid ' + (e.gateOpen ? 'rgba(22,163,74,.3)' : 'rgba(220,38,38,.25)') }}>
               {basic <= 0 ? 'No laminate target is set for you this month, so laminate cannot earn.'
-                : e.gateOpen ? <>Laminate basic crossed by <b>{num(e.excess)}</b> → {e.L.rate ? `${num(Math.round(e.L.rate * ppr))} pts on every sheet above basic` : e.L.bands.map(b => `${num(Math.round(b.rate * ppr))} pts × ${num(b.sheets)}`).join(' + ')} = <b>{num(Math.round(e.L.amount * ppr))} pts</b></>
-                : <><b>{num(basic - lamNow)}</b> more laminate sheets to reach basic ({num(basic)}). Laminate earns nothing until then; other products still earn above their targets.</>}
+                : e.gateOpen ? <>Laminate basic crossed by <b>{num(e.excess)}</b> → {e.L.rate ? `${num(Math.round(e.L.rate * ppr))} pts on every sheet above basic` : e.L.bands.map(b => `${num(Math.round(b.rate * ppr))} pts × ${num(b.sheets)}`).join(' + ')} = <b>{num(netPts(e.L.amount))} pts</b></>
+                : <><b>{num(basic - lamNow)}</b> more laminate sheets to reach basic ({num(basic)}). {c.gateAll ? 'Nothing pays until basic is crossed — then every product earns above its own target.' : 'Laminate earns nothing until then; other products still earn above their targets.'}</>}
             </div>
 
             <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--t3)', marginBottom: 6 }}>Where the points come from</div>
@@ -297,7 +448,7 @@ function EstimateModal({ d, person, onClose }) {
                 <div key={l} style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '6px 0', borderTop: '1px solid var(--b1)' }}>
                   <span style={{ color: 'var(--t1)', fontWeight: 600 }}>{l}</span>
                   {sub && <span style={{ fontSize: 10.5, color: 'var(--grn)' }}>{sub}</span>}
-                  <b style={{ marginLeft: 'auto', fontVariantNumeric: 'tabular-nums', color: a > 0 ? 'var(--grn)' : 'var(--t3)' }}>{num(Math.round(a * ppr))}</b>
+                  <b style={{ marginLeft: 'auto', fontVariantNumeric: 'tabular-nums', color: a > 0 ? 'var(--grn)' : 'var(--t3)' }}>{num(netPts(a))}</b>
                 </div>
               ))}
               <div style={{ display: 'flex', gap: 8, padding: '8px 0 6px', borderTop: '2px solid var(--b2)', fontWeight: 800 }}>
@@ -305,7 +456,7 @@ function EstimateModal({ d, person, onClose }) {
               </div>
             </div>
           </div>
-        </div>
+        </div>}
       </div>
     </div>
   );
@@ -412,7 +563,7 @@ export default function SalesIncentive() {
       </div>
 
       {err && <div className="card" style={{ color: 'var(--red)', fontSize: 12.5 }}>{err}</div>}
-      {busy && !d && <div style={{ fontSize: 12.5, color: 'var(--t3)' }}>Loading…</div>}
+      {busy && !d && <Skeleton kind="dashboard" rows={6} />}
 
       {d && d.month && (
         <>
@@ -574,7 +725,7 @@ export default function SalesIncentive() {
                                     </tr>
                                     {p.products.map(x => (
                                       <tr key={x.key} style={{ borderTop: '1px solid var(--b1)' }}>
-                                        <td style={{ padding: '6px 0' }}>{x.label} <span style={{ fontSize: 10, color: 'var(--t3)' }}>· {x.category}{x.targetSource === 'derived' ? ' · derived target' : ''}</span></td>
+                                        <td style={{ padding: '6px 0' }}>{x.label} <span style={{ fontSize: 10, color: 'var(--t3)' }}>· {x.category}{x.targetSource === 'derived' ? ' · derived target' : x.targetSource === 'rule' ? ' · fixed by rule' : ''}</span></td>
                                         <td style={{ padding: '6px 8px', textAlign: 'right' }}>{x.target ? num(x.target) : <span style={{ color: 'var(--t3)' }}>none</span>}</td>
                                         <td style={{ padding: '6px 8px', textAlign: 'right' }}>{num(x.actual)}</td>
                                         <td style={{ padding: '6px 8px', textAlign: 'right', color: x.excess > 0 ? 'var(--grn)' : undefined, fontWeight: x.excess > 0 ? 700 : 400 }}>{num(x.excess)}</td>
@@ -622,7 +773,7 @@ export default function SalesIncentive() {
       )}
 
       {editing && <AdjustModal person={editing} month={d?.month} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); reload(); }} />}
-      {calc && d && <EstimateModal d={d} person={people[0] || everyone[0]} onClose={() => setCalc(false)} />}
+      {calc && d && <EstimateModal key={(people[0] || everyone[0])?.salesmanId + ':' + d.month} d={d} person={people[0] || everyone[0]} onClose={() => setCalc(false)} />}
     </div>
   );
 }

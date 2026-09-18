@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import Counter from '../../models/Counter.js';
 import { ColPayment, ColPaymentAllocation, ColAttachment, ColBalance, ColCycle, ColInvoice, ColPromise, ColEvent, PAYMENT_MODES } from '../models/index.js';
+import { cloudinaryReady, uploadBuffer } from '../lib/storage.js';
 import { withTxn, refreshBalance, oldestPeriodOf } from '../engines/reconcile.js';
 import { sortPeriods, daysSincePeriodStart, todayYmd } from '../lib/periods.js';
 import { writeAudit } from '../lib/audit.js';
@@ -30,7 +31,15 @@ export async function recordPayment(input, { by }) {
   if (input.proof?.data) {
     const buf = Buffer.from(String(input.proof.data).replace(/^data:[^;]+;base64,/, ''), 'base64');
     if (buf.length > 5 * 1024 * 1024) throw bad('proof is larger than 5 MB');
-    const att = await ColAttachment.create({ kind: 'payment_proof', mime: String(input.proof.mime || 'image/jpeg'), size: buf.length, data: buf, dealerId, uploadedBy: by });
+    const mime = String(input.proof.mime || 'image/jpeg');
+    let att;
+    if (cloudinaryReady()) {
+      // bytes go to Cloudinary; Mongo keeps the pointer only
+      const up = await uploadBuffer(buf, { mime });
+      att = await ColAttachment.create({ kind: 'payment_proof', mime, size: buf.length, url: up.url, publicId: up.publicId, resourceType: up.resourceType, provider: 'cloudinary', dealerId, uploadedBy: by });
+    } else {
+      att = await ColAttachment.create({ kind: 'payment_proof', mime, size: buf.length, data: buf, provider: 'mongo', dealerId, uploadedBy: by });
+    }
     proofId = att._id;
   }
 

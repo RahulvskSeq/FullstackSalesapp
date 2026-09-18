@@ -49,7 +49,13 @@ router.get('/attachments/:id', async (req, res) => {
     const a = await ColAttachment.findById(req.params.id).select('+data').lean();
     if (!a) return res.status(404).end();
     if (a.dealerId && !ensureInScope(req, res, a.dealerId)) return;
-    res.setHeader('Content-Type', a.mime || 'application/octet-stream'); res.send(a.data);
+    // stored on Cloudinary → hand the browser the file's own URL
+    if (a.url) return res.redirect(302, a.url);
+    if (!a.data) return res.status(404).json({ error: 'file has no content' });
+    // lean() hands back a driver Binary, not a Buffer — sending that raw
+    // serialised it as base64 JSON and the image never rendered
+    const buf = Buffer.isBuffer(a.data) ? a.data : Buffer.from(a.data.buffer || a.data);
+    res.setHeader('Content-Type', a.mime || 'application/octet-stream'); res.setHeader('Content-Length', buf.length); res.end(buf);
   } catch (e) { fail(res, e); }
 });
 router.get('/:id', async (req, res) => {

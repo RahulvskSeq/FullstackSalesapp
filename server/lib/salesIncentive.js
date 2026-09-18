@@ -44,18 +44,18 @@ export const DEFAULT_SALES_CONFIG = {
     { key: 'liner',      label: 'Liner',      category: 'LINER',         targetPct: 1.00, rate: 3 },
   ],
 
-  // The basic target gates LAMINATE only, as the published table reads:
-  // "Laminate incentive starts only after crossing your basic target", and
-  // the other products pay "above target only" on their own targets. Set
-  // gateAll to make a missed laminate basic zero the whole month instead.
-  gateAll:         false,
+  // Laminate basic is the gate for the whole month: miss it and nothing
+  // pays — not laminate, not the other products, not display. Cross it and
+  // the other products start earning on units above their own targets.
+  // Set gateAll false to let other products earn regardless of laminate.
+  gateAll:         true,
 
   displayPct:      0.03,   // 3% of display value sold
   // The published table has no adjustments: a project sale counts in full,
   // nothing is clawed back and nothing is deducted. Each can be switched on
   // under Rule & setup if the company decides otherwise.
-  projectCredit:   1.00,
-  badDebtClawback: 0,
+  projectCredit:   0.50,   // a project sale (Rs 50+ below regular price) counts half toward target
+  badDebtClawback: 0.25,   // 25% of each earning month's incentive until the bad debt is recovered
   // The same 30% deduction the billing scheme applies, taken before payment.
   deductionPct:    0.30,
 
@@ -99,11 +99,10 @@ export function laminateExcessPay(excess, config = DEFAULT_SALES_CONFIG) {
     return { excess: x, rate: null, amount: r2(amount), mode: 'starter', bands };
   }
 
-  // Slabs as the table reads them: 1,000–2,000 pays the base rate, and the
-  // rate steps up when the NEXT block is entered — 2,001 pays base + step,
-  // 3,001 base + 2 steps — so an exact 2,000 still sits in the first slab.
-  // (1,000 itself is retroactive, as the scheme's own worked example shows.)
-  const steps = Math.max(0, Math.floor((x - 1) / c.retroBlock) - 1);
+  // Slabs as the one-page scheme reads them: 1,000–1,999 above pays the base
+  // rate on every sheet, 2,000–2,999 base + step, 3,000–3,999 base + 2 steps,
+  // 4,000 and above the cap — the rate steps up on reaching each block.
+  const steps = Math.max(0, Math.floor(x / c.retroBlock) - 1);
   const rate = Math.min(c.retroCap, c.retroBase + c.retroStep * steps);
   return { excess: x, rate, amount: r2(x * rate), mode: 'retroactive', bands: [{ sheets: x, rate }] };
 }
@@ -147,17 +146,20 @@ export function salesIncentiveFor(basic, qty = {}, opts = {}, config = DEFAULT_S
   const othersOpen = c.gateAll ? gateOpen : true;
   const own = opts.categoryTargets || {};
   const products = c.products.map(p => {
-    // the salesman's own target for that category (Sales by Category →
-    // Salesman-wise) wins; the derived share of basic is only a fallback
+    // Target precedence, per the scheme: the salesman's OWN target for the
+    // category (Sales by Category → Salesman-wise — "fixed roll count, set per
+    // rep") wins; the rule's fixed count or % share of the laminate basic is
+    // the fallback when none is set for them.
+    const fixed = (p.fixedTarget !== undefined && p.fixedTarget !== null && p.fixedTarget !== '') ? Math.round(Number(p.fixedTarget) || 0) : 0;
     const ownT = Math.round(Number(own[p.category]) || 0);
-    const target = ownT > 0 ? ownT : targetFor(p, b);
+    const target = ownT > 0 ? ownT : fixed > 0 ? fixed : targetFor(p, b);
     const actual = Math.max(0, Math.round(Number(qty[p.category]) || 0));
     // no target at all (none set, and no basic to derive one from) → nothing
     // to be above, so nothing earns; a zero target must not pay on every unit
     const over = target > 0 ? Math.max(0, actual - target) : 0;
     return {
       key: p.key, label: p.label, category: p.category,
-      target, targetSource: ownT > 0 ? 'own' : (target > 0 ? 'derived' : 'none'), actual, excess: over,
+      target, targetSource: ownT > 0 ? 'own' : fixed > 0 ? 'rule' : (target > 0 ? 'derived' : 'none'), actual, excess: over,
       rate: p.rate,
       amount: othersOpen && target > 0 ? r2(over * p.rate) : 0,
     };

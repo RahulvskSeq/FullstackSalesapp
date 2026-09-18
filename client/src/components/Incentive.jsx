@@ -5,6 +5,7 @@ import { IndianRupee, Trophy, Settings, TrendingUp, AlertTriangle, RefreshCw,
 import { PieChart, Pie, Cell, ComposedChart, Area, Line, XAxis, YAxis,
          CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { api } from '../api';
+import Skeleton from './Skeleton';
 
 /**
  * Incentive — what each billing person earned, in rupees and in points.
@@ -288,7 +289,7 @@ function Dashboard({ month, setMonth, currentUser }) {
       </div>
 
       {err && <div className="card" style={{ color: 'var(--red)', fontSize: 12.5 }}>{err}</div>}
-      {busy && !d && <div style={{ fontSize: 12.5, color: 'var(--t3)' }}>Loading…</div>}
+      {busy && !d && <Skeleton kind="dashboard" rows={5} />}
 
       {d && d.month && d.mine && <MyBilling d={d} />}
 
@@ -690,7 +691,7 @@ function ThisMonth({ month, setMonth }) {
       </div>
 
       {err && <div className="card" style={{ color: 'var(--red)', fontSize: 12.5 }}>{err}</div>}
-      {busy && !data && <div style={{ fontSize: 12.5, color: 'var(--t3)' }}>Loading…</div>}
+      {busy && !data && <Skeleton kind="table" rows={7} />}
 
       {data && (
         <>
@@ -830,7 +831,7 @@ function History({ month, setMonth }) {
       </div>
 
       {err && <div className="card" style={{ color: 'var(--red)', fontSize: 12.5 }}>{err}</div>}
-      {busy && !data && <div style={{ fontSize: 12.5, color: 'var(--t3)' }}>Loading…</div>}
+      {busy && !data && <Skeleton kind="table" rows={7} />}
 
       {data && (
         <div className="card">
@@ -959,7 +960,7 @@ function Rule() {
     setBusy(false);
   };
 
-  if (!cfg) return <div style={{ fontSize: 12.5, color: 'var(--t3)' }}>{err || 'Loading…'}</div>;
+  if (!cfg) return err ? <div style={{ fontSize: 12.5, color: 'var(--red)' }}>{err}</div> : <Skeleton kind="form" />;
 
   const dirty = !!saved && JSON.stringify(cfg) !== JSON.stringify(saved);
   const changeSummary = (() => {
