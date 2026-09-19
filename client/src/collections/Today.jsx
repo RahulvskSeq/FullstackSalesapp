@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ClipboardList, Check, X, CalendarCheck, NotebookPen, Banknote } from 'lucide-react';
 import { col } from './api';
-import { useLoad, PageHead, Card, Table, Badge, Busy, ErrorBox, money, num, fmtDate, DealerLink, useDealerCtx, userName, title, WhatsAppIcon, StatusBadge, CallButton, CardRow, KV, monthCols, MonthKVs, FollowupDate, PendingChip, Modal } from './ui';
+import { useLoad, PageHead, Card, Table, Badge, Busy, ErrorBox, money, num, fmtDate, periodLabel, DealerLink, useDealerCtx, userName, title, WhatsAppIcon, StatusBadge, CallButton, CardRow, KV, monthCols, MonthKVs, FollowupDate, PendingChip, Modal } from './ui';
 import { FollowupForm, PaymentForm, TaskForm, WhatsAppForm } from './forms';
 import ApprovalsModal from './Approvals';
 
@@ -12,6 +12,12 @@ import ApprovalsModal from './Approvals';
 export default function Today() {
   const { users, isStaff, currentUser, openRecord, open: openDealer, openRow, openPending } = useDealerCtx();
   // amber (money told, not yet in a statement) opens the Pending list; a plain promise opens its record
+  /** What came in: the last payment and the 30-day total, from the statements. Works for balance rows and task/promise rows (bal* fields). */
+  const Came = ({ r }) => {
+    const amt = r.lastPaymentAmount ?? r.balLastPaymentAmount, at = r.lastPaymentAt ?? r.balLastPaymentAt, c30 = r.came30 || 0;
+    if (!amt && !c30) return <span style={{ color: 'var(--t3)' }}>—</span>;
+    return <span data-tip={c30 ? `${money(c30)} came in the last 30 days (${r.came30Count} payment${r.came30Count === 1 ? '' : 's'}) — click the dealer for the list` : 'last payment seen in a statement'} style={{ color: 'var(--grn)', fontWeight: 700, whiteSpace: 'nowrap' }}>{amt ? `${money(amt)} · ${fmtDate(at)}` : ''}{c30 && c30 !== amt ? <span style={{ fontWeight: 500, color: 'var(--t2)' }}>{amt ? ' · ' : ''}{money(c30)} in 30d</span> : null}</span>;
+  };
   const openProm = r => (r?.pendingRecorded > 0 || r?.pendingApproval > 0) ? openPending(String(r.dealerId)) : openRecord('promise', r, reload);
   const [emp, setEmp] = useState('');
   const { data, busy, err, reload } = useLoad(() => col.today(emp ? { employeeId: emp } : {}), [emp]);
@@ -52,7 +58,8 @@ export default function Today() {
   const balCard = r => <>
     <CardRow><DealerLink id={r.dealerId} name={r.dealerName} code={r.dealerCode} /><StatusBadge status={r.status} priority={r.priority} /></CardRow>
     <MonthKVs row={r} rows={allRows} />
-    <div style={{ fontSize: 11.5, color: 'var(--t2)' }}>{r.ageDays != null ? `${r.ageDays} days · ` : ''}<FollowupDate value={r.nextFollowupAt} prefix="follow-up " onOpen={() => setForm({ kind: 'followup', dealer: dealerOf(r), focusDate: true })} /></div>
+    <div style={{ fontSize: 11.5, color: 'var(--t2)' }}>{r.ageDays != null ? `${r.ageDays} days${r.oldestPeriod ? ' · oldest ' + periodLabel(r.oldestPeriod) : ''} · ` : ''}<FollowupDate value={r.nextFollowupAt} prefix="follow-up " onOpen={() => setForm({ kind: 'followup', dealer: dealerOf(r), focusDate: true })} /></div>
+    {(r.lastPaymentAmount || r.came30) ? <div style={{ fontSize: 11.5 }}><Came r={r} /></div> : null}
     {r.promise?.amount ? <div style={{ fontSize: 11.5, color: 'var(--t2)' }}>Promise {money(r.promise.amount)} by {fmtDate(r.promise.date)}</div> : null}
     {actBtns(r)}
   </>;
@@ -63,7 +70,7 @@ export default function Today() {
     {isStaff && <div style={{ fontSize: 11.5, color: 'var(--t2)' }}>{userName(users, r.employeeId)}</div>}
     {actBtns(r)}
   </>;
-  const allRows = [...d.tasksToday, ...d.tasksOverdue, ...d.followupsDue, ...d.followupsOverdue, ...d.promisesToday, ...d.promisesBroken, ...d.highPriority];
+  const allRows = [...d.tasksToday, ...d.tasksOverdue, ...d.followupsDue, ...d.followupsOverdue, ...d.promisesToday, ...d.promisesBroken, ...(d.overdue || []), ...d.highPriority];
   const months = monthCols(allRows);
   const taskCols = [
     { k: 'taskNo', h: '#', r: r => <span className="chip">{r.taskNo}</span> },
@@ -81,8 +88,9 @@ export default function Today() {
   const balCols = [
     { k: 'dealer', h: 'Dealer', r: r => <DealerLink id={r.dealerId} name={r.dealerName} code={r.dealerCode} /> },
     ...months, { k: 'total', h: 'Outstanding', align: 'right', r: r => <b>{money(r.total)}</b> },
-    { k: 'ageDays', h: 'Age', align: 'right', r: r => r.ageDays == null ? '—' : r.ageDays + 'd' },
+    { k: 'ageDays', h: 'Age', align: 'right', r: r => r.ageDays == null ? '—' : <span data-tip={r.oldestPeriod ? `oldest unpaid month ${periodLabel(r.oldestPeriod)}${r.creditDays ? ` · credit ${r.creditDays} days` : ''}` : undefined} style={{ color: r.status === 'OVERDUE' ? 'var(--red)' : undefined }}>{r.ageDays + 'd'}</span> },
     { k: 'status', h: 'Status', r: r => <StatusBadge status={r.status} priority={r.priority} /> },
+    { k: 'came', h: 'Came', align: 'right', r: r => <Came r={r} /> },
     { k: 'nextFollowupAt', h: 'Follow-up', r: r => <FollowupDate value={r.nextFollowupAt} onOpen={() => setForm({ kind: 'followup', dealer: dealerOf(r), focusDate: true })} /> },
     { k: 'promise', h: 'Promise', r: r => r.promise?.amount ? `${money(r.promise.amount)} by ${fmtDate(r.promise.date)}` : '—' },
     { k: 'act', h: '', r: actions },
@@ -105,7 +113,7 @@ export default function Today() {
   // over a section of 5.
   const seen = new Set();
   const once = rows => rows.filter(r => { const k = String(r.dealerId); if (seen.has(k) || (r.balanceTotal ?? r.total ?? 1) <= 0) return false; seen.add(k); return true; });
-  const promisesToday = once(d.promisesToday), followupsDue = once(d.followupsDue), promisesBroken = once(d.promisesBroken), followupsOverdue = once(d.followupsOverdue), highPriority = once(d.highPriority);
+  const promisesToday = once(d.promisesToday), followupsDue = once(d.followupsDue), promisesBroken = once(d.promisesBroken), followupsOverdue = once(d.followupsOverdue), overdue = once(d.overdue || []), highPriority = once(d.highPriority);
   const promisesTodayDue = promisesToday.reduce((s, p) => s + (p.amount - (p.received || 0)), 0);
   // each section wears its own colour so the eye finds it without reading
   const Section = ({ t, n, children, tone = 'var(--t3)', bg = 'transparent' }) => (
@@ -134,6 +142,7 @@ export default function Today() {
       <Section t="Overdue follow-ups" n={followupsOverdue.length} tone="var(--red)" bg="rgba(220,38,38,.04)"><Table dense cols={balCols} rows={followupsOverdue} keyOf={r => r.dealerId} empty="Nothing overdue." card={balCard} onRow={r => openRow(r)} /></Section>
       <Section t="Promises due today" n={promisesToday.length} tone="#b45309" bg="rgba(245,158,11,.05)"><Table dense cols={promCols} rows={promisesToday} empty="No promises fall due today." card={promCard} onRow={openProm} /></Section>
       <Section t="Broken promises" n={promisesBroken.length} tone="var(--red)" bg="rgba(220,38,38,.04)"><Table dense cols={promCols} rows={promisesBroken} empty="No broken promises." card={promCard} onRow={openProm} /></Section>
+      <Section t="Overdue payments" n={overdue.length} tone="var(--red)" bg="rgba(220,38,38,.04)" sub="oldest unpaid month is past the dealer's credit days"><Table dense cols={balCols} rows={overdue} keyOf={r => r.dealerId} empty="Nobody is past their credit days." card={balCard} onRow={r => openRow(r)} /></Section>
       <Section t="High-priority dealers" n={highPriority.length} tone="var(--t3)"><Table dense cols={balCols} rows={highPriority} keyOf={r => r.dealerId} empty="Nobody else is flagged high priority." card={balCard} onRow={r => openRow(r)} /></Section>
       {pending && <ApprovalsModal onClose={() => setPending(false)} onChanged={reload} />}
       {tileModal === 'followups' && <Modal title={<span>Follow-ups <span className="chip">{num(d.followupsDue.length)} today · {num(d.followupsOverdue.length)} overdue</span></span>} onClose={() => { setTileModal(null); setMq(''); }} width={960}>

@@ -20,6 +20,8 @@ const S = new mongoose.Schema({
   lastSnapshotAsOn: { type: String, default: '' },
   lastChangeAt:   { type: Date, default: null },
   lastPaymentAt:  { type: Date, default: null },
+  lastPaymentAmount: { type: Number, default: 0 },
+  creditDays:     { type: Number, default: 0 },       // from the Dealer master; overdue after this many days
   lastFollowupAt: { type: Date, default: null },
   nextFollowupAt: { type: String, default: '' },      // YYYY-MM-DD
   promise:        { id: { type: mongoose.Schema.Types.ObjectId, ref: 'ColPromise' }, amount: Number, date: String },

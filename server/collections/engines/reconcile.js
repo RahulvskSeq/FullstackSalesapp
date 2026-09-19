@@ -34,7 +34,13 @@ export function computeTotal(buckets, mode) {
   return entries.reduce((s, [, v]) => s + Math.max(0, Number(v) || 0), 0);
 }
 
-/** Oldest bucket still carrying money, for ageing (buckets mode). */
+/**
+ * Oldest period still carrying money, for ageing. Works for both statement
+ * shapes: in buckets mode it is the oldest bucket with money; in snapshot
+ * mode (running columns — Jul, Aug, Sep each the total still pending from
+ * bills up to that month end) it is the first column that is not nil,
+ * which is exactly the oldest month with an unpaid bill.
+ */
 export function oldestPeriodOf(buckets) {
   const live = Object.entries(buckets || {}).filter(([, v]) => (Number(v) || 0) > 0).map(([p]) => p);
   return live.length ? sortPeriods(live)[0] : '';
@@ -49,6 +55,9 @@ export function derivePriority({ total, ageDays, brokenPromises }, thresholds) {
   return order[i];
 }
 
+/** Days after which a dealer's oldest unpaid month counts as overdue. */
+export function overdueAfter(b, cfg) { const cd = Number(b?.creditDays) || 0; return cd > 0 ? cd : (cfg?.overdueDays || Infinity); }
+
 export function deriveStatus(b, cycle, cfg, today = todayYmd()) {
   // Nothing due: CLEARED if a cycle was ever paid down to zero, NIL if the
   // dealer has simply never owed anything in the app's memory.
@@ -57,7 +66,9 @@ export function deriveStatus(b, cycle, cfg, today = todayYmd()) {
   if ((b.brokenPromises || 0) > 0) return 'FOLLOW_UP_REQUIRED';
   if (b.lastPaymentAt && cycle && b.lastPaymentAt >= cycle.openedAt) return 'PARTIAL_PAYMENT';
   if ((b.total || 0) >= (cfg.highValue || Infinity)) return 'HIGH_PRIORITY';
-  if (b.ageDays !== null && b.ageDays !== undefined && b.ageDays > (cfg.overdueDays || Infinity)) return 'OVERDUE';
+  // Overdue once the oldest unpaid month is older than the dealer's own
+  // credit days (Dealer master) — or the module's default when none is set.
+  if (b.ageDays !== null && b.ageDays !== undefined && b.ageDays > overdueAfter(b, cfg)) return 'OVERDUE';
   // Nothing specific has happened yet: it is simply due, and the priority
   // (critical / high / medium / low, from amount and age) says how urgently.
   return 'DUE';
@@ -187,11 +198,12 @@ export function planRow(imp, row, dealer, ctx, { by = '' } = {}) {
     if (observed !== explained) ev('RECONCILIATION_DIFFERENCE', { cycleId, amount: observed - explained, meta: { observed, explained, from: prev.asOn, to: imp.asOn, appliedAt: new Date() } });
   }
 
-  const oldest = imp.balanceMode === 'buckets' ? oldestPeriodOf(buckets) : '';
+  const oldest = oldestPeriodOf(buckets);
   const next = {
     ...balance,
     dealerName: dealer?.name || balance?.dealerName || '', dealerCode: dealer?.code || row.code || balance?.dealerCode || '', salesmanId: dealer?.salesman || balance?.salesmanId || '',
     total, buckets, balanceMode: imp.balanceMode, oldestPeriod: oldest, ageDays: oldest ? daysSincePeriodStart(oldest, imp.asOn) : null,
+    creditDays: Number(dealer?.creditDays) || 0,
     lastImportId: imp._id, lastSnapshotAsOn: imp.asOn, lastChangeAt: classification !== 'UNCHANGED' ? at : (balance?.lastChangeAt || null),
     openCycleId: cycleForStatus && cycleForStatus.status === 'OPEN' ? cycleId : null,
   };
@@ -270,7 +282,7 @@ export async function applyImport(importId, { by = '', progress = async () => {}
   try {
     const rows = await ColImportRow.find({ importId: imp._id, status: 'OK', matchedDealerId: { $ne: null } }).sort({ rowNo: 1 }).lean();
     const Dealer = mongoose.models.Dealer;
-    const dealers = new Map((await Dealer.find({ _id: { $in: rows.map(r => r.matchedDealerId) } }, 'name code aliases salesman').lean()).map(d => [String(d._id), d]));
+    const dealers = new Map((await Dealer.find({ _id: { $in: rows.map(r => r.matchedDealerId) } }, 'name code aliases salesman creditDays').lean()).map(d => [String(d._id), d]));
 
     let conflicts = 0;
     for (const r of rows) {
@@ -325,6 +337,12 @@ export async function refreshBalance(dealerId, { session = null } = {}) {
   if (!balance) return null;
   const cycle = balance.openCycleId ? await ColCycle.findById(balance.openCycleId).session(session) : await ColCycle.findOne({ dealerId }).sort({ cycleNo: -1 }).session(session);
   const cfg = { overdueDays: await getSetting('collections.overdueDays'), highValue: await getSetting('collections.highValue'), thresholds: await getSetting('collections.priorityThresholds') };
+  // Age moves every day, not only on import day; and the dealer's credit
+  // terms may have been edited since the last statement.
+  const oldest = oldestPeriodOf(balance.buckets instanceof Map ? Object.fromEntries(balance.buckets) : (balance.buckets || {}));
+  balance.oldestPeriod = oldest; balance.ageDays = oldest ? daysSincePeriodStart(oldest, todayYmd()) : null;
+  const dealer = await mongoose.models.Dealer?.findById(balance.dealerId, 'creditDays').session(session).lean();
+  if (dealer) balance.creditDays = Number(dealer.creditDays) || 0;
   balance.priority = derivePriority({ total: balance.total, ageDays: balance.ageDays, brokenPromises: balance.brokenPromises }, cfg.thresholds);
   balance.status = deriveStatus(balance, cycle, cfg);
   await balance.save({ session });

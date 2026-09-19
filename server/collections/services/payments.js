@@ -118,8 +118,8 @@ export async function confirmPayment(paymentId, { by }) {
       for (const period of sortPeriods(Object.keys(buckets))) { if (left <= 0) break; left = reduceBucket(period, left); }
       balance.buckets = buckets;
       balance.total = Math.max(0, (balance.total || 0) - p.amount);
-      balance.lastPaymentAt = new Date(p.date + 'T00:00:00');
-      const oldest = balance.balanceMode === 'buckets' ? oldestPeriodOf(buckets) : balance.oldestPeriod;
+      balance.lastPaymentAt = new Date(p.date + 'T00:00:00'); balance.lastPaymentAmount = p.amount;
+      const oldest = oldestPeriodOf(buckets);
       balance.oldestPeriod = oldest; balance.ageDays = oldest ? daysSincePeriodStart(oldest, todayYmd()) : balance.ageDays;
       balance.version = (balance.version || 0) + 1;
     }
@@ -174,7 +174,7 @@ export async function bouncePayment(paymentId, { by, reason }) {
       const buckets = asObj(balance.buckets);
       for (const [period, amt] of Object.entries(rev.buckets || {})) buckets[period] = (buckets[period] || 0) + amt;
       balance.buckets = buckets; balance.total = (balance.total || 0) + p.amount;
-      const oldest = balance.balanceMode === 'buckets' ? oldestPeriodOf(buckets) : balance.oldestPeriod;
+      const oldest = oldestPeriodOf(buckets);
       balance.oldestPeriod = oldest; balance.ageDays = oldest ? daysSincePeriodStart(oldest, todayYmd()) : balance.ageDays;
     }
     for (const iv of rev.invoices || []) { const inv = await ColInvoice.findById(iv.invoiceId).session(session); if (inv) { inv.pending += iv.amount; inv.status = 'OPEN'; inv.settledAt = null; await inv.save({ session }); } }
@@ -193,7 +193,7 @@ export async function bouncePayment(paymentId, { by, reason }) {
       balance.promise = next ? { id: next._id, amount: next.amount - next.received, date: next.promiseDate } : undefined;
       balance.brokenPromises = await ColPromise.countDocuments({ dealerId: p.dealerId, status: 'BROKEN' }).session(session);
       const lastPaid = await ColPayment.findOne({ dealerId: p.dealerId, status: 'CONFIRMED', _id: { $ne: p._id } }, 'date').sort({ date: -1 }).session(session).lean();
-      balance.lastPaymentAt = lastPaid ? new Date(lastPaid.date + 'T00:00:00') : null;
+      balance.lastPaymentAt = lastPaid ? new Date(lastPaid.date + 'T00:00:00') : null; balance.lastPaymentAmount = lastPaid ? lastPaid.amount : 0;
       balance.version = (balance.version || 0) + 1; await balance.save({ session });
     }
     p.status = 'BOUNCED'; p.cancelReason = String(reason || '').slice(0, 500); p.cancelledBy = by; await p.save({ session });
@@ -259,12 +259,17 @@ export async function listPendingApprovals(scopeF, { page = 1, limit = 50 } = {}
 /** Unapproved decrease per dealer — what a row shows as "₹X came · pending approval". */
 export async function pendingByDealer(dealerIds) {
   const ids = dealerIds.map(oid);
-  const [dec, rec] = await Promise.all([
+  const since30 = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+  const [dec, rec, came] = await Promise.all([
     ColEvent.aggregate([{ $match: { ...PENDING, dealerId: { $in: ids } } }, { $group: { _id: '$dealerId', sum: { $sum: '$amount' }, n: { $sum: 1 } } }]),
-    ColPayment.aggregate([{ $match: { status: 'RECORDED', dealerId: { $in: ids } } }, { $group: { _id: '$dealerId', sum: { $sum: '$amount' }, n: { $sum: 1 } } }])]);
+    ColPayment.aggregate([{ $match: { status: 'RECORDED', dealerId: { $in: ids } } }, { $group: { _id: '$dealerId', sum: { $sum: '$amount' }, n: { $sum: 1 } } }]),
+    // what actually came in the last 30 days — so a row can say "₹X came" without opening the dealer
+    ColPayment.aggregate([{ $match: { status: 'CONFIRMED', dealerId: { $in: ids }, date: { $gte: since30 } } }, { $group: { _id: '$dealerId', sum: { $sum: '$amount' }, n: { $sum: 1 } } }])]);
   const m = new Map();
-  for (const a of dec) m.set(String(a._id), { amount: a.sum, count: a.n, recorded: 0, recordedCount: 0 });
-  for (const a of rec) { const k = String(a._id); const cur = m.get(k) || { amount: 0, count: 0, recorded: 0, recordedCount: 0 }; cur.recorded = a.sum; cur.recordedCount = a.n; m.set(k, cur); }
+  const blank = () => ({ amount: 0, count: 0, recorded: 0, recordedCount: 0, came30: 0, came30Count: 0 });
+  for (const a of dec) { const cur = m.get(String(a._id)) || blank(); cur.amount = a.sum; cur.count = a.n; m.set(String(a._id), cur); }
+  for (const a of rec) { const cur = m.get(String(a._id)) || blank(); cur.recorded = a.sum; cur.recordedCount = a.n; m.set(String(a._id), cur); }
+  for (const a of came) { const cur = m.get(String(a._id)) || blank(); cur.came30 = a.sum; cur.came30Count = a.n; m.set(String(a._id), cur); }
   return m;
 }
 
@@ -303,7 +308,7 @@ export async function approveDecrease(eventId, { by }) {
       const next = await ColPromise.findOne({ dealerId: e.dealerId, status: { $in: ['PENDING', 'PARTIALLY_FULFILLED'] } }).sort({ promiseDate: 1 }).session(session).lean();
       balance.promise = next ? { id: next._id, amount: next.amount - next.received, date: next.promiseDate } : undefined;
       balance.brokenPromises = await ColPromise.countDocuments({ dealerId: e.dealerId, status: 'BROKEN' }).session(session);
-      balance.lastPaymentAt = new Date(date + 'T00:00:00');
+      balance.lastPaymentAt = new Date(date + 'T00:00:00'); balance.lastPaymentAmount = e.amount;
       await balance.save({ session });
     }
     e.set('meta', { ...(e.meta || {}), approved: true, approvedBy: by, approvedAt: new Date(), paymentId: p._id }); e.markModified('meta'); await e.save({ session });
@@ -417,8 +422,8 @@ export async function autoConfirmFromStatements(dealerId, { by = 'statement' } =
       const next = await ColPromise.findOne({ dealerId: oid(dealerId), status: { $in: ['PENDING', 'PARTIALLY_FULFILLED'] } }).sort({ promiseDate: 1 }).session(session).lean();
       balance.promise = next ? { id: next._id, amount: next.amount - next.received, date: next.promiseDate } : undefined;
       balance.brokenPromises = await ColPromise.countDocuments({ dealerId: oid(dealerId), status: 'BROKEN' }).session(session);
-      const lastPaid = await ColPayment.findOne({ dealerId: oid(dealerId), status: 'CONFIRMED' }, 'date').sort({ date: -1 }).session(session).lean();
-      if (lastPaid) balance.lastPaymentAt = new Date(lastPaid.date + 'T00:00:00');
+      const lastPaid = await ColPayment.findOne({ dealerId: oid(dealerId), status: 'CONFIRMED' }, 'date amount').sort({ date: -1, createdAt: -1 }).session(session).lean();
+      if (lastPaid) { balance.lastPaymentAt = new Date(lastPaid.date + 'T00:00:00'); balance.lastPaymentAmount = lastPaid.amount; }
       await balance.save({ session });
     }
   });

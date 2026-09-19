@@ -147,23 +147,29 @@ export async function lateFacts(month, facts, config, today = new Date()) {
   const snaps = await ColSnapshot.aggregate([
     { $match: { dealerId: { $in: ids }, asOn: { $lte: sched.evalDate }, superseded: { $ne: true } } },
     { $sort: { asOn: -1, createdAt: -1 } },
-    { $group: { _id: '$dealerId', asOn: { $first: '$asOn' }, buckets: { $first: '$buckets' }, total: { $first: '$total' } } },
+    { $group: { _id: '$dealerId', asOn: { $first: '$asOn' }, buckets: { $first: '$buckets' }, total: { $first: '$total' }, balanceMode: { $first: '$balanceMode' } } },
   ]);
+  // Statement columns come in two shapes. Buckets: each month holds only its
+  // own unpaid bills. Snapshot (the Tally export): each column is the total
+  // still pending from bills up to that month end, so the month's own
+  // unpaid bills are that column minus the one before it.
+  const monthPending = (buckets, mode) => {
+    const b = buckets || {};
+    const get = k => Number(b[k] ?? (b.get ? b.get(k) : 0)) || 0;
+    const cur = get(month);
+    if (mode !== 'snapshot') return cur;
+    const keys = Object.keys(b instanceof Map ? Object.fromEntries(b) : b).filter(k => /^\d{4}-\d{2}$/.test(k) && k < month).sort();
+    const prev = keys.length ? get(keys[keys.length - 1]) : 0;
+    return Math.max(0, cur - prev);
+  };
   const pendingOf = new Map();                   // dealerId → { pending, asOn }
-  for (const s of snaps) {
-    const b = s.buckets || {};
-    const pending = Number(b[month] ?? (b.get ? b.get(month) : 0)) || 0;
-    pendingOf.set(String(s._id), { pending, asOn: s.asOn });
-  }
+  for (const s of snaps) pendingOf.set(String(s._id), { pending: monthPending(s.buckets, s.balanceMode), asOn: s.asOn });
   // dealers with no snapshot at all: fall back to the live balance when the
   // evaluation day is today (nothing dated exists to look back at)
   const missing = ids.filter(i => !pendingOf.has(String(i)));
   if (missing.length && !sched.final) {
-    const bals = await ColBalance.find({ dealerId: { $in: missing } }, 'dealerId buckets lastSnapshotAsOn').lean();
-    for (const b of bals) {
-      const bk = b.buckets || {};
-      pendingOf.set(String(b.dealerId), { pending: Number(bk[month]) || 0, asOn: b.lastSnapshotAsOn || '' });
-    }
+    const bals = await ColBalance.find({ dealerId: { $in: missing } }, 'dealerId buckets balanceMode lastSnapshotAsOn').lean();
+    for (const b of bals) pendingOf.set(String(b.dealerId), { pending: monthPending(b.buckets, b.balanceMode), asOn: b.lastSnapshotAsOn || '' });
   }
 
   for (const [sm, f] of Object.entries(facts.per)) {
