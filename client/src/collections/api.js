@@ -49,6 +49,7 @@ export const col = {
   confirmPayment: (id)        => post(`/payments/${id}/confirm`),
   bouncePayment:  (id, reason)=> post(`/payments/${id}/bounce`, { reason }),
   cancelPayment:  (id, reason)=> post(`/payments/${id}/cancel`, { reason }),
+  paymentCountedOn: (id, ofPaymentId, reason) => post(`/payments/${id}/counted-on`, { ofPaymentId, reason }),
   proofUrl:       (id)        => base() + `/payments/attachments/${id}`,
   pendingApprovals: (q)       => get('/payments/pending-approvals', q),
   approveDecrease:  (id)      => post(`/payments/approvals/${id}/approve`),

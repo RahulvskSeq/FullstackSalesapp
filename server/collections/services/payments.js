@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import Counter from '../../models/Counter.js';
-import { ColPayment, ColPaymentAllocation, ColAttachment, ColBalance, ColCycle, ColInvoice, ColPromise, ColEvent, PAYMENT_MODES } from '../models/index.js';
+import { ColImport, ColPayment, ColPaymentAllocation, ColAttachment, ColBalance, ColCycle, ColInvoice, ColPromise, ColEvent, PAYMENT_MODES } from '../models/index.js';
 import { cloudinaryReady, uploadBuffer } from '../lib/storage.js';
 import { withTxn, refreshBalance, oldestPeriodOf } from '../engines/reconcile.js';
 import { sortPeriods, daysSincePeriodStart, todayYmd } from '../lib/periods.js';
@@ -223,7 +223,7 @@ export async function listPayments(filter, { page = 1, limit = 50 } = {}) {
   const names = new Map((await Dealer.find({ _id: { $in: items.map(i => i.dealerId) } }, 'name code').lean()).map(d => [String(d._id), d]));
   const bm = new Map((await ColBalance.find({ dealerId: { $in: items.map(i => i.dealerId) } }, 'dealerId buckets total').lean()).map(b => [String(b.dealerId), b]));
   const came = await cameSoFar(items);
-  return { items: items.map(i => ({ ...i, dealer: names.get(String(i.dealerId)) || null, buckets: asObj(bm.get(String(i.dealerId))?.buckets), balanceTotal: bm.get(String(i.dealerId))?.total ?? null, cameSoFar: came.get(String(i._id)) ?? null })), total, page, limit };
+  return { items: items.map(i => ({ ...i, dealer: names.get(String(i.dealerId)) || null, buckets: asObj(bm.get(String(i.dealerId))?.buckets), balanceTotal: bm.get(String(i.dealerId))?.total ?? null, cameSoFar: came.get(String(i._id))?.cameSoFar ?? null, cameDealer: came.get(String(i._id))?.cameDealer ?? 0, dupOf: came.get(String(i._id))?.dupOf ?? null, cameFrom: came.get(String(i._id))?.cameFrom ?? [], beforeFirstStatement: came.get(String(i._id))?.beforeFirstStatement ?? false, firstStatementAsOn: came.get(String(i._id))?.firstStatementAsOn ?? '' })), total, page, limit };
 }
 
 /* ─────────────────── statement decreases awaiting approval ───────────────────
@@ -438,6 +438,7 @@ export async function autoConfirmFromStatements(dealerId, { by = 'statement' } =
     }
   });
   if (did.length) await refreshBalance(dealerId);
+  for (const id of did) { try { await settleDuplicatesOf(id, { by }); } catch (e) { console.warn('[COL DUPLICATES]', String(id), e.message); } }
   return did;
 }
 
@@ -453,15 +454,103 @@ hooks.on('import.applied', async ({ importId }) => {
     }
   }
   if (n || m) console.log('[COL AUTO-CONFIRM]', n + m, 'recorded payment(s) confirmed by the statement');
+  try { const k = await settleClearedMonthEntries({ by: 'statement' }); if (k) console.log('[COL AUTO-CONFIRM]', k, 'entry(ies) closed — the collection month is clear'); } catch (e) { console.warn('[COL CLEARED-MONTH]', e.message); }
 });
+
+/**
+ * An entry a salesman makes is about collecting the month being chased. When
+ * the statement shows that month clear for the dealer, the money came —
+ * whatever amount he wrote down — and the entry has nothing left to wait
+ * for. Closed as counted on the statement (the payment itself is already
+ * booked from the decrease). Only entries dated before the statement, since
+ * a statement of day D shows money up to D-1.
+ */
+export async function settleClearedMonthEntries({ by = 'statement' } = {}) {
+  const { collectionMonthOf } = await import('../engines/reconcile.js');
+  const cm = await collectionMonthOf(); if (!cm) return 0;
+  const latest = await ColImport.findOne({ status: 'APPLIED' }, 'asOn').sort({ asOn: -1, appliedAt: -1 }).lean(); if (!latest) return 0;
+  const rec = await ColPayment.find({ status: 'RECORDED', date: { $lt: latest.asOn } }, 'dealerId date amount').lean();
+  if (!rec.length) return 0;
+  const bals = new Map((await ColBalance.find({ dealerId: { $in: rec.map(r => r.dealerId) } }, 'dealerId dueAmount overdue lastSnapshotAsOn').lean()).map(b => [String(b.dealerId), b]));
+  let n = 0;
+  for (const r of rec) {
+    const b = bals.get(String(r.dealerId));
+    if (!b || b.overdue || (b.dueAmount || 0) > 0 || !b.lastSnapshotAsOn || b.lastSnapshotAsOn <= r.date) continue;
+    // money must actually have come since the entry — a month that was already nil proves nothing
+    const of = await ColPayment.findOne({ dealerId: r.dealerId, status: 'CONFIRMED', date: { $gte: r.date } }, '_id').sort({ date: -1 }).lean();
+    if (!of) continue;
+    const p = await ColPayment.findById(r._id); if (!p || p.status !== 'RECORDED') continue;
+    p.status = 'CANCELLED'; p.cancelledBy = by;
+    p.cancelReason = `${cm} cleared in the statement of ${b.lastSnapshotAsOn} — money came; counted on the statement`;
+    p.set('countedOn', of?._id || null, { strict: false });
+    await p.save();
+    await ColEvent.create({ dealerId: p.dealerId, cycleId: p.cycleId, type: 'PAYMENT_CANCELLED', amount: p.amount, refType: 'payment', refId: p._id, by, note: p.cancelReason });
+    await writeAudit({ entity: 'payment', entityId: p._id, action: 'counted-on', after: { reason: p.cancelReason }, by });
+    n++;
+  }
+  return n;
+}
 
 /** For a RECORDED entry: how much the statements have shown coming in since it was recorded (capped at the entry). */
 export async function cameSoFar(items) {
   const rec = items.filter(p => p.status === 'RECORDED'); if (!rec.length) return new Map();
-  const pool = await ColPayment.find({ dealerId: { $in: rec.map(p => p.dealerId) }, source: 'statement', status: 'CONFIRMED', unmatched: { $gt: 0 } }, 'dealerId date unmatched').lean();
+  const ids = rec.map(p => p.dealerId);
+  // Money that came on or before the FIRST statement's date is already inside
+  // its figures: there is nothing earlier to compare with, so no drop can
+  // ever show it. Those entries need a person to check the Tally receipt.
+  const first = await ColImport.findOne({ status: 'APPLIED' }, 'asOn').sort({ asOn: 1 }).lean();
+  const firstAsOn = first?.asOn || '';
+  const [pool, confirmed] = await Promise.all([
+    ColPayment.find({ dealerId: { $in: ids }, source: 'statement', status: 'CONFIRMED', unmatched: { $gt: 0 } }, 'dealerId date unmatched').lean(),
+    // everything that actually came for these dealers, whoever it was credited to
+    ColPayment.find({ dealerId: { $in: ids }, status: 'CONFIRMED' }, 'dealerId date amount paymentNo source enteredBy confirmedAt').sort({ date: 1 }).lean()]);
   const out = new Map();
-  for (const p of rec) { const avail = pool.filter(x => String(x.dealerId) === String(p.dealerId) && x.date >= p.date).reduce((a, x) => a + (x.unmatched || 0), 0); out.set(String(p._id), Math.min(p.amount, avail)); }
+  const day = d => new Date(d + 'T00:00:00').getTime();
+  for (const p of rec) {
+    const k = String(p.dealerId);
+    const avail = pool.filter(x => String(x.dealerId) === k && x.date >= p.date).reduce((a, x) => a + (x.unmatched || 0), 0);
+    const since = confirmed.filter(x => String(x.dealerId) === k && String(x._id) !== String(p._id) && (x.date >= p.date || (x.confirmedAt && p.createdAt && x.confirmedAt >= p.createdAt)));
+    const cameDealer = since.reduce((a, x) => a + (x.amount || 0), 0);
+    // the same cheque told twice: same dealer, same amount, same person, within three days
+    const dup = confirmed.find(x => String(x.dealerId) === k && String(x._id) !== String(p._id) && x.source !== 'statement' && x.amount === p.amount && x.enteredBy === p.enteredBy && Math.abs(day(x.date) - day(p.date)) <= 3 * 86400000) || null;
+    out.set(String(p._id), { cameSoFar: Math.min(p.amount, avail), cameDealer, dupOf: dup ? { _id: dup._id, paymentNo: dup.paymentNo, date: dup.date, amount: dup.amount } : null,
+      cameFrom: since.map(x => ({ paymentNo: x.paymentNo, date: x.date, amount: x.amount, source: x.source })),
+      beforeFirstStatement: !!(firstAsOn && p.date <= firstAsOn), firstStatementAsOn: firstAsOn });
+  }
   return out;
+}
+
+/**
+ * The same money told twice. A salesman writes "need to collect cheque" on
+ * Monday and "collected 1.5L" on Wednesday; the statement shows one 1.5L and
+ * it is credited to the first entry. The second is not wrong and not
+ * pending — it is the same cheque. Close it as counted on the other entry so
+ * the money stays counted once and the list stops asking about it.
+ */
+export async function settleAsCounted(paymentId, { by, ofPaymentId, reason = '' }) {
+  const p = await ColPayment.findById(paymentId);
+  if (!p) throw bad('payment not found');
+  if (p.status !== 'RECORDED') throw bad(`payment is ${p.status}`);
+  const of = ofPaymentId ? await ColPayment.findById(ofPaymentId, 'paymentNo date amount status dealerId').lean() : null;
+  if (ofPaymentId && (!of || String(of.dealerId) !== String(p.dealerId) || of.status !== 'CONFIRMED')) throw bad('the entry it was counted on must be a confirmed payment of the same dealer');
+  p.status = 'CANCELLED'; p.cancelledBy = by;
+  p.cancelReason = of ? `same money as #${of.paymentNo} of ${of.date} — counted there` : 'money came in full (statement) — counted on the statement payment';
+  p.set('countedOn', of?._id || null, { strict: false });
+  await p.save();
+  await ColEvent.create({ dealerId: p.dealerId, cycleId: p.cycleId, type: 'PAYMENT_CANCELLED', amount: p.amount, refType: 'payment', refId: p._id, by, note: p.cancelReason });
+  await writeAudit({ entity: 'payment', entityId: p._id, action: 'counted-on', after: { countedOn: of?.paymentNo || null, reason: p.cancelReason }, by });
+  return p;
+}
+
+/** After an entry is confirmed, close its exact duplicates (same dealer, amount, person, within 3 days) as counted on it. */
+export async function settleDuplicatesOf(paymentId, { by = 'statement' } = {}) {
+  const p = await ColPayment.findById(paymentId, 'dealerId amount enteredBy date status').lean();
+  if (!p || p.status !== 'CONFIRMED') return 0;
+  const day = d => new Date(d + 'T00:00:00').getTime();
+  const others = await ColPayment.find({ dealerId: p.dealerId, status: 'RECORDED', amount: p.amount, enteredBy: p.enteredBy, _id: { $ne: p._id } }, 'date').lean();
+  let n = 0;
+  for (const o of others) if (Math.abs(day(o.date) - day(p.date)) <= 3 * 86400000) { await settleAsCounted(o._id, { by, ofPaymentId: p._id }); n++; }
+  return n;
 }
 
 /**

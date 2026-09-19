@@ -1,7 +1,7 @@
 import express from 'express';
 import { protect, requireFeature } from '../../middleware/auth.js';
 import { ColPayment, ColPaymentAllocation, ColAttachment, ColEvent } from '../models/index.js';
-import { recordPayment, confirmPayment, bouncePayment, cancelPayment, listPayments, listPendingApprovals, approveDecrease, dismissDecrease } from '../services/payments.js';
+import { recordPayment, confirmPayment, bouncePayment, cancelPayment, listPayments, listPendingApprovals, approveDecrease, dismissDecrease, settleAsCounted } from '../services/payments.js';
 import { withScope, ensureInScope, paging, fail, scopeFilter } from '../lib/http.js';
 
 const router = express.Router();
@@ -20,6 +20,12 @@ router.post('/:id/confirm', requireFeature('collections.payments'), async (req, 
 router.post('/:id/bounce', requireFeature('collections.payments'), async (req, res) => {
   try { const p = await ColPayment.findById(req.params.id, 'dealerId').lean(); if (!p) return res.status(404).json({ error: 'not found' }); if (!ensureInScope(req, res, p.dealerId)) return;
         res.json(await bouncePayment(req.params.id, { by: req.user.id, reason: req.body?.reason })); } catch (e) { fail(res, e); }
+});
+/* The money came and is already counted on another entry (or the statement): close this one as counted there. */
+router.post('/:id/counted-on', async (req, res) => {
+  try { const p = await ColPayment.findById(req.params.id, 'dealerId enteredBy').lean(); if (!p) return res.status(404).json({ error: 'not found' }); if (!ensureInScope(req, res, p.dealerId)) return;
+        if (p.enteredBy !== req.user.id && !['admin', 'superadmin', 'employee'].includes(req.user.role)) return res.status(403).json({ error: 'only the person who recorded it, or accounts, can close it' });
+        res.json(await settleAsCounted(req.params.id, { by: req.user.id, ofPaymentId: req.body?.ofPaymentId || null, reason: req.body?.reason || '' })); } catch (e) { fail(res, e); }
 });
 router.post('/:id/cancel', async (req, res) => {
   try { const p = await ColPayment.findById(req.params.id, 'dealerId enteredBy').lean(); if (!p) return res.status(404).json({ error: 'not found' }); if (!ensureInScope(req, res, p.dealerId)) return;

@@ -44,7 +44,7 @@ export default function Payments({ params }) {
           { k: 'dealer', h: 'Dealer', r: r => <DealerLink id={r.dealerId} name={r.dealer?.name || String(r.dealerId)} code={r.dealer?.code} /> },
           ...monthCols(data?.items), { k: 'balanceTotal', h: 'Outstanding', align: 'right', r: r => r.balanceTotal == null ? '—' : <b>{money(r.balanceTotal)}</b> },
           { k: 'amount', h: 'Amount', align: 'right', r: r => <b>{money(r.amount)}</b> },
-          { k: 'how', h: 'How it was known', r: r => r.source === 'statement' ? (/[Pp]romised/.test(r.remarks || '') ? 'promise kept · statement' : 'seen in statement') : (r.status === 'CONFIRMED' ? 'recorded · confirmed by statement' : 'recorded, not yet in a statement') },
+          { k: 'how', h: 'How it was known', r: r => r.status === 'CANCELLED' && /counted/.test(r.cancelReason || '') ? <span style={{ color: 'var(--grn)' }}>received · {r.cancelReason}</span> : r.status === 'CANCELLED' ? `cancelled${r.cancelReason ? ' · ' + r.cancelReason : ''}` : r.source === 'statement' ? (/[Pp]romised/.test(r.remarks || '') ? 'promise kept · statement' : 'seen in statement') : (r.status === 'CONFIRMED' ? 'recorded · confirmed by statement' : 'recorded, not yet in a statement') },
           { k: 'mode', h: 'Mode' }, { k: 'reference', h: 'Reference' },
           { k: 'status', h: 'Status', r: r => <Badge v={r.status} /> },
           { k: 'allocated', h: 'Allocated', align: 'right', r: r => r.allocated ? money(r.allocated) : '—' },
