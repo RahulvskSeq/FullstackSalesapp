@@ -22,6 +22,7 @@ const S = new mongoose.Schema({
   lastPaymentAt:  { type: Date, default: null },
   lastPaymentAmount: { type: Number, default: 0 },
   creditDays:     { type: Number, default: 0 },       // from the Dealer master; overdue after this many days
+  overdue:        { type: Boolean, default: false, index: true },   // oldest unpaid month past credit days — whatever the status says
   lastFollowupAt: { type: Date, default: null },
   nextFollowupAt: { type: String, default: '' },      // YYYY-MM-DD
   promise:        { id: { type: mongoose.Schema.Types.ObjectId, ref: 'ColPromise' }, amount: Number, date: String },

@@ -57,6 +57,10 @@ export function derivePriority({ total, ageDays, brokenPromises }, thresholds) {
 
 /** Days after which a dealer's oldest unpaid month counts as overdue. */
 export function overdueAfter(b, cfg) { const cd = Number(b?.creditDays) || 0; return cd > 0 ? cd : (cfg?.overdueDays || Infinity); }
+/** Overdue is a fact about the money, separate from the status: a dealer who
+ *  paid part of it (PARTIAL_PAYMENT) or promised (PROMISED) can still be past
+ *  their credit days on what is left. */
+export function isOverdue(b, cfg) { return (b?.total || 0) > 0 && b?.ageDays !== null && b?.ageDays !== undefined && b.ageDays > overdueAfter(b, cfg); }
 
 export function deriveStatus(b, cycle, cfg, today = todayYmd()) {
   // Nothing due: CLEARED if a cycle was ever paid down to zero, NIL if the
@@ -209,6 +213,7 @@ export function planRow(imp, row, dealer, ctx, { by = '' } = {}) {
   };
   next.priority = derivePriority({ total, ageDays: next.ageDays, brokenPromises: balance?.brokenPromises || 0 }, ctx.cfg.thresholds);
   next.status = deriveStatus(next, cycleForStatus, ctx.cfg);
+  next.overdue = isOverdue(next, ctx.cfg);
   const { _id, dealerId: _d, createdAt, updatedAt, __v, version, ...set } = next;
   plan.balance = { dealerId, set };
   return plan;
@@ -345,6 +350,7 @@ export async function refreshBalance(dealerId, { session = null } = {}) {
   if (dealer) balance.creditDays = Number(dealer.creditDays) || 0;
   balance.priority = derivePriority({ total: balance.total, ageDays: balance.ageDays, brokenPromises: balance.brokenPromises }, cfg.thresholds);
   balance.status = deriveStatus(balance, cycle, cfg);
+  balance.overdue = isOverdue(balance, cfg);
   await balance.save({ session });
   return balance;
 }

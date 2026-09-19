@@ -88,8 +88,8 @@ export default function Today() {
   const balCols = [
     { k: 'dealer', h: 'Dealer', r: r => <DealerLink id={r.dealerId} name={r.dealerName} code={r.dealerCode} /> },
     ...months, { k: 'total', h: 'Outstanding', align: 'right', r: r => <b>{money(r.total)}</b> },
-    { k: 'ageDays', h: 'Age', align: 'right', r: r => r.ageDays == null ? '—' : <span data-tip={r.oldestPeriod ? `oldest unpaid month ${periodLabel(r.oldestPeriod)}${r.creditDays ? ` · credit ${r.creditDays} days` : ''}` : undefined} style={{ color: r.status === 'OVERDUE' ? 'var(--red)' : undefined }}>{r.ageDays + 'd'}</span> },
-    { k: 'status', h: 'Status', r: r => <StatusBadge status={r.status} priority={r.priority} /> },
+    { k: 'ageDays', h: 'Age', align: 'right', r: r => r.ageDays == null ? '—' : <span data-tip={r.oldestPeriod ? `oldest unpaid month ${periodLabel(r.oldestPeriod)}${r.creditDays ? ` · credit ${r.creditDays} days` : ''}` : undefined} style={{ color: (r.overdue ?? r.balOverdue) ? 'var(--red)' : undefined }}>{r.ageDays + 'd'}</span> },
+    { k: 'status', h: 'Status', r: r => <span className="row" style={{ gap: 4 }}><StatusBadge status={r.status} priority={r.priority} />{(r.overdue ?? r.balOverdue) && r.status !== 'OVERDUE' ? <Badge v="OVERDUE" label="overdue" /> : null}</span> },
     { k: 'came', h: 'Came', align: 'right', r: r => <Came r={r} /> },
     { k: 'nextFollowupAt', h: 'Follow-up', r: r => <FollowupDate value={r.nextFollowupAt} onOpen={() => setForm({ kind: 'followup', dealer: dealerOf(r), focusDate: true })} /> },
     { k: 'promise', h: 'Promise', r: r => r.promise?.amount ? `${money(r.promise.amount)} by ${fmtDate(r.promise.date)}` : '—' },
@@ -116,8 +116,8 @@ export default function Today() {
   const promisesToday = once(d.promisesToday), followupsDue = once(d.followupsDue), promisesBroken = once(d.promisesBroken), followupsOverdue = once(d.followupsOverdue), overdue = once(d.overdue || []), highPriority = once(d.highPriority);
   const promisesTodayDue = promisesToday.reduce((s, p) => s + (p.amount - (p.received || 0)), 0);
   // each section wears its own colour so the eye finds it without reading
-  const Section = ({ t, n, children, tone = 'var(--t3)', bg = 'transparent' }) => (
-    <Card title={<span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><span style={{ width: 8, height: 8, borderRadius: 4, background: tone, display: 'inline-block' }} />{t} <span className="chip" style={{ color: tone, fontWeight: 800, borderColor: tone }}>{num(n)}</span></span>}
+  const Section = ({ t, n, sub, children, tone = 'var(--t3)', bg = 'transparent' }) => (
+    <Card title={<span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}><span style={{ width: 8, height: 8, borderRadius: 4, background: tone, display: 'inline-block' }} />{t} <span className="chip" style={{ color: tone, fontWeight: 800, borderColor: tone }}>{num(n)}</span>{sub && <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--t3)' }}>{sub}</span>}</span>}
       style={{ marginBottom: 12, borderLeft: `4px solid ${tone}`, background: bg }}>{children}</Card>
   );
   return (
@@ -133,6 +133,23 @@ export default function Today() {
         <span className="spacer" style={{ flex: 1 }} />
         <button className="btnp" onClick={() => setPending(true)} data-tip="Told / came / still to come, for each entry">Pending approval ({num(d.pendingRecorded)})</button>
       </div>}
+      {(() => {
+        const came = d.recentPayments || []; const sum = came.reduce((a, p) => a + (p.amount || 0), 0);
+        const how = p => p.source === 'statement' ? (/[Pp]romised/.test(p.remarks || '') ? 'promise kept · statement' : 'seen in statement') : 'recorded · confirmed by statement';
+        const cameCols = [
+          { k: 'dealer', h: 'Dealer', r: r => <DealerLink id={r.dealerId} name={r.dealerName} code={r.dealerCode} /> },
+          { k: 'amount', h: 'Came', align: 'right', r: r => <b style={{ color: 'var(--grn)' }}>{money(r.amount)}</b> },
+          { k: 'date', h: 'On', r: r => fmtDate(r.date) },
+          { k: 'how', h: 'How it was known', r: how },
+          { k: 'balanceTotal', h: 'Still outstanding', align: 'right', r: r => money(r.balanceTotal) },
+          { k: 'status', h: 'Status', r: r => <StatusBadge status={r.balStatus} priority={r.balPriority} /> },
+        ];
+        const cameCard = r => <>
+          <CardRow><DealerLink id={r.dealerId} name={r.dealerName} code={r.dealerCode} /><b style={{ color: 'var(--grn)' }}>{money(r.amount)}</b></CardRow>
+          <div style={{ fontSize: 11.5, color: 'var(--t2)' }}>{fmtDate(r.date)} · {how(r)} · still {money(r.balanceTotal)}</div>
+        </>;
+        return <Section t={`Came in · last 7 days · ${money(sum)}`} n={came.length} tone="var(--grn)" bg="rgba(22,163,74,.05)" sub="every payment the statements showed, newest first"><Table dense cols={cameCols} rows={came} keyOf={r => r._id} empty="No payment came in the last 7 days." card={cameCard} onRow={r => openRecord('payment', r, reload)} /></Section>;
+      })()}
       <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
         <div className="stat-card" onClick={() => setTileModal('followups')} data-tip="Open all follow-ups due and overdue" style={{ cursor: 'pointer' }}><div style={{ fontSize: 10.5, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase' }}>Follow-ups</div><div style={{ fontSize: 19, fontWeight: 800 }}>{num(followupsDue.length)} <span style={{ fontSize: 12, color: 'var(--red)' }}>{followupsOverdue.length ? `+${followupsOverdue.length} overdue` : ''}</span></div></div>
         <div className="stat-card" onClick={() => setTileModal('promises')} data-tip="Open every promise falling due today" style={{ cursor: 'pointer' }}><div style={{ fontSize: 10.5, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase' }}>Promises today</div><div style={{ fontSize: 19, fontWeight: 800 }}>{money(promisesTodayDue)} <span style={{ fontSize: 12, color: 'var(--t3)' }}>{promisesToday.length ? `· ${num(promisesToday.length)}` : ''}</span></div></div>

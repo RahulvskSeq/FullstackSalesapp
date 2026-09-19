@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { args, connect } from './_shared.mjs';
 import { ColBalance, ColCycle, ColPayment } from '../models/index.js';
-import { oldestPeriodOf, derivePriority, deriveStatus } from '../engines/reconcile.js';
+import { oldestPeriodOf, derivePriority, deriveStatus, isOverdue } from '../engines/reconcile.js';
 import { daysSincePeriodStart, todayYmd } from '../lib/periods.js';
 import { getSetting } from '../lib/settings.js';
 /**
@@ -33,12 +33,13 @@ for (const b of bals) {
   const cycle = b.openCycleId ? await ColCycle.findById(b.openCycleId).lean() : cycles.get(String(b.dealerId)) || null;
   next.priority = derivePriority({ total: b.total, ageDays, brokenPromises: b.brokenPromises || 0 }, cfg.thresholds);
   next.status = deriveStatus(next, cycle, cfg, today);
-  if (next.status === 'OVERDUE') overdue++;
+  next.overdue = isOverdue(next, cfg);
+  if (next.overdue) overdue++;
   if (next.status !== b.status) changedStatus++;
   n++;
-  ops.push({ updateOne: { filter: { _id: b._id }, update: { $set: { oldestPeriod: oldest, ageDays, creditDays, lastPaymentAmount: next.lastPaymentAmount, priority: next.priority, status: next.status } } } });
+  ops.push({ updateOne: { filter: { _id: b._id }, update: { $set: { oldestPeriod: oldest, ageDays, creditDays, lastPaymentAmount: next.lastPaymentAmount, priority: next.priority, status: next.status, overdue: next.overdue } } } });
 }
-console.log(`${n} balances · ${overdue} would be OVERDUE · ${changedStatus} status changes · default overdue after ${cfg.overdueDays} days`);
+console.log(`${n} balances · ${overdue} are overdue (past credit days) · ${changedStatus} status changes · default overdue after ${cfg.overdueDays} days`);
 if (dryRun) { console.log('DRY RUN — nothing written. Re-run with --apply.'); await mongoose.disconnect(); process.exit(0); }
 for (let i = 0; i < ops.length; i += 500) await ColBalance.bulkWrite(ops.slice(i, i + 500), { ordered: false });
 console.log('written');

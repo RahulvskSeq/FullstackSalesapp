@@ -118,7 +118,7 @@ export async function confirmPayment(paymentId, { by }) {
       for (const period of sortPeriods(Object.keys(buckets))) { if (left <= 0) break; left = reduceBucket(period, left); }
       balance.buckets = buckets;
       balance.total = Math.max(0, (balance.total || 0) - p.amount);
-      balance.lastPaymentAt = new Date(p.date + 'T00:00:00'); balance.lastPaymentAmount = p.amount;
+      balance.lastPaymentAt = new Date(p.date + 'T00:00:00'); balance.lastPaymentAmount = p.amount; followupSettled(balance, p.date);
       const oldest = oldestPeriodOf(buckets);
       balance.oldestPeriod = oldest; balance.ageDays = oldest ? daysSincePeriodStart(oldest, todayYmd()) : balance.ageDays;
       balance.version = (balance.version || 0) + 1;
@@ -308,7 +308,7 @@ export async function approveDecrease(eventId, { by }) {
       const next = await ColPromise.findOne({ dealerId: e.dealerId, status: { $in: ['PENDING', 'PARTIALLY_FULFILLED'] } }).sort({ promiseDate: 1 }).session(session).lean();
       balance.promise = next ? { id: next._id, amount: next.amount - next.received, date: next.promiseDate } : undefined;
       balance.brokenPromises = await ColPromise.countDocuments({ dealerId: e.dealerId, status: 'BROKEN' }).session(session);
-      balance.lastPaymentAt = new Date(date + 'T00:00:00'); balance.lastPaymentAmount = e.amount;
+      balance.lastPaymentAt = new Date(date + 'T00:00:00'); balance.lastPaymentAmount = e.amount; followupSettled(balance, date);
       await balance.save({ session });
     }
     e.set('meta', { ...(e.meta || {}), approved: true, approvedBy: by, approvedAt: new Date(), paymentId: p._id }); e.markModified('meta'); await e.save({ session });
@@ -335,6 +335,16 @@ export async function dismissDecrease(eventId, { by, reason }) {
  * explained to that extent. Whatever the sheet cannot account for stays in
  * the approval queue. Runs after every statement, and again whenever a
  * payment is recorded (the sheet may already have shown the drop). */
+/**
+ * Money arriving on or after a scheduled follow-up date IS that follow-up
+ * done: the dealer paid. Clear the date so the row leaves "Overdue
+ * follow-ups" instead of nagging every morning about a call that is moot.
+ * A follow-up set for a later date is left alone.
+ */
+function followupSettled(balance, paidYmd) {
+  if (balance?.nextFollowupAt && paidYmd && balance.nextFollowupAt <= paidYmd) balance.nextFollowupAt = '';
+}
+
 async function creditMoney(dealerId, amount, cycleId, by, session) {
   let toCredit = amount;
   const promises = [
@@ -423,7 +433,7 @@ export async function autoConfirmFromStatements(dealerId, { by = 'statement' } =
       balance.promise = next ? { id: next._id, amount: next.amount - next.received, date: next.promiseDate } : undefined;
       balance.brokenPromises = await ColPromise.countDocuments({ dealerId: oid(dealerId), status: 'BROKEN' }).session(session);
       const lastPaid = await ColPayment.findOne({ dealerId: oid(dealerId), status: 'CONFIRMED' }, 'date amount').sort({ date: -1, createdAt: -1 }).session(session).lean();
-      if (lastPaid) { balance.lastPaymentAt = new Date(lastPaid.date + 'T00:00:00'); balance.lastPaymentAmount = lastPaid.amount; }
+      if (lastPaid) { balance.lastPaymentAt = new Date(lastPaid.date + 'T00:00:00'); balance.lastPaymentAmount = lastPaid.amount; followupSettled(balance, todayYmd()); }
       await balance.save({ session });
     }
   });

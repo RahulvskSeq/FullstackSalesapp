@@ -10,7 +10,7 @@ const PRIORITIES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
 /** The current book: one row per dealer, the server's figure, never a sheet. */
 export default function Outstanding({ params }) {
   const { users, isStaff, open: openDealer, openRow } = useDealerCtx();
-  const [q, setQ] = useState({ page: 1, limit: 50, sort: 'total', dir: 'desc', owing: '1', status: params?.status || '', priority: params?.priority || '', salesmanId: params?.salesmanId || '', pending: params?.pending || '', q: '' });
+  const [q, setQ] = useState({ page: 1, limit: 50, sort: 'total', dir: 'desc', owing: '1', status: params?.status || '', priority: params?.priority || '', salesmanId: params?.salesmanId || '', pending: params?.pending || '', overdue: params?.overdue || '', q: '' });
   const [text, setText] = useState('');
   const { data, busy, err, reload } = useLoad(() => col.outstanding(q), [JSON.stringify(q)]);
   const [form, setForm] = useState(null);
@@ -34,6 +34,7 @@ export default function Outstanding({ params }) {
           <select className="sel" value={q.priority} onChange={e => set({ priority: e.target.value })}><option value="">Any priority</option>{PRIORITIES.map(s => <option key={s} value={s}>{s}</option>)}<option value="HIGH,CRITICAL">High + Critical</option></select>
           {isStaff && <select className="sel" value={q.salesmanId} onChange={e => set({ salesmanId: e.target.value })}><option value="">All salesmen</option>{(users || []).filter(u => u.role === 'salesman').map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select>}
           <label className="row" style={{ fontSize: 12, gap: 5 }}><input type="checkbox" checked={q.owing === '1'} onChange={e => set({ owing: e.target.checked ? '1' : '' })} /> owing only</label>
+          <label className="row" style={{ fontSize: 12, gap: 5, color: 'var(--red)' }} data-tip="Oldest unpaid month is past the dealer's credit days (or the default), whatever the status"><input type="checkbox" checked={q.overdue === '1'} onChange={e => set({ overdue: e.target.checked ? '1' : '' })} /> overdue</label>
           <label className="row" style={{ fontSize: 12, gap: 5, color: '#b45309' }} data-tip="Dealers with a payment a salesman recorded that no statement has shown yet"><input type="checkbox" checked={q.pending === '1'} onChange={e => set({ pending: e.target.checked ? '1' : '' })} /> recorded, not in statement</label>
           <input className="inp" type="number" style={{ maxWidth: 140 }} placeholder="Min ₹" value={q.minTotal || ''} onChange={e => set({ minTotal: e.target.value })} />
         </div>
@@ -46,7 +47,7 @@ export default function Outstanding({ params }) {
             ...periods.map((p, i) => ({ k: p, h: i === 0 ? <span style={{ color: 'var(--red)' }}>{periodLabel(p)}</span> : periodLabel(p), align: 'right', r: r => <span>{r.buckets?.[p] ? (i === 0 ? <OldestPill>{money(r.buckets[p])}</OldestPill> : money(r.buckets[p])) : <span style={{ color: 'var(--t3)' }}>–</span>}</span> })),
             { k: 'total', h: H('total', 'Total'), align: 'right', r: r => <b>{money(r.total)}</b> },
             { k: 'ageDays', h: H('ageDays', 'Age'), align: 'right', r: r => r.ageDays == null ? '—' : <span data-tip={`oldest unpaid month ${periodLabel(r.oldestPeriod)}${r.creditDays ? ` · credit ${r.creditDays} days` : ''}`} style={{ color: r.status === 'OVERDUE' ? 'var(--red)' : undefined }}>{r.ageDays}d</span> },
-            { k: 'status', h: 'Status', r: r => <StatusBadge status={r.status} priority={r.priority} /> },
+            { k: 'status', h: 'Status', r: r => <span className="row" style={{ gap: 4 }}><StatusBadge status={r.status} priority={r.priority} />{r.overdue && r.status !== 'OVERDUE' ? <Badge v="OVERDUE" label="overdue" /> : null}</span> },
             { k: 'priority', h: H('priority', 'Priority'), r: r => <Badge v={r.priority} /> },
             { k: 'nextFollowupAt', h: H('nextFollowupAt', 'Next follow-up'), r: r => <a href="#" data-tip={r.nextFollowupAt ? 'Change the follow-up date' : 'Set a follow-up date'} onClick={e => { e.preventDefault(); e.stopPropagation(); setForm({ kind: 'followup', dealer: dealerOf(r), focusDate: true }); }} style={{ color: r.nextFollowupAt ? 'var(--t1)' : 'var(--acc)', textDecoration: 'none', borderBottom: '1px dotted var(--t3)' }}>{r.nextFollowupAt ? fmtDate(r.nextFollowupAt) : 'set date'}</a> },
             { k: 'promise', h: 'Promise', r: r => r.promise?.amount ? `${money(r.promise.amount)} · ${fmtDate(r.promise.date)}` : '—' },

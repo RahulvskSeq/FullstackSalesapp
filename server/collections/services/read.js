@@ -19,6 +19,7 @@ export async function listBalances(scopeF, q = {}) {
   if (q.salesmanId) f.salesmanId = String(q.salesmanId);
   if (q.minTotal) f.total = { ...(f.total || {}), $gte: +q.minTotal };
   if (q.owing === '1') f.total = { ...(f.total || {}), $gt: 0 };
+  if (q.overdue === '1') f.overdue = true;                    // past credit days, whatever the status
   if (q.pending === '1') f.dealerId = { $in: await ColPayment.distinct('dealerId', { ...scopeF, status: 'RECORDED' }) };   // a salesman's record no statement has shown yet
   if (q.q) { const rx = new RegExp(String(q.q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'); f.$or = [{ dealerName: rx }, { dealerCode: rx }]; }
   const sortKey = ['total', 'ageDays', 'dealerName', 'nextFollowupAt', 'lastPaymentAt', 'priority'].includes(q.sort) ? q.sort : 'total';
@@ -96,7 +97,7 @@ export async function dashboard(scopeF) {
   const recToday = (await ColPayment.aggregate([{ $match: { ...scopeF, source: 'manual', status: { $ne: 'CANCELLED' }, createdAt: { $gte: dayStart } } }, { $group: { _id: null, sum: { $sum: '$amount' }, n: { $sum: 1 } } }]))[0] || { sum: 0, n: 0 };
   const pendingDec = (await ColEvent.aggregate([{ $match: { ...scopeF, type: 'RECONCILIATION_DIFFERENCE', amount: { $gt: 0 }, 'meta.approved': { $exists: false } } }, { $group: { _id: null, sum: { $sum: '$amount' }, n: { $sum: 1 } } }]))[0] || { sum: 0, n: 0 };
   const [bal, todayPay, monthPay, fuToday, fuOverdue, prToday, prBroken, newOut, clearedToday, hi, bySm, act, imports] = await Promise.all([
-    ColBalance.aggregate([{ $match: scopeF }, { $group: { _id: null, total: { $sum: '$total' }, owing: { $sum: { $cond: [{ $gt: ['$total', 0] }, 1, 0] } }, overdue: { $sum: { $cond: [{ $gt: ['$ageDays', { $cond: [{ $gt: [{ $ifNull: ['$creditDays', 0] }, 0] }, '$creditDays', overdueDays] }] }, '$total', 0] } }, overdueDealers: { $sum: { $cond: [{ $gt: ['$ageDays', { $cond: [{ $gt: [{ $ifNull: ['$creditDays', 0] }, 0] }, '$creditDays', overdueDays] }] }, 1, 0] } } } }]),
+    ColBalance.aggregate([{ $match: scopeF }, { $group: { _id: null, total: { $sum: '$total' }, owing: { $sum: { $cond: [{ $gt: ['$total', 0] }, 1, 0] } }, overdue: { $sum: { $cond: [{ $eq: ['$overdue', true] }, '$total', 0] } }, overdueDealers: { $sum: { $cond: [{ $eq: ['$overdue', true] }, 1, 0] } } } }]),
     ColPayment.aggregate([{ $match: { ...scopeF, status: 'CONFIRMED', date: today } }, { $group: { _id: null, sum: { $sum: '$amount' }, n: { $sum: 1 } } }]),
     ColPayment.aggregate([{ $match: { ...scopeF, status: 'CONFIRMED', date: { $gte: monthStart } } }, { $group: { _id: null, sum: { $sum: '$amount' }, n: { $sum: 1 } } }]),
     ColBalance.countDocuments({ ...scopeF, nextFollowupAt: today, total: { $gt: 0 } }),
@@ -106,7 +107,7 @@ export async function dashboard(scopeF) {
     ColEvent.aggregate([{ $match: { ...scopeF, type: { $in: ['NEW_OUTSTANDING', 'REOPENED'] }, at: { $gte: since7 } } }, { $group: { _id: null, sum: { $sum: '$amount' }, n: { $sum: 1 } } }]),
     ColEvent.aggregate([{ $match: { ...scopeF, type: 'CLEARED', at: { $gte: new Date(today + 'T00:00:00') } } }, { $group: { _id: null, sum: { $sum: '$amount' }, n: { $sum: 1 } } }]),
     ColBalance.find({ ...scopeF, priority: { $in: ['HIGH', 'CRITICAL'] }, total: { $gt: 0 } }).sort({ total: -1 }).limit(10).lean(),
-    ColBalance.aggregate([{ $match: { ...scopeF, total: { $gt: 0 } } }, { $group: { _id: '$salesmanId', total: { $sum: '$total' }, dealers: { $sum: 1 }, overdue: { $sum: { $cond: [{ $gt: ['$ageDays', { $cond: [{ $gt: [{ $ifNull: ['$creditDays', 0] }, 0] }, '$creditDays', overdueDays] }] }, '$total', 0] } } } }, { $sort: { total: -1 } }]),
+    ColBalance.aggregate([{ $match: { ...scopeF, total: { $gt: 0 } } }, { $group: { _id: '$salesmanId', total: { $sum: '$total' }, dealers: { $sum: 1 }, overdue: { $sum: { $cond: [{ $eq: ['$overdue', true] }, '$total', 0] } } } }, { $sort: { total: -1 } }]),
     ColEmployeeActivity.aggregate([{ $match: { date: { $gte: new Date(since30).toISOString().slice(0, 10) } } }, { $group: { _id: '$employeeId', followups: { $sum: '$followups' }, visits: { $sum: '$visits' }, calls: { $sum: '$calls' }, tasksDone: { $sum: '$tasksDone' }, promisesKept: { $sum: '$promisesKept' }, promisesBroken: { $sum: '$promisesBroken' }, collected: { $sum: '$collected' }, points: { $sum: '$points' } } }]),
     ColImport.find({ status: 'APPLIED' }, 'asOn stats.totalAfter fileName').sort({ asOn: -1 }).limit(12).lean(),
   ]);
