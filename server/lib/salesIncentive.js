@@ -63,6 +63,28 @@ export const DEFAULT_SALES_CONFIG = {
   // two incentives can be spoken about in the same units. Same conversion as
   // the billing scheme: 4 points = ₹1.
   pointsPerRupee:  4,
+
+  // ── Section 3/4 of the one-page scheme: what never counts, and timing ──
+  // Money is held `holdDays` after the month ends so collections can be
+  // checked; the month is then paid in the next salary cycle, on `salaryDay`.
+  holdDays:   90,
+  salaryDay:  7,
+  // A laminate line priced this many rupees (or more) under the product's
+  // regular price is a project sale. Regular price = the price the product
+  // most often sells at. Set projectDetect false to type project sheets by hand.
+  projectDetect: true,
+  projectBelow:  50,
+  // Late payment: at holdEnd the dealer's outstanding for the sale month must
+  // be nil; otherwise every unit sold to that dealer that month is forfeit.
+  lateDetect:    true,
+  // Invoice lines that never count toward target or incentive.
+  countStatusPattern:  'sales invoice',          // only these ERP statuses are sales
+  returnStatusPattern: 'return|credit note',     // these reverse units, in the month they happen
+  excludePartyRoles:   ['Showroom'],             // internal locations — stock transfers
+  excludeNamePattern:  'sample kit|sample box|stock transfer|free display',
+  // Category types whose VALUE (not units) earns displayPct. Empty = display
+  // value is typed by hand per salesman.
+  displayCategories:   [],
 };
 
 const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
@@ -122,6 +144,7 @@ export function targetFor(product, laminateBasic) {
  * @param qty          { CATEGORY: units } achieved
  * @param opts.projectSheets    laminate sheets sold as project sales (half credit)
  * @param opts.latePaymentSheets laminate sheets on sales not collected in 90 days
+ * @param opts.lateByCategory   { CATEGORY: units } forfeit for late payment, every product
  * @param opts.displayValue      rupee value of display material sold
  * @param opts.badDebtOutstanding balance still to recover
  */
@@ -133,7 +156,9 @@ export function salesIncentiveFor(basic, qty = {}, opts = {}, config = DEFAULT_S
   // Project sales count half toward target; late-paid sales do not count at
   // all. Both reduce the laminate figure the gate and the ramp see.
   const project = Math.max(0, Math.round(Number(opts.projectSheets) || 0));
-  const late    = Math.max(0, Math.round(Number(opts.latePaymentSheets) || 0));
+  const lateBy  = opts.lateByCategory && typeof opts.lateByCategory === 'object' ? opts.lateByCategory : {};
+  const late    = Math.max(0, Math.round(Number(opts.latePaymentSheets) || 0))
+                + Math.max(0, Math.round(Number(lateBy[c.gateCategory]) || 0));
   const credited = Math.max(0, gross - project + Math.round(project * c.projectCredit) - late);
 
   const gateOpen = b > 0 && credited >= b;
@@ -153,13 +178,15 @@ export function salesIncentiveFor(basic, qty = {}, opts = {}, config = DEFAULT_S
     const fixed = (p.fixedTarget !== undefined && p.fixedTarget !== null && p.fixedTarget !== '') ? Math.round(Number(p.fixedTarget) || 0) : 0;
     const ownT = Math.round(Number(own[p.category]) || 0);
     const target = ownT > 0 ? ownT : fixed > 0 ? fixed : targetFor(p, b);
-    const actual = Math.max(0, Math.round(Number(qty[p.category]) || 0));
+    // a late-paid sale earns nothing on any product it carried
+    const lateHere = Math.max(0, Math.round(Number(lateBy[p.category]) || 0));
+    const actual = Math.max(0, Math.round(Number(qty[p.category]) || 0) - lateHere);
     // no target at all (none set, and no basic to derive one from) → nothing
     // to be above, so nothing earns; a zero target must not pay on every unit
     const over = target > 0 ? Math.max(0, actual - target) : 0;
     return {
       key: p.key, label: p.label, category: p.category,
-      target, targetSource: ownT > 0 ? 'own' : fixed > 0 ? 'rule' : (target > 0 ? 'derived' : 'none'), actual, excess: over,
+      target, targetSource: ownT > 0 ? 'own' : fixed > 0 ? 'rule' : (target > 0 ? 'derived' : 'none'), actual, late: lateHere, excess: over,
       rate: p.rate,
       amount: othersOpen && target > 0 ? r2(over * p.rate) : 0,
     };
@@ -202,5 +229,36 @@ export function salesIncentiveFor(basic, qty = {}, opts = {}, config = DEFAULT_S
     // will not arrive.
     points:      Math.round(payable * pointsPerRupee),
     grossPoints: Math.round(earned  * pointsPerRupee),
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ *  Section 4 — when a month is paid                                   *
+ * ------------------------------------------------------------------ */
+const ymd = d => d.toISOString().slice(0, 10);
+
+/**
+ * The timeline of one sales month: sales close at month end, the money is
+ * held `holdDays` for collections, then paid in the first salary cycle on or
+ * after the hold ends. January → held to 1 May → paid 7 May, as the scheme's
+ * own example has it.
+ */
+export function payoutSchedule(month, config = DEFAULT_SALES_CONFIG, today = new Date()) {
+  const [y, m] = String(month).split('-').map(Number);
+  if (!y || !m) return null;
+  const hold = Math.max(0, Math.round(Number(config.holdDays) || 0));
+  const salaryDay = Math.min(28, Math.max(1, Math.round(Number(config.salaryDay) || 7)));
+  const monthEnd = new Date(Date.UTC(y, m, 0));                         // last day of the month
+  const holdEnd  = new Date(Date.UTC(y, m, 0 + hold));
+  let pay = new Date(Date.UTC(holdEnd.getUTCFullYear(), holdEnd.getUTCMonth(), salaryDay));
+  if (pay < holdEnd) pay = new Date(Date.UTC(holdEnd.getUTCFullYear(), holdEnd.getUTCMonth() + 1, salaryDay));
+  const t = ymd(today);
+  const status = t <= ymd(monthEnd) ? 'open' : t < ymd(holdEnd) ? 'held' : 'payable';
+  return {
+    month, monthEnd: ymd(monthEnd), holdEnd: ymd(holdEnd), payDate: ymd(pay),
+    payMonth: ymd(pay).slice(0, 7), holdDays: hold, status,
+    // the day the late-payment check is final: the hold end, or today if sooner
+    evalDate: t < ymd(holdEnd) ? t : ymd(holdEnd),
+    final: t >= ymd(holdEnd),
   };
 }

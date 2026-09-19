@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Lock, Unlock, AlertTriangle, RefreshCw, Pencil, X, ChevronDown, ChevronRight,
-         ArrowUpRight, ArrowDownRight, Trophy, Users, Layers, Package, Monitor, Star, Calculator } from 'lucide-react';
+         ArrowUpRight, ArrowDownRight, Trophy, Users, Layers, Package, Monitor, Star, Calculator,
+         Clock, CheckCircle2, Banknote, ShieldCheck, AlertOctagon } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { api } from '../api';
 import Skeleton from './Skeleton';
@@ -63,77 +64,106 @@ function Stat({ label, value, tone, sub }) {
   );
 }
 
-/** The four figures the sales data cannot supply, typed per salesman. */
-function AdjustModal({ person, month, onClose, onSaved }) {
+/**
+ * The section-3 figures. Each is worked out from the data (invoice lines,
+ * Collections uploads) and shown; a number typed here overrides it, blank
+ * puts it back to what the system found.
+ */
+function AdjustModal({ person, month, ppr, onClose, onSaved }) {
   const a = person.adjustments || {};
+  const au = person.auto || {};
+  const v = x => (x === null || x === undefined) ? '' : String(x);
   const [f, setF] = useState({
-    displayValue: a.displayValue || 0,
-    projectSheets: a.projectSheets || 0,
-    latePaymentSheets: a.latePaymentSheets || 0,
-    badDebtOutstanding: a.badDebtOutstanding || 0,
+    displayValue: v(a.displayValue), projectSheets: v(a.projectSheets),
+    latePaymentSheets: v(a.latePaymentSheets), badDebtOutstanding: v(a.badDebtOutstanding),
     note: a.note || '',
   });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
-  const set = (k, v) => setF(x => ({ ...x, [k]: v }));
+  const [show, setShow] = useState('');
+  const set = (k, x) => setF(o => ({ ...o, [k]: x }));
+  const paid = !!person.paid;
 
   const save = async () => {
     setBusy(true); setErr('');
     try {
-      await api.salesIncentiveAdjSave({ month, salesmanId: person.salesmanId, ...f });
+      const body = { month, salesmanId: person.salesmanId, note: f.note };
+      for (const k of ['displayValue', 'projectSheets', 'latePaymentSheets', 'badDebtOutstanding']) body[k] = f[k] === '' ? null : Number(f[k]);
+      await api.salesIncentiveAdjSave(body);
       onSaved();
     } catch (e) { setErr(e?.message || 'Could not save'); }
     finally { setBusy(false); }
   };
 
-  const row = (label, key, hint, prefix) => (
+  const row = (label, key, hint, autoVal, autoNote, prefix, detailKey) => (
     <div style={{ marginBottom: 12 }}>
       <label style={{ display: 'block', fontSize: 10.5, fontWeight: 700, letterSpacing: '.06em',
                       textTransform: 'uppercase', color: 'var(--t3)', marginBottom: 4 }}>{label}</label>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         {prefix && <span style={{ fontSize: 13, color: 'var(--t3)' }}>{prefix}</span>}
-        <input type="number" min="0" value={f[key]}
+        <input type="number" min="0" value={f[key]} placeholder={`auto: ${num(autoVal)}`} disabled={paid}
                onChange={e => set(key, e.target.value)}
                style={{ flex: 1, fontSize: 13, padding: '7px 9px', borderRadius: 8,
                         border: '1px solid var(--b1)', background: 'var(--bg1)', color: 'var(--t1)' }} />
+        {f[key] !== '' && !paid && <button className="btn" title="Back to the system figure" onClick={() => set(key, '')} style={{ fontSize: 11, padding: '4px 8px' }}>auto</button>}
+        {detailKey && <button className="btn" onClick={() => setShow(show === detailKey ? '' : detailKey)} style={{ fontSize: 11, padding: '4px 8px' }}>{show === detailKey ? 'hide' : 'show'}</button>}
       </div>
-      <div style={{ fontSize: 10, color: 'var(--t3)', marginTop: 3, lineHeight: 1.5 }}>{hint}</div>
+      <div style={{ fontSize: 10, color: 'var(--t3)', marginTop: 3, lineHeight: 1.5 }}>
+        <span style={{ color: f[key] === '' ? 'var(--acc)' : 'var(--yel,#ca8a04)', fontWeight: 700 }}>{f[key] === '' ? 'System: ' : 'Overridden · system found '}{num(autoVal)}{autoNote ? ` — ${autoNote}` : ''}.</span> {hint}
+      </div>
     </div>
   );
+  const lateDealers = au.lateDealers || [];
+  const projLines = au.projectLines || [];
+  const table = (rows) => <div style={{ margin: '4px 0 10px', border: '1px solid var(--b1)', borderRadius: 8, maxHeight: 180, overflowY: 'auto', fontSize: 11 }}>{rows}</div>;
 
   return (
     <div onClick={onClose}
          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', zIndex: 2000,
                   display: 'grid', placeItems: 'center', padding: 18 }}>
       <div onClick={e => e.stopPropagation()} className="card"
-           style={{ width: 'min(460px,100%)', maxHeight: '88vh', overflowY: 'auto', padding: '18px 20px' }}>
+           style={{ width: 'min(520px,100%)', maxHeight: '88vh', overflowY: 'auto', padding: '18px 20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
           <div style={{ fontSize: 15, fontWeight: 800 }}>{person.name}</div>
           <button onClick={onClose} style={{ marginLeft: 'auto', background: 'none', border: 'none',
                     cursor: 'pointer', color: 'var(--t3)', display: 'flex' }}><X size={16} /></button>
         </div>
         <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 14, lineHeight: 1.6 }}>
-          None of these are in the sales data — an invoice line does not say whether it was
-          discounted to project price, and nothing records when payment cleared. Type them in
-          and the calculation uses them.
+          {paid ? <b style={{ color: 'var(--grn)' }}>This month is paid and its figures are frozen.</b>
+            : <>Worked out from the invoice lines and the Collections uploads. Type a number only to override; blank uses the system figure.</>}
+          {au.excluded?.units > 0 && <div style={{ marginTop: 4 }}>Never counted: <b>{num(au.excluded.units)}</b> units ({Object.entries(au.excluded.byReason || {}).map(([k, n]) => `${k} ${num(n)}`).join(', ')}).</div>}
+          {au.returns?.units > 0 && <div style={{ marginTop: 2 }}>Returns reversed this month: <b>{num(au.returns.units)}</b> units.</div>}
         </div>
 
-        {row('Display value sold', 'displayValue', 'Panels, MS displays, DIY boxes sold to dealers. Earns 3%.', '₹')}
-        {row('Project-sale sheets', 'projectSheets', 'Laminate sold ₹50 or more below regular price. Counts half toward target.')}
-        {row('Late-payment sheets', 'latePaymentSheets', 'Laminate on sales not fully collected within 90 days. Earns nothing — the whole sale is forfeit.')}
-        {row('Bad debt outstanding', 'badDebtOutstanding', '25% of each month’s incentive is recovered against this until it clears.', '₹')}
+        {row('Display value sold', 'displayValue', 'Panels, MS displays, DIY boxes sold to dealers. Earns 3%.', au.displayValue || 0, (au.displayValue ? 'from display categories' : 'no display category set in the rule'), '₹')}
+
+        {row('Project-sale sheets', 'projectSheets', 'Laminate ₹50 or more below regular price. Counts half toward target; payout needs approval.', au.projectSheets || 0, projLines.length ? `${projLines.length} invoice lines under regular price` : 'no line under regular price', '', projLines.length ? 'proj' : '')}
+        {show === 'proj' && table(<table style={{ width: '100%', borderCollapse: 'collapse' }}><thead><tr style={{ color: 'var(--t3)', fontSize: 9.5, textTransform: 'uppercase' }}><th style={{ textAlign: 'left', padding: '4px 6px' }}>Dealer · product</th><th style={{ textAlign: 'right', padding: '4px 6px' }}>Sheets</th><th style={{ textAlign: 'right', padding: '4px 6px' }}>Price</th><th style={{ textAlign: 'right', padding: '4px 6px' }}>Regular</th></tr></thead><tbody>
+          {projLines.map((l, i) => <tr key={i} style={{ borderTop: '1px solid var(--b1)' }}><td style={{ padding: '3px 6px' }}>{l.dealer}<div style={{ color: 'var(--t3)' }}>{l.product} · {l.voucherNo}</div></td><td style={{ textAlign: 'right', padding: '3px 6px' }}>{num(l.qty)}</td><td style={{ textAlign: 'right', padding: '3px 6px', color: 'var(--red)' }}>{money(l.price)}</td><td style={{ textAlign: 'right', padding: '3px 6px' }}>{money(l.regular)}</td></tr>)}
+        </tbody></table>)}
+
+        {row('Late-payment sheets', 'latePaymentSheets', 'Sales not fully collected within the hold. Earns nothing — the whole sale is forfeit, every product.',
+             au.lateSheets || 0,
+             au.lateFinal ? `final · ${lateDealers.length} dealer${lateDealers.length === 1 ? '' : 's'} still outstanding at ${au.lateDealers?.[0]?.asOn || person.payout?.holdEnd || ''}`
+                          : `provisional · ${num(au.atRiskUnits || 0)} units across ${lateDealers.length} dealer${lateDealers.length === 1 ? '' : 's'} still outstanding, decided ${person.payout?.holdEnd || ''}`,
+             '', lateDealers.length ? 'late' : '')}
+        {show === 'late' && table(<table style={{ width: '100%', borderCollapse: 'collapse' }}><thead><tr style={{ color: 'var(--t3)', fontSize: 9.5, textTransform: 'uppercase' }}><th style={{ textAlign: 'left', padding: '4px 6px' }}>Dealer</th><th style={{ textAlign: 'right', padding: '4px 6px' }}>Units {au.lateFinal ? 'forfeit' : 'at risk'}</th><th style={{ textAlign: 'right', padding: '4px 6px' }}>Pending</th></tr></thead><tbody>
+          {lateDealers.map((l, i) => <tr key={i} style={{ borderTop: '1px solid var(--b1)' }}><td style={{ padding: '3px 6px' }}>{l.name}<div style={{ color: 'var(--t3)' }}>{Object.entries(l.byCategory || {}).map(([c, n]) => `${c} ${num(n)}`).join(' · ')}</div></td><td style={{ textAlign: 'right', padding: '3px 6px' }}>{num(l.units)}</td><td style={{ textAlign: 'right', padding: '3px 6px', color: 'var(--red)' }}>{money(l.pending)}<div style={{ color: 'var(--t3)' }}>as on {l.asOn}</div></td></tr>)}
+        </tbody></table>)}
+
+        {row('Bad debt outstanding', 'badDebtOutstanding', 'Type the balance the month accounts declare it. Later months carry it forward minus what each recovered.', au.badDebtCarried || 0, au.badDebtCarried ? 'carried from the previous month' : 'nothing carried', '₹')}
 
         <label style={{ display: 'block', fontSize: 10.5, fontWeight: 700, letterSpacing: '.06em',
                         textTransform: 'uppercase', color: 'var(--t3)', marginBottom: 4 }}>Note</label>
-        <textarea value={f.note} onChange={e => set('note', e.target.value)} rows={2}
+        <textarea value={f.note} onChange={e => set('note', e.target.value)} rows={2} disabled={paid} placeholder="e.g. territory changed mid-month — handled with the manager"
                   style={{ width: '100%', fontSize: 12, padding: '7px 9px', borderRadius: 8, resize: 'vertical',
                            border: '1px solid var(--b1)', background: 'var(--bg1)', color: 'var(--t1)' }} />
 
         {err && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>{err}</div>}
         <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-          <button className="btn btn-primary" disabled={busy} onClick={save}
-                  style={{ fontSize: 12.5 }}>{busy ? 'Saving…' : 'Save'}</button>
-          <button className="btn" onClick={onClose} style={{ fontSize: 12.5 }}>Cancel</button>
+          {!paid && <button className="btn btn-primary" disabled={busy} onClick={save}
+                  style={{ fontSize: 12.5 }}>{busy ? 'Saving…' : 'Save'}</button>}
+          <button className="btn" onClick={onClose} style={{ fontSize: 12.5 }}>{paid ? 'Close' : 'Cancel'}</button>
         </div>
       </div>
     </div>
@@ -476,6 +506,8 @@ export default function SalesIncentive() {
   const [editing, setEditing] = useState(null);
   const [open, setOpen] = useState({});
   const [calc, setCalc] = useState(false);
+  const [acting, setActing] = useState('');
+  const [actErr, setActErr] = useState('');
 
   useEffect(() => {
     let dead = false;
@@ -488,7 +520,16 @@ export default function SalesIncentive() {
   }, [month, key, ranged, from, to]);
 
   const reload = useCallback(() => setKey(k => k + 1), []);
-  const mine = !!d?.mine;                                     // a salesman looking at their own month
+  const mine = !!d?.mine;
+  const act = async (label, fn) => {
+    setActing(label); setActErr('');
+    try { await fn(); reload(); } catch (e) { setActErr(e?.message || 'Could not do that'); }
+    finally { setActing(''); }
+  };
+  const approveProject = (p, approved) => act('approve:' + p.salesmanId, () => api.salesIncentiveApproveProject({ month: d.month, salesmanId: p.salesmanId, approved }));
+  const markPaid = (p) => { if (!window.confirm(`Mark ${p ? p.name + "'s" : 'every payable'} ${monthLabel(d.month)} incentive as paid? The figures are frozen after this.`)) return; act('paid:' + (p?.salesmanId || 'all'), () => api.salesIncentivePaid({ month: d.month, salesmanId: p?.salesmanId })); };
+  const unmarkPaid = (p) => { if (!window.confirm(`Un-mark ${p.name}'s ${monthLabel(d.month)} as paid?`)) return; act('unpaid:' + p.salesmanId, () => api.salesIncentiveUnpaid({ month: d.month, salesmanId: p.salesmanId })); };
+  const fmtDay = s => s ? new Date(s + 'T00:00:00Z').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '';                                     // a salesman looking at their own month
   useEffect(() => { if (mine && d?.people?.[0]) setOpen({ [d.people[0].salesmanId]: true }); }, [mine, d?.month]);
   const ppr = Number(d?.config?.pointsPerRupee) || 4;
   const pts = v => Math.round((Number(v) || 0) * ppr);          // rupees → points
@@ -578,6 +619,37 @@ export default function SalesIncentive() {
             </div>
           )}
 
+          {/* ── section 4: when this month is paid ────────────── */}
+          {d.schedule && (() => {
+            const sc = d.schedule; const allPaid = people.length > 0 && people.every(p => p.paid); const somePaid = people.some(p => p.paid);
+            const st = allPaid ? 'paid' : sc.status;
+            const tone = st === 'paid' ? 'var(--grn)' : st === 'payable' ? 'var(--acc)' : st === 'held' ? '#b45309' : 'var(--t3)';
+            const Icon = st === 'paid' ? CheckCircle2 : st === 'payable' ? Banknote : Clock;
+            const title = st === 'paid' ? `Paid — ${monthLabel(d.month)} incentive has been paid${somePaid ? '' : ''}`
+              : st === 'payable' ? `Payable — hold ended ${fmtDay(sc.holdEnd)}, pays in the ${monthLabel(sc.payMonth)} salary (${fmtDay(sc.payDate)})`
+              : st === 'held' ? `Held — ${monthLabel(d.month)} closed, collections checked until ${fmtDay(sc.holdEnd)}, then paid in the ${monthLabel(sc.payMonth)} salary`
+              : `Open — ${monthLabel(d.month)} is still running; it closes ${fmtDay(sc.monthEnd)}, is held ${sc.holdDays} days and pays in the ${monthLabel(sc.payMonth)} salary`;
+            return (
+              <div className="card" style={{ padding: '10px 15px', marginBottom: 14, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', borderLeft: `4px solid ${tone}` }}>
+                <Icon size={16} color={tone} style={{ flexShrink: 0 }} />
+                <div style={{ fontSize: 11.5, color: 'var(--t2)', lineHeight: 1.5, flex: 1, minWidth: 220 }}>
+                  <b style={{ color: tone }}>{title}.</b>
+                  {' '}{st === 'paid' ? 'One calendar month, paid as a single amount. No splits, no partial release.' : 'Sales are evaluated together, held for collections, then paid in full in one salary cycle.'}
+                  {t.atRisk > 0 && st !== 'paid' && <> <span style={{ color: '#b45309' }}>{num(t.atRisk)} units are on dealers still outstanding for {monthLabel(d.month)}{sc.final ? ' — forfeited' : ` — forfeit if not cleared by ${fmtDay(sc.holdEnd)}`}.</span></>}
+                  {t.late > 0 && <> <span style={{ color: 'var(--red)' }}>{num(t.late)} units forfeited for late payment.</span></>}
+                  {t.needsApproval > 0 && !mine && <> <span style={{ color: '#b45309' }}>{t.needsApproval} project-sale payout{t.needsApproval === 1 ? '' : 's'} awaiting approval.</span></>}
+                  {d.source === 'rollup' && <> <span style={{ color: 'var(--t3)' }}>No invoice lines for this month, so project sales and exclusions cannot be detected — only late payment.</span></>}
+                </div>
+                {d.canPay && !mine && st === 'payable' && !allPaid && (
+                  <button className="btnp" disabled={!!acting} onClick={() => markPaid(null)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '6px 12px' }}>
+                    <Banknote size={13} /> Mark all as paid
+                  </button>
+                )}
+              </div>
+            );
+          })()}
+          {actErr && <div className="card" style={{ color: 'var(--red)', fontSize: 12, marginBottom: 12 }}>{actErr}</div>}
+
           {/* ── headline tiles ────────────────────────────────── */}
           <div style={{ display: 'grid', gap: 10, marginBottom: 14, gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}>
             <Tile icon={Trophy} label={`${mine ? 'My points' : 'Points'} · ${monthLabel(d.month)}`} value={num(t.points)} big tone="var(--grn)"
@@ -605,7 +677,7 @@ export default function SalesIncentive() {
                     <YAxis tick={{ fontSize: 10, fill: 'var(--t3)' }} axisLine={false} tickLine={false} tickFormatter={v => num(v)} />
                     <Tooltip formatter={v => [num(v) + ' pts', 'Points']} contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid var(--b1)', background: 'var(--bg1)', color: 'var(--t1)' }} />
                     <Bar dataKey="points" radius={[6, 6, 0, 0]}>
-                      {(d.trend || []).map((x, i) => <Cell key={i} fill={x.month === d.month ? 'var(--acc)' : 'rgba(99,102,241,.35)'} />)}
+                      {(d.trend || []).map((x, i) => <Cell key={i} fill={x.status === 'paid' ? 'var(--grn)' : x.month === d.month ? 'var(--acc)' : 'rgba(99,102,241,.35)'} />)}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
@@ -660,10 +732,14 @@ export default function SalesIncentive() {
                             <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
                               {p.gateOpen ? <Unlock size={12} color="var(--grn)" /> : <Lock size={12} color={p.basic ? 'var(--red)' : 'var(--t3)'} />}{p.name}
                             </div>
-                            <div style={{ marginTop: 3 }}>
+                            <div style={{ marginTop: 3, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                               {p.gateOpen ? <Chip tone="var(--grn)" bg="rgba(22,163,74,.14)">basic cleared</Chip>
                                 : p.basic ? <Chip tone="var(--red)" bg="rgba(220,38,38,.12)">short by {num(p.shortfall)}</Chip>
                                 : <Chip>no target</Chip>}
+                              {p.paid && <Chip tone="var(--grn)" bg="rgba(22,163,74,.14)">paid</Chip>}
+                              {p.effective?.latePaymentSheets > 0 && <Chip tone="var(--red)" bg="rgba(220,38,38,.12)" >late −{num(p.effective.latePaymentSheets)}</Chip>}
+                              {!p.auto?.lateFinal && p.auto?.atRiskUnits > 0 && <Chip tone="#b45309" bg="rgba(180,83,9,.12)">{num(p.auto.atRiskUnits)} at risk</Chip>}
+                              {p.effective?.projectSheets > 0 && <Chip tone={p.needsApproval ? '#b45309' : 'var(--acc)'} bg={p.needsApproval ? 'rgba(180,83,9,.12)' : 'rgba(99,102,241,.12)'}>project {num(p.effective.projectSheets)}{p.needsApproval ? ' · approve' : ' ✓'}</Chip>}
                             </div>
                           </td>
                           <td style={{ padding: '10px 6px' }}>
@@ -691,6 +767,8 @@ export default function SalesIncentive() {
                           </td>
                           <td style={{ padding: '10px 10px 10px 0', textAlign: 'right', whiteSpace: 'nowrap' }}>
                             {!mine && <button className="btn" title="Display value, project sheets, late payment, bad debt" onClick={e => { e.stopPropagation(); setEditing(p); }} style={{ padding: '3px 6px' }}><Pencil size={11} /></button>}
+                            {!mine && p.needsApproval && !p.paid && <button className="btn" title="Approve the project-sale payout (management approval)" disabled={!!acting} onClick={e => { e.stopPropagation(); approveProject(p, true); }} style={{ padding: '3px 6px', marginLeft: 4, color: '#b45309' }}><ShieldCheck size={11} /></button>}
+                            {!mine && d.canPay && p.payout?.status === 'payable' && !p.paid && <button className="btn" title="Mark this salesman's month as paid" disabled={!!acting || p.needsApproval} onClick={e => { e.stopPropagation(); markPaid(p); }} style={{ padding: '3px 6px', marginLeft: 4, color: 'var(--grn)' }}><Banknote size={11} /></button>}
                             <span style={{ display: 'inline-block', marginLeft: 6, color: 'var(--t3)', verticalAlign: 'middle' }}>{isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
                           </td>
                         </tr>
@@ -743,6 +821,15 @@ export default function SalesIncentive() {
                                     </tr>
                                   </tbody>
                                 </table>
+                                {(p.effective?.projectSheets > 0 || p.effective?.latePaymentSheets > 0 || p.auto?.excluded?.units > 0 || p.auto?.returns?.units > 0 || (!p.auto?.lateFinal && p.auto?.atRiskUnits > 0)) && (
+                                  <div style={{ marginTop: 8, fontSize: 11, color: 'var(--t2)', lineHeight: 1.6, display: 'grid', gap: 2 }}>
+                                    {p.effective.projectSheets > 0 && <div><AlertOctagon size={11} style={{ verticalAlign: -1, marginRight: 4 }} color="#b45309" />Project sales: <b>{num(p.effective.projectSheets)}</b> laminate sheets under regular price count as {num(Math.round(p.effective.projectSheets * (d.config?.projectCredit ?? 0.5)))} → laminate credited {num(p.credited)} of {num(p.gross)} sold.{p.needsApproval ? <span style={{ color: '#b45309' }}> Payout awaits management approval.</span> : p.adjustments?.projectApproved ? <span style={{ color: 'var(--grn)' }}> Approved.</span> : ''}{!mine && p.adjustments?.projectApproved && !p.paid && <button className="btn" style={{ fontSize: 10, padding: '1px 6px', marginLeft: 6 }} onClick={e => { e.stopPropagation(); approveProject(p, false); }}>withdraw</button>}</div>}
+                                    {p.effective.latePaymentSheets > 0 && <div style={{ color: 'var(--red)' }}>Late payment: <b>{num(p.effective.latePaymentSheets)}</b> units forfeited — {p.auto?.lateDealers?.length ? p.auto.lateDealers.slice(0, 4).map(x => x.name).join(', ') + (p.auto.lateDealers.length > 4 ? ` +${p.auto.lateDealers.length - 4} more` : '') : 'entered by admin'} not cleared within {p.payout?.holdDays || 90} days. No proration: the whole sale earns nothing.</div>}
+                                    {!p.auto?.lateFinal && p.auto?.atRiskUnits > 0 && <div style={{ color: '#b45309' }}>At risk: <b>{num(p.auto.atRiskUnits)}</b> units on {p.auto.lateDealers.length} dealer{p.auto.lateDealers.length === 1 ? '' : 's'} still outstanding for {monthLabel(d.month)}. Forfeit if not cleared by {fmtDay(p.payout?.holdEnd)}.</div>}
+                                    {p.auto?.excluded?.units > 0 && <div style={{ color: 'var(--t3)' }}>Never counted: {num(p.auto.excluded.units)} units ({Object.entries(p.auto.excluded.byReason || {}).map(([k, n]) => `${k} ${num(n)}`).join(', ')}).</div>}
+                                    {p.auto?.returns?.units > 0 && <div style={{ color: 'var(--t3)' }}>Returns reversed: {num(p.auto.returns.units)} units taken off this month.</div>}
+                                  </div>
+                                )}
                                 <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px dashed var(--b1)', display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 12 }}>
                                   <span style={{ color: 'var(--t3)' }}>Earned <b style={{ color: 'var(--t1)' }}>{num(p.grossPoints)}</b></span>
                                   {p.clawback > 0 && <span style={{ color: 'var(--t3)' }}>Bad-debt recovery <b style={{ color: 'var(--red)' }}>−{num(pts(p.clawback))}</b></span>}
@@ -756,6 +843,8 @@ export default function SalesIncentive() {
                                       : `Laminate is ${p.basic ? num(p.shortfall) + ' sheets' : 'without a target'} short of basic, so laminate earns nothing this month. Other products and display still earn above their own targets.`}
                                   </div>
                                 )}
+                                {p.badDebtOutstanding > 0 && <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 6 }}>Bad debt still to recover: {money(p.badDebtOutstanding)}{p.clawback > 0 ? ` — ${money(p.clawback)} taken this month, ${money(Math.max(0, p.badDebtOutstanding - p.clawback))} carried forward` : ' — no earnings this month, so no deduction'}. Never more than the month's incentive.</div>}
+                                {p.paid && <div style={{ fontSize: 11, color: 'var(--grn)', marginTop: 6 }}>Paid {fmtDay(String(p.paid.at).slice(0, 10))}{p.paid.by ? ` by ${p.paid.by}` : ''} · figures frozen at {num(p.points)} pts.{!mine && d.canPay && <button className="btn" style={{ fontSize: 10, padding: '1px 6px', marginLeft: 8 }} onClick={e => { e.stopPropagation(); unmarkPaid(p); }}>un-mark (superadmin)</button>}</div>}
                                 {p.adjustments?.note && <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 6 }}>Note: {p.adjustments.note}</div>}
                               </div>
                             </td>
@@ -772,7 +861,7 @@ export default function SalesIncentive() {
         </>
       )}
 
-      {editing && <AdjustModal person={editing} month={d?.month} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); reload(); }} />}
+      {editing && <AdjustModal person={editing} month={d?.month} ppr={ppr} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); reload(); }} />}
       {calc && d && <EstimateModal key={(people[0] || everyone[0])?.salesmanId + ':' + d.month} d={d} person={people[0] || everyone[0]} onClose={() => setCalc(false)} />}
     </div>
   );

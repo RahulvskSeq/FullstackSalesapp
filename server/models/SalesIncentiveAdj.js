@@ -18,14 +18,30 @@ const S = new mongoose.Schema({
   month:      { type: String, required: true, index: true },   // YYYY-MM
   salesmanId: { type: String, required: true, index: true },
 
+  // Each figure is worked out from the data when it can be (see
+  // lib/salesIncentiveFacts.js). A number here OVERRIDES that; null means
+  // "use what the system found".
   // Rupee value of display material sold to dealers — earns displayPct.
-  displayValue:       { type: Number, default: 0 },
+  displayValue:       { type: Number, default: null },
   // Laminate sheets sold at or below the project-sale price: half credit.
-  projectSheets:      { type: Number, default: 0 },
+  projectSheets:      { type: Number, default: null },
   // Laminate sheets on sales not collected inside the 90-day window: no credit.
-  latePaymentSheets:  { type: Number, default: 0 },
+  latePaymentSheets:  { type: Number, default: null },
   // Balance still to recover; 25% of each month's incentive goes against it.
-  badDebtOutstanding: { type: Number, default: 0 },
+  // Set when accounts declare it; later months carry it forward minus what
+  // each month recovered, unless typed again.
+  badDebtOutstanding: { type: Number, default: null },
+
+  // Section 3: a project-sale payout needs management approval.
+  projectApproved:    { type: Boolean, default: false },
+  projectApprovedBy:  { type: String, default: '' },
+  projectApprovedAt:  { type: Date, default: null },
+
+  // Section 4: the month is paid once, in full, after the hold. The figures
+  // are frozen here so a later return or upload cannot rewrite a paid slip.
+  paidAt:     { type: Date, default: null },
+  paidBy:     { type: String, default: '' },
+  paid:       { type: mongoose.Schema.Types.Mixed, default: null },
 
   note:       { type: String, default: '' },
   updatedBy:  { type: String, default: '' },

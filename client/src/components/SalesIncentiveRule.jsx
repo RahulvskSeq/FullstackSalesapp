@@ -42,10 +42,11 @@ export default function SalesIncentiveRule() {
   const [busy, setBusy] = useState(false);
   const [err, setErr]   = useState('');
   const [ok, setOk]     = useState('');
+  const [canEdit, setCanEdit] = useState(true);   // section 6: the CEO (superadmin) changes the rule
 
   const load = useCallback(() => {
     api.salesIncentiveConfig()
-      .then(r => { setCfg(r.config); setDefs(r.defaults); })
+      .then(r => { setCfg(r.config); setDefs(r.defaults); setCanEdit(r.canEdit !== false); })
       .catch(e => setErr(e?.message || 'Could not load the rule'));
   }, []);
   useEffect(load, [load]);
@@ -294,6 +295,59 @@ export default function SalesIncentiveRule() {
         </button>
       </div>
 
+      {/* ── section 3 & 4: what never counts, and when it is paid ─── */}
+      <div className="card" style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>What never counts, and when it is paid</div>
+        <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 11, lineHeight: 1.7 }}>
+          Worked out from the ERP invoice lines and the Collections outstanding uploads, so nobody has to type
+          them. Any figure can still be overridden per salesman on the dashboard.
+        </div>
+        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))' }}>
+          <Field label="Hold after month end" value={cfg.holdDays ?? 90} onChange={v => set('holdDays', n(v))} step="1" suffix="days"
+                 hint="the month is evaluated together, held this long for collections, then paid in the next salary" />
+          <Field label="Salary day" value={cfg.salaryDay ?? 7} onChange={v => set('salaryDay', n(v))} step="1" suffix="of month"
+                 hint="first salary cycle on or after the hold ends pays the month" />
+          <Field label="Project sale: below regular by" value={cfg.projectBelow ?? 50} onChange={v => set('projectBelow', n(v))} step="5" prefix="₹" suffix="/sheet"
+                 hint="regular price = the price the product most often sells at; laminate priced this much under it counts at the project credit" />
+        </div>
+        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', marginTop: 12 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer' }}>
+            <input type="checkbox" checked={cfg.projectDetect !== false} onChange={e => set('projectDetect', e.target.checked)} />
+            <span><b>Detect project sales</b> from invoice prices (needs management approval before payout)</span>
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer' }}>
+            <input type="checkbox" checked={cfg.lateDetect !== false} onChange={e => set('lateDetect', e.target.checked)} />
+            <span><b>Detect late payment</b> from Collections — a dealer's month still outstanding when the hold ends forfeits that whole sale</span>
+          </label>
+        </div>
+        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', marginTop: 12 }}>
+          {[
+            ['countStatusPattern',  'Counts as a sale (ERP status)', 'sales invoice', 'only lines whose status matches'],
+            ['returnStatusPattern', 'Reverses units (ERP status)',   'return|credit note', 'returns and cancellations, reversed in the month they happen'],
+            ['excludeNamePattern',  'Never counts (product name)',   'sample kit|stock transfer', 'sample kits, free display kits — matched against the product name'],
+          ].map(([k, label, ph, hint]) => (
+            <div key={k}>
+              <label style={{ display: 'block', fontSize: 10.5, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--t3)', marginBottom: 5 }}>{label}</label>
+              <input value={cfg[k] ?? ''} placeholder={ph} onChange={e => set(k, e.target.value)}
+                     style={{ width: '100%', fontSize: 13, padding: '7px 9px', borderRadius: 8, border: '1px solid var(--b1)', background: 'var(--bg1)', color: 'var(--t1)' }} />
+              <div style={{ fontSize: 10, color: 'var(--t3)', marginTop: 3, lineHeight: 1.5 }}>{hint}</div>
+            </div>
+          ))}
+          {[
+            ['excludePartyRoles', 'Internal locations (party role)', 'Showroom', 'stock transfers to these party roles never count — comma separated'],
+            ['displayCategories', 'Display categories', 'DISPLAY', 'category types whose VALUE earns the display % — comma separated; blank = typed per salesman'],
+          ].map(([k, label, ph, hint]) => (
+            <div key={k}>
+              <label style={{ display: 'block', fontSize: 10.5, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--t3)', marginBottom: 5 }}>{label}</label>
+              <input value={(cfg[k] || []).join(', ')} placeholder={ph}
+                     onChange={e => set(k, e.target.value.split(',').map(x => x.trim()).filter(Boolean))}
+                     style={{ width: '100%', fontSize: 13, padding: '7px 9px', borderRadius: 8, border: '1px solid var(--b1)', background: 'var(--bg1)', color: 'var(--t1)' }} />
+              <div style={{ fontSize: 10, color: 'var(--t3)', marginTop: 3, lineHeight: 1.5 }}>{hint}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* ── worked example, live ────────────────────────────────── */}
       <div className="card" style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Worked example</div>
@@ -350,12 +404,14 @@ export default function SalesIncentiveRule() {
         })()}
       </div>
 
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <button className="btn btn-primary" onClick={save} disabled={busy}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <button className="btn btn-primary" onClick={save} disabled={busy || !canEdit}
+                title={canEdit ? '' : 'Targets, rates and the gate can only be changed by the CEO (superadmin)'}
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12.5 }}>
           <Save size={12} /> {busy ? 'Saving…' : 'Save rule'}
         </button>
-        {defs && (
+        {!canEdit && <span style={{ fontSize: 11.5, color: 'var(--t3)' }}>Read-only: targets, rates and the gate can only be changed by the CEO. Operations may clarify edge cases only.</span>}
+        {defs && canEdit && (
           <button className="btn" onClick={() => setCfg({ ...defs })}
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12.5 }}>
             <RotateCcw size={12} /> Reset to the published scheme

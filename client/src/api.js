@@ -2242,6 +2242,15 @@ export const api = {
   salesIncentiveAdjSave: (body) => fetch(`${BASE}/sales-incentive/adjustments`,{
     method:'PUT', headers:{...authHeaders(),'Content-Type':'application/json'}, body:JSON.stringify(body),
   }).then(handle),
+  salesIncentiveApproveProject: (body) => fetch(`${BASE}/sales-incentive/approve-project`,{
+    method:'POST', headers:{...authHeaders(),'Content-Type':'application/json'}, body:JSON.stringify(body),
+  }).then(handle),
+  salesIncentivePaid: (body) => fetch(`${BASE}/sales-incentive/paid`,{
+    method:'POST', headers:{...authHeaders(),'Content-Type':'application/json'}, body:JSON.stringify(body),
+  }).then(handle),
+  salesIncentiveUnpaid: (body) => fetch(`${BASE}/sales-incentive/unpaid`,{
+    method:'POST', headers:{...authHeaders(),'Content-Type':'application/json'}, body:JSON.stringify(body),
+  }).then(handle),
   salesIncentiveConfig:  ()     => fetch(`${BASE}/sales-incentive/config`,{headers:authHeaders()}).then(handle),
   salesIncentiveConfigSave: (c) => fetch(`${BASE}/sales-incentive/config`,{
     method:'PUT', headers:{...authHeaders(),'Content-Type':'application/json'}, body:JSON.stringify(c),
