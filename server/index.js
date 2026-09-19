@@ -165,6 +165,7 @@ import salesIncentiveRoutes from './routes/salesIncentive.js';
 import collectionsRoutes, { startJobs as startCollectionJobs, startTick as startCollectionTick } from './collections/routes/index.js';
 import appUpdateRoutes  from './routes/appupdate.js';
 import incentiveApiRoutes from './routes/incentiveApi.js';
+import salesIncentiveApiRoutes from './routes/salesIncentiveApi.js';
 import sheetRoutes       from './routes/sheets.js';
 import productTxRoutes  from './routes/producttx.js';
 import { auditTrail }    from './lib/auditTrail.js';
@@ -209,6 +210,7 @@ app.use('/api/sheets',      sheetRoutes);
 app.use('/api/producttx',   productTxRoutes);  // raw ERP product-transaction import + report
 app.use('/api/app',         appUpdateRoutes);   // in-app APK update channel
 app.use('/api/external/incentive', incentiveApiRoutes);   // key-authenticated read API for other software
+app.use('/api/external/sales-incentive', salesIncentiveApiRoutes);   // same key — the salesman (laminate) scheme
 
 app.get('/api/health', (_, res) => res.json({ ok:true, time:new Date(), version:'1.0.0' }));
 
