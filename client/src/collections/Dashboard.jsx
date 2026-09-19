@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import ApprovalsModal from './Approvals';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid } from 'recharts';
 import { col } from './api';
-import { useLoad, PageHead, Card, Tile, Table, Badge, Busy, ErrorBox, money, num, fmtDate, DealerLink, userName, useDealerCtx, CardRow, monthCols, MonthKVs } from './ui';
+import { useLoad, PageHead, Card, Tile, Table, Badge, Busy, ErrorBox, money, num, fmtDate, periodLabel, DealerLink, userName, useDealerCtx, CardRow, monthCols, MonthKVs } from './ui';
 
 const AGE_COLOURS = ['#22c55e', '#84cc16', '#eab308', '#f97316', '#ef4444', '#991b1b'];
 
@@ -20,7 +20,7 @@ export default function Dashboard({ go }) {
       <PageHead icon={Gauge} tone="var(--acc)" title={isStaff ? "Collection dashboard" : "My dashboard"} sub={`As of ${fmtDate(data.today)} · outstanding = latest statement · collected = what statements showed coming in`} right={<button className="btn" data-tip="Reload the figures" onClick={reload}>Refresh</button>} />
       <div className="stat-grid">
         <Tile label="Total outstanding" value={money(t.totalOutstanding)} sub={`${num(t.owingDealers)} dealers owing`} tone="var(--acc)" onClick={() => go('colOutstanding')} />
-        <Tile label="Overdue" value={money(t.overdueOutstanding)} sub={`${num(t.overdueDealers)} dealers past their credit days`} tone="var(--red)" onClick={() => go('colOutstanding', { overdue: '1' })} />
+        <Tile label={`Due · ${periodLabel(t.collectionMonth) || 'no statement'}`} value={money(t.overdueOutstanding)} sub={`${num(t.overdueDealers)} dealers still have ${periodLabel(t.collectionMonth)} pending · clears as they pay`} tone="var(--red)" onClick={() => go('colOutstanding', { overdue: '1' })} />
         <Tile label="Recorded today" value={money(t.recordedToday)} sub={`${num(t.recordedTodayCount)} entries by salesmen · counted once a statement shows them`} tone="#f59e0b" onClick={() => setPending('today')} />
         <Tile label={`Collected · ${fmtDate(t.latestCollectedDate)}`} value={money(t.latestCollected)} sub={`${num(t.latestCollectedCount)} payments · shown by the statement of ${fmtDate(t.latestStatementDate)}`} tone="var(--grn)" onClick={() => go('colPayments', { from: t.latestCollectedDate, to: t.latestCollectedDate, status: 'CONFIRMED' })} />
         <Tile label="Collected this month" value={money(t.monthCollection)} sub={`${num(t.monthPayments)} payments came`} tone="var(--grn)" onClick={() => go('colPayments', { from: data.today.slice(0, 7) + '-01', to: data.today, status: 'CONFIRMED' })} />

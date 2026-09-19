@@ -55,12 +55,38 @@ export function derivePriority({ total, ageDays, brokenPromises }, thresholds) {
   return order[i];
 }
 
-/** Days after which a dealer's oldest unpaid month counts as overdue. */
+/** Days after which a dealer's oldest unpaid month counts as overdue (used when no statement sets a collection month). */
 export function overdueAfter(b, cfg) { const cd = Number(b?.creditDays) || 0; return cd > 0 ? cd : (cfg?.overdueDays || Infinity); }
-/** Overdue is a fact about the money, separate from the status: a dealer who
- *  paid part of it (PARTIAL_PAYMENT) or promised (PROMISED) can still be past
- *  their credit days on what is left. */
-export function isOverdue(b, cfg) { return (b?.total || 0) > 0 && b?.ageDays !== null && b?.ageDays !== undefined && b.ageDays > overdueAfter(b, cfg); }
+
+/**
+ * The collection month: the oldest column of the latest statement. That is
+ * the month accounts is chasing right now — the Tally export folds every
+ * older bill into its first column, so "July still pending" means "bills
+ * from July or before still unpaid".
+ */
+export async function collectionMonthOf({ session = null } = {}) {
+  const imp = await ColImport.findOne({ status: 'APPLIED' }, 'periods asOn').sort({ asOn: -1, appliedAt: -1 }).session(session).lean();
+  const ps = (imp?.periods || []).filter(p => /^\d{4}-\d{2}$/.test(p)).sort();
+  return ps[0] || '';
+}
+/** What the dealer still owes from the collection month (and older). */
+export function dueAmountOf(buckets, collectionMonth) {
+  if (!collectionMonth) return 0;
+  const b = buckets instanceof Map ? Object.fromEntries(buckets) : (buckets || {});
+  return Math.max(0, Number(b[collectionMonth]) || 0);
+}
+/**
+ * Due, as the office means it: the dealer still has money in the collection
+ * month. Clear that month and the dealer drops off, whatever the credit
+ * days say. A fact about the money, separate from the status — a dealer who
+ * paid part (PARTIAL_PAYMENT) or promised (PROMISED) can still be due on the
+ * rest. Without a statement to name the month, credit days decide.
+ */
+export function isOverdue(b, cfg) {
+  if ((b?.total || 0) <= 0) return false;
+  if (cfg?.collectionMonth) return dueAmountOf(b?.buckets, cfg.collectionMonth) > 0;
+  return b?.ageDays !== null && b?.ageDays !== undefined && b.ageDays > overdueAfter(b, cfg);
+}
 
 export function deriveStatus(b, cycle, cfg, today = todayYmd()) {
   // Nothing due: CLEARED if a cycle was ever paid down to zero, NIL if the
@@ -70,9 +96,8 @@ export function deriveStatus(b, cycle, cfg, today = todayYmd()) {
   if ((b.brokenPromises || 0) > 0) return 'FOLLOW_UP_REQUIRED';
   if (b.lastPaymentAt && cycle && b.lastPaymentAt >= cycle.openedAt) return 'PARTIAL_PAYMENT';
   if ((b.total || 0) >= (cfg.highValue || Infinity)) return 'HIGH_PRIORITY';
-  // Overdue once the oldest unpaid month is older than the dealer's own
-  // credit days (Dealer master) — or the module's default when none is set.
-  if (b.ageDays !== null && b.ageDays !== undefined && b.ageDays > overdueAfter(b, cfg)) return 'OVERDUE';
+  // Still owing from the collection month (the statement's oldest column).
+  if (isOverdue(b, cfg)) return 'OVERDUE';
   // Nothing specific has happened yet: it is simply due, and the priority
   // (critical / high / medium / low, from amount and age) says how urgently.
   return 'DUE';
@@ -125,7 +150,9 @@ const toObj = m => m instanceof Map ? Object.fromEntries(m) : (m || {});
 
 /** Everything a chunk of rows needs to read, in five queries. Lean documents. */
 export async function preloadCtx(imp, ids, { session = null } = {}) {
-  const cfg = { overdueDays: await getSetting('collections.overdueDays'), highValue: await getSetting('collections.highValue'), thresholds: await getSetting('collections.priorityThresholds') };
+  const cfg = { overdueDays: await getSetting('collections.overdueDays'), highValue: await getSetting('collections.highValue'), thresholds: await getSetting('collections.priorityThresholds'),
+    // this import's own oldest column is the collection month for the rows it writes
+    collectionMonth: (imp.periods || []).filter(p => /^\d{4}-\d{2}$/.test(p)).sort()[0] || await collectionMonthOf({ session }) };
   // Sequential on purpose: operations inside one transaction share a session,
   // and the driver requires them one at a time — firing them together makes
   // the server reject the later ones with NoSuchTransaction.
@@ -214,6 +241,7 @@ export function planRow(imp, row, dealer, ctx, { by = '' } = {}) {
   next.priority = derivePriority({ total, ageDays: next.ageDays, brokenPromises: balance?.brokenPromises || 0 }, ctx.cfg.thresholds);
   next.status = deriveStatus(next, cycleForStatus, ctx.cfg);
   next.overdue = isOverdue(next, ctx.cfg);
+  next.dueAmount = dueAmountOf(buckets, ctx.cfg.collectionMonth);
   const { _id, dealerId: _d, createdAt, updatedAt, __v, version, ...set } = next;
   plan.balance = { dealerId, set };
   return plan;
@@ -341,7 +369,7 @@ export async function refreshBalance(dealerId, { session = null } = {}) {
   const balance = await ColBalance.findOne({ dealerId }).session(session);
   if (!balance) return null;
   const cycle = balance.openCycleId ? await ColCycle.findById(balance.openCycleId).session(session) : await ColCycle.findOne({ dealerId }).sort({ cycleNo: -1 }).session(session);
-  const cfg = { overdueDays: await getSetting('collections.overdueDays'), highValue: await getSetting('collections.highValue'), thresholds: await getSetting('collections.priorityThresholds') };
+  const cfg = { overdueDays: await getSetting('collections.overdueDays'), highValue: await getSetting('collections.highValue'), thresholds: await getSetting('collections.priorityThresholds'), collectionMonth: await collectionMonthOf({ session }) };
   // Age moves every day, not only on import day; and the dealer's credit
   // terms may have been edited since the last statement.
   const oldest = oldestPeriodOf(balance.buckets instanceof Map ? Object.fromEntries(balance.buckets) : (balance.buckets || {}));
@@ -351,6 +379,7 @@ export async function refreshBalance(dealerId, { session = null } = {}) {
   balance.priority = derivePriority({ total: balance.total, ageDays: balance.ageDays, brokenPromises: balance.brokenPromises }, cfg.thresholds);
   balance.status = deriveStatus(balance, cycle, cfg);
   balance.overdue = isOverdue(balance, cfg);
+  balance.dueAmount = dueAmountOf(balance.buckets, cfg.collectionMonth);
   await balance.save({ session });
   return balance;
 }

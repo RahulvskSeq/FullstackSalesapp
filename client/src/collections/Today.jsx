@@ -27,6 +27,10 @@ export default function Today() {
   const byName = rows => mq.trim() ? rows.filter(r => (r.dealerName || '').toLowerCase().includes(mq.trim().toLowerCase())) : rows;
   const searchBox = <input className="inp" value={mq} onChange={e => setMq(e.target.value)} placeholder="Search dealer name…" style={{ marginBottom: 10 }} autoFocus />;
   const [pending, setPending] = useState(false);
+  // Today's work is about the collection month: only dealers who still owe
+  // it are listed. The switch shows everyone with a follow-up or promise.
+  const [onlyDue, setOnlyDue] = useState(() => { try { return localStorage.getItem('col_today_onlyDue') !== '0'; } catch { return true; } });
+  const toggleOnlyDue = () => setOnlyDue(v => { try { localStorage.setItem('col_today_onlyDue', v ? '0' : '1'); } catch {} return !v; });
   const [done, setDone] = useState(null);   // task being completed
   if (busy && !data) return <Busy />;
   if (err) return <ErrorBox err={err} onRetry={reload} />;
@@ -89,7 +93,7 @@ export default function Today() {
     { k: 'dealer', h: 'Dealer', r: r => <DealerLink id={r.dealerId} name={r.dealerName} code={r.dealerCode} /> },
     ...months, { k: 'total', h: 'Outstanding', align: 'right', r: r => <b>{money(r.total)}</b> },
     { k: 'ageDays', h: 'Age', align: 'right', r: r => r.ageDays == null ? '—' : <span data-tip={r.oldestPeriod ? `oldest unpaid month ${periodLabel(r.oldestPeriod)}${r.creditDays ? ` · credit ${r.creditDays} days` : ''}` : undefined} style={{ color: (r.overdue ?? r.balOverdue) ? 'var(--red)' : undefined }}>{r.ageDays + 'd'}</span> },
-    { k: 'status', h: 'Status', r: r => <span className="row" style={{ gap: 4 }}><StatusBadge status={r.status} priority={r.priority} />{(r.overdue ?? r.balOverdue) && r.status !== 'OVERDUE' ? <Badge v="OVERDUE" label="overdue" /> : null}</span> },
+    { k: 'status', h: 'Status', r: r => <span className="row" style={{ gap: 4 }}><StatusBadge status={r.status} priority={r.priority} />{(r.overdue ?? r.balOverdue) && r.status !== 'OVERDUE' ? <Badge v="OVERDUE" label={`due · ${periodLabel(d.collectionMonth)}`} /> : null}</span> },
     { k: 'came', h: 'Came', align: 'right', r: r => <Came r={r} /> },
     { k: 'nextFollowupAt', h: 'Follow-up', r: r => <FollowupDate value={r.nextFollowupAt} onOpen={() => setForm({ kind: 'followup', dealer: dealerOf(r), focusDate: true })} /> },
     { k: 'promise', h: 'Promise', r: r => r.promise?.amount ? `${money(r.promise.amount)} by ${fmtDate(r.promise.date)}` : '—' },
@@ -112,7 +116,8 @@ export default function Today() {
   // below. The tiles count these same deduped lists, so a tile never says 16
   // over a section of 5.
   const seen = new Set();
-  const once = rows => rows.filter(r => { const k = String(r.dealerId); if (seen.has(k) || (r.balanceTotal ?? r.total ?? 1) <= 0) return false; seen.add(k); return true; });
+  const owesDue = r => !!(r.overdue ?? r.balOverdue);
+  const once = rows => rows.filter(r => { const k = String(r.dealerId); if (seen.has(k) || (r.balanceTotal ?? r.total ?? 1) <= 0) return false; if (onlyDue && !owesDue(r)) return false; seen.add(k); return true; });
   const promisesToday = once(d.promisesToday), followupsDue = once(d.followupsDue), promisesBroken = once(d.promisesBroken), followupsOverdue = once(d.followupsOverdue), overdue = once(d.overdue || []), highPriority = once(d.highPriority);
   const promisesTodayDue = promisesToday.reduce((s, p) => s + (p.amount - (p.received || 0)), 0);
   // each section wears its own colour so the eye finds it without reading
@@ -122,7 +127,8 @@ export default function Today() {
   );
   return (
     <div>
-      <PageHead icon={CalendarCheck} tone="var(--yel)" title="Today's work" sub={fmtDate(d.today) + (isStaff ? (emp ? ' · ' + userName(users, emp) : ' · everyone in scope') : '')} right={<>
+      <PageHead icon={CalendarCheck} tone="var(--yel)" title="Today's work" sub={fmtDate(d.today) + (isStaff ? (emp ? ' · ' + userName(users, emp) : ' · everyone in scope') : '') + (d.collectionMonth ? ` · collecting ${periodLabel(d.collectionMonth)}` : '')} right={<>
+        <label className="row" style={{ fontSize: 12, gap: 5, cursor: 'pointer', color: onlyDue ? 'var(--red)' : 'var(--t2)' }} data-tip={`On: only dealers who still owe ${periodLabel(d.collectionMonth)}. Off: everyone with a follow-up, promise or flag.`}><input type="checkbox" checked={onlyDue} onChange={toggleOnlyDue} /> only {periodLabel(d.collectionMonth) || 'due'} pending</label>
         {isStaff && <select className="sel" value={emp} onChange={e => setEmp(e.target.value)}><option value="">Everyone</option>{(users || []).filter(u => u.role === 'salesman').map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select>}
         <button className="btn" data-tip="Record a call or visit" onClick={() => setForm({ kind: 'followup' })}><NotebookPen size={12} /> Follow-up</button>
         <button className="btn" data-tip="Record money received" onClick={() => setForm({ kind: 'payment' })}><Banknote size={12} /> Payment</button>
@@ -133,23 +139,6 @@ export default function Today() {
         <span className="spacer" style={{ flex: 1 }} />
         <button className="btnp" onClick={() => setPending(true)} data-tip="Told / came / still to come, for each entry">Pending approval ({num(d.pendingRecorded)})</button>
       </div>}
-      {(() => {
-        const came = d.recentPayments || []; const sum = came.reduce((a, p) => a + (p.amount || 0), 0);
-        const how = p => p.source === 'statement' ? (/[Pp]romised/.test(p.remarks || '') ? 'promise kept · statement' : 'seen in statement') : 'recorded · confirmed by statement';
-        const cameCols = [
-          { k: 'dealer', h: 'Dealer', r: r => <DealerLink id={r.dealerId} name={r.dealerName} code={r.dealerCode} /> },
-          { k: 'amount', h: 'Came', align: 'right', r: r => <b style={{ color: 'var(--grn)' }}>{money(r.amount)}</b> },
-          { k: 'date', h: 'On', r: r => fmtDate(r.date) },
-          { k: 'how', h: 'How it was known', r: how },
-          { k: 'balanceTotal', h: 'Still outstanding', align: 'right', r: r => money(r.balanceTotal) },
-          { k: 'status', h: 'Status', r: r => <StatusBadge status={r.balStatus} priority={r.balPriority} /> },
-        ];
-        const cameCard = r => <>
-          <CardRow><DealerLink id={r.dealerId} name={r.dealerName} code={r.dealerCode} /><b style={{ color: 'var(--grn)' }}>{money(r.amount)}</b></CardRow>
-          <div style={{ fontSize: 11.5, color: 'var(--t2)' }}>{fmtDate(r.date)} · {how(r)} · still {money(r.balanceTotal)}</div>
-        </>;
-        return <Section t={`Came in · last 7 days · ${money(sum)}`} n={came.length} tone="var(--grn)" bg="rgba(22,163,74,.05)" sub="every payment the statements showed, newest first"><Table dense cols={cameCols} rows={came} keyOf={r => r._id} empty="No payment came in the last 7 days." card={cameCard} onRow={r => openRecord('payment', r, reload)} /></Section>;
-      })()}
       <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
         <div className="stat-card" onClick={() => setTileModal('followups')} data-tip="Open all follow-ups due and overdue" style={{ cursor: 'pointer' }}><div style={{ fontSize: 10.5, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase' }}>Follow-ups</div><div style={{ fontSize: 19, fontWeight: 800 }}>{num(followupsDue.length)} <span style={{ fontSize: 12, color: 'var(--red)' }}>{followupsOverdue.length ? `+${followupsOverdue.length} overdue` : ''}</span></div></div>
         <div className="stat-card" onClick={() => setTileModal('promises')} data-tip="Open every promise falling due today" style={{ cursor: 'pointer' }}><div style={{ fontSize: 10.5, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase' }}>Promises today</div><div style={{ fontSize: 19, fontWeight: 800 }}>{money(promisesTodayDue)} <span style={{ fontSize: 12, color: 'var(--t3)' }}>{promisesToday.length ? `· ${num(promisesToday.length)}` : ''}</span></div></div>
@@ -159,7 +148,7 @@ export default function Today() {
       <Section t="Overdue follow-ups" n={followupsOverdue.length} tone="var(--red)" bg="rgba(220,38,38,.04)"><Table dense cols={balCols} rows={followupsOverdue} keyOf={r => r.dealerId} empty="Nothing overdue." card={balCard} onRow={r => openRow(r)} /></Section>
       <Section t="Promises due today" n={promisesToday.length} tone="#b45309" bg="rgba(245,158,11,.05)"><Table dense cols={promCols} rows={promisesToday} empty="No promises fall due today." card={promCard} onRow={openProm} /></Section>
       <Section t="Broken promises" n={promisesBroken.length} tone="var(--red)" bg="rgba(220,38,38,.04)"><Table dense cols={promCols} rows={promisesBroken} empty="No broken promises." card={promCard} onRow={openProm} /></Section>
-      <Section t="Overdue payments" n={overdue.length} tone="var(--red)" bg="rgba(220,38,38,.04)" sub="oldest unpaid month is past the dealer's credit days"><Table dense cols={balCols} rows={overdue} keyOf={r => r.dealerId} empty="Nobody is past their credit days." card={balCard} onRow={r => openRow(r)} /></Section>
+      <Section t={`Due for collection · ${periodLabel(d.collectionMonth) || 'no statement'} · ${money(overdue.reduce((a, r) => a + (r.dueAmount || r.balDueAmount || 0), 0))}`} n={overdue.length} tone="var(--red)" bg="rgba(220,38,38,.04)" sub={`${periodLabel(d.collectionMonth)} column still pending in the latest statement · a dealer drops off the moment that month is cleared`}><Table dense cols={balCols} rows={overdue} keyOf={r => r.dealerId} empty={`Nobody has ${periodLabel(d.collectionMonth)} pending.`} card={balCard} onRow={r => openRow(r)} /></Section>
       <Section t="High-priority dealers" n={highPriority.length} tone="var(--t3)"><Table dense cols={balCols} rows={highPriority} keyOf={r => r.dealerId} empty="Nobody else is flagged high priority." card={balCard} onRow={r => openRow(r)} /></Section>
       {pending && <ApprovalsModal onClose={() => setPending(false)} onChanged={reload} />}
       {tileModal === 'followups' && <Modal title={<span>Follow-ups <span className="chip">{num(d.followupsDue.length)} today · {num(d.followupsOverdue.length)} overdue</span></span>} onClose={() => { setTileModal(null); setMq(''); }} width={960}>

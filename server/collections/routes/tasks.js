@@ -1,3 +1,4 @@
+import { collectionMonthOf } from '../engines/reconcile.js';
 import express from 'express';
 import { protect } from '../../middleware/auth.js';
 import { ColTask, ColPromise, ColBalance, ColPayment, ColEvent, ColImport } from '../models/index.js';
@@ -49,16 +50,16 @@ router.get('/today', async (req, res) => {
       ColEvent.find({ ...sf, type: { $in: ['NEW_OUTSTANDING', 'REOPENED'] }, at: { $gte: since } }).sort({ at: -1 }).limit(20).lean(),
       ColEvent.find({ ...sf, type: 'CLEARED', at: { $gte: since } }).sort({ at: -1 }).limit(20).lean(),
       // oldest unpaid month older than the dealer's credit days (or the default)
-      ColBalance.find({ ...sf, ...(mine.employeeId ? { salesmanId: mine.employeeId } : {}), overdue: true, total: { $gt: 0 } }).sort({ ageDays: -1, total: -1 }).limit(100).lean(),
+      ColBalance.find({ ...sf, ...(mine.employeeId ? { salesmanId: mine.employeeId } : {}), overdue: true, total: { $gt: 0 } }).sort({ dueAmount: -1, total: -1 }).limit(100).lean(),
     ]);
     const Dealer = (await import('mongoose')).default.models.Dealer;
     const ids = [...new Set([...tasksToday, ...tasksOverdue, ...promisesToday, ...promisesBroken, ...followupsDue, ...followupsOverdue, ...highPriority, ...recentPayments, ...newOutstanding, ...recentlyCleared, ...overdueBalances].map(t => String(t.dealerId)))];
     const names = new Map((await Dealer.find({ _id: { $in: ids } }, 'name code phone').lean()).map(d => [String(d._id), d]));
     // Month buckets travel with every dealer row (tasks and promises included), so each list can show the same columns as Outstanding.
-    const balById = new Map((await ColBalance.find({ dealerId: { $in: ids } }, 'dealerId buckets total status priority nextFollowupAt ageDays oldestPeriod creditDays overdue lastPaymentAt lastPaymentAmount').lean()).map(b => [String(b.dealerId), b]));
+    const balById = new Map((await ColBalance.find({ dealerId: { $in: ids } }, 'dealerId buckets total status priority nextFollowupAt ageDays oldestPeriod creditDays overdue dueAmount lastPaymentAt lastPaymentAmount').lean()).map(b => [String(b.dealerId), b]));
     const asObj = b => b instanceof Map ? Object.fromEntries(b) : (b && typeof b === 'object' ? b : {});
     const pend = await pendingByDealer(ids);
-    const named = a => a.map(t => { const b = balById.get(String(t.dealerId)); return { ...t, pendingApproval: pend.get(String(t.dealerId))?.amount || 0, pendingRecorded: pend.get(String(t.dealerId))?.recorded || 0, balStatus: b?.status, balPriority: b?.priority, balNextFollowupAt: b?.nextFollowupAt || '', balAgeDays: b?.ageDays ?? null, balOldestPeriod: b?.oldestPeriod || '', balOverdue: !!b?.overdue, balCreditDays: b?.creditDays || 0, balLastPaymentAt: b?.lastPaymentAt || null, balLastPaymentAmount: b?.lastPaymentAmount || 0, came30: pend.get(String(t.dealerId))?.came30 || 0, came30Count: pend.get(String(t.dealerId))?.came30Count || 0, buckets: asObj(t.buckets && Object.keys(asObj(t.buckets)).length ? t.buckets : b?.buckets), balanceTotal: b?.total ?? t.total, dealerName: t.dealerName || names.get(String(t.dealerId))?.name || '', dealerCode: t.dealerCode || names.get(String(t.dealerId))?.code || '', phone: names.get(String(t.dealerId))?.phone || '' }; });
+    const named = a => a.map(t => { const b = balById.get(String(t.dealerId)); return { ...t, pendingApproval: pend.get(String(t.dealerId))?.amount || 0, pendingRecorded: pend.get(String(t.dealerId))?.recorded || 0, balStatus: b?.status, balPriority: b?.priority, balNextFollowupAt: b?.nextFollowupAt || '', balAgeDays: b?.ageDays ?? null, balOldestPeriod: b?.oldestPeriod || '', balOverdue: !!b?.overdue, balDueAmount: b?.dueAmount || 0, balCreditDays: b?.creditDays || 0, balLastPaymentAt: b?.lastPaymentAt || null, balLastPaymentAmount: b?.lastPaymentAmount || 0, came30: pend.get(String(t.dealerId))?.came30 || 0, came30Count: pend.get(String(t.dealerId))?.came30Count || 0, buckets: asObj(t.buckets && Object.keys(asObj(t.buckets)).length ? t.buckets : b?.buckets), balanceTotal: b?.total ?? t.total, dealerName: t.dealerName || names.get(String(t.dealerId))?.name || '', dealerCode: t.dealerCode || names.get(String(t.dealerId))?.code || '', phone: names.get(String(t.dealerId))?.phone || '' }; });
     // The banner counts everything waiting for accounts in scope: statement decreases to approve and payments recorded by salesmen to confirm.
     const [decAll, recAll] = await Promise.all([
       ColEvent.aggregate([{ $match: { ...sf, type: 'RECONCILIATION_DIFFERENCE', amount: { $gt: 0 }, 'meta.approved': { $exists: false } } }, { $group: { _id: null, sum: { $sum: '$amount' }, n: { $sum: 1 } } }]),
@@ -69,7 +70,8 @@ router.get('/today', async (req, res) => {
     const came = latest ? await ColPayment.find({ ...sf, ...(mine.employeeId ? { salesmanId: mine.employeeId } : {}), status: 'CONFIRMED', $or: [{ source: 'statement', date: latest.asOn }, { confirmedBy: 'statement', remarks: new RegExp('statement of ' + latest.asOn) }] }).sort({ amount: -1 }).limit(200).lean() : [];
     const cameIds = [...new Set(came.map(p => String(p.dealerId)))].filter(i => !names.has(i));
     for (const d of await Dealer.find({ _id: { $in: cameIds } }, 'name code phone').lean()) names.set(String(d._id), d);
-    res.json({ today, employeeId: me, latestStatement: latest ? { asOn: latest.asOn, fileName: latest.fileName } : null, paymentsCame: named(came), paymentsCameSum: came.reduce((a, p) => a + p.amount, 0),
+    const collectionMonth = await collectionMonthOf();
+    res.json({ today, collectionMonth, employeeId: me, latestStatement: latest ? { asOn: latest.asOn, fileName: latest.fileName } : null, paymentsCame: named(came), paymentsCameSum: came.reduce((a, p) => a + p.amount, 0),
       pendingApprovals: pendAll.sum, pendingApprovalsCount: pendAll.n, pendingDecreases: pendAll.decreases, pendingRecorded: pendAll.recorded, tasksToday: named(tasksToday), tasksOverdue: named(tasksOverdue), followupsDue, followupsOverdue, promisesToday: named(promisesToday).filter(p => (p.balanceTotal ?? 1) > 0), promisesBroken: named(promisesBroken).filter(p => (p.balanceTotal ?? 1) > 0), followupsDue: named(followupsDue), followupsOverdue: named(followupsOverdue), highPriority: named(highPriority), overdue: named(overdueBalances), recentPayments: named(recentPayments), newOutstanding: named(newOutstanding), recentlyCleared: named(recentlyCleared) });
   } catch (e) { fail(res, e); }
 });

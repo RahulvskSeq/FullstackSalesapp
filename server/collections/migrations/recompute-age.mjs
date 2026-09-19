@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { args, connect } from './_shared.mjs';
 import { ColBalance, ColCycle, ColPayment } from '../models/index.js';
-import { oldestPeriodOf, derivePriority, deriveStatus, isOverdue } from '../engines/reconcile.js';
+import { oldestPeriodOf, derivePriority, deriveStatus, isOverdue, collectionMonthOf, dueAmountOf } from '../engines/reconcile.js';
 import { daysSincePeriodStart, todayYmd } from '../lib/periods.js';
 import { getSetting } from '../lib/settings.js';
 /**
@@ -15,8 +15,9 @@ const { dryRun, db } = args();
 await connect({ db });
 await import('../../models/Dealer.js');
 const Dealer = mongoose.models.Dealer;
-const cfg = { overdueDays: await getSetting('collections.overdueDays'), highValue: await getSetting('collections.highValue'), thresholds: await getSetting('collections.priorityThresholds') };
+const cfg = { overdueDays: await getSetting('collections.overdueDays'), highValue: await getSetting('collections.highValue'), thresholds: await getSetting('collections.priorityThresholds'), collectionMonth: await collectionMonthOf() };
 const today = todayYmd();
+console.log('collection month (oldest column of the latest statement):', cfg.collectionMonth || 'none');
 const bals = await ColBalance.find({}).lean();
 const dealers = new Map((await Dealer.find({ _id: { $in: bals.map(b => b.dealerId) } }, 'creditDays').lean()).map(d => [String(d._id), d]));
 const lastPay = new Map((await ColPayment.aggregate([{ $match: { status: 'CONFIRMED' } }, { $sort: { date: -1, createdAt: -1 } }, { $group: { _id: '$dealerId', date: { $first: '$date' }, amount: { $first: '$amount' } } }])).map(p => [String(p._id), p]));
@@ -34,12 +35,13 @@ for (const b of bals) {
   next.priority = derivePriority({ total: b.total, ageDays, brokenPromises: b.brokenPromises || 0 }, cfg.thresholds);
   next.status = deriveStatus(next, cycle, cfg, today);
   next.overdue = isOverdue(next, cfg);
+  next.dueAmount = dueAmountOf(buckets, cfg.collectionMonth);
   if (next.overdue) overdue++;
   if (next.status !== b.status) changedStatus++;
   n++;
-  ops.push({ updateOne: { filter: { _id: b._id }, update: { $set: { oldestPeriod: oldest, ageDays, creditDays, lastPaymentAmount: next.lastPaymentAmount, priority: next.priority, status: next.status, overdue: next.overdue } } } });
+  ops.push({ updateOne: { filter: { _id: b._id }, update: { $set: { oldestPeriod: oldest, ageDays, creditDays, lastPaymentAmount: next.lastPaymentAmount, priority: next.priority, status: next.status, overdue: next.overdue, dueAmount: next.dueAmount } } } });
 }
-console.log(`${n} balances · ${overdue} are overdue (past credit days) · ${changedStatus} status changes · default overdue after ${cfg.overdueDays} days`);
+console.log(`${n} balances · ${overdue} still owe the collection month · ${changedStatus} status changes · default overdue after ${cfg.overdueDays} days`);
 if (dryRun) { console.log('DRY RUN — nothing written. Re-run with --apply.'); await mongoose.disconnect(); process.exit(0); }
 for (let i = 0; i < ops.length; i += 500) await ColBalance.bulkWrite(ops.slice(i, i + 500), { ordered: false });
 console.log('written');
