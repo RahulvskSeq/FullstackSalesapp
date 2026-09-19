@@ -9,7 +9,7 @@ import { cloudinaryReady, uploadBuffer } from '../lib/storage.js';
  */
 const { dryRun, db } = args();
 await connect({ db });
-if (!cloudinaryReady()) { console.error('CLOUDINARY_URL is not set in server/.env'); process.exit(1); }
+if (!cloudinaryReady()) { console.error('Cloudinary is not configured in server/.env (CLOUDINARY_CLOUD_NAME + CLOUDINARY_UPLOAD_PRESET, or CLOUDINARY_URL)'); process.exit(1); }
 const C = mongoose.connection.db.collection('col_attachments');
 const todo = await C.find({ $or: [{ url: { $in: ['', null] } }, { url: { $exists: false } }], data: { $exists: true } }).project({ mime: 1, size: 1, kind: 1 }).toArray();
 console.log(`${todo.length} attachment(s) still in Mongo, ${(todo.reduce((a, d) => a + (d.size || 0), 0) / 1048576).toFixed(2)} MB`);
