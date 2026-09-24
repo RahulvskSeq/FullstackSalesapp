@@ -8,6 +8,7 @@ import multer  from 'multer';
 import XLSX    from 'xlsx';
 import Attendance from '../models/Attendance.js';
 import Visit      from '../models/Visit.js';
+import VisitPlan  from '../models/VisitPlan.js';
 import Lead       from '../models/Lead.js';
 import Leave      from '../models/Leave.js';
 import Task       from '../models/Task.js';
@@ -361,6 +362,12 @@ router.post('/visits/:id/checkout', protect, async (req, res) => {
     v.comment = note.trim();
 
     await v.save();
+    // A real check-out at a dealer the office planned for today ticks that plan as visited.
+    try {
+      const day = new Date(start + 5.5 * 3600e3).toISOString().slice(0, 10);
+      const f = { salesmanId: v.userId, date: day, status: 'PLANNED', ...(v.dealerId ? { dealerId: String(v.dealerId) } : { dealerName: new RegExp('^\\s*' + String(v.dealerName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*$', 'i') }) };
+      await VisitPlan.updateMany(f, { $set: { status: 'DONE' } });
+    } catch (e) { console.warn('[CRM/visits checkout] plan tick:', e.message); }
     res.json(v.toObject());
   } catch(e){ console.error('[CRM/visits checkout]', e.message); res.status(500).json({ error:e.message }); }
 });

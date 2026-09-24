@@ -119,6 +119,10 @@ const dealerSchema = new mongoose.Schema({
   creditDays:   { type:Number, default:0 },
   creditLimit:  { type:Number, default:0 },
   avg6m:        { type:Number, default:0 },
+  // The physical Dealer Form — ticked off on a visit MOM once it is filled.
+  dealerFormDone:   { type:Boolean, default:false },
+  dealerFormDoneAt: { type:Date, default:null },
+  dealerFormBy:     { type:String, default:'' },
   // Per-month data — fully independent per month
   monthlyData:  { type:Map, of:monthEntrySchema, default:{} },
   source:       { type:String, default:'sheet' },
