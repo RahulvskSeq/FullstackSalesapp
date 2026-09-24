@@ -1784,6 +1784,26 @@ export const api = {
   // month-tagged scheme. Outstanding amounts are NOT touched.
   wipeAllFollowups:()      => fetch(`${BASE}/followups`,{method:'DELETE',headers:authHeaders()}).then(handle),
 
+  // ── Dealer visit (pre-visit summary + MOM) ──
+  visitSummary: (id)        => fetch(`${BASE}/dealer-visit/${id}/summary`,{headers:authHeaders()}).then(handle),
+  visitMoms:    (id)        => fetch(`${BASE}/dealer-visit/${id}/moms`,{headers:authHeaders()}).then(handle),
+  saveVisitMom: (id, body)  => fetch(`${BASE}/dealer-visit/${id}/mom`,{method:'POST',headers:{...authHeaders(),'Content-Type':'application/json'},body:JSON.stringify(body)}).then(handle),
+  // ── Visit calendar ──
+  visitPlans:      (params) => fetch(`${BASE}/visit-plan?${new URLSearchParams(params).toString()}`,{headers:authHeaders()}).then(handle),
+  addVisitPlan:    (body)   => fetch(`${BASE}/visit-plan`,{method:'POST',headers:{...authHeaders(),'Content-Type':'application/json'},body:JSON.stringify(body)}).then(handle),
+  updateVisitPlan: (id, body) => fetch(`${BASE}/visit-plan/${id}`,{method:'PUT',headers:{...authHeaders(),'Content-Type':'application/json'},body:JSON.stringify(body)}).then(handle),
+  deleteVisitPlan: (id)     => fetch(`${BASE}/visit-plan/${id}`,{method:'DELETE',headers:authHeaders()}).then(handle),
+  // ── Sample allocation (stock → STAR/KEY/ACHIEVER first, rest by hand) ──
+  uploadSampleStock: (file) => { const fd=new FormData(); fd.append('file',file); return fetch(`${BASE}/samples/stock/upload`,{method:'POST',headers:{Authorization:`Bearer ${getToken()}`},body:fd}).then(handle); },
+  uploadSampleAlloc: (file) => { const fd=new FormData(); fd.append('file',file); return fetch(`${BASE}/samples/alloc/upload`,{method:'POST',headers:{Authorization:`Bearer ${getToken()}`},body:fd}).then(handle); },
+  sampleAllocations: (params) => fetch(`${BASE}/samples/alloc${params?'?'+new URLSearchParams(params).toString():''}`,{headers:authHeaders()}).then(handle),
+  moveSample: (body) => fetch(`${BASE}/samples/move`,{method:'POST',headers:{...authHeaders(),'Content-Type':'application/json'},body:JSON.stringify(body)}).then(handle),
+  givenTakeBack: (id, takeBack) => fetch(`${BASE}/samples/given/${id}/take-back`,{method:'POST',headers:{...authHeaders(),'Content-Type':'application/json'},body:JSON.stringify({ takeBack })}).then(handle),
+  requestSample: (body)     => fetch(`${BASE}/samples/alloc/request`,{method:'POST',headers:{...authHeaders(),'Content-Type':'application/json'},body:JSON.stringify(body)}).then(handle),
+  allocSample:   (body)     => fetch(`${BASE}/samples/alloc`,{method:'POST',headers:{...authHeaders(),'Content-Type':'application/json'},body:JSON.stringify(body)}).then(handle),
+  updateAlloc:   (id, body) => fetch(`${BASE}/samples/alloc/${id}`,{method:'PUT',headers:{...authHeaders(),'Content-Type':'application/json'},body:JSON.stringify(body)}).then(handle),
+  allocGiven:    (id)       => fetch(`${BASE}/samples/alloc/${id}/given`,{method:'POST',headers:{...authHeaders(),'Content-Type':'application/json'},body:'{}'}).then(handle),
+  allocReturned: (id)       => fetch(`${BASE}/samples/alloc/${id}/returned`,{method:'POST',headers:{...authHeaders(),'Content-Type':'application/json'},body:'{}'}).then(handle),
   // ── Samples ────────────────────────────────────────────────────────────────
   getSamples:      (zone)  => fetch(`${BASE}/samples${zone?'?zone='+encodeURIComponent(zone):''}`,{headers:authHeaders()}).then(handle),
   addSample:       (data)  => fetch(`${BASE}/samples`,{method:'POST',headers:{...authHeaders(),'Content-Type':'application/json'},body:JSON.stringify(data)}).then(handle),

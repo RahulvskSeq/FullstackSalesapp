@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../api';
 import { Upload, Trash2, RefreshCw, Package, Plus, Download } from 'lucide-react';
 import { confirmDialog } from './Toast';
+import SampleAllocationPanel from './SampleAllocationPanel';
 
 export default function SampleMasterTab() {
   const [samples, setSamples] = useState([]);
@@ -101,10 +102,11 @@ export default function SampleMasterTab() {
 
   return (
     <div>
+      <SampleAllocationPanel />
       <div style={{marginBottom:16}}>
         <div style={{fontSize:14,fontWeight:600,marginBottom:4}}>Sample Master</div>
         <div style={{fontSize:12,color:'var(--t3)',marginBottom:12}}>
-          Excel format: <strong>Company Name | Product | Zone</strong>. Zone cell holds free tags like "All Zones", "ZONE 2 & 5", or "NEW DEALERS ONLY".
+          Dealer-wise sheet: <strong>Company Name | Product | Total</strong> — what each dealer already holds. Zone sheet (in Sample allocation above): <strong>Sample Name | Stock | Zones</strong> — "Zone 2, 5, 6" becomes one row per zone.
         </div>
         <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
           {/* 1) Download the current state as an editable template. */}
@@ -201,10 +203,10 @@ export default function SampleMasterTab() {
       <div style={{background:'var(--bg2)',borderRadius:8,padding:12,marginBottom:14,fontSize:11,color:'var(--t3)'}}>
         <strong style={{color:'var(--t2)'}}>Excel format:</strong>
         <div style={{fontFamily:'monospace',marginTop:6,background:'var(--bg1)',padding:8,borderRadius:6}}>
-          Sample Name | Zone | Category<br/>
-          Wood Filler | ZONE 1 | Wood Care<br/>
-          PU Primer   | ZONE 2 | Primer<br/>
-          Edge Band   | ZONE 1 | Accessories
+          Sample Name | Stock | Zones<br/>
+          FOLDER INTERLAM CATALOGE | 1546 | All Zones<br/>
+          FOLDER CANDID | 121 | Zone 2, 5, 6<br/>
+          FOLDER STONE SET 01 | 0 | Dispose
         </div>
       </div>
 
@@ -243,7 +245,7 @@ export default function SampleMasterTab() {
         <div className="card" style={{padding:0,overflow:'hidden'}}>
           <table>
             <thead><tr>
-              <th>#</th><th>Sample Name</th><th>Zone</th><th>Category</th><th></th>
+              <th>#</th><th>Sample Name</th><th>Zone</th><th>Stock</th><th>Category</th><th></th>
             </tr></thead>
             <tbody>
               {[...samples].sort((a,b)=>a.zone.localeCompare(b.zone)||a.name.localeCompare(b.name)).map((s,i)=>(
@@ -251,6 +253,7 @@ export default function SampleMasterTab() {
                   <td style={{color:'var(--t3)',fontSize:11}}>{i+1}</td>
                   <td style={{fontWeight:500}}>{s.name}</td>
                   <td><span style={{background:'rgba(99,102,241,0.1)',color:'var(--acc)',padding:'2px 8px',borderRadius:4,fontSize:11}}>{s.zone}</span></td>
+                  <td style={{fontWeight:600,color:s.stock>0?'var(--t1)':'var(--t3)'}}>{s.stock||0}</td>
                   <td style={{color:'var(--t3)',fontSize:11}}>{s.category||'—'}</td>
                   <td>
                     <button onClick={()=>deleteSample(s._id, s.name)}

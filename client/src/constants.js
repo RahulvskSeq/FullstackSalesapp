@@ -55,6 +55,7 @@ export const NAV_PAGES = [
   { id:'followups',   label:'Follow-ups' },
   { id:'attendance',  label:'Attendance' },
   { id:'visits',      label:'Visits (CRM)' },
+  { id:'calendar',    label:'Visit calendar (CRM)' },
   { id:'leads',       label:'Leads (CRM)' },
   { id:'tasks',       label:'Tasks (CRM)' },
   { id:'leaves',      label:'Leaves' },

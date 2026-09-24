@@ -1294,6 +1294,7 @@ import SalesByBrand from './SalesByBrand';
 import CategoryFilter from './CategoryFilter';
 import { useGlobalCategoryFilter } from '../hooks/useGlobalCategoryFilter';
 import { api } from '../api';
+import { DealerVisitSearch } from './DealerVisitModal';
 
 // MO label like "Jun-26" → YYYY-MM ("2026-06") used by the Sales collection.
 const _moMonths = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
@@ -1824,8 +1825,10 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
         salesman={currentUser?.role === 'salesman' ? currentUser.id : ''}
       />
 
-      {/* Dealer quick search */}
-      <div className="card" style={{marginBottom:16,padding:'12px 16px'}}>
+      {/* Dealer quick search + Going to meet (visit summary & MOM), side by side */}
+      <div className="card ov-search-row" style={{marginBottom:16,padding:'12px 16px',display:'flex',gap:12,alignItems:'flex-start'}}>
+        <div style={{flex:'1 1 0',minWidth:0}}>
+        <div style={{fontSize:10.5,fontWeight:700,letterSpacing:'.06em',textTransform:'uppercase',color:'var(--t3)',marginBottom:5}}>Find a dealer</div>
         <div style={{position:'relative'}}>
           <Search size={14} style={{position:'absolute',left:12,top:'50%',transform:'translateY(-50%)',color:'var(--t3)'}}/>
           <input className="inp" style={{paddingLeft:36}} placeholder="🔍 Search any dealer by name..."
@@ -1861,6 +1864,11 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
               }):<div style={{padding:16,color:'var(--t3)',fontSize:13,textAlign:'center'}}>No dealers match "{dealerSearch}"</div>}
             </div>
           )}
+        </div>
+        </div>
+        <div style={{flex:'1 1 0',minWidth:0}}>
+          <div style={{fontSize:10.5,fontWeight:700,letterSpacing:'.06em',textTransform:'uppercase',color:'var(--acc)',marginBottom:5}}>Going to meet a dealer? · summary before you go</div>
+          <DealerVisitSearch dealers={dealers} compact />
         </div>
       </div>
 

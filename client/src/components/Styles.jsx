@@ -266,6 +266,7 @@ export default function Styles({theme}){
     .sb-resizer::after{content:'';position:absolute;top:50%;left:2px;width:3px;height:36px;margin-top:-18px;border-radius:2px;background:var(--b2);opacity:0;transition:opacity .15s}
     .sb-resizer:hover::after,.sb-resizer.dragging::after{opacity:1;background:var(--acc)}
     @media (max-width:768px){.sb-resizer{display:none}}
+    @media (max-width:768px){.ov-search-row{flex-direction:column}}
 
     #sb-overlay{
       display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);

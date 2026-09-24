@@ -198,7 +198,7 @@ export default function PermissionsMatrix({ setUsers, currentUser }) {
   const PAGE_GROUP = {
     overview:'Sales', dealers:'Sales', monthly:'Sales', compare:'Sales', map:'Sales', salesCat:'Sales', reports:'Sales', sheets:'Sales',
     upload:'Data entry', entry:'Data entry', months:'Data entry', producttx:'Data entry',
-    attendance:'Team', leaves:'Team', visits:'Team', leads:'Team', tasks:'Team', tickets:'Team',
+    attendance:'Team', leaves:'Team', visits:'Team', calendar:'Team', leads:'Team', tasks:'Team', tickets:'Team',
     incentiveHome:'Billing incentive', incentive:'Billing incentive', incentiveHistory:'Billing incentive', incentiveRule:'Billing incentive', incentiveUpload:'Billing incentive',
     salesIncentive:'Sales incentive', salesIncentiveRule:'Sales incentive',
     outstanding:'Old outstanding', followups:'Old outstanding',

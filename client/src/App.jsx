@@ -15410,6 +15410,7 @@ import UserManagement    from './components/UserManagement';
 import Incentive        from './components/Incentive';
 import SalesIncentive   from './components/SalesIncentive';
 import SalesIncentiveRule from './components/SalesIncentiveRule';
+import VisitCalendar from './components/VisitCalendar';
 import Collections, { COL_SCREENS } from './collections';
 import AddDealerModal    from './components/AddDealerModal';
 import BulkActionModal   from './components/BulkActionModal';
@@ -16414,6 +16415,7 @@ export default function App(){
     // CRM is a collapsible group with Visits + Leads + Tasks as children.
     { group:'crm', label:'CRM', icon:Briefcase, children:[
         {id:'visits', label:'Visits', icon:ClipboardList},
+        {id:'calendar', label:'Visit calendar', icon:Calendar},
         {id:'leads',  label:'Leads',  icon:UserCheck},
         {id:'tasks',  label:'Tasks',  icon:CheckSquare},
     ]},
@@ -16949,6 +16951,7 @@ export default function App(){
                   {screen==='crm'        && <CRM            dealers={myDealers} users={users} currentUser={currentUser}/>}
                   {screen==='attendance' && <AttendancePage users={users} currentUser={currentUser}/>}
                   {screen==='visits'     && <VisitsPage     dealers={myDealers} users={users} currentUser={currentUser}/>}
+                  {screen==='calendar'   && <VisitCalendar  dealers={(currentUser?.role==='admin'||currentUser?.role==='superadmin'||currentUser?.role==='employee')?dealers:myDealers} users={users} currentUser={currentUser}/>}
                   {screen==='leads'      && <LeadsPage      users={users} currentUser={currentUser}/>}
                   {screen==='leaves'     && <LeavesPage     users={users} currentUser={currentUser}/>}
                   {screen==='reports' && isStaff && <Reports dealers={dealers} users={users} currentUser={currentUser} monthConfig={monthConfig} outstandingData={outstandingData}/>}
