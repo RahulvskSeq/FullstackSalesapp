@@ -71,10 +71,14 @@ function Preview({ id, onClose }) {
   const [mapRow, setMapRow] = useState(null);
   useEffect(() => { if (!job || ['DONE', 'FAILED'].includes(job.status)) return; const t = setTimeout(() => col.job(job._id).then(setJob).catch(() => {}), 1500); return () => clearTimeout(t); }, [job]);
   useEffect(() => { if (job && ['DONE', 'FAILED'].includes(job.status)) reload(); }, [job?.status]);   // eslint-disable-line
+  const [clearAbsent, setClearAbsent] = useState(null);   // null = follow the app's guard
   const apply = async () => {
-    if (!window.confirm(`Apply "${imp.fileName}" as the statement of ${fmtDate(imp.asOn)}? ${num(imp.stats.unmapped)} unmapped rows will be skipped.`)) return;
+    const st0 = imp.stats || {};
+    const willClear = clearAbsent === null ? !st0.absentTooMany : clearAbsent;
+    const extra = st0.absentMissing > 0 ? ` ${num(st0.absentMissing)} dealers are not in the file (${money(st0.absentMissingAmount)}): they will ${willClear ? 'be CLEARED as paid up' : 'be left as they are'}.` : '';
+    if (!window.confirm(`Apply "${imp.fileName}" as the statement of ${fmtDate(imp.asOn)}? ${num(imp.stats.unmapped)} unmapped rows will be skipped.${extra}`)) return;
     setApplying(true); setAerr('');
-    try { const r = await col.applyImport(id, {}); if (r.jobId) setJob({ _id: r.jobId, status: 'QUEUED' }); else reload(); }
+    try { const r = await col.applyImport(id, clearAbsent === null ? {} : { clearAbsent }); if (r.jobId) setJob({ _id: r.jobId, status: 'QUEUED' }); else reload(); }
     catch (e) { setAerr(e.message); } finally { setApplying(false); }
   };
   if (busy && !data) return <Modal title="Import" onClose={onClose}><Busy kind="inline" /></Modal>;
@@ -92,6 +96,19 @@ function Preview({ id, onClose }) {
       <div className="stat-grid col-stats" style={{ gridTemplateColumns: 'repeat(8, 1fr)' }}>
         {[['New', st.new], ['Increased', st.increased], ['Decreased', st.decreased], ['Cleared', st.cleared], ['Unchanged', st.unchanged], ['Reopened', st.reopened], ['Before', money(st.totalBefore)], ['After', money(st.totalAfter)]].map(([l, v]) => <div key={l} className="stat-card" style={{ padding: '8px 10px' }}><div style={{ fontSize: 10, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase' }}>{l}</div><div style={{ fontSize: 14, fontWeight: 800 }}>{typeof v === 'number' ? num(v) : v}</div></div>)}
       </div>
+      {imp.status !== 'APPLIED' && st.absentMissing > 0 && (() => { const on = clearAbsent === null ? !st.absentTooMany : clearAbsent; return (
+        <div style={{ fontSize: 12, padding: 10, borderRadius: 8, background: on ? 'rgba(22,163,74,.10)' : 'rgba(220,38,38,.10)', marginBottom: 8 }}>
+          <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', cursor: 'pointer' }}>
+            <input type="checkbox" checked={on} onChange={e => setClearAbsent(e.target.checked)} style={{ marginTop: 2 }} />
+            <span><b>{num(st.absentMissing)} open dealers are not in this file ({money(st.absentMissingAmount)}).</b> Tally leaves out a nil balance, so ticked = they are cleared as paid up on apply. Unticked = their balances stay as they were.
+              {st.absentTooMany && <span style={{ color: 'var(--red)' }}> <AlertTriangle size={12} /> That is more than a normal day{st.absentSkippedBlocks?.length ? ` — a whole block is missing: ${st.absentSkippedBlocks.map(b => `${b.salesmanId || 'unassigned'} (${b.n} dealers, ${money(b.amount)})`).join(', ')}` : ''}. It looks like a short export, so the box is off; check with accounts before ticking it.</span>}
+            </span>
+          </label>
+          <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 4 }}>They are listed below as "Cleared" (absent from file).</div>
+        </div>); })()}
+      {imp.status === 'APPLIED' && st.absentCleared > 0 && <div style={{ fontSize: 12, padding: 8, borderRadius: 7, background: 'rgba(22,163,74,.10)', color: 'var(--grn)', marginBottom: 8 }}>{num(st.absentCleared)} dealers not in this statement were cleared as paid up ({money(st.absentClearedAmount)}).</div>}
+      {imp.status === 'APPLIED' && st.absentSkipped > 0 && <div style={{ fontSize: 12, padding: 8, borderRadius: 7, background: 'rgba(220,38,38,.10)', color: 'var(--red)', marginBottom: 8 }}><AlertTriangle size={12} /> {num(st.absentSkipped)} dealers not in this statement ({money(st.absentSkippedAmount)}) were left as they were.</div>}
+      {st.columnShiftTooMany && <div style={{ fontSize: 12, padding: 8, borderRadius: 7, background: 'rgba(217,119,6,.12)', color: 'var(--yel)', marginBottom: 8 }}><AlertTriangle size={12} /> The older month columns moved for {num(st.columnShift)} dealers ({st.columnShiftPct}% of the file) — far more than a normal day. This file looks like a different report or date basis, so payments {imp.status === 'APPLIED' ? 'were' : 'will be'} measured from totals only, not from the columns. Check the export with accounts.</div>}
       {data.olderThanLatest > 0 && <div style={{ fontSize: 12, padding: 8, borderRadius: 7, background: 'rgba(217,119,6,.12)', color: 'var(--yel)', marginBottom: 8 }}><AlertTriangle size={12} /> {num(data.olderThanLatest)} dealers already have a newer statement — this file is recorded as history for them and does not move their current figure.</div>}
       {data.willBindCodes > 0 && <div style={{ fontSize: 12, color: 'var(--t2)', marginBottom: 8 }}>{num(data.willBindCodes)} dealers will learn their ERP code from this file.</div>}
       {job && <div style={{ fontSize: 12.5, padding: 10, borderRadius: 8, background: 'var(--accL)', marginBottom: 8 }}><RefreshCw size={12} className={job.status === 'RUNNING' ? 'spin' : ''} /> Applying in the background — {job.status}{job.progress?.message ? ' · ' + job.progress.message : ''}{job.error ? <span style={{ color: 'var(--red)' }}> · {job.error}</span> : ''}</div>}

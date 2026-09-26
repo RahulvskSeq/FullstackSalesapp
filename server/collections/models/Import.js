@@ -20,6 +20,13 @@ const S = new mongoose.Schema({
     duplicatesInFile: { type: Number, default: 0 },
     new: { type: Number, default: 0 }, increased: { type: Number, default: 0 }, decreased: { type: Number, default: 0 },
     cleared: { type: Number, default: 0 }, unchanged: { type: Number, default: 0 }, reopened: { type: Number, default: 0 },
+    // parties left out of the file (nil in Tally): cleared, or held back when a whole block / too many are missing
+    absentCleared: { type: Number, default: 0 }, absentClearedAmount: { type: Number, default: 0 },
+    absentSkipped: { type: Number, default: 0 }, absentSkippedAmount: { type: Number, default: 0 },
+    absentSkippedBlocks: { type: [{ salesmanId: String, n: Number, amount: Number }], default: [] }, absentTooMany: { type: Boolean, default: false },
+    absentMissing: { type: Number, default: 0 }, absentMissingAmount: { type: Number, default: 0 },
+    // dealers whose older columns moved against the previous statement; too many = file on a different basis
+    columnShift: { type: Number, default: 0 }, columnShiftPct: { type: Number, default: 0 }, columnShiftTooMany: { type: Boolean, default: false },
     totalBefore: { type: Number, default: 0 }, totalAfter: { type: Number, default: 0 },
   },
   errorReport: { type: [{ row: Number, message: String }], default: [] },

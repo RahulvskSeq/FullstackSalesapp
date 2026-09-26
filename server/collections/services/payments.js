@@ -345,7 +345,7 @@ function followupSettled(balance, paidYmd) {
   if (balance?.nextFollowupAt && paidYmd && balance.nextFollowupAt <= paidYmd) balance.nextFollowupAt = '';
 }
 
-async function creditMoney(dealerId, amount, cycleId, by, session) {
+export async function creditMoney(dealerId, amount, cycleId, by, session) {
   let toCredit = amount;
   const promises = [
     ...await ColPromise.find({ dealerId, status: { $in: ['PENDING', 'PARTIALLY_FULFILLED'] } }).sort({ promiseDate: 1 }).session(session),
@@ -469,19 +469,31 @@ export async function settleClearedMonthEntries({ by = 'statement' } = {}) {
   const { collectionMonthOf } = await import('../engines/reconcile.js');
   const cm = await collectionMonthOf(); if (!cm) return 0;
   const latest = await ColImport.findOne({ status: 'APPLIED' }, 'asOn').sort({ asOn: -1, appliedAt: -1 }).lean(); if (!latest) return 0;
-  const rec = await ColPayment.find({ status: 'RECORDED', date: { $lt: latest.asOn } }, 'dealerId date amount').lean();
+  // Entries dated on the statement day are still open — unless the dealer owes
+  // nothing at all any more: then no further money can be coming, whatever the date.
+  const rec = await ColPayment.find({ status: 'RECORDED' }, 'dealerId date amount').lean();
   if (!rec.length) return 0;
-  const bals = new Map((await ColBalance.find({ dealerId: { $in: rec.map(r => r.dealerId) } }, 'dealerId dueAmount overdue lastSnapshotAsOn').lean()).map(b => [String(b.dealerId), b]));
+  const bals = new Map((await ColBalance.find({ dealerId: { $in: rec.map(r => r.dealerId) } }, 'dealerId dueAmount overdue lastSnapshotAsOn total').lean()).map(b => [String(b.dealerId), b]));
   let n = 0;
   for (const r of rec) {
     const b = bals.get(String(r.dealerId));
-    if (!b || b.overdue || (b.dueAmount || 0) > 0 || !b.lastSnapshotAsOn || b.lastSnapshotAsOn <= r.date) continue;
-    // money must actually have come since the entry — a month that was already nil proves nothing
-    const of = await ColPayment.findOne({ dealerId: r.dealerId, status: 'CONFIRMED', date: { $gte: r.date } }, '_id').sort({ date: -1 }).lean();
-    if (!of) continue;
+    if (!b || b.overdue || (b.dueAmount || 0) > 0 || !b.lastSnapshotAsOn) continue;
+    const nil = (b.total || 0) <= 0;
+    if (!nil && (r.date >= latest.asOn || b.lastSnapshotAsOn <= r.date)) continue;
+    // money must actually have come since the entry — a month that was already nil proves nothing.
+    // Either a payment dated on/after the entry, or a statement after the entry that showed a drop
+    // (the drop may have been booked against an older entry for the same money, dated earlier).
+    let of = await ColPayment.findOne({ dealerId: r.dealerId, status: 'CONFIRMED', date: { $gte: r.date } }, '_id').sort({ date: -1 }).lean();
+    if (!of) {
+      const drop = await ColEvent.findOne({ dealerId: r.dealerId, type: 'RECONCILIATION_DIFFERENCE', ...(nil ? {} : { 'meta.to': { $gt: r.date } }), 'meta.observed': { $gt: 0 } }, 'meta').sort({ 'meta.to': -1 }).lean();
+      if (!drop) continue;
+      const pid = drop.meta?.autoConfirmed?.find(x => x.paymentId)?.paymentId || drop.meta?.paymentId || null;
+      of = { _id: pid };
+    }
     const p = await ColPayment.findById(r._id); if (!p || p.status !== 'RECORDED') continue;
     p.status = 'CANCELLED'; p.cancelledBy = by;
-    p.cancelReason = `${cm} cleared in the statement of ${b.lastSnapshotAsOn} — money came; counted on the statement`;
+    p.cancelReason = nil ? `nothing outstanding after the statement of ${b.lastSnapshotAsOn} — money came; counted on the statement`
+                         : `${cm} cleared in the statement of ${b.lastSnapshotAsOn} — money came; counted on the statement`;
     p.set('countedOn', of?._id || null, { strict: false });
     await p.save();
     await ColEvent.create({ dealerId: p.dealerId, cycleId: p.cycleId, type: 'PAYMENT_CANCELLED', amount: p.amount, refType: 'payment', refId: p._id, by, note: p.cancelReason });

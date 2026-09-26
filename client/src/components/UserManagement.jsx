@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, UserPlus, LogIn, KeyRound, Link as LinkIcon, Trash2, Shield, ShieldCheck, Power, PowerOff, MapPin, Mail } from 'lucide-react';
+import { X, UserPlus, LogIn, KeyRound, Link as LinkIcon, Trash2, Shield, ShieldCheck, Power, PowerOff, MapPin, Mail, Hash } from 'lucide-react';
 import { Avatar } from './UI';
 import { api } from '../api';
 import { NAV_PAGES } from '../constants';
@@ -143,6 +143,19 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
       onUsersChanged?.();
       flash('success', 'Sheet URL updated');
     } catch(e){ flash('error', 'Update failed: ' + e.message); }
+  };
+
+  const editEmpCode = async (uid) => {
+    const np = prompt('Employee code for ' + allUsers[uid]?.name + ' (e.g. SSL 12, blank to remove):', allUsers[uid]?.empCode || '');
+    if(np === null) return;
+    const c = np.trim().toUpperCase().replace(/\s+/g, ' ');
+    try {
+      await api.updateUser(uid, { empCode: c });
+      setUsers({ ...users, [uid]: { ...users[uid], empCode: c } });
+      setAllUsers({ ...allUsers, [uid]: { ...allUsers[uid], empCode: c } });
+      onUsersChanged?.();
+      flash('success', c ? 'Employee code updated' : 'Employee code removed');
+    } catch(err){ flash('error', 'Update failed: ' + err.message); }
   };
 
   const editEmail = async (uid) => {
@@ -517,7 +530,7 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
                 <Avatar user={u} size={32}/>
                 <div style={{flex:'1 1 260px', minWidth:0}}>
                   <div style={{display:'flex', alignItems:'center', gap:6, flexWrap:'wrap'}}>
-                    <div style={{fontSize:13, fontWeight:600}}>{u.name}</div>
+                    <div style={{fontSize:13, fontWeight:600}}>{u.name}{u.empCode && <span style={{fontSize:10.5, fontWeight:600, color:'var(--t3)', marginLeft:6}}>{u.empCode}</span>}</div>
                     <span style={{
                       fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:3,
                       background: rb.bg, color: rb.color,
@@ -591,6 +604,10 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
                     )}
                     <button className="btn" style={{fontSize:11, padding:'4px 8px', display:'inline-flex', alignItems:'center', gap:4, whiteSpace:'nowrap'}} onClick={()=>reset(u.id)} title="Reset password">
                       <KeyRound size={11}/> Password
+                    </button>
+                    <button className="btn" style={{fontSize:11, padding:'4px 8px', display:'inline-flex', alignItems:'center', gap:4, whiteSpace:'nowrap'}} onClick={()=>editEmpCode(u.id)}
+                      title={u.empCode ? `Employee code: ${u.empCode}` : 'Set the employee code (SSL …)'}>
+                      <Hash size={11} style={{color: u.empCode ? 'var(--acc)' : undefined}}/> {u.empCode || 'Emp code'}
                     </button>
                     <button className="btn" style={{fontSize:11, padding:'4px 8px', display:'inline-flex', alignItems:'center', gap:4, whiteSpace:'nowrap'}} onClick={()=>editEmail(u.id)}
                       title={u.email ? `Email: ${u.email}` : 'Add an email address'}>

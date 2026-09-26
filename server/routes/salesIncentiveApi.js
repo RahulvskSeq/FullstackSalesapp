@@ -36,8 +36,9 @@ const isDay   = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
 const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
 
 /** A salesman as the outside world should see them — no dealer lists, no invoice lines. */
-const publicPerson = (p, name) => ({
+const publicPerson = (p, name, empCode = '') => ({
   salesmanId: p.salesmanId,
+  empCode,                                          // HR code, e.g. "SSL 12"
   name,
   basic: p.basic,                                   // laminate basic target, sheets
   laminate: {
@@ -80,13 +81,16 @@ router.get('/', async (req, res) => {
     const cur = scored[month];
     // only salesmen in the scheme this month (a laminate basic is set) — same as the dashboard list
     let people = cur.people.filter(p => p.basic > 0);
-    const users = await User.find({ id: { $in: people.map(p => p.salesmanId) } }, 'id name active').lean();
+    const users = await User.find({ id: { $in: people.map(p => p.salesmanId) } }, 'id name active empCode').lean();
     const active = new Set(users.filter(u => u.active !== false).map(u => u.id));
+    const codeOf = Object.fromEntries(users.map(u => [u.id, u.empCode || '']));
     people = people.filter(p => active.has(p.salesmanId));
 
+    // person = user id, name, or employee code ("SSL 12" / "ssl12"), case-insensitive
     const q = String(req.query.person || '').trim().toLowerCase();
-    const list = q ? people.filter(p => [p.salesmanId, nameOf[p.salesmanId]].some(v => String(v || '').toLowerCase() === q)) : people;
-    if (q && !list.length) return res.status(404).json({ error: `No salesman "${req.query.person}" in ${month}`, people: people.map(p => ({ salesmanId: p.salesmanId, name: nameOf[p.salesmanId] || p.salesmanId })) });
+    const squash = v => String(v || '').toLowerCase().replace(/\s+/g, '');
+    const list = q ? people.filter(p => [p.salesmanId, nameOf[p.salesmanId]].some(v => String(v || '').toLowerCase() === q) || (codeOf[p.salesmanId] && squash(codeOf[p.salesmanId]) === squash(q))) : people;
+    if (q && !list.length) return res.status(404).json({ error: `No salesman "${req.query.person}" in ${month}`, people: people.map(p => ({ salesmanId: p.salesmanId, empCode: codeOf[p.salesmanId] || '', name: nameOf[p.salesmanId] || p.salesmanId })) });
 
     const sum = f => r2(list.reduce((a, p) => a + f(p), 0));
     res.json({
@@ -110,7 +114,7 @@ router.get('/', async (req, res) => {
         grossPoints: list.reduce((a, p) => a + (p.grossPoints || 0), 0), points: list.reduce((a, p) => a + (p.points || 0), 0),
         paid: list.filter(p => p.paid).length, projectApprovalsPending: list.filter(p => p.needsApproval).length,
       },
-      people: list.sort((a, b) => b.payable - a.payable || b.credited - a.credited).map(p => publicPerson(p, nameOf[p.salesmanId] || p.salesmanId)),
+      people: list.sort((a, b) => b.payable - a.payable || b.credited - a.credited).map(p => publicPerson(p, nameOf[p.salesmanId] || p.salesmanId, codeOf[p.salesmanId] || '')),
       generatedAt: new Date().toISOString(),
     });
   } catch (e) {

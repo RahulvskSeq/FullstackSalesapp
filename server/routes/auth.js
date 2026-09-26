@@ -160,15 +160,15 @@ router.put('/users/:id', protect, async (req, res) => {
   // Authorize the edit
   let allowed = [];
   if(isSuperAdmin){
-    allowed = ['url','url2','url_outstanding','pass','name','color','ini','role','approver','active','permissions','email'];
+    allowed = ['url','url2','url_outstanding','pass','name','color','ini','role','approver','active','permissions','email','empCode'];
   } else if(isAdmin){
     if(isSelf) {
       // editing own profile
-      allowed = ['url','url2','url_outstanding','pass','name','color','ini','email'];
+      allowed = ['url','url2','url_outstanding','pass','name','color','ini','email','empCode'];
     } else if(target.role === 'salesman') {
       // admin editing a salesman — can activate / deactivate, but NOT grant
       // data permissions (only superadmin may set permissions).
-      allowed = ['url','url2','url_outstanding','pass','name','color','ini','approver','active','email'];
+      allowed = ['url','url2','url_outstanding','pass','name','color','ini','approver','active','email','empCode'];
     } else if(target.role === 'admin') {
       // Admins can (de)activate other admins but cannot set permissions or role.
       allowed = ['active'];
@@ -276,6 +276,7 @@ router.post('/users', protect, adminOnly, requireFeature('manageUsers'), async (
     id, name, pass,
     role: wantRole,
     email: cleanEmail,
+    empCode: String(req.body.empCode || '').trim().toUpperCase().replace(/\s+/g, ' '),
     color: color || '#818cf8',
     ini: ini || name.slice(0, 2).toUpperCase(),
     ...(url ? { url: String(url).trim() } : {}),

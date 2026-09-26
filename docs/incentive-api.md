@@ -83,7 +83,7 @@ Auth: header `X-API-Key: <key>` (or `?key=<key>`), the same `INCENTIVE_API_KEY`.
 | `GET /months` | `{ months: ["2026-09", …] }` newest first |
 | `GET /` | latest month, every salesman in the scheme |
 | `GET /?month=2026-09` | that month |
-| `GET /?month=2026-09&person=rakesh` | one salesman — user id or name, case-insensitive |
+| `GET /?month=2026-09&person=rakesh` | one salesman — user id, name, or employee code (`SSL 12`), case-insensitive |
 | `GET /?from=2026-09-01&to=2026-09-10` | invoice lines in that window, scored against the month's targets |
 
 Only active salesmen with a laminate basic target for the month are listed (the same list as the dashboard).
@@ -100,7 +100,7 @@ Only active salesmen with a laminate basic target for the month are listed (the 
   "totals": { "people": 9, "gateOpen": 0, "laminateSheets": 8691, "earned": 0, "badDebtRecovered": 0, "deduction": 0, "amount": 0, "grossPoints": 0, "points": 0, "paid": 0, "projectApprovalsPending": 6 },
   "people": [
     {
-      "salesmanId": "rakesh", "name": "Rakesh Boriwal",
+      "salesmanId": "rakesh", "empCode": "SSL 12", "name": "Rakesh Boriwal",
       "basic": 4500,
       "laminate": { "sold": 2579, "project": 54, "late": 0, "credited": 2552, "gateOpen": false, "shortfall": 1948, "excess": 0, "rate": 0, "mode": "gate-closed", "amount": 0 },
       "products": [ { "key": "rolls", "label": "Rolls", "category": "ROLLS", "target": 20, "targetSource": "rule", "actual": 3, "late": 0, "excess": 0, "rate": 100, "amount": 0 } ],
@@ -118,6 +118,7 @@ Only active salesmen with a laminate basic target for the month are listed (the 
 }
 ```
 
+- `empCode` is the HR employee code set on the user (Admin → Users). Blank when none is set.
 - `amount` / `points` are net — what is paid. `earned` is before bad-debt recovery and the deduction.
 - `laminate.credited` = sold − late − half of project sheets; the gate and the slabs use this figure.
 - `laminate.mode`: `gate-closed` (basic not crossed), `starter` (bands), `retroactive` (one rate on the whole excess).

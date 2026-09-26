@@ -66,11 +66,11 @@ router.post('/:id/apply', protect, requireFeature('collections.import'), async (
     await imp.save();
     if (imp.status === 'APPLIED') return res.json({ applied: true, import: imp });
     if ((imp.stats?.matched || 0) > APPLY_INLINE_MAX_ROWS) {
-      const job = await enqueue('collections.applyImport', { importId: String(imp._id), by: req.user.id }, { by: req.user.id });
+      const job = await enqueue('collections.applyImport', { importId: String(imp._id), by: req.user.id, clearAbsent: req.body?.clearAbsent }, { by: req.user.id });
       await ColImport.updateOne({ _id: imp._id }, { $set: { jobId: job._id } });
       return res.status(202).json({ applied: false, jobId: job._id, import: imp });
     }
-    const done = await applyImport(imp._id, { by: req.user.id });
+    const done = await applyImport(imp._id, { by: req.user.id, clearAbsent: typeof req.body?.clearAbsent === 'boolean' ? req.body.clearAbsent : undefined });
     res.json({ applied: true, import: done });
   } catch (e) { console.error('[COL IMPORT APPLY]', e.message); res.status(400).json({ error: e.message }); }
 });

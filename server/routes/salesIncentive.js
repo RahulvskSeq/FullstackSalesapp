@@ -139,7 +139,7 @@ async function computeWindow(month, config, { from = '', to = '' } = {}) {
   const [targets, adjRows, users, factsList] = await Promise.all([
     SalesTarget.find({ month: { $in: trendMonths } }).lean(),
     SalesIncentiveAdj.find({ month: { $lte: month } }).lean(),
-    User.find({}, 'id userId name role').lean(),
+    User.find({}, 'id userId name role empCode').lean(),
     Promise.all(trendMonths.map(m => monthFacts(m, config))),
   ]);
   const factsByMonth = Object.fromEntries(trendMonths.map((m, i) => [m, factsList[i]]));
@@ -167,6 +167,7 @@ async function computeWindow(month, config, { from = '', to = '' } = {}) {
   const lateByMonth = Object.fromEntries(await Promise.all(trendMonths.map(async m => [m, await lateFacts(m, factsByMonth[m], config, today)])));
 
   const nameOf = Object.fromEntries(users.map(u => [u.id || u.userId, u.name || u.id || u.userId]));
+  const codeOf = Object.fromEntries(users.map(u => [u.id || u.userId, u.empCode || '']));
   const targetsByMonth = {}, adjByMonth = {}, catTargetsByMonth = {};
   for (const t of targets) {
     ((catTargetsByMonth[t.month] ||= {})[t.salesmanId] ||= {})[t.category] = Number(t.target) || 0;
@@ -194,7 +195,7 @@ async function computeWindow(month, config, { from = '', to = '' } = {}) {
     }
     carryIn = next;
   }
-  return { trendMonths, scored, nameOf, rangeInfo, factsByMonth };
+  return { trendMonths, scored, nameOf, codeOf, rangeInfo, factsByMonth };
 }
 
 /* ------------------------------------------------------------------ *
@@ -243,7 +244,7 @@ router.get('/', protect, async (req, res) => {
     const curScored = scored[month];
 
     const people = curScored.people
-      .map(p => ({ ...p, name: nameOf[p.salesmanId] || p.salesmanId }))
+      .map(p => ({ ...p, name: nameOf[p.salesmanId] || p.salesmanId, empCode: codeOf[p.salesmanId] || '' }))
       .sort((x, y) => y.payable - x.payable || y.credited - x.credited);
 
     const prevMonth = trendMonths[trendMonths.length - 2] || '';

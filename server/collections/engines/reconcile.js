@@ -148,9 +148,53 @@ export async function withTxn(fn) {
 const asDate = ymd => new Date(ymd + 'T00:00:00');
 const toObj = m => m instanceof Map ? Object.fromEntries(m) : (m || {});
 
+/**
+ * Money that came between two statements. The total alone under-counts it:
+ * new billing in the same interval lands in the newest column and offsets the
+ * drop, so a dealer who paid 68,835 and was billed 26,100 shows a total only
+ * 42,735 lower. In snapshot mode the columns are cumulative, so a drop in an
+ * older column is payment only — no new bill can land there. In buckets mode
+ * each column stands alone, so every column's drop is payment.
+ * `trustColumns: false` falls back to the total (a file whose columns moved
+ * for everyone is on a different basis, not a day of payments).
+ */
+export function observedPayment(prevBuckets, curBuckets, prevTotal, curTotal, mode, { trustColumns = true } = {}) {
+  const net = Math.max(0, (Number(prevTotal) || 0) - (Number(curTotal) || 0));
+  if (!trustColumns) return { observed: net, hidden: 0 };
+  const pb = toObj(prevBuckets), cb = toObj(curBuckets);
+  const periods = [...new Set([...Object.keys(pb), ...Object.keys(cb)])].sort();
+  const drop = p => Math.max(0, (Number(pb[p]) || 0) - (Number(cb[p]) || 0));
+  const cols = mode === 'buckets' ? periods.reduce((s, p) => s + drop(p), 0) : Math.max(0, ...periods.slice(0, -1).map(drop));
+  const observed = Math.max(net, cols);
+  return { observed, hidden: observed - net };
+}
+
+/**
+ * Did this file's older columns move for an unusual share of dealers? A normal
+ * day shifts a few percent (payments under new billing). A file on a different
+ * basis — a re-dated export, a different report — shifts a third of them, and
+ * trusting its columns would book money that never came. Above the threshold
+ * the import measures payments from totals only.
+ */
+export async function columnShift(imp) {
+  const rows = await ColImportRow.find({ importId: imp._id, status: 'OK', matchedDealerId: { $ne: null } }, 'matchedDealerId buckets').lean();
+  const bals = new Map((await ColBalance.find({ dealerId: { $in: rows.map(r => r.matchedDealerId) }, lastSnapshotAsOn: { $lt: imp.asOn } }, 'dealerId dealerName buckets total').lean()).map(b => [String(b.dealerId), b]));
+  let n = 0, compared = 0; const examples = [];
+  for (const r of rows) {
+    const b = bals.get(String(r.matchedDealerId)); if (!b) continue; compared++;
+    const pb = toObj(b.buckets), cb = toObj(r.buckets);
+    const older = [...new Set([...Object.keys(pb), ...Object.keys(cb)])].sort().slice(0, -1);
+    const rise = Math.max(0, ...older.map(p => (Number(cb[p]) || 0) - (Number(pb[p]) || 0)));
+    const { hidden } = observedPayment(pb, cb, b.total, computeTotal(cb, imp.balanceMode), imp.balanceMode);
+    if (rise > 0 || hidden > 0) { n++; if (examples.length < 5) examples.push(b.dealerName); }
+  }
+  const pct = compared ? n / compared : 0;
+  return { compared, n, pct: Math.round(pct * 1000) / 10, tooMany: compared >= 20 && pct > 0.10, examples };
+}
+
 /** Everything a chunk of rows needs to read, in five queries. Lean documents. */
-export async function preloadCtx(imp, ids, { session = null } = {}) {
-  const cfg = { overdueDays: await getSetting('collections.overdueDays'), highValue: await getSetting('collections.highValue'), thresholds: await getSetting('collections.priorityThresholds'),
+export async function preloadCtx(imp, ids, { session = null, trustColumns = true } = {}) {
+  const cfg = { overdueDays: await getSetting('collections.overdueDays'), highValue: await getSetting('collections.highValue'), thresholds: await getSetting('collections.priorityThresholds'), trustColumns,
     // this import's own oldest column is the collection month for the rows it writes
     collectionMonth: (imp.periods || []).filter(p => /^\d{4}-\d{2}$/.test(p)).sort()[0] || await collectionMonthOf({ session }) };
   // Sequential on purpose: operations inside one transaction share a session,
@@ -224,9 +268,10 @@ export function planRow(imp, row, dealer, ctx, { by = '' } = {}) {
   // what accounts confirmed came in over the same interval. Neither side is
   // altered; a gap is recorded so a person can look.
   if (prev) {
-    const observed = Math.max(0, prev.total - total);
+    // measured from the columns, not the total: new billing in the same interval hides part of a payment
+    const { observed, hidden } = observedPayment(prev.buckets, buckets, prev.total, total, imp.balanceMode, { trustColumns: ctx.cfg.trustColumns !== false });
     const explained = (ctx.payments.get(k) || []).filter(p => p.date > prev.asOn && p.date <= imp.asOn).reduce((s, p) => s + p.amount, 0);
-    if (observed !== explained) ev('RECONCILIATION_DIFFERENCE', { cycleId, amount: observed - explained, meta: { observed, explained, from: prev.asOn, to: imp.asOn, appliedAt: new Date() } });
+    if (observed !== explained || hidden > 0) ev('RECONCILIATION_DIFFERENCE', { cycleId, amount: observed - explained, meta: { observed, explained, hidden, net: Math.max(0, prev.total - total), from: prev.asOn, to: imp.asOn, appliedAt: new Date() } });
   }
 
   const oldest = oldestPeriodOf(buckets);
@@ -303,7 +348,7 @@ export async function bindDealerIdentity(row, dealer, { by, importId }) {
  * job continues where it stopped. Ends with stats and APPLIED, or FAILED with
  * the completed chunks intact.
  */
-export async function applyImport(importId, { by = '', progress = async () => {} } = {}) {
+export async function applyImport(importId, { by = '', progress = async () => {}, clearAbsent } = {}) {
   const t0 = Date.now();
   const imp = await ColImport.findById(importId);
   if (!imp) throw new Error('Import not found');
@@ -331,11 +376,16 @@ export async function applyImport(importId, { by = '', progress = async () => {}
     // transaction had already recorded with $addToSet — and a chunk listed twice
     // is a chunk that looks finished when it may not be.
     const done = new Set(imp.appliedChunks);
+    // a file whose older columns moved for too many dealers is on a different basis: totals only
+    const shift = await columnShift(imp);
+    const trustColumns = !shift.tooMany;
+    imp.stats.columnShift = shift.n; imp.stats.columnShiftPct = shift.pct; imp.stats.columnShiftTooMany = shift.tooMany; imp.markModified('stats');
+    if (shift.tooMany) console.warn('[COL IMPORT]', imp.asOn, `older columns moved for ${shift.n} of ${shift.compared} dealers (${shift.pct}%) — payments measured from totals only`);
     for (let c = 0; c < chunks; c++) {
       if (done.has(c)) continue;
       const slice = rows.slice(c * CHUNK, (c + 1) * CHUNK);
       await withTxn(async session => {
-        const ctx = await preloadCtx(imp, slice.map(r => r.matchedDealerId), { session });
+        const ctx = await preloadCtx(imp, slice.map(r => r.matchedDealerId), { session, trustColumns });
         const plans = slice.map(r => planRow(imp, r, dealers.get(String(r.matchedDealerId)), ctx, { by }));
         await applyPlans(imp, plans, { session });
         await ColImport.updateOne({ _id: imp._id }, { $addToSet: { appliedChunks: c } }).session(session);
@@ -344,6 +394,30 @@ export async function applyImport(importId, { by = '', progress = async () => {}
       await progress(Math.min(rows.length, (c + 1) * CHUNK), rows.length, `chunk ${c + 1}/${chunks}`);
     }
     await ColImportRow.updateMany({ importId: imp._id, status: 'OK', matchedDealerId: { $ne: null } }, { $set: { appliedAt: new Date() } });
+
+    // Parties the statement left out are nil (Tally drops a nil balance):
+    // write them a zero row so they clear like any other decrease to nothing.
+    const absent = await absentDealers(imp, rows.map(r => r.matchedDealerId), { clearAbsent });
+    if (absent.clear.length) {
+      const zero = Object.fromEntries((imp.periods || []).map(p => [p, 0]));
+      const dl = new Map((await Dealer.find({ _id: { $in: absent.clear.map(b => b.dealerId) } }, 'name code aliases salesman creditDays').lean()).map(d => [String(d._id), d]));
+      const fake = absent.clear.map(b => ({ rowNo: 0, matchedDealerId: b.dealerId, partyName: b.dealerName, code: '', buckets: zero }));
+      for (let i = 0; i < fake.length; i += CHUNK) {
+        const slice = fake.slice(i, i + CHUNK);
+        await withTxn(async session => {
+          const ctx = await preloadCtx(imp, slice.map(r => r.matchedDealerId), { session });
+          await applyPlans(imp, slice.map(r => planRow(imp, r, dl.get(String(r.matchedDealerId)), ctx, { by })), { session });
+        });
+      }
+    }
+    imp.stats.absentCleared = absent.clear.length;
+    imp.stats.absentClearedAmount = Math.round(absent.clear.reduce((a, b) => a + b.total, 0));
+    imp.stats.absentSkipped = absent.skipped.length;
+    imp.stats.absentSkippedAmount = Math.round(absent.skipped.reduce((a, b) => a + b.total, 0));
+    imp.stats.absentSkippedBlocks = absent.skippedBlocks;
+    imp.stats.absentTooMany = absent.tooMany;
+    imp.stats.absentMissing = absent.missing.length; imp.stats.absentMissingAmount = absent.missingAmount;
+    imp.markModified('stats');
 
     const agg = await ColSnapshot.aggregate([{ $match: { importId: imp._id } },
       { $group: { _id: '$classification', n: { $sum: 1 }, before: { $sum: { $ifNull: ['$prevTotal', 0] } }, after: { $sum: '$total' } } }]);
@@ -362,6 +436,34 @@ export async function applyImport(importId, { by = '', progress = async () => {}
     await imp.save();
     throw e;
   }
+}
+
+/**
+ * Dealers the statement left out. Tally drops a party once its balance is
+ * nil, so an open dealer missing from the file has, in the normal case, paid
+ * up. Two exports look the same but mean something else: a whole salesman's
+ * block dropped (every open dealer of one salesman missing), or a file so
+ * short that most open dealers are missing. Those are not cleared — they are
+ * reported, and the balances stay as they were.
+ */
+export async function absentDealers(imp, presentIds, opts = {}) {
+  const present = new Set(presentIds.map(String));
+  // every open dealer is the base; only those with an older statement and not in this file are "missing"
+  const open = await ColBalance.find({ total: { $gt: 0 } }, 'dealerId dealerName salesmanId total lastSnapshotAsOn').lean();
+  const missing = open.filter(b => !present.has(String(b.dealerId)) && b.lastSnapshotAsOn && b.lastSnapshotAsOn < imp.asOn);
+  const bySm = {}; for (const b of open) (bySm[b.salesmanId || ''] ||= { open: 0, missing: 0, amount: 0 }).open++;
+  for (const b of missing) { const g = bySm[b.salesmanId || '']; g.missing++; g.amount += b.total; }
+  const skippedBlocks = Object.entries(bySm).filter(([, g]) => g.missing >= 3 && g.missing === g.open).map(([sm, g]) => ({ salesmanId: sm, n: g.missing, amount: Math.round(g.amount) }));
+  const blockSms = new Set(skippedBlocks.map(x => x.salesmanId));
+  // a normal day clears a handful of small parties; a dropped block is lakhs at once
+  const openAmount = open.reduce((a, b) => a + b.total, 0), missingAmount = missing.reduce((a, b) => a + b.total, 0);
+  const tooMany = open.length > 0 && (missing.length / open.length > 0.10 || (openAmount > 0 && missingAmount / openAmount > 0.02));
+  // decided: 'auto' clears unless it looks wrong; true forces; false skips
+  const decided = opts.clearAbsent;
+  const clear = decided === true ? missing : decided === false ? [] : (tooMany ? [] : missing.filter(b => !blockSms.has(b.salesmanId || '')));
+  const clearIds = new Set(clear.map(b => String(b.dealerId)));
+  const skipped = missing.filter(b => !clearIds.has(String(b.dealerId)));
+  return { open: open.length, openAmount: Math.round(openAmount), missing, missingAmount: Math.round(missingAmount), clear, skipped, skippedBlocks, tooMany, decided };
 }
 
 /** Recompute status/priority for one dealer after payments, promises or follow-ups change. */

@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 const S = new mongoose.Schema({
   id:              { type:String, required:true, unique:true },
   name:            { type:String, required:true },
+  empCode:         { type:String, default:'', trim:true },   // HR employee code, e.g. "SSL 12"; returned by the APIs
   pass:            { type:String, required:true },
   // Roles (ascending privilege):
   //   salesman   — sees only their own dealers, follow-ups, monthly entries

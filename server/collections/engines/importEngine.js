@@ -207,7 +207,14 @@ export async function buildPreview(importId) {
     if (cls !== 'UNCHANGED') changes.push({ rowNo: r.rowNo, dealerId: k, dealer: dealers.get(k)?.name || r.partyName, code: r.code, before: p?.total ?? null, after: total, delta: total - (p?.total || 0), classification: cls, matchMethod: r.matchMethod });
   }
   changes.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
-  Object.assign(imp.stats, st);
+  // parties left out of the file: nil, so they will clear — unless a whole block is missing
+  const { absentDealers, columnShift } = await import('./reconcile.js');
+  const shift = await columnShift(imp);
+  Object.assign(st, { columnShift: shift.n, columnShiftPct: shift.pct, columnShiftTooMany: shift.tooMany });
+  const absent = await absentDealers(imp, ids);
+  Object.assign(st, { absentCleared: absent.clear.length, absentClearedAmount: Math.round(absent.clear.reduce((a, b) => a + b.total, 0)), absentSkipped: absent.skipped.length, absentSkippedAmount: Math.round(absent.skipped.reduce((a, b) => a + b.total, 0)), absentSkippedBlocks: absent.skippedBlocks, absentTooMany: absent.tooMany, absentMissing: absent.missing.length, absentMissingAmount: absent.missingAmount });
+  for (const b of absent.missing) changes.push({ rowNo: 0, dealerId: String(b.dealerId), dealer: b.dealerName, code: '', before: b.total, after: 0, delta: -b.total, classification: 'CLEARED', absent: true, willClear: absent.clear.some(x => String(x.dealerId) === String(b.dealerId)) });
+  Object.assign(imp.stats, st); imp.markModified('stats');
   if (imp.status === 'VALIDATED') imp.status = 'PREVIEWED';
   await imp.save();
   return {
