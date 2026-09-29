@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Download, FileBarChart2 } from 'lucide-react';
 import { col, downloadReport } from './api';
-import { useLoad, PageHead, Card, Table, Busy, ErrorBox, money, num, monthNow, DealerPicker, useDealerCtx } from './ui';
+import { useLoad, PageHead, Card, Table, Busy, ErrorBox, money, num, monthNow, today, DealerPicker, useDealerCtx } from './ui';
 
 const NEEDS_RANGE = new Set(['collection', 'payment-history', 'follow-ups', 'promises', 'broken-promises', 'cleared', 'new-outstanding', 'reconciliation', 'employee-activity', 'task-points']);
 const NEEDS_PERIOD = new Set(['employee-review']);
@@ -11,7 +11,7 @@ export default function Reports() {
   const { users, isStaff } = useDealerCtx();
   const kinds = useLoad(() => col.reports(), []);
   const [kind, setKind] = useState('current-outstanding');
-  const [p, setP] = useState({ from: monthNow() + '-01', to: new Date().toISOString().slice(0, 10), period: monthNow(), employeeId: '' });
+  const [p, setP] = useState({ from: monthNow() + '-01', to: today(), period: monthNow(), employeeId: '' });
   const [dealer, setDealer] = useState(null);
   const q = { ...(NEEDS_RANGE.has(kind) ? { from: p.from, to: p.to } : {}), ...(NEEDS_PERIOD.has(kind) ? { period: p.period } : {}), ...(NEEDS_DEALER.has(kind) && dealer ? { dealerId: dealer.id } : {}), ...(p.employeeId ? { employeeId: p.employeeId } : {}) };
   const ready = !NEEDS_DEALER.has(kind) || !!dealer;
@@ -32,7 +32,7 @@ export default function Reports() {
       <Card pad={false}>
         {!ready ? <div style={{ padding: 20, color: 'var(--t3)', fontSize: 12.5 }}>Pick a dealer.</div> : err ? <ErrorBox err={err} onRetry={reload} /> : busy && !data ? <Busy /> : data ? <>
           <div style={{ padding: '10px 12px 0', fontSize: 12, color: 'var(--t2)' }}>{num(data.count)} rows{data.truncated ? ' — first 500 shown here; the Excel has all of them' : ''}</div>
-          <Table dense cols={(data.columns || []).map((c, i) => ({ k: String(i), h: c, align: typeof data.rows?.[0]?.[i] === 'number' ? 'right' : 'left', r: r => fmtCell(r[i]) }))} rows={(data.rows || []).map((r, i) => Object.assign([...r], { _id: i }))} keyOf={r => r._id} empty="Empty report." />
+          <Table dense cols={(data.columns || []).map((c, i) => ({ k: String(i), h: c, avatar: /^(dealer|party|dealer name|party name|employee|salesman)$/i.test(String(c).trim()) ? r => String(r[i] ?? '') : undefined, align: typeof data.rows?.[0]?.[i] === 'number' ? 'right' : 'left', r: r => fmtCell(r[i]) }))} rows={(data.rows || []).map((r, i) => Object.assign([...r], { _id: i }))} keyOf={r => r._id} empty="Empty report." />
         </> : null}
       </Card>
     </div>);

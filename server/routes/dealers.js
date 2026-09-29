@@ -86,6 +86,10 @@ const dealerSchema = new mongoose.Schema({
   locLng:       { type:Number, default:null },
   locUpdatedAt: { type:Date,   default:null },
   locAccuracy:  { type:Number, default:null },
+  // the dealer's registration form, ticked from a visit MOM (kept in step with models/Dealer.js)
+  dealerFormDone:   { type:Boolean, default:false },
+  dealerFormDoneAt: { type:Date, default:null },
+  dealerFormBy:     { type:String, default:'' },
 }, { timestamps:true });
 
 dealerSchema.index({ name:1, salesman:1 }, { unique:true });
@@ -546,6 +550,14 @@ router.post('/upload', protect, upload.single('file'), async (req,res) => {
             if(monthData.state) d0.state = monthData.state;
             if(monthData.zone)  d0.zone  = monthData.zone;
             d0.source = 'upload';
+            // record WHEN the handover happened, as PUT /:id does, so ERP invoice
+            // lines are credited by their own date to the right salesman
+            if(oldSm && oldSm !== rowSm){
+              const hist = Array.isArray(d0.salesmanHistory) ? d0.salesmanHistory.map(h => ({ salesman: h.salesman, from: h.from })) : [];
+              if(!hist.length) hist.push({ salesman: oldSm, from: '0000-00-00' });
+              hist.push({ salesman: rowSm, from: cutYM ? cutYM + '-01' : todayStr() });
+              d0.salesmanHistory = hist;
+            }
             await d0.save();
             // Move Sale rows from the handover month onward; earlier rows stay
             // credited to the old salesman. Open follow-ups move with the dealer.
@@ -1450,7 +1462,11 @@ router.post('/export-xlsx', protect, async (req,res) => {
 router.post('/', protect, async (req,res) => {
   try {
     const data={...req.body};
-    if(!isStaff(req)) data.salesman=req.user.id;
+    if(!isStaff(req)){
+      data.salesman=req.user.id;
+      // a new dealer from a salesman starts with no credit terms; the office sets them
+      for(const k of ['creditDays','creditLimit','salesmanHistory','tallyGuid','code','perfStatus','perfQty']) delete data[k];
+    }
     const d=await Dealer.create(data);
     res.json(fmt(d.toObject(),[]));
   }catch(e){res.status(500).json({error:e.message});}
@@ -1464,6 +1480,14 @@ router.put('/:id', protect, async (req,res) => {
     const setObj={};
     for(const [k,v] of Object.entries(req.body)){
       if(k.startsWith('monthlyData.')&&v&&typeof v==='object'){Object.entries(v).forEach(([f,fv])=>{setObj[`${k}.${f}`]=fv;});}else{setObj[k]=v;}
+    }
+    // A salesman edits his dealer's month figures and contact details only.
+    // Name, salesman, zone, category and credit terms belong to the office —
+    // the edit screen sends them unchanged, so they are dropped, not refused.
+    if(!isStaff(req)){
+      const SALESMAN_MAY = /^(status|dealerType|city|state|address|pincode|phone|email|monthlyData\.[^.]+\.(achieved|target|status|zone))$/;
+      for(const k of Object.keys(setObj)) if(!SALESMAN_MAY.test(k)) delete setObj[k];
+      if(!Object.keys(setObj).length) return res.json(fmt(ex.toObject(),[]));
     }
     // Salesman handover: months that already hold data were earned by the OLD
     // salesman — stamp them so their attribution survives the change. Only

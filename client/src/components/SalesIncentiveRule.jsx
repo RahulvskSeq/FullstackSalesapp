@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, X, RotateCcw, Save } from 'lucide-react';
+import { Plus, X, RotateCcw, Save, Settings, Lock, Layers, TrendingUp, Package, Ban, Calculator } from 'lucide-react';
 import { api } from '../api';
 import Skeleton from './Skeleton';
+import { PageHead } from '../collections/ui';
 
 /**
  * Sales incentive — rule & setup.
@@ -104,17 +105,14 @@ export default function SalesIncentiveRule() {
 
   return (
     <div className="fade">
-      <div className="page-head" style={{ marginBottom: 14 }}>
-        <div className="page-eyebrow">Sales incentive</div>
-        <div className="page-title">Rule &amp; setup</div>
-      </div>
+      <PageHead icon={Settings} tone="var(--acc)" eyebrow="Sales incentive" title="Rule & setup" />
 
       {err && <div className="card" style={{ color: 'var(--red)', fontSize: 12.5, marginBottom: 12 }}>{err}</div>}
       {ok  && <div className="card" style={{ color: 'var(--grn)', fontSize: 12.5, marginBottom: 12 }}>{ok}</div>}
 
       {/* ── the gate ────────────────────────────────────────────── */}
       <div className="card" style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>The gate</div>
+        <div className="sec-title" style={{ marginBottom: 6 }}><span className="sec-ico" style={{ '--tone': 'var(--pur)' }}><Lock size={15} /></span> The gate</div>
         <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 11, lineHeight: 1.7 }}>
           Laminate incentive starts only after crossing this category's basic target. Other products pay
           on units above their own targets (set per salesman under Sales by Category); switch on the
@@ -158,7 +156,7 @@ export default function SalesIncentiveRule() {
 
       {/* ── starter tiers ───────────────────────────────────────── */}
       <div className="card" style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>Starter tiers</div>
+        <div className="sec-title" style={{ marginBottom: 6 }}><span className="sec-ico" style={{ '--tone': 'var(--pur)' }}><Layers size={15} /></span> Starter tiers</div>
         <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 11, lineHeight: 1.7 }}>
           Applies while the excess over basic is below {num(cfg.retroFrom)}. Each band earns its own
           rate on the sheets that fall inside it.
@@ -189,7 +187,7 @@ export default function SalesIncentiveRule() {
 
       {/* ── retroactive escalation ──────────────────────────────── */}
       <div className="card" style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>Retroactive escalation</div>
+        <div className="sec-title" style={{ marginBottom: 6 }}><span className="sec-ico" style={{ '--tone': 'var(--pur)' }}><TrendingUp size={15} /></span> Retroactive escalation</div>
         <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 11, lineHeight: 1.7 }}>
           Past the threshold, <b>one rate applies to the entire excess</b> — crossing a block re-prices
           sheets already earned, which is why the payout jumps rather than rising smoothly. The rate is
@@ -227,7 +225,7 @@ export default function SalesIncentiveRule() {
 
       {/* ── other products ──────────────────────────────────────── */}
       <div className="card" style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>Other products</div>
+        <div className="sec-title" style={{ marginBottom: 6 }}><span className="sec-ico" style={{ '--tone': 'var(--pur)' }}><Package size={15} /></span> Other products</div>
         <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 11, lineHeight: 1.7 }}>
           The salesman's own target for the category (Sales by Category → Salesman-wise) is used when set —
           rolls are "a fixed count set per rep". The fixed count or % of the gate target here is the fallback
@@ -297,7 +295,7 @@ export default function SalesIncentiveRule() {
 
       {/* ── section 3 & 4: what never counts, and when it is paid ─── */}
       <div className="card" style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>What never counts, and when it is paid</div>
+        <div className="sec-title" style={{ marginBottom: 6 }}><span className="sec-ico" style={{ '--tone': 'var(--red)' }}><Ban size={15} /></span> What never counts, and when it is paid</div>
         <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 11, lineHeight: 1.7 }}>
           Worked out from the ERP invoice lines and the Collections outstanding uploads, so nobody has to type
           them. Any figure can still be overridden per salesman on the dashboard.
@@ -350,7 +348,7 @@ export default function SalesIncentiveRule() {
 
       {/* ── worked example, live ────────────────────────────────── */}
       <div className="card" style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Worked example</div>
+        <div className="sec-title"><span className="sec-ico" style={{ '--tone': 'var(--grn)' }}><Calculator size={15} /></span> Worked example</div>
         {(() => {
           const basic = 2500, achieved = 3800, display = 80000;
           const excess = achieved - basic;

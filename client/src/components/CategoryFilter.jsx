@@ -214,7 +214,7 @@ const CategoryFilter = ({
           <div key={category} style={{
             display:'flex',alignItems:'center',gap:8,
             padding:'8px 10px',borderRadius:6,
-            background: off ? 'transparent' : 'rgba(99,102,241,.06)',
+            background: off ? 'transparent' : 'color-mix(in srgb, var(--acc) 6%, transparent)',
             minHeight: isMobile ? 40 : 'auto',   // bigger tap target on mobile
           }}>
             <input
@@ -296,7 +296,7 @@ const CategoryFilter = ({
           overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
           minWidth:0,
         }}>
-          {isMobile ? summary : `${label}: ${summary}`}
+          {isMobile ? (excluded.size ? `Category: ${summary}` : 'Category') : `${label}: ${summary}`}
         </span>
         <ChevronDown size={compact ? 12 : 14}
           style={{transform: open ? 'rotate(180deg)' : 'none', transition:'transform .12s',

@@ -6,9 +6,11 @@
 import React, { useEffect, useState } from 'react';
 import {
   ClipboardList, Plus, RefreshCw, Send, Trash2, X, Download,
-  Calendar, Users as UsersIcon,
+  Calendar, Users as UsersIcon, CheckSquare,
 } from 'lucide-react';
+import { PageHead } from '../collections/ui';
 import { api } from '../api';
+import { saveText } from '../lib/saveFile';
 import { notify, confirmDialog } from './Toast';
 import { VoiceTextarea } from './VoiceInput';
 
@@ -16,14 +18,15 @@ const STATUSES = ['NEW','IN_PROGRESS','COMPLETED','CANCELLED'];
 const PRIORITIES = ['LOW','MEDIUM','HIGH','URGENT'];
 const STATUS_COLOR = {
   NEW:         '#a5b4fc',
-  IN_PROGRESS: '#fbbf24',
-  COMPLETED:   '#34d399',
+  IN_PROGRESS: '#f59e0b',
+  COMPLETED:   '#10b981',
   CANCELLED:   '#94a3b8',
 };
 const PRIORITY_COLOR = {
-  LOW:'#94a3b8', MEDIUM:'#a5b4fc', HIGH:'#fb923c', URGENT:'#f87171',
+  LOW:'#94a3b8', MEDIUM:'#a5b4fc', HIGH:'#f97316', URGENT:'#ef4444',
 };
-const todayStr = () => new Date().toISOString().slice(0,10);
+// Local date — toISOString() is UTC and lags IST until 05:30.
+const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 const fmtTime  = (d) => d ? new Date(d).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'}) : '';
 
 function Field({ label, children }){
@@ -39,11 +42,9 @@ function exportCSV(filename, headers, rows){
   if(!rows || rows.length === 0){ notify.info('Nothing to export'); return; }
   const esc = v => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s; };
   const csv = [headers.map(esc).join(','), ...rows.map(r => r.map(esc).join(','))].join('\n');
-  const a = document.createElement('a');
-  a.href = 'data:text/csv;charset=utf-8,﻿' + encodeURIComponent(csv);
-  a.download = filename;
-  a.click();
-  notify.success('Exported ' + rows.length + ' rows');
+  saveText('\ufeff' + csv, filename, 'text/csv;charset=utf-8')
+    .then(() => notify.success('Exported ' + rows.length + ' rows'))
+    .catch(e => notify.error('Export failed: ' + (e?.message || e)));
 }
 
 export default function TasksPage({ users, currentUser }){
@@ -56,6 +57,7 @@ export default function TasksPage({ users, currentUser }){
   const [scope, setScope] = useState('mine');
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing]   = useState(null);
+  const [busy, setBusy]         = useState(false);   // create in flight — blocks a double tap
 
   const [form, setForm] = useState({
     title:'', description:'', priority:'MEDIUM', dueDate:'',
@@ -77,7 +79,9 @@ export default function TasksPage({ users, currentUser }){
   useEffect(()=>{ load(); }, [filterStatus, filterUser, scope]);
 
   const create = async () => {
+    if(busy) return;
     if(!form.title.trim()){ notify.error('Title required'); return; }
+    setBusy(true);
     try {
       await api.tasksCreate(form);
       notify.success('Task created');
@@ -85,6 +89,7 @@ export default function TasksPage({ users, currentUser }){
       setShowForm(false);
       load();
     } catch(e){ notify.error(e.message); }
+    finally { setBusy(false); }
   };
 
   const remove = async (id) => {
@@ -96,20 +101,15 @@ export default function TasksPage({ users, currentUser }){
 
   return (
     <div className="fade" style={{display:'flex', flexDirection:'column', gap:14}}>
-      <div>
-        <div style={{fontSize:11, color:'var(--acc)', textTransform:'uppercase', letterSpacing:'.15em', marginBottom:4}}>CRM</div>
-        <div className="crm-page-title" style={{fontSize:22, fontWeight:700}}>Tasks</div>
-        <div className="crm-page-sub" style={{fontSize:13, color:'var(--t3)', marginTop:4}}>
-          {isStaff
-            ? 'Assign tasks to salesmen, track status, push updates.'
-            : 'Tasks assigned to you. Update status as you progress.'}
-        </div>
-      </div>
+      <PageHead icon={CheckSquare} tone="var(--acc)" eyebrow="CRM" title="Tasks"
+        sub={isStaff
+          ? 'Assign tasks to salesmen, track status, push updates.'
+          : 'Tasks assigned to you. Update status as you progress.'} />
 
       <div className="card">
         <div className="row" style={{marginBottom:10, flexWrap:'wrap', gap:6}}>
-          <div style={{fontSize:13, fontWeight:700, display:'flex', alignItems:'center', gap:6}}>
-            <ClipboardList size={14}/> Tasks {items.length ? `(${items.length})` : ''}
+          <div className="sec-title" style={{marginBottom:0}}>
+            <span className="sec-ico" style={{'--tone':'var(--acc)'}}><ClipboardList size={15}/></span> Tasks {items.length ? <span className="count-pill">{items.length}</span> : ''}
           </div>
           <div className="spacer"/>
           <select className="inp" value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}
@@ -183,8 +183,8 @@ export default function TasksPage({ users, currentUser }){
             </div>
             <div style={{display:'flex', justifyContent:'flex-end', gap:8, marginTop:10}}>
               <button onClick={()=>setShowForm(false)} className="btn" style={{fontSize:12}}>Cancel</button>
-              <button onClick={create} className="btnp" style={{display:'inline-flex', alignItems:'center', gap:6, fontSize:12}}>
-                <Plus size={12}/> Create
+              <button onClick={create} disabled={busy} className="btnp" style={{display:'inline-flex', alignItems:'center', gap:6, fontSize:12}}>
+                <Plus size={12}/> {busy ? 'Creating…' : 'Create'}
               </button>
             </div>
           </div>
@@ -201,30 +201,26 @@ export default function TasksPage({ users, currentUser }){
               const iAmAssignee = T.assignedTo === meId;
               const iAmCreator  = T.createdBy  === meId;
               return (
-                <div key={T._id} onClick={()=>setEditing(T)} style={{
-                  cursor:'pointer', padding:'10px 12px', borderRadius:8,
-                  background:'var(--bg2)', border:'1px solid var(--b2)',
-                  borderLeft:'3px solid ' + sc,
-                }}>
+                <div key={T._id} onClick={()=>setEditing(T)} className="att-card" style={{'--tone':sc, flexShrink:0}}>
                   <div style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
                     <div style={{fontSize:13, fontWeight:700}}>{T.title}</div>
-                    <span style={{fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:3, background:sc+'22', color:sc}}>{T.status}</span>
-                    <span style={{fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:3, background:pc+'22', color:pc}}>{T.priority}</span>
+                    <span style={{fontSize:9, fontWeight:800, padding:'2px 8px', borderRadius:20, background:sc+'22', color:sc}}>{T.status}</span>
+                    <span style={{fontSize:9, fontWeight:800, padding:'2px 8px', borderRadius:20, background:pc+'22', color:pc}}>{T.priority}</span>
                     {/* By you / To you / Both — quick context for the salesman */}
                     {iAmAssignee && (
                       <span style={{fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:3,
-                        background:'rgba(34,211,238,0.15)', color:'#22d3ee'}}>📥 TO YOU</span>
+                        background:'rgba(34,211,238,0.15)', color:'#06b6d4'}}>📥 TO YOU</span>
                     )}
                     {iAmCreator && !iAmAssignee && (
                       <span style={{fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:3,
-                        background:'rgba(167,139,250,0.15)', color:'var(--pur)'}}>📤 BY YOU</span>
+                        background:'color-mix(in srgb, var(--pur) 15%, transparent)', color:'var(--pur)'}}>📤 BY YOU</span>
                     )}
                     {iAmAssignee && iAmCreator && (
                       <span style={{fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:3,
-                        background:'rgba(251,191,36,0.15)', color:'var(--yel)'}}>SELF</span>
+                        background:'color-mix(in srgb, var(--yel) 15%, transparent)', color:'var(--yel)'}}>SELF</span>
                     )}
                     <div style={{flex:1}}/>
-                    {T.assignedName && <span style={{fontSize:10, color:'var(--t3)'}}>→ {T.assignedName}</span>}
+                    {T.assignedName && <span style={{display:'inline-flex', alignItems:'center', gap:6, fontSize:11, color:'var(--t2)', fontWeight:600}}><span className="ini" style={{'--h':(T.assignedName||'?').charCodeAt(0)*37%360, width:22, height:22, borderRadius:7, fontSize:9}}>{(T.assignedName||'?').replace(/[^A-Za-z0-9]/g,'').slice(0,2).toUpperCase()}</span>{T.assignedName}</span>}
                   </div>
                   <div style={{display:'flex', gap:10, marginTop:4, fontSize:11, color:'var(--t3)', flexWrap:'wrap'}}>
                     {T.dueDate && <span><Calendar size={10} style={{display:'inline'}}/> Due: <b>{T.dueDate}</b></span>}
@@ -288,8 +284,8 @@ function TaskDetailModal({ task, users, isStaff, onClose, onSaved, onDelete, cur
         <div className="row" style={{marginBottom:12}}>
           <div style={{fontSize:17, fontWeight:700}}>{draft.title}</div>
           <span style={{fontSize:10, fontWeight:700, padding:'2px 7px', borderRadius:3, background:sc+'22', color:sc}}>{draft.status}</span>
-          {iAmAssignee && <span style={{fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:3, background:'rgba(34,211,238,0.15)', color:'#22d3ee'}}>📥 TO YOU</span>}
-          {iAmCreator && !iAmAssignee && <span style={{fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:3, background:'rgba(167,139,250,0.15)', color:'var(--pur)'}}>📤 BY YOU</span>}
+          {iAmAssignee && <span style={{fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:3, background:'rgba(34,211,238,0.15)', color:'#06b6d4'}}>📥 TO YOU</span>}
+          {iAmCreator && !iAmAssignee && <span style={{fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:3, background:'color-mix(in srgb, var(--pur) 15%, transparent)', color:'var(--pur)'}}>📤 BY YOU</span>}
           <div className="spacer"/>
           <button onClick={onClose} className="btn"><X size={13}/></button>
         </div>
@@ -335,19 +331,22 @@ function TaskDetailModal({ task, users, isStaff, onClose, onSaved, onDelete, cur
               {STATUSES.map(s => <option key={s} value={s}>Set: {s}</option>)}
             </select>
             <div style={{flex:1}}/>
-            {canDelete && <button onClick={onDelete} className="btn" style={{color:'var(--red)', border:'1px solid #7f1d1d', fontSize:12, display:'inline-flex', alignItems:'center', gap:4}}><Trash2 size={11}/> Delete</button>}
+            {canDelete && <button onClick={onDelete} className="btn" style={{color:'var(--red)', border:'1px solid color-mix(in srgb, var(--red) 45%, transparent)', fontSize:12, display:'inline-flex', alignItems:'center', gap:4}}><Trash2 size={11}/> Delete</button>}
             <button onClick={save} disabled={busy} className="btnp" style={{display:'inline-flex', alignItems:'center', gap:6}}>
               <Send size={12}/> {busy ? 'Saving…' : 'Save'}
             </button>
           </div>
         </div>
 
-        <div style={{fontSize:12, fontWeight:700, marginBottom:6}}>Activity ({task.updates?.length || 0})</div>
+        <div style={{fontSize:12, fontWeight:700, marginBottom:6, display:'flex', alignItems:'center', gap:6}}>Activity <span className="count-pill">{task.updates?.length || 0}</span></div>
         <div style={{display:'flex', flexDirection:'column', gap:6, maxHeight:200, overflowY:'auto'}}>
           {(task.updates || []).slice().reverse().map((u, idx) => (
-            <div key={idx} style={{background:'var(--bg2)', borderRadius:6, padding:'8px 10px'}}>
-              <div style={{fontSize:11, color:'var(--t3)'}}>{u.byName || u.by} · {fmtTime(u.at)}{u.status ? ' · → ' + u.status : ''}</div>
-              {u.comment && <div style={{fontSize:12, color:'var(--t1)', marginTop:2}}>{u.comment}</div>}
+            <div key={idx} style={{background:'var(--bg2)', borderRadius:10, padding:'8px 10px', display:'flex', gap:9, alignItems:'flex-start'}}>
+              <span className="ini" style={{'--h':String(u.byName||u.by||'?').charCodeAt(0)*37%360, width:26, height:26, borderRadius:8, fontSize:10}}>{String(u.byName||u.by||'?').replace(/[^A-Za-z0-9]/g,'').slice(0,2).toUpperCase()}</span>
+              <div style={{minWidth:0, flex:1}}>
+                <div style={{fontSize:11, color:'var(--t3)'}}><b style={{color:'var(--t1)', fontWeight:700}}>{u.byName || u.by}</b> · {fmtTime(u.at)}{u.status ? ' · → ' + u.status : ''}</div>
+                {u.comment && <div style={{fontSize:12, color:'var(--t1)', marginTop:2}}>{u.comment}</div>}
+              </div>
             </div>
           ))}
           {(!task.updates || task.updates.length === 0) && (

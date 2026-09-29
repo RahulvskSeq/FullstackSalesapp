@@ -5,7 +5,7 @@ import { MO as MO_CONST } from '../constants';
 import { useMonth } from '../context';
 import { api } from '../api';
 
-const PAL = ['#6366f1','#34d399','#fbbf24','#f472b6','#22d3ee','#fb923c','#a78bfa','#f87171','#84cc16','#e879f9','#06b6d4'];
+const PAL = ['#3b82f6','#10b981','#f59e0b','#ec4899','#06b6d4','#f97316','#8b5cf6','#ef4444','#84cc16','#e879f9','#06b6d4'];
 
 // MO label "Jun-26" → YYYY-MM "2026-06" used by the Sale collection.
 const MO_MONTHS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
@@ -25,8 +25,11 @@ function moToYM(lbl) {
  * Numbers here are guaranteed to match the Sales by Category page totals.
  */
 export default function CategoryDrillChart({ dealers, selectedMonthIdx, onNavigate }) {
-  const { MO:ctxMO } = useMonth();
+  const { MO:ctxMO, viewIdx } = useMonth();
   const MO = ctxMO || MO_CONST;
+  // Months shown on the trend chart = the view cycle picked in the month bar.
+  const vIdx = (viewIdx && viewIdx.length ? viewIdx : MO.map((_,i)=>i)).filter(i => i < MO.length);
+  const vKey = vIdx.join(',');
   const [drillCat, setDrillCat] = useState(null);
   const [selMains, setSelMains] = useState([]);
   const [selSubs,  setSelSubs]  = useState([]);
@@ -106,26 +109,26 @@ export default function CategoryDrillChart({ dealers, selectedMonthIdx, onNaviga
 
   const mainTrend = useMemo(() => {
     const cats = selMains.length > 0 ? selMains : mainData.map(x => x.name);
-    return MO.map(m => {
+    return vIdx.map(i => MO[i]).map(m => {
       const ym = moToYM(m);
       const row = { month: m.slice(0,3) };
       const bucket = monthlyByCat[ym] || {};
       for (const c of cats) row[c] = bucket[c] || 0;
       return row;
     });
-  }, [MO.join('|'), selMains, mainData, monthlyByCat]);
+  }, [MO.join('|'), vKey, selMains, mainData, monthlyByCat]);
 
   const subTrend = useMemo(() => {
     if (!drillCat) return [];
     const subs = selSubs.length > 0 ? selSubs : subData.map(x => x.name);
-    return MO.map(m => {
+    return vIdx.map(i => MO[i]).map(m => {
       const ym = moToYM(m);
       const row = { month: m.slice(0,3) };
       const bucket = monthlyBySub[ym] || {};
       for (const s of subs) row[s] = bucket[s] || 0;
       return row;
     });
-  }, [MO.join('|'), selSubs, subData, monthlyBySub, drillCat]);
+  }, [MO.join('|'), vKey, selSubs, subData, monthlyBySub, drillCat]);
 
   // Dealers list when drilled + sub selected — group sale rows by dealer
   const dealersForDrill = useMemo(() => {
@@ -157,23 +160,21 @@ export default function CategoryDrillChart({ dealers, selectedMonthIdx, onNaviga
   return (
     <div className="card" style={{marginBottom:16}}>
       {/* Header */}
-      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:14,flexWrap:'wrap'}}>
-        <Layers size={14} color="#818cf8"/>
+      <div className="sec-title">
+        <span className="sec-ico" style={{'--tone':'var(--pur)'}}><Layers size={15}/></span>
         {!drillCat ? (
-          <span style={{fontSize:13,fontWeight:600,color:'var(--t2)'}}>Category Analysis — {MO[selectedMonthIdx]}</span>
+          <span>Category Analysis — {MO[selectedMonthIdx]}</span>
         ) : (
           <>
-            <button onClick={goBack} style={{background:'none',border:'none',color:'var(--acc)',cursor:'pointer',fontSize:13,fontWeight:600,padding:0}}>All Categories</button>
+            <button onClick={goBack} style={{background:'none',border:'none',color:'var(--acc)',cursor:'pointer',fontSize:15,fontWeight:800,padding:0}}>All Categories</button>
             <ChevronRight size={13} color="var(--t3)"/>
-            <span style={{fontSize:13,fontWeight:700,color:'var(--t1)'}}>{drillCat}</span>
-            <span style={{fontSize:11,color:'var(--t3)'}}>— {subData.length} sub-types</span>
+            <span>{drillCat}</span>
+            <span className="count-pill">{subData.length}</span><span className="sec-note">sub-types</span>
           </>
         )}
         <span style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}>
           {grandTotal > 0 && (
-            <span style={{fontSize:11,color:'var(--t3)'}}>
-              Grand Total: <b style={{color:'var(--grn)',fontSize:13}}>{Number(grandTotal).toLocaleString('en-IN')}</b>
-            </span>
+            <span className="kpi-pill">Grand Total <b>{Number(grandTotal).toLocaleString('en-IN')}</b></span>
           )}
           {drillCat && <button onClick={goBack} className="btn" style={{fontSize:11,padding:'3px 10px',color:'var(--red)'}}>← Back</button>}
         </span>
@@ -183,14 +184,14 @@ export default function CategoryDrillChart({ dealers, selectedMonthIdx, onNaviga
       <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:12}}>
         {!drillCat ? (
           mainData.map((c) => (
-            <button key={c.name} onClick={()=>toggleMain(c.name)} style={{padding:'5px 12px',borderRadius:14,fontSize:12,fontWeight:600,cursor:'pointer',background:selMains.includes(c.name)?c.color+'33':'var(--bg2)',color:selMains.includes(c.name)?c.color:'var(--t2)',border:`1.5px solid ${selMains.includes(c.name)?c.color:'var(--b2)'}`,transition:'all .15s',display:'flex',alignItems:'center',gap:5}}>
-              <span style={{width:8,height:8,borderRadius:'50%',background:c.color,flexShrink:0}}/>{c.name}<span style={{opacity:0.7,fontSize:11}}>({Number(c.value).toLocaleString('en-IN')})</span>
+            <button key={c.name} onClick={()=>toggleMain(c.name)} className={'thr'+(selMains.includes(c.name)?' on':'')} style={{'--tone':c.color,display:'flex',alignItems:'center',gap:5}}>
+              <span style={{width:8,height:8,borderRadius:'50%',background:selMains.includes(c.name)?'#fff':c.color,flexShrink:0}}/>{c.name}<span style={{opacity:0.7,fontSize:11}}>({Number(c.value).toLocaleString('en-IN')})</span>
             </button>
           ))
         ) : (
           subData.map((t) => (
-            <button key={t.name} onClick={()=>toggleSub(t.name)} style={{padding:'5px 12px',borderRadius:14,fontSize:12,fontWeight:600,cursor:'pointer',background:selSubs.includes(t.name)?t.color+'33':'var(--bg2)',color:selSubs.includes(t.name)?t.color:'var(--t2)',border:`1.5px solid ${selSubs.includes(t.name)?t.color:'var(--b2)'}`,transition:'all .15s',display:'flex',alignItems:'center',gap:5}}>
-              <span style={{width:8,height:8,borderRadius:'50%',background:t.color,flexShrink:0}}/>{t.name}<span style={{opacity:0.7,fontSize:11}}>({Number(t.value).toLocaleString('en-IN')})</span>
+            <button key={t.name} onClick={()=>toggleSub(t.name)} className={'thr'+(selSubs.includes(t.name)?' on':'')} style={{'--tone':t.color,display:'flex',alignItems:'center',gap:5}}>
+              <span style={{width:8,height:8,borderRadius:'50%',background:selSubs.includes(t.name)?'#fff':t.color,flexShrink:0}}/>{t.name}<span style={{opacity:0.7,fontSize:11}}>({Number(t.value).toLocaleString('en-IN')})</span>
             </button>
           ))
         )}
@@ -211,15 +212,16 @@ export default function CategoryDrillChart({ dealers, selectedMonthIdx, onNaviga
             </div>
             <ResponsiveContainer width="100%" height={Math.max(barData.length*36+40,140)}>
               <BarChart data={barData} layout="vertical" margin={{left:8,right:50,top:4,bottom:4}}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--b1)" horizontal={false}/>
-                <XAxis type="number" tick={{fill:'var(--t3)',fontSize:10}} stroke="var(--b2)"/>
-                <YAxis type="category" dataKey="name" tick={{fill:'var(--t2)',fontSize:11}} stroke="var(--b2)" width={110}/>
-                <Tooltip contentStyle={{background:'var(--bg2)',border:'1px solid var(--b2)',borderRadius:8}}/>
-                <Bar dataKey="value" radius={[0,4,4,0]} label={{position:'right',fill:'var(--t2)',fontSize:11,fontWeight:700}} onClick={d=>!drillCat&&drillInto(d.name)} style={{cursor:drillCat?'default':'pointer'}}>
+                <defs>{barData.map((d,i)=><linearGradient key={i} id={'cdg'+i} x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stopColor={d.color} stopOpacity={0.55}/><stop offset="100%" stopColor={d.color} stopOpacity={1}/></linearGradient>)}</defs>
+                <CartesianGrid horizontal={false}/>
+                <XAxis type="number" tickLine={false} axisLine={false}/>
+                <YAxis type="category" dataKey="name" tickLine={false} axisLine={false} width={110}/>
+                <Tooltip/>
+                <Bar dataKey="value" radius={[0,8,8,0]} maxBarSize={26} label={{position:'right',fill:'var(--t1)',fontSize:11,fontWeight:800}} onClick={d=>!drillCat&&drillInto(d.name)} style={{cursor:drillCat?'default':'pointer'}}>
                   {barData.map((entry,i)=>{
                     const isActive=drillCat?selSubs.includes(entry.name):selMains.includes(entry.name);
                     const anyActive=drillCat?selSubs.length>0:selMains.length>0;
-                    return<Cell key={i} fill={entry.color} opacity={anyActive&&!isActive?0.3:1}/>;
+                    return<Cell key={i} fill={`url(#cdg${i})`} opacity={anyActive&&!isActive?0.3:1}/>;
                   })}
                 </Bar>
               </BarChart>
@@ -234,15 +236,15 @@ export default function CategoryDrillChart({ dealers, selectedMonthIdx, onNaviga
               {(drillCat?selSubs:selMains).length>0&&<span style={{color:'var(--acc)',marginLeft:5}}>({(drillCat?selSubs:selMains).join(', ')})</span>}
             </div>
             <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={drillCat?subTrend:mainTrend}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--b1)"/>
-                <XAxis dataKey="month" tick={{fill:'var(--t3)',fontSize:10}}/>
-                <YAxis tick={{fill:'var(--t3)',fontSize:10}}/>
-                <Tooltip contentStyle={{background:'var(--bg2)',border:'1px solid var(--b2)',borderRadius:8}}/>
-                <Legend wrapperStyle={{fontSize:10}}/>
-                <ReferenceLine x={MO[selectedMonthIdx].slice(0,3)} stroke="#fbbf24" strokeWidth={2} strokeDasharray="3 3"/>
+              <LineChart data={drillCat?subTrend:mainTrend} margin={{top:8,right:8,left:-12,bottom:0}}>
+                <CartesianGrid vertical={false}/>
+                <XAxis dataKey="month" tickLine={false} axisLine={false}/>
+                <YAxis tickLine={false} axisLine={false} width={44}/>
+                <Tooltip/>
+                <Legend wrapperStyle={{fontSize:10}} iconType="circle" iconSize={8}/>
+                <ReferenceLine x={MO[selectedMonthIdx].slice(0,3)} stroke="#f59e0b" strokeWidth={2} strokeDasharray="3 3"/>
                 {(drillCat?displaySubs:displayMains).map((name,i)=>(
-                  <Line key={name} type="monotone" dataKey={name} stroke={(drillCat?subData:mainData).find(x=>x.name===name)?.color||PAL[i%PAL.length]} strokeWidth={2} dot={false}/>
+                  <Line key={name} type="monotone" dataKey={name} stroke={(drillCat?subData:mainData).find(x=>x.name===name)?.color||PAL[i%PAL.length]} strokeWidth={2.5} dot={false} activeDot={{r:5}}/>
                 ))}
               </LineChart>
             </ResponsiveContainer>
@@ -252,8 +254,11 @@ export default function CategoryDrillChart({ dealers, selectedMonthIdx, onNaviga
               <div style={{marginTop:10,maxHeight:160,overflowY:'auto'}}>
                 <div style={{fontSize:11,color:'var(--t3)',marginBottom:6}}>Dealers — {selSubs.join(' + ')}</div>
                 {dealersForDrill.map(d=>(
-                  <div key={d.name} style={{display:'flex',justifyContent:'space-between',padding:'4px 0',borderBottom:'1px solid var(--b1)',fontSize:12}}>
-                    <span style={{color:'var(--t2)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:160}}>{d.name}</span>
+                  <div key={d.name} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'5px 0',borderBottom:'1px solid var(--b1)',fontSize:12}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8,minWidth:0}}>
+                      <span className="ini" style={{'--h':(d.name||'?').charCodeAt(0)*37%360,width:24,height:24,fontSize:10,borderRadius:8}}>{(d.name||'?').replace(/[^A-Za-z0-9]/g,'').slice(0,2).toUpperCase()}</span>
+                      <span style={{color:'var(--t1)',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:160}}>{d.name}</span>
+                    </div>
                     <div style={{display:'flex',gap:8,flexShrink:0}}>
                       <span style={{color:'var(--t3)',fontSize:11}}>{d.sub}</span>
                       <span style={{color:'var(--acc)',fontWeight:700}}>{Number(d.qty).toLocaleString('en-IN')}</span>

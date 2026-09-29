@@ -222,7 +222,7 @@ router.get('/', protect, async (req, res) => {
           ? String(req.query.month) : (months[0] || ''));
     if (!month) return res.json({ month: '', months: [], config, people: [], totals: {} });
 
-    const { trendMonths, scored, nameOf, rangeInfo, factsByMonth } = await computeWindow(month, config, ranged ? { from, to } : {});
+    const { trendMonths, scored, nameOf, codeOf, rangeInfo, factsByMonth } = await computeWindow(month, config, ranged ? { from, to } : {});
 
     // "My incentive": keep one person everywhere — the list, the totals and
     // the trend — so nothing about colleagues leaves the server.

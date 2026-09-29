@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Download, BadgeIndianRupee, NotebookPen, Banknote } from 'lucide-react';
 import { col, downloadReport } from './api';
-import { useLoad, PageHead, Card, Table, Pager, Badge, Busy, ErrorBox, money, num, fmtDate, periodLabel, DealerLink, useDealerCtx, WhatsAppIcon, StatusBadge, CallButton, CardRow, KV, OldestPill, PendingChip } from './ui';
+import { useLoad, PageHead, Card, Table, Pager, Badge, Busy, ErrorBox, money, num, fmtDate, periodLabel, DealerLink, useDealerCtx, WhatsAppIcon, StatusBadge, CallButton, CardRow, KV, OldestPill, PendingChip, Pbar, ageTone, AGE_FULL } from './ui';
 import { FollowupForm, PaymentForm, WhatsAppForm } from './forms';
 
 const STATUSES = ['DUE', 'NIL', 'FOLLOW_UP_REQUIRED', 'PROMISED', 'PARTIAL_PAYMENT', 'OVERDUE', 'HIGH_PRIORITY', 'CLEARED', 'CLOSED'];
@@ -9,10 +9,10 @@ const PRIORITIES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
 
 /** The current book: one row per dealer, the server's figure, never a sheet. */
 export default function Outstanding({ params }) {
-  const { users, isStaff, open: openDealer, openRow } = useDealerCtx();
+  const { users, isStaff, open: openDealer, openRow, bump } = useDealerCtx();
   const [q, setQ] = useState({ page: 1, limit: 50, sort: 'total', dir: 'desc', owing: '1', status: params?.status || '', priority: params?.priority || '', salesmanId: params?.salesmanId || '', pending: params?.pending || '', overdue: params?.overdue || '', q: '' });
   const [text, setText] = useState('');
-  const { data, busy, err, reload } = useLoad(() => col.outstanding(q), [JSON.stringify(q)]);
+  const { data, busy, err, reload } = useLoad(() => col.outstanding(q), [JSON.stringify(q), bump]);
   const [form, setForm] = useState(null);
   useEffect(() => { const t = setTimeout(() => setQ(x => ({ ...x, q: text, page: 1 })), 300); return () => clearTimeout(t); }, [text]);
   const set = patch => setQ(x => ({ ...x, ...patch, page: patch.page || 1 }));
@@ -23,7 +23,7 @@ export default function Outstanding({ params }) {
   return (
     <div>
       <PageHead icon={BadgeIndianRupee} tone="var(--red)" title="Outstanding" sub={data ? `${num(data.owing)} dealers owing · ${money(data.sum)} in scope` : ''} right={<>
-        <button className="btn" data-tip="Download this list as Excel" onClick={() => downloadReport('current-outstanding', {}, 'xlsx').catch(e => alert(e.message))}><Download size={12} /> Excel</button>
+        <button className="btn" data-tip="Download this list as Excel" onClick={() => downloadReport('current-outstanding', { status: q.status, priority: q.priority, salesmanId: q.salesmanId, overdue: q.overdue, q: q.q }, 'xlsx').catch(e => alert(e.message))}><Download size={12} /> Excel</button>
         <button className="btn" data-tip="Record a call or visit" onClick={() => setForm({ kind: 'followup' })}><NotebookPen size={12} /> Follow-up</button>
         <button className="btnp" data-tip="Record money received" onClick={() => setForm({ kind: 'payment' })}><Banknote size={12} /> Payment</button>
       </>} />
@@ -42,11 +42,11 @@ export default function Outstanding({ params }) {
       <Card pad={false}>
         {err ? <ErrorBox err={err} onRetry={reload} /> : busy && !data ? <Busy kind="table" rows={8} /> : (
           <Table cols={[
-            { k: 'dealer', h: H('dealerName', 'Dealer'), r: r => <DealerLink id={r.dealerId} name={r.dealerName} code={r.dealerCode} /> },
+            { k: 'dealer', h: H('dealerName', 'Dealer'), avatar: r => r.dealerName, r: r => <DealerLink id={r.dealerId} name={r.dealerName} code={r.dealerCode} /> },
             { k: 'salesmanName', h: 'Salesman' },
             ...periods.map((p, i) => ({ k: p, h: i === 0 ? <span style={{ color: 'var(--red)' }}>{periodLabel(p)}</span> : periodLabel(p), align: 'right', r: r => <span>{r.buckets?.[p] ? (i === 0 ? <OldestPill>{money(r.buckets[p])}</OldestPill> : money(r.buckets[p])) : <span style={{ color: 'var(--t3)' }}>–</span>}</span> })),
             { k: 'total', h: H('total', 'Total'), align: 'right', r: r => <b>{money(r.total)}</b> },
-            { k: 'ageDays', h: H('ageDays', 'Age'), align: 'right', r: r => r.ageDays == null ? '—' : <span data-tip={`oldest unpaid month ${periodLabel(r.oldestPeriod)}${r.creditDays ? ` · credit ${r.creditDays} days` : ''}`} style={{ color: r.status === 'OVERDUE' ? 'var(--red)' : undefined }}>{r.ageDays}d</span> },
+            { k: 'ageDays', h: H('ageDays', 'Age'), align: 'right', r: r => r.ageDays == null ? '—' : <><span data-tip={`oldest unpaid month ${periodLabel(r.oldestPeriod)}${r.creditDays ? ` · credit ${r.creditDays} days` : ''}`} style={{ color: r.status === 'OVERDUE' ? 'var(--red)' : undefined, fontWeight: 700 }}>{r.ageDays}d</span><Pbar pct={r.ageDays / AGE_FULL * 100} color={ageTone(r.ageDays)} style={{ width: 48 }} /></> },
             { k: 'status', h: 'Status', r: r => <span className="row" style={{ gap: 4 }}><StatusBadge status={r.status} priority={r.priority} />{r.overdue && r.status !== 'OVERDUE' ? <Badge v="OVERDUE" label="due" /> : null}</span> },
             { k: 'priority', h: H('priority', 'Priority'), r: r => <Badge v={r.priority} /> },
             { k: 'nextFollowupAt', h: H('nextFollowupAt', 'Next follow-up'), r: r => <a href="#" data-tip={r.nextFollowupAt ? 'Change the follow-up date' : 'Set a follow-up date'} onClick={e => { e.preventDefault(); e.stopPropagation(); setForm({ kind: 'followup', dealer: dealerOf(r), focusDate: true }); }} style={{ color: r.nextFollowupAt ? 'var(--t1)' : 'var(--acc)', textDecoration: 'none', borderBottom: '1px dotted var(--t3)' }}>{r.nextFollowupAt ? fmtDate(r.nextFollowupAt) : 'set date'}</a> },

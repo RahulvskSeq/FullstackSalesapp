@@ -114,9 +114,8 @@ const ManageCategories = ({ currentUser }) => {
   return (
     <div className="fade">
       <div className="row" style={{marginBottom:14}}>
-        <div style={{display:'flex',alignItems:'center',gap:8}}>
-          <Layers size={16} color="var(--acc)"/>
-          <div style={{fontSize:15,fontWeight:700}}>Category Types &amp; Product Types</div>
+        <div className="sec-title" style={{marginBottom:0}}>
+          <span className="sec-ico" style={{'--tone':'var(--pur)'}}><Layers size={15}/></span> Category Types &amp; Product Types
         </div>
         <div className="spacer"/>
         <button className="btn" onClick={load} disabled={loading}>
@@ -129,11 +128,11 @@ const ManageCategories = ({ currentUser }) => {
         )}
       </div>
 
-      <div style={{display:'grid',gridTemplateColumns:'minmax(220px,1fr) minmax(280px,2fr)',gap:14}}>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(260px,1fr))',gap:14}}>
         {/* ──────── Categories column ──────── */}
         <div className="card" style={{padding:12}}>
-          <div style={{fontSize:11,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:8}}>
-            Category Types ({cats.length})
+          <div className="sec-title">
+            <span className="sec-ico" style={{'--tone':'var(--pur)'}}><Tag size={15}/></span> Category Types ({cats.length})
           </div>
 
           {isAdmin && (
@@ -161,7 +160,7 @@ const ManageCategories = ({ currentUser }) => {
                   style={{
                     display:'flex',alignItems:'center',gap:6,
                     padding:'8px 10px',borderRadius:8,cursor:'pointer',
-                    background: active ? 'rgba(99,102,241,.12)' : 'transparent',
+                    background: active ? 'color-mix(in srgb, var(--acc) 12%, transparent)' : 'transparent',
                     border: active ? '1px solid var(--acc)' : '1px solid transparent',
                   }}
                 >
@@ -207,8 +206,8 @@ const ManageCategories = ({ currentUser }) => {
 
         {/* ──────── Sub-categories column ──────── */}
         <div className="card" style={{padding:12}}>
-          <div style={{fontSize:11,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:8}}>
-            {selected ? `Product Types in “${selected.name}”` : 'Product Types'}
+          <div className="sec-title">
+            <span className="sec-ico" style={{'--tone':'var(--pur)'}}><Layers size={15}/></span> {selected ? `Product Types in “${selected.name}”` : 'Product Types'}
           </div>
 
           {isAdmin && selected && (

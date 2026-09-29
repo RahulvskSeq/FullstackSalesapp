@@ -27,6 +27,28 @@ const S = new mongoose.Schema({
   // search / dropdowns, but their historic records (visits, leads, sales
   // entries, dealers) remain intact in the DB.
   active:          { type:Boolean, default:true },
+  // Self-service profile (Profile page). The person edits these themselves;
+  // name, id, role, empCode and email stay with the admin because dealers,
+  // sales and permissions are tied to them.
+  photo:           { type:String, default:'' },   // square photo, ~512px data URL — never sent in the users list
+  avatar:          { type:String, default:'' },   // ~96px thumbnail data URL shown beside the name everywhere
+  profile: {
+    phone:          { type:String, default:'' },
+    whatsapp:       { type:String, default:'' },
+    altPhone:       { type:String, default:'' },
+    personalEmail:  { type:String, default:'' },
+    dob:            { type:String, default:'' },   // YYYY-MM-DD
+    bloodGroup:     { type:String, default:'' },
+    address:        { type:String, default:'' },
+    city:           { type:String, default:'' },
+    state:          { type:String, default:'' },
+    pincode:        { type:String, default:'' },
+    emergencyName:  { type:String, default:'' },
+    emergencyRel:   { type:String, default:'' },
+    emergencyPhone: { type:String, default:'' },
+    languages:      { type:String, default:'' },
+    bio:            { type:String, default:'' },
+  },
   // Per-user UI preferences. Stored on the server so the user's choices
   // survive APK reinstall, incognito, different browser, different device.
   // `excludedCategories` is the live filter selection; `defaultExcludedCategories`

@@ -4,11 +4,40 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"/>
   <title>Sales Tracker Pro</title>
+  <meta name="description" content="Dealer sales, targets, collections, visits and samples in one place."/>
+  <meta name="theme-color" content="#2f4162"/>
+  <meta name="application-name" content="Sales Tracker Pro"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-title" content="Sales Tracker"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-32.png"/>
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png"/>
+  <link rel="apple-touch-icon" href="/icons/icon-180.png"/>
+  <link rel="manifest" href="/manifest.webmanifest"/>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet"/>
+  <style>
+    /* first paint, before the app loads: the brand on the theme's page colour */
+    html,body{margin:0;height:100%;background:#e4e8ee}
+    html[data-tone="dark"],html[data-tone="dark"] body{background:#0b1220}
+    #boot{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;font-family:Inter,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:#4a5568}
+    html[data-tone="dark"] #boot{color:#aeb9cd}
+    #boot img{width:64px;height:64px;border-radius:16px;box-shadow:0 8px 24px rgba(79,70,229,.35);animation:bootpulse 1.4s ease-in-out infinite}
+    #boot b{font-size:15px;font-weight:800;letter-spacing:.01em;color:#252f40}
+    html[data-tone="dark"] #boot b{color:#e6ebf5}
+    #boot span{font-size:12px}
+    @keyframes bootpulse{0%,100%{transform:scale(1)}50%{transform:scale(.94)}}
+    @media (prefers-reduced-motion:reduce){#boot img{animation:none}}
+  </style>
+  <script>
+    // tone of the saved theme, so even the loading screen matches (themes.js does the rest)
+    try{var p=localStorage.getItem('stp_palette');if(p==='dark'||/midnight|ocean|forest|sunset|cyberpunk|slate|crimson|solar-dark|mono|^rose$|amber|nord|corporate-navy/.test(p||''))document.documentElement.setAttribute('data-tone','dark')}catch(e){}
+  </script>
 </head>
 <body>
-  <div id="root"></div>
+  <div id="root"><div id="boot"><img src="/icons/icon-192.png" alt=""/><b>Sales Tracker Pro</b><span>Loading…</span></div></div>
+  <noscript>Sales Tracker Pro needs JavaScript to run.</noscript>
   <script type="module" src="/src/main.jsx"></script>
 </body>
 </html>

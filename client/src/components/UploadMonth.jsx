@@ -684,14 +684,16 @@
 
 
 
-import React, { useState, useRef } from 'react';
-import { Upload, X, CheckCircle, AlertCircle, Download, ChevronDown, RefreshCw, Edit3, DollarSign } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Upload, X, CheckCircle, AlertCircle, Download, ChevronDown, RefreshCw, Edit3, DollarSign, FileText, UploadCloud, FileSpreadsheet, Layers, Plus, SkipForward, Calendar } from 'lucide-react';
 import { useMonth } from '../context';
 import { MO as MO_DEFAULT } from '../constants';
 import { api } from '../api';
+import { PageHead, Tile } from '../collections/ui';
+import { IMPORT_CSS, ImportStepper, FileChip, ResultCard } from './ErpDailyUpload';
 
 const MODES = [
-  { id:'monthly',     label:'Monthly Sales Data',  icon:Upload,      color:'#6366f1', desc:'Upload dealer data for a specific month — target, achieved, status, zone etc.' },
+  { id:'monthly',     label:'Monthly Sales Data',  icon:Upload,      color:'#3b82f6', desc:'Upload dealer data for a specific month — target, achieved, status, zone etc.' },
   { id:'bulk-info',   label:'Bulk Update Info',     icon:Edit3,       color:'var(--grn)', desc:'Update dealer details in bulk — zone, category, credit limit etc.' },
   { id:'outstanding', label:'Outstanding Payments', icon:DollarSign,  color:'var(--red)', desc:'Upload month-wise outstanding amounts (admin only).' },
 ];
@@ -713,6 +715,12 @@ export default function UploadMonth({ users, currentUser, onSuccess }) {
 
   const salesmen = Object.values(users).filter(u => u.role === 'salesman');
   const activeMode = MODES.find(m => m.id === mode);
+  // An admin is not one of the salesman options, so their own id would leave
+  // the select showing the first salesman while uploads went to the admin.
+  // Default admins to the first real salesman (non-admins keep their own id).
+  useEffect(() => {
+    if (isAdmin && salesmen.length && !salesmen.some(s => s.id === salesman)) setSalesman(salesmen[0].id);
+  }, [isAdmin, salesmen, salesman]);
 
   const reset = () => { setFile(null); setResult(null); setError(''); };
 
@@ -770,60 +778,82 @@ export default function UploadMonth({ users, currentUser, onSuccess }) {
       filename = 'Outstanding_Template.csv';
     }
     const csv = [headers,...rows].map(r=>r.map(v=>`"${v}"`).join(',')).join('\n');
-    const a   = document.createElement('a');
-    a.href    = 'data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
-    a.download= filename; a.click();
+    import('../lib/saveFile').then(m => m.saveText(csv, filename, 'text/csv;charset=utf-8'));
   };
+
+
+  // Stepper position, derived from existing state only.
+  const step = result ? 4 : (loading || file) ? 2 : 1;
+  const lbl = { fontSize:10.5, fontWeight:800, color:'var(--t3)', display:'block', marginBottom:6, textTransform:'uppercase', letterSpacing:'.08em' };
+  const tone = activeMode.color;
 
   return (
     <div className="fade">
-      <div style={{marginBottom:16}}>
-        <div style={{fontSize:11,color:'var(--acc)',textTransform:'uppercase',letterSpacing:'.15em',marginBottom:4}}>Data Entry</div>
-        <div style={{fontSize:22,fontWeight:700}}>Upload & Update</div>
+      <style>{IMPORT_CSS}</style>
+      <PageHead icon={Upload} tone="var(--acc)" eyebrow="Data Entry" title="Upload & Update"
+        sub="Import an Excel / CSV file — pick what it contains, drop the file, check the result."
+        right={
+          <button onClick={downloadTemplate} className="btne" style={{display:'inline-flex',alignItems:'center',gap:6}}>
+            <Download size={13}/> Download Template
+          </button>
+        }/>
+
+      <div className="card" style={{marginBottom:14,paddingBottom:6}}>
+        <ImportStepper steps={['Choose type & month','Select file','Upload & check','Done']} current={step} error={!!error && !loading}/>
       </div>
 
       {/* Mode selector */}
-      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:10,marginBottom:18}}>
+      <div className="sec-title" style={{marginBottom:8}}>
+        <span className="sec-ico" style={{'--tone':'var(--acc)'}}><Layers size={15}/></span>
+        What are you uploading?
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:10,marginBottom:16}}>
         {MODES.map(m => {
           if(m.id==='outstanding' && !isAdmin) return null;
           const Icon   = m.icon;
           const active = mode === m.id;
           return (
-            <div key={m.id} onClick={()=>{setMode(m.id);reset();}} style={{
-              background:active?`${m.color}18`:'var(--bg1)',
-              border:`2px solid ${active?m.color:'var(--b2)'}`,
-              borderRadius:10, padding:'12px 14px', cursor:'pointer', transition:'all .15s',
-            }}>
-              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:5}}>
-                <Icon size={16} color={active?m.color:'var(--t3)'}/>
-                <span style={{fontSize:12,fontWeight:700,color:active?m.color:'var(--t2)'}}>{m.label}</span>
+            <div key={m.id} role="button" tabIndex={0}
+              onClick={()=>{setMode(m.id);reset();}}
+              onKeyDown={e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); setMode(m.id); reset(); } }}
+              className="att-card" style={{
+                '--tone':m.color,
+                background:active?`color-mix(in srgb, ${m.color} 9%, var(--bg1))`:'var(--bg1)',
+                borderColor:active?m.color:'var(--b1)',
+                boxShadow:active?`0 0 0 3px color-mix(in srgb, ${m.color} 16%, transparent)`:undefined,
+              }}>
+              <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:6}}>
+                <span className="stat-ico" style={{width:32,height:32,borderRadius:10,color:m.color,background:`color-mix(in srgb, ${m.color} 14%, transparent)`}}><Icon size={16}/></span>
+                <span style={{fontSize:13,fontWeight:800,color:active?m.color:'var(--t1)',flex:1,minWidth:0}}>{m.label}</span>
+                {active && <CheckCircle size={16} color={m.color}/>}
               </div>
-              <div style={{fontSize:10,color:'var(--t3)',lineHeight:1.4}}>{m.desc}</div>
+              <div style={{fontSize:11,color:'var(--t3)',lineHeight:1.45}}>{m.desc}</div>
             </div>
           );
         })}
       </div>
 
       <div className="card" style={{marginBottom:14}}>
+        <div className="sec-title">
+          <span className="sec-ico" style={{'--tone':tone}}><FileText size={15}/></span>
+          {activeMode.label}
+          {mode==='monthly' && <span className="kpi-pill">Month <b style={{color:'var(--acc)'}}>{month}</b></span>}
+        </div>
 
         {/* Month + salesman selectors */}
-        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:12,marginBottom:14}}>
+        {(mode==='monthly' || (isAdmin && mode !== 'outstanding')) && (
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12,marginBottom:14}}>
 
           {mode==='monthly' && (
             <div>
-              <label style={{fontSize:11,color:'var(--t3)',display:'block',marginBottom:5,textTransform:'uppercase',letterSpacing:'.07em'}}>
-                Which Month? *
-              </label>
-              <div style={{position:'relative'}}>
-                <select className="inp" value={month} onChange={e=>setMonth(e.target.value)}
-                  style={{width:'100%',paddingRight:28,appearance:'none',fontWeight:700,color:'var(--acc)'}}>
-                  {[...MO].reverse().map(m=>(
-                    <option key={m} value={m}>{m}{m===MO[currentMonthIdx]?' (current)':''}</option>
-                  ))}
-                </select>
-                <ChevronDown size={13} style={{position:'absolute',right:8,top:'50%',transform:'translateY(-50%)',color:'var(--t3)',pointerEvents:'none'}}/>
-              </div>
-              <div style={{fontSize:10,color:'var(--t3)',marginTop:4}}>
+              <label style={lbl}>Which Month? *</label>
+              <select className="sel" value={month} onChange={e=>setMonth(e.target.value)}
+                style={{width:'100%',fontWeight:700,color:'var(--acc)'}}>
+                {[...MO].reverse().map(m=>(
+                  <option key={m} value={m}>{m}{m===MO[currentMonthIdx]?' (current)':''}</option>
+                ))}
+              </select>
+              <div style={{fontSize:10.5,color:'var(--t3)',marginTop:5}}>
                 Data will be stored for <strong style={{color:'var(--acc)'}}>{month}</strong> only. Other months untouched.
               </div>
             </div>
@@ -831,73 +861,68 @@ export default function UploadMonth({ users, currentUser, onSuccess }) {
 
           {isAdmin && mode !== 'outstanding' && (
             <div>
-              <label style={{fontSize:11,color:'var(--t3)',display:'block',marginBottom:5,textTransform:'uppercase',letterSpacing:'.07em'}}>
-                Salesman *
-              </label>
-              <div style={{position:'relative'}}>
-                <select className="inp" value={salesman} onChange={e=>setSalesman(e.target.value)}
-                  style={{width:'100%',paddingRight:28,appearance:'none'}}>
-                  {salesmen.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
-                <ChevronDown size={13} style={{position:'absolute',right:8,top:'50%',transform:'translateY(-50%)',color:'var(--t3)',pointerEvents:'none'}}/>
-              </div>
+              <label style={lbl}>Salesman *</label>
+              <select className="sel" value={salesman} onChange={e=>setSalesman(e.target.value)}
+                style={{width:'100%'}}>
+                {salesmen.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
             </div>
           )}
         </div>
+        )}
 
         {/* Info box */}
         {mode==='monthly' && (
-          <div style={{padding:'8px 12px',background:`${activeMode.color}10`,border:`1px solid ${activeMode.color}30`,borderRadius:8,marginBottom:14,fontSize:11}}>
-            <strong style={{color:activeMode.color}}>📅 Uploading for: {month}</strong>
-            <span style={{color:'var(--t3)',marginLeft:8}}>
-              This will save {month} target + achieved + status + zone for each dealer to MongoDB.
-              Other months are NOT affected.
+          <div style={{display:'flex',gap:8,alignItems:'flex-start',padding:'9px 12px',background:`color-mix(in srgb, ${tone} 7%, transparent)`,border:`1px solid color-mix(in srgb, ${tone} 22%, transparent)`,borderRadius:10,marginBottom:14,fontSize:11.5,lineHeight:1.5}}>
+            <Calendar size={14} color={tone} style={{flexShrink:0,marginTop:1}}/>
+            <span>
+              <strong style={{color:tone}}>Uploading for: {month}</strong>
+              <span style={{color:'var(--t3)',marginLeft:8}}>
+                This will save {month} target + achieved + status + zone for each dealer to MongoDB.
+                Other months are NOT affected.
+              </span>
             </span>
           </div>
         )}
 
         {mode==='outstanding' && (
-          <div style={{padding:'8px 12px',background:'rgba(248,113,113,0.08)',border:'1px solid rgba(248,113,113,0.2)',borderRadius:8,marginBottom:14,fontSize:11}}>
+          <div style={{display:'flex',gap:8,alignItems:'flex-start',flexWrap:'wrap',padding:'9px 12px',background:'color-mix(in srgb, var(--red) 7%, transparent)',border:'1px solid color-mix(in srgb, var(--red) 20%, transparent)',borderRadius:10,marginBottom:14,fontSize:11.5}}>
             <strong style={{color:'var(--red)'}}>Format:</strong>
-            <span style={{color:'var(--t3)',fontFamily:'monospace',marginLeft:6}}>Dealer Name | Jul-25 | Aug-25 | Sep-25 | ...</span>
-            <span style={{color:'var(--t3)',marginLeft:8}}>— each column is one month, value is ₹ outstanding</span>
+            <span style={{color:'var(--t2)',fontFamily:'monospace'}}>Dealer Name | Jul-25 | Aug-25 | Sep-25 | ...</span>
+            <span style={{color:'var(--t3)'}}>— each column is one month, value is ₹ outstanding</span>
           </div>
         )}
 
         {/* Drop zone */}
+        <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}} onChange={onDrop}/>
         <div
+          className={'imp-drop'+(drag?' over':'')} style={{'--tone':tone,marginBottom:12}}
+          role="button" tabIndex={0}
+          onKeyDown={e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); fileRef.current?.click(); } }}
           onDrop={onDrop} onDragOver={e=>{e.preventDefault();setDrag(true);}} onDragLeave={()=>setDrag(false)}
-          onClick={()=>fileRef.current?.click()}
-          style={{
-            border:`2px dashed ${drag?activeMode.color:'var(--b2)'}`,
-            borderRadius:10, padding:'28px 20px', textAlign:'center', cursor:'pointer',
-            background:drag?`${activeMode.color}10`:'var(--bg2)', transition:'all .15s', marginBottom:12,
-          }}>
-          <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}} onChange={onDrop}/>
-          <Upload size={28} color={file?activeMode.color:'var(--t3)'} style={{margin:'0 auto 10px'}}/>
-          {file ? (
-            <div>
-              <div style={{fontSize:13,fontWeight:600,color:activeMode.color}}>{file.name}</div>
-              <div style={{fontSize:11,color:'var(--t3)',marginTop:3}}>{(file.size/1024).toFixed(1)} KB · Click to change</div>
-            </div>
-          ) : (
-            <div>
-              <div style={{fontSize:13,fontWeight:600,color:'var(--t2)'}}>Drop Excel / CSV here or click to browse</div>
-              <div style={{fontSize:11,color:'var(--t3)',marginTop:3}}>.xlsx, .xls, .csv supported</div>
-            </div>
-          )}
+          onClick={()=>fileRef.current?.click()}>
+          <span className="imp-drop-ico"><UploadCloud size={26}/></span>
+          <div className="imp-drop-t">{file ? 'Drop another file to replace it' : 'Drag & drop your Excel / CSV here'}</div>
+          <div className="imp-drop-s">or <u>click to browse</u></div>
+          <div className="imp-fmts">{['.XLSX','.XLS','.CSV'].map(f=><span key={f} className="imp-fmt">{f}</span>)}</div>
         </div>
 
-        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+        {file && (
+          <div style={{marginBottom:12}}>
+            <FileChip file={file} onRemove={reset} disabled={loading} note="ready to upload"/>
+          </div>
+        )}
+
+        <div className="imp-bar">
           <button onClick={handleUpload} disabled={!file||loading} className="btnp"
-            style={{display:'flex',alignItems:'center',gap:6,background:file&&!loading?activeMode.color:undefined}}>
+            style={{display:'inline-flex',alignItems:'center',gap:6}}>
             {loading ? <RefreshCw size={13} style={{animation:'spin .7s linear infinite'}}/> : <Upload size={13}/>}
             {loading ? 'Saving to DB...' : (mode==='monthly' ? `Upload for ${month}` : 'Upload')}
           </button>
-          <button onClick={downloadTemplate} className="btn" style={{display:'flex',alignItems:'center',gap:6}}>
+          <button onClick={downloadTemplate} className="btne" style={{display:'inline-flex',alignItems:'center',gap:6}}>
             <Download size={13}/> Download Template
           </button>
-          {file && <button onClick={reset} className="btn" style={{color:'var(--red)',display:'flex',alignItems:'center',gap:4}}>
+          {file && <button onClick={reset} className="btnd" style={{display:'inline-flex',alignItems:'center',gap:4}}>
             <X size={12}/> Clear
           </button>}
         </div>
@@ -905,75 +930,73 @@ export default function UploadMonth({ users, currentUser, onSuccess }) {
 
       {/* Result */}
       {result && (
-        <div className="card" style={{background:'rgba(52,211,153,0.06)',border:'1px solid rgba(52,211,153,0.2)',marginBottom:12}}>
-          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
-            <CheckCircle size={18} color="#34d399"/>
-            <div>
-              <div style={{fontSize:14,fontWeight:700,color:'var(--grn)'}}>
-                Saved to MongoDB ✓ {result.mode==='monthly'?`— ${result.month}`:''}
-              </div>
-              <div style={{fontSize:11,color:'var(--t3)',marginTop:2}}>
-                {result.mode==='monthly'
-                  ? `Select "${result.month}" in the month bar to see this data`
-                  : 'Data updated in database'}
-              </div>
-            </div>
+        <div className="card" style={{background:'color-mix(in srgb, var(--grn) 6%, var(--bg1))',border:'1px solid color-mix(in srgb, var(--grn) 28%, transparent)',marginBottom:12}}>
+          <div className="sec-title">
+            <span className="sec-ico" style={{'--tone':'var(--grn)'}}><CheckCircle size={15}/></span>
+            <span>
+              Saved to MongoDB {result.mode==='monthly'?`— ${result.month}`:''}
+            </span>
+            <span className="sec-note">
+              {result.mode==='monthly'
+                ? `Select "${result.month}" in the month bar to see this data`
+                : 'Data updated in database'}
+            </span>
           </div>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(110px,1fr))',gap:8,marginBottom:result.errors?.length?12:0}}>
+          <div className="imp-tiles" style={{marginBottom:result.errors?.length?12:0}}>
             {[
-              result.added   !==undefined && {l:'New Added',   v:result.added,   c:'#34d399'},
-              result.updated !==undefined && {l:'Updated',     v:result.updated, c:'var(--acc)'},
-              result.skipped !==undefined && {l:'Skipped',     v:result.skipped, c:'var(--t3)'},
-              {l:'Errors', v:result.errors?.length||0, c:result.errors?.length?'#f87171':'var(--t3)'},
+              result.added   !==undefined && {l:'New Added',   v:result.added,   c:'var(--grn)', i:Plus},
+              result.updated !==undefined && {l:'Updated',     v:result.updated, c:'var(--acc)', i:RefreshCw},
+              result.skipped !==undefined && {l:'Skipped',     v:result.skipped, c:'var(--t3)',  i:SkipForward},
+              {l:'Errors', v:result.errors?.length||0, c:result.errors?.length?'var(--red)':'var(--t3)', i:AlertCircle},
             ].filter(Boolean).map(k=>(
-              <div key={k.l} style={{background:'var(--bg2)',borderRadius:8,padding:'8px 12px'}}>
-                <div style={{fontSize:9,color:'var(--t3)',textTransform:'uppercase',marginBottom:3}}>{k.l}</div>
-                <div style={{fontSize:20,fontWeight:700,color:k.c}}>{k.v}</div>
-              </div>
+              <Tile key={k.l} label={k.l} value={<span style={{color:k.c}}>{k.v}</span>} tone={k.c} icon={k.i}/>
             ))}
           </div>
           {result.errors?.length>0 && (
-            <div style={{fontSize:11,color:'var(--red)'}}>
-              <div style={{fontWeight:600,marginBottom:4}}>Errors:</div>
+            <ResultCard kind="err" title={`${result.errors.length} row${result.errors.length===1?'':'s'} had errors`}>
               {result.errors.slice(0,5).map((e,i)=><div key={i}>· {e}</div>)}
               {result.errors.length>5&&<div>...and {result.errors.length-5} more</div>}
-            </div>
+            </ResultCard>
           )}
         </div>
       )}
 
       {error && (
-        <div className="card" style={{background:'rgba(248,113,113,0.06)',border:'1px solid rgba(248,113,113,0.2)',display:'flex',alignItems:'center',gap:10}}>
-          <AlertCircle size={16} color="#f87171" style={{flexShrink:0}}/>
-          <span style={{fontSize:13,color:'var(--red)'}}>{error}</span>
-        </div>
+        <ResultCard kind="err" title="Upload failed" style={{marginBottom:12}}>{error}</ResultCard>
       )}
 
       {/* Format guide */}
       <div className="card" style={{marginTop:14}}>
-        <div style={{fontSize:12,fontWeight:600,color:'var(--t2)',marginBottom:10}}>
-          {mode==='monthly'&&'📋 Monthly Upload Format (one file per salesman per month)'}
-          {mode==='bulk-info'&&'📋 Bulk Info Update Format'}
-          {mode==='outstanding'&&'📋 Outstanding Format'}
+        <div className="sec-title">
+          <span className="sec-ico" style={{'--tone':'var(--acc)'}}><FileSpreadsheet size={15}/></span>
+          {mode==='monthly'&&'Monthly Upload Format'}
+          {mode==='bulk-info'&&'Bulk Info Update Format'}
+          {mode==='outstanding'&&'Outstanding Format'}
+          {mode==='monthly'&&<span className="sec-note">one file per salesman per month</span>}
         </div>
         {mode==='monthly'&&(
           <>
-            <div style={{overflowX:'auto',marginBottom:8}}>
-              <table style={{fontSize:10}}>
+            <div style={{overflowX:'auto',marginBottom:10,border:'1px solid var(--b1)',borderRadius:10}}>
+              <table className="imp-tbl" style={{fontSize:11}}>
                 <thead><tr>{['Dealer Name*','City','State','Zone','Status','Target','Achieved*','Cat Type','Sub Cat','Cr Days','Cr Limit'].map(h=><th key={h}>{h}</th>)}</tr></thead>
                 <tbody>
                   <tr>{['AADINATH PLYWOOD','Hyderabad','Telangana','ZONE 1','STAR','500','320','LAMINATE','1 MM','45','300000'].map((v,i)=><td key={i} style={{color:'var(--t2)'}}>{v}</td>)}</tr>
                 </tbody>
               </table>
             </div>
-            <div style={{fontSize:11,color:'var(--t3)'}}>
+            <div style={{fontSize:11.5,color:'var(--t3)',lineHeight:1.5}}>
               * Required. Each upload is for ONE month only. Uploading Jun-26 data does NOT change May-26 or Jul-26.
               After upload, select <strong>{month}</strong> in the month bar to see your data.
             </div>
           </>
         )}
+        {mode==='bulk-info'&&(
+          <div style={{fontSize:11.5,color:'var(--t3)',lineHeight:1.5}}>
+            Use <b>Download Template</b> for the column layout.
+          </div>
+        )}
         {mode==='outstanding'&&(
-          <div style={{fontSize:11,color:'var(--t3)',fontFamily:'monospace',lineHeight:1.8}}>
+          <div style={{fontSize:11.5,color:'var(--t3)',fontFamily:'monospace',lineHeight:1.8,padding:'8px 12px',background:'var(--bg2)',borderRadius:10,border:'1px solid var(--b1)',overflowX:'auto'}}>
             Dealer Name | Jul-25 | Aug-25 | Sep-25 | ...<br/>
             AADINATH PLYWOOD | 36000 | 100625 | 169650<br/>
             <span style={{color:'var(--grn)'}}>0 = cleared / fully paid</span>

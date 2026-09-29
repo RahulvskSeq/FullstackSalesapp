@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
 import { PhoneCall, NotebookPen } from 'lucide-react';
 import { col } from './api';
-import { useLoad, PageHead, Card, Table, Pager, Badge, Tabs, Busy, ErrorBox, money, num, fmtDate, DealerLink, userName, useDealerCtx, title, CardRow, KV, monthCols, MonthKVs } from './ui';
+import { useLoad, PageHead, Card, Table, Pager, Badge, Tabs, Busy, ErrorBox, money, num, fmtDate, DealerLink, userName, useDealerCtx, title, CardRow, KV, monthCols, MonthKVs, Pbar } from './ui';
 import { FollowupForm } from './forms';
 
 export default function FollowUps({ params }) {
-  const { users, isStaff, openRecord } = useDealerCtx();
+  const { users, isStaff, openRecord, bump } = useDealerCtx();
   const [tab, setTab] = useState(params?.tab || 'followups');
   const [q, setQ] = useState({ page: 1, limit: 50, employeeId: '', from: '', to: '', status: params?.status || '' });
-  const { data, busy, err, reload } = useLoad(() => tab === 'promises' ? col.promises(q) : col.followups(q), [tab, JSON.stringify(q)]);
+  const { data, busy, err, reload } = useLoad(() => tab === 'promises' ? col.promises(q) : col.followups(q), [tab, JSON.stringify(q), bump]);
   const [form, setForm] = useState(false);
   const set = p => setQ(x => ({ ...x, ...p, page: p.page || 1 }));
   return (
@@ -23,7 +23,7 @@ export default function FollowUps({ params }) {
       <Card pad={false}>
         {err ? <ErrorBox err={err} onRetry={reload} /> : busy && !data ? <Busy kind="table" /> : tab === 'followups' ? <Table cols={[
           { k: 'date', h: 'Date', r: r => fmtDate(r.date) + (r.time ? ' ' + r.time : '') },
-          { k: 'dealer', h: 'Dealer', r: r => <DealerLink id={r.dealerId} name={r.dealerName || r.dealer?.name || String(r.dealerId)} code={r.dealerCode || r.dealer?.code} /> },
+          { k: 'dealer', h: 'Dealer', avatar: r => r.dealerName || r.dealer?.name || String(r.dealerId), r: r => <DealerLink id={r.dealerId} name={r.dealerName || r.dealer?.name || String(r.dealerId)} code={r.dealerCode || r.dealer?.code} /> },
           ...monthCols(data?.items), { k: 'balanceTotal', h: 'Outstanding', align: 'right', r: r => r.balanceTotal == null ? '—' : <b>{money(r.balanceTotal)}</b> },
           { k: 'channel', h: 'Channel', r: r => title(r.channel) },
           { k: 'outcome', h: 'Outcome', r: r => <Badge v={r.outcome} /> },
@@ -40,10 +40,10 @@ export default function FollowUps({ params }) {
           {(r.nextFollowupDate || r.nextAction) && <div style={{ fontSize: 11.5, color: 'var(--t2)', marginTop: 4 }}>Next: {fmtDate(r.nextFollowupDate)}{r.nextAction ? ' — ' + r.nextAction : ''}</div>}
         </>} /> : <Table cols={[
           { k: 'promiseDate', h: 'Promised by', r: r => <span style={{ color: r.status === 'BROKEN' ? 'var(--red)' : undefined }}>{fmtDate(r.promiseDate)}</span> },
-          { k: 'dealer', h: 'Dealer', r: r => <DealerLink id={r.dealerId} name={r.dealerName || r.dealer?.name || String(r.dealerId)} code={r.dealerCode || r.dealer?.code} /> },
+          { k: 'dealer', h: 'Dealer', avatar: r => r.dealerName || r.dealer?.name || String(r.dealerId), r: r => <DealerLink id={r.dealerId} name={r.dealerName || r.dealer?.name || String(r.dealerId)} code={r.dealerCode || r.dealer?.code} /> },
           ...monthCols(data?.items), { k: 'balanceTotal', h: 'Outstanding', align: 'right', r: r => r.balanceTotal == null ? '—' : <b>{money(r.balanceTotal)}</b> },
           { k: 'amount', h: 'Promised', align: 'right', r: r => <b>{money(r.amount)}</b> },
-          { k: 'received', h: 'Received', align: 'right', r: r => money(r.received) },
+          { k: 'received', h: 'Received', align: 'right', r: r => <><span style={{ color: r.received > 0 ? 'var(--grn)' : undefined, fontWeight: r.received > 0 ? 700 : undefined }}>{money(r.received)}</span>{r.amount > 0 && <Pbar pct={(r.received || 0) / r.amount * 100} color="#10b981" style={{ width: 52 }} />}</> },
           { k: 'status', h: 'Status', r: r => <Badge v={r.status} /> },
           { k: 'employeeId', h: 'Employee', r: r => userName(users, r.employeeId) },
           { k: 'notes', h: 'Notes', wrap: true, max: 260 },

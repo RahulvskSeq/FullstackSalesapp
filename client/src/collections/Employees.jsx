@@ -1,7 +1,7 @@
 import { Trophy } from 'lucide-react';
 import React, { useState } from 'react';
 import { col } from './api';
-import { useLoad, PageHead, Card, Table, Badge, Tabs, Modal, Field, Busy, ErrorBox, money, num, monthNow, userName, useDealerCtx, title } from './ui';
+import { useLoad, PageHead, Card, Table, Badge, Tabs, Modal, Field, Busy, ErrorBox, money, num, monthNow, today, userName, useDealerCtx, title, Pbar } from './ui';
 
 const METRICS = ['followupDiscipline', 'taskCompletion', 'onTimeUpdates', 'dealerVisits', 'promiseFollowUp', 'dataAccuracy', 'customerManagement', 'communicationQuality', 'systemUsage', 'taskPoints', 'collectionActivity', 'managerReview'];
 
@@ -12,7 +12,7 @@ export default function Employees() {
   const [tab, setTab] = useState('reviews');
   const [period, setPeriod] = useState(monthNow());
   const reviews = useLoad(() => col.reviews({ period }), [period]);
-  const [range, setRange] = useState({ from: period + '-01', to: new Date().toISOString().slice(0, 10) });
+  const [range, setRange] = useState({ from: period + '-01', to: today() });
   const activity = useLoad(() => col.activity(range), [JSON.stringify(range)]);
   const [edit, setEdit] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -29,9 +29,9 @@ export default function Employees() {
         </div></Card>
         <Card pad={false}>
           {reviews.err ? <ErrorBox err={reviews.err} onRetry={reviews.reload} /> : reviews.busy && !reviews.data ? <Busy kind="table" rows={4} /> : <Table cols={[
-            { k: 'employeeId', h: 'Employee', r: r => <b>{userName(users, r.employeeId)}</b> },
-            { k: 'score', h: 'Score', align: 'right', r: r => <b style={{ color: r.score >= 70 ? 'var(--grn)' : r.score >= 40 ? 'var(--yel)' : 'var(--red)' }}>{Number(r.score || 0).toFixed(1)}</b> },
-            ...METRICS.map(m => ({ k: m, h: title(m), align: 'right', r: r => r.metrics?.[m] == null ? '—' : Number(r.metrics[m]).toFixed(0) })),
+            { k: 'employeeId', h: 'Employee', avatar: r => userName(users, r.employeeId), r: r => <b>{userName(users, r.employeeId)}</b> },
+            { k: 'score', h: 'Score', align: 'right', r: r => { const c = r.score >= 70 ? 'var(--grn)' : r.score >= 40 ? 'var(--yel)' : 'var(--red)'; return <><div style={{ fontWeight: 800, color: c }}>{Number(r.score || 0).toFixed(1)}</div><Pbar pct={r.score} color={c} /></>; } },
+            ...METRICS.map(m => ({ k: m, h: title(m), align: 'right', r: r => r.metrics?.[m] == null ? '—' : <><div>{Number(r.metrics[m]).toFixed(0)}</div><Pbar pct={r.metrics[m]} color={r.metrics[m] >= 70 ? 'var(--grn)' : r.metrics[m] >= 40 ? 'var(--yel)' : 'var(--red)'} style={{ width: 44 }} /></> })),
             { k: 'status', h: 'Status', r: r => <Badge v={r.status} /> },
             { k: 'act', h: '', r: r => canReview ? <div className="row" style={{ gap: 4 }}><button className="btn" data-tip="Add the manager's score and notes" style={{ fontSize: 11 }} onClick={() => setEdit(r)}>Manager review</button>{r.status !== 'FINAL' && <button className="btne" data-tip="Lock this review" onClick={async () => { if (!window.confirm('Finalise this review? It stops changing with new activity.')) return; await col.finalizeReview(r._id).catch(e => alert(e.message)); reviews.reload(); }}>Finalise</button>}</div> : null },
           ]} rows={reviews.data} empty={canReview ? 'No reviews for this month yet — generate them.' : 'No review for this month yet.'} />}
@@ -45,7 +45,7 @@ export default function Employees() {
         </div></Card>
         <Card pad={false}>
           {activity.err ? <ErrorBox err={activity.err} onRetry={activity.reload} /> : activity.busy && !activity.data ? <Busy kind="table" rows={4} /> : <Table cols={[
-            { k: 'employeeId', h: 'Employee', r: r => <b>{userName(users, r.employeeId)}</b> }, { k: 'days', h: 'Active days', align: 'right' },
+            { k: 'employeeId', h: 'Employee', avatar: r => userName(users, r.employeeId), r: r => <b>{userName(users, r.employeeId)}</b> }, { k: 'days', h: 'Active days', align: 'right' },
             { k: 'followups', h: 'Follow-ups', align: 'right' }, { k: 'calls', h: 'Calls', align: 'right' }, { k: 'visits', h: 'Visits', align: 'right' },
             { k: 'tasksDone', h: 'Tasks done', align: 'right' }, { k: 'promisesTaken', h: 'Promises', align: 'right' }, { k: 'promisesKept', h: 'Kept', align: 'right' }, { k: 'promisesBroken', h: 'Broken', align: 'right' },
             { k: 'paymentsRecorded', h: 'Payments', align: 'right' }, { k: 'collected', h: 'Collected', align: 'right', r: r => money(r.collected) }, { k: 'points', h: 'Points', align: 'right' },

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Search, X, MapPin, Target, Wallet, Package, ClipboardList, CheckCircle2, AlertTriangle, History, Save, Phone } from 'lucide-react';
+import { Search, X, MapPin, Target, Wallet, Package, ClipboardList, CheckCircle2, AlertTriangle, History, Save, Phone, Camera, LogIn } from 'lucide-react';
 import { api } from '../api';
-import Skeleton from './Skeleton';
+import { VISIT_PURPOSES, fileToCompressedDataURL, getLocation } from './visitCapture';
 
 /**
  * Dealer visit — the one screen a salesman opens before walking into a
@@ -21,7 +21,7 @@ const ACTIONS = [['THREATENING', 'Threatening'], ['MOTIVATION', 'Motivation'], [
 const actionLabel = a => (ACTIONS.find(x => x[0] === a) || [])[1] || '—';
 
 const S = {
-  input: { width: '100%', fontSize: 13, padding: '7px 9px', borderRadius: 8, border: '1px solid var(--b1)', background: 'var(--bg1)', color: 'var(--t1)', boxSizing: 'border-box' },
+  input: { width: '100%', fontSize: 13, padding: '8px 11px', borderRadius: 10, border: '1px solid var(--b2)', background: 'var(--bg2)', color: 'var(--t1)', boxSizing: 'border-box' },
   label: { display: 'block', fontSize: 10.5, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--t3)', marginBottom: 4 },
   card: { border: '1px solid var(--b1)', borderRadius: 10, padding: '10px 12px', background: 'var(--bg1)' },
   chip: (c) => ({ display: 'inline-block', padding: '2px 8px', borderRadius: 20, fontSize: 10.5, fontWeight: 700, color: c, background: `color-mix(in srgb, ${c} 14%, transparent)`, border: `1px solid color-mix(in srgb, ${c} 35%, transparent)`, whiteSpace: 'nowrap' }),
@@ -39,17 +39,55 @@ function Row({ label, hint, children }) {
 
 function Sec({ n, icon: Icon, title, sub, children, tone = 'var(--acc)' }) {
   return (
-    <div style={{ ...S.card, marginBottom: 10, borderLeft: `4px solid ${tone}`, borderRadius: '0 10px 10px 0' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-        <span style={{ width: 20, height: 20, borderRadius: 10, background: tone, color: '#fff', fontSize: 11, fontWeight: 800, display: 'grid', placeItems: 'center', flexShrink: 0 }}>{n}</span>
-        {Icon && <Icon size={14} color={tone} />}
-        <div style={{ fontSize: 13, fontWeight: 800 }}>{title}</div>
-        {sub && <div style={{ fontSize: 11, color: 'var(--t3)', marginLeft: 'auto' }}>{sub}</div>}
+    <div className="dvm-sec" style={{ '--tone': tone }}>
+      <div className="sec-title dvm-sec-h">
+        {Icon && <span className="sec-ico dvm-sec-ico" style={{ '--tone': tone }}><Icon size={15} /><span className="dvm-n">{n}</span></span>}
+        {!Icon && <span className="dvm-n dvm-n-solo">{n}</span>}
+        <span style={{ minWidth: 0 }}>{title}</span>
+        {sub && <span className="sec-note dvm-sec-sub">{sub}</span>}
       </div>
       {children}
     </div>
   );
 }
+
+/* scoped look for the visit screen: section cards, hero, tabs, check-in box */
+const DVM_CSS = `
+  .dvm-wrap { backdrop-filter: blur(3px); }
+  .dvm-card { border-radius: 20px !important; box-shadow: var(--shadowHover, 0 24px 60px rgba(0,0,0,.35)); }
+  .dvm-hero { position: relative; padding: 16px 18px 12px; border-bottom: 1px solid var(--b1); display: flex; gap: 12px; align-items: flex-start;
+    background: linear-gradient(135deg, color-mix(in srgb, var(--acc) 12%, var(--bg1)) 0%, var(--bg1) 70%); }
+  .dvm-hero-av { width: 52px !important; height: 52px !important; border-radius: 16px !important; font-size: 17px !important; box-shadow: 0 4px 14px color-mix(in srgb, var(--acc) 18%, transparent); }
+  .dvm-meta { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 6px; }
+  .dvm-mchip { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; font-weight: 600; color: var(--t2); padding: 3px 9px; border-radius: 20px; background: var(--bg1); border: 1px solid var(--b1); max-width: 100%; overflow-wrap: anywhere; }
+  .dvm-close { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; border: 1px solid var(--b1); background: var(--bg1); color: var(--t2); cursor: pointer; flex-shrink: 0; transition: background .15s, color .15s; }
+  .dvm-close:hover { background: var(--bg2); color: var(--red); }
+  .dvm-tabs { padding: 10px 18px; border-bottom: 1px solid var(--b1); display: flex; }
+  .dvm-sec { position: relative; overflow: hidden; background: var(--bg1); border: 1px solid var(--b1); border-radius: 16px; padding: 14px 14px 14px 18px; margin-bottom: 12px; box-shadow: var(--shadow, none); }
+  .dvm-sec::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--tone); }
+  .dvm-sec-h { margin-bottom: 10px !important; font-size: 14px !important; }
+  .dvm-sec-ico { position: relative; }
+  .dvm-n { position: absolute; right: -6px; top: -6px; min-width: 16px; height: 16px; padding: 0 3px; border-radius: 8px; background: var(--tone); color: #fff; font-size: 9.5px; font-weight: 800; display: grid; place-items: center; border: 2px solid var(--bg1); }
+  .dvm-n-solo { position: static; width: 26px; height: 26px; border-radius: 9px; font-size: 12px; border: none; }
+  .dvm-sec-sub { margin-left: auto; text-align: right; }
+  .dvm-tile { padding: 12px 14px; border-radius: 14px; background: var(--bg2); border: 1px solid var(--b1); position: relative; overflow: hidden; }
+  .dvm-flag { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px; border-radius: 12px; background: color-mix(in srgb, var(--tone) 8%, var(--bg2)); border: 1px solid color-mix(in srgb, var(--tone) 25%, transparent); flex: 1 1 260px; min-width: 0; }
+  .dvm-dot { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--tone); color: #fff; flex-shrink: 0; }
+  .dvm-scol { background: var(--bg2); border: 1px solid var(--b1); border-radius: 14px; padding: 10px 12px; min-height: 120px; min-width: 0; }
+  .dvm-sitem { display: flex; gap: 6px; align-items: flex-start; font-size: 12.5px; padding: 6px 6px; margin: 0 -6px; border-radius: 8px; border-top: 1px solid var(--b1); }
+  .dvm-visit { position: relative; overflow: hidden; padding: 16px; border-radius: 18px; border: 1px solid color-mix(in srgb, var(--tone) 35%, var(--b1)); background: linear-gradient(160deg, color-mix(in srgb, var(--tone) 10%, var(--bg1)) 0%, var(--bg1) 75%); }
+  .dvm-visit-ico { width: 48px; height: 48px; border-radius: 16px; display: grid; place-items: center; flex-shrink: 0; color: #fff; background: var(--tone); box-shadow: 0 6px 18px color-mix(in srgb, var(--tone) 35%, transparent); }
+  .dvm-visit-ico.live { animation: dvmPulse 2s ease-in-out infinite; }
+  @keyframes dvmPulse { 0%,100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--tone) 45%, transparent); } 50% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--tone) 0%, transparent); } }
+  .dvm-cam { display: flex !important; align-items: center; justify-content: center; gap: 10px; width: 100%; margin-top: 12px; font-size: 15px !important; font-weight: 800 !important; padding: 14px 20px !important; border-radius: 14px !important; color: #fff !important; border: none !important; background: var(--tone) !important; box-shadow: 0 8px 22px color-mix(in srgb, var(--tone) 35%, transparent) !important; cursor: pointer; }
+  .dvm-cam .dvm-cam-ico { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,.22); }
+  .dvm-cam:disabled { opacity: .7; cursor: progress; }
+  .dvm-cam.alt { background: var(--bg1) !important; color: var(--tone) !important; border: 1.5px solid var(--tone) !important; box-shadow: none !important; }
+  .dvm-cam.alt .dvm-cam-ico { background: color-mix(in srgb, var(--tone) 14%, transparent); }
+  .dvm-plan { position: relative; overflow: hidden; padding: 12px 14px 12px 18px; margin-bottom: 12px; border-radius: 16px; background: color-mix(in srgb, #f59e0b 7%, var(--bg1)); border: 1px solid color-mix(in srgb, #f59e0b 30%, var(--b1)); }
+  .dvm-plan::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: #f59e0b; }
+  .dvm-foot { background: color-mix(in srgb, var(--bg2) 60%, var(--bg1)); }
+`;
 
 /* ── search box for Overview ─────────────────────────────────────────── */
 export function DealerVisitSearch({ dealers = [], compact = false }) {
@@ -105,13 +143,13 @@ export function DealerVisitSearch({ dealers = [], compact = false }) {
           </div>
         )}
       </div>
-      {pick && <DealerVisitModal dealerId={pick._id || pick.id} onClose={() => { setPick(null); loadToday(); }} />}
+      {pick && <DealerVisitModal dealerId={pick._id || pick.id} dealerName={pick.name} onClose={() => { setPick(null); loadToday(); }} />}
     </>
   );
 }
 
 /* ── the summary + MOM ───────────────────────────────────────────────── */
-export default function DealerVisitModal({ dealerId, onClose }) {
+export default function DealerVisitModal({ dealerId, dealerName = '', onClose }) {
   const [d, setD] = useState(null);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -128,6 +166,16 @@ export default function DealerVisitModal({ dealerId, onClose }) {
     catch (e) { setErr(e?.message || 'Could not move'); } finally { setBusy(false); }
   };   // sample lists: first 5, then "See all"
   const [f, setF] = useState({ dealerFormFilled: false, samplesShown: '', samplesGiven: '', samplesTakenBack: '', action: '', actionNote: '', paymentStatus: '', paymentCollected: '', paymentCollectionNote: '', reviewPaymentTerms: '', relineCreditDays: '', relineCreditLimit: '', relineNote: '', appUsageShown: false, remarks: '', previousReviewed: false, givenAllocationIds: [], returnedAllocationIds: [], returnedGivenIds: [] });
+  // The form as it was before the user touched it (defaults + the prefill
+  // below, or what was last saved). Anything different = unsaved MOM.
+  const initF = useRef(f);
+  const fRef = useRef(f); fRef.current = f;
+  const requestClose = () => {
+    const dirty = JSON.stringify(fRef.current) !== JSON.stringify(initF.current);
+    if (dirty && !window.confirm('Discard the MOM you typed?')) return;
+    onClose?.();
+  };
+  const closeRef = useRef(requestClose); closeRef.current = requestClose;
   const set = (k, v) => setF(x => ({ ...x, [k]: v }));
   const toggleIn = (k, id) => setF(x => ({ ...x, [k]: x[k].includes(id) ? x[k].filter(i => i !== id) : [...x[k], id] }));
 
@@ -136,21 +184,28 @@ export default function DealerVisitModal({ dealerId, onClose }) {
     api.visitSummary(dealerId).then(r => {
       if (dead) return; setD(r);
       // prefill from what the system knows; the salesman edits what differs
-      setF(x => ({ ...x,
+      const prefill = {
         dealerFormFilled: !!r.dealer.dealerFormDone,
         samplesTakenBack: r.samples.given.filter(g => g.takeBack).map(g => g.name).join(', '),
         previousMomId: r.moms[0]?._id || '',
-      }));
+      };
+      initF.current = { ...initF.current, ...prefill };
+      setF(x => ({ ...x, ...prefill }));
     }).catch(e => { if (!dead) setErr(e?.message || 'Could not load'); });
     return () => { dead = true; };
   }, [dealerId]);
-  useEffect(() => { const h = e => { if (e.key === 'Escape') onClose?.(); }; window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h); }, [onClose]);
+  useEffect(() => { const h = e => { if (e.key === 'Escape') closeRef.current(); }; window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h); }, []);
 
   const save = async () => {
     setBusy(true); setErr('');
-    try { const r = await api.saveVisitMom(dealerId, { ...f, paymentCollected: Number(f.paymentCollected) || 0 }); setSaved(r.mom); const s = await api.visitSummary(dealerId); setD(s); setTab('previous'); }
-    catch (e) { setErr(e?.message || 'Could not save'); }
-    finally { setBusy(false); }
+    let r;
+    try { r = await api.saveVisitMom(dealerId, { ...f, paymentCollected: Number(f.paymentCollected) || 0 }); }
+    catch (e) { setErr(e?.message || 'Could not save'); setBusy(false); return; }
+    // Saved. Record success before the reload so a failed refresh can't be
+    // reported as a failed save (and retried into a duplicate MOM).
+    setSaved(r.mom); initF.current = f; setTab('previous');
+    try { setD(await api.visitSummary(dealerId)); } catch (_) { /* summary refresh is best-effort */ }
+    setBusy(false);
   };
 
   const dl = d?.dealer, c = d?.collections, v = d?.volume, sm = d?.samples;
@@ -161,89 +216,108 @@ export default function DealerVisitModal({ dealerId, onClose }) {
   const overLimit = c?.overLimit;
 
   return (
-    <div onClick={onClose} className="dvm-wrap" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', zIndex: 2000, display: 'grid', placeItems: 'center', padding: 14 }}>
-      <style>{`
+    <div onMouseDown={e => { if (e.target === e.currentTarget) requestClose(); }} className="dvm-wrap" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', zIndex: 2000, display: 'grid', placeItems: 'center', padding: 14 }}>
+      <style>{DVM_CSS + `
         @media (max-width: 640px) {
-          .dvm-wrap { padding: 0 !important; }
-          .dvm-card { width: 100% !important; max-height: 100dvh !important; height: 100dvh; border-radius: 0 !important; }
-          .dvm-head { padding: 10px 12px 8px !important; }
+          .dvm-wrap { padding: 10px !important; }
+          .dvm-card { width: 100% !important; max-height: calc(100dvh - 20px) !important; border-radius: 16px !important; }
+          .dvm-head { padding: 12px 12px 10px !important; gap: 10px !important; }
           .dvm-head .dvm-title { font-size: 16px !important; }
-          .dvm-body { padding: 8px !important; }
+          .dvm-hero-av { width: 42px !important; height: 42px !important; border-radius: 13px !important; font-size: 14px !important; }
+          .dvm-tabs { padding: 8px 12px !important; }
+          .dvm-tabs .seg { width: 100%; }
+          .dvm-tabs .seg-b { flex: 1; padding: 6px 8px; }
+          .dvm-body { padding: 10px !important; }
+          .dvm-sec { padding: 12px 10px 12px 14px; border-radius: 14px; }
+          .dvm-sec-sub { margin-left: 0; text-align: left; flex-basis: 100%; }
           .dvm-grid { grid-template-columns: 1fr !important; }
           .dvm-glance { grid-template-columns: 1fr 1fr !important; }
           .dvm-foot { padding: 8px 12px !important; }
         }
       `}</style>
-      <div onClick={e => e.stopPropagation()} className="card dvm-card" style={{ width: 'min(900px,100%)', maxHeight: '92vh', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
+      <div onClick={e => e.stopPropagation()} className="card dvm-card" style={{ width: 'min(920px,100%)', maxHeight: '92vh', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
         {/* head */}
-        <div className="dvm-head" style={{ padding: '14px 18px 10px', borderBottom: '1px solid var(--b1)', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+        <div className="dvm-head dvm-hero">
+          {(() => { const nm = dl?.name || dealerName || '?'; return <span className="ini dvm-hero-av" style={{ '--h': nm.charCodeAt(0) * 37 % 360 }}>{nm.replace(/[^A-Za-z0-9 ]/g, '').split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?'}</span>; })()}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--acc)' }}>Before you visit · your dealer at a glance</div>
-            <div className="dvm-title" style={{ fontSize: 18, fontWeight: 850, lineHeight: 1.2 }}>{dl?.name || '…'} {dl?.code && <span style={{ fontSize: 12, color: 'var(--t3)', fontWeight: 600 }}>{dl.code}</span>}</div>
-            {dl && <div style={{ fontSize: 12, color: 'var(--t2)', marginTop: 3, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-              <span><MapPin size={11} style={{ verticalAlign: -1 }} /> {dl.zone || 'no zone'}{dl.city ? ' · ' + dl.city : ''}{dl.state ? ', ' + dl.state : ''}{dl.address ? ' · ' + dl.address : ''}{dl.pincode ? ' · ' + dl.pincode : ''}</span>
-              <span>Salesman {dl.salesmanName}</span>
-              {dl.phone ? <a href={`tel:${dl.phone}`} style={{ color: 'var(--acc)' }}><Phone size={11} style={{ verticalAlign: -1 }} /> {dl.phone}</a> : <span style={{ color: 'var(--red)' }}>no phone on master</span>}
+            <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--acc)' }}>Before you visit · your dealer at a glance</div>
+            <div className="dvm-title" style={{ fontSize: 20, fontWeight: 850, lineHeight: 1.2, color: 'var(--t1)', letterSpacing: '-.01em', overflowWrap: 'anywhere' }}>{dl?.name || dealerName || ' '} {dl?.code && <span style={{ fontSize: 12, color: 'var(--t3)', fontWeight: 600, letterSpacing: 0 }}>{dl.code}</span>}</div>
+            {dl && <div className="dvm-meta">
+              <span className="dvm-mchip"><MapPin size={11} /> {dl.zone || 'no zone'}{dl.city ? ' · ' + dl.city : ''}{dl.state ? ', ' + dl.state : ''}{dl.address ? ' · ' + dl.address : ''}{dl.pincode ? ' · ' + dl.pincode : ''}</span>
+              <span className="dvm-mchip">Salesman <b style={{ color: 'var(--t1)' }}>{dl.salesmanName}</b></span>
+              {dl.phone ? <a className="dvm-mchip" href={`tel:+${String(dl.phone).replace(/\D/g,'')}`} style={{ color: 'var(--acc)', textDecoration: 'none' }}><Phone size={11} /> {dl.phone}</a> : <span className="dvm-mchip" style={{ color: 'var(--red)' }}>no phone on master</span>}
               <span style={S.chip(dl.accountStatus === 'STAR' ? '#b45309' : dl.accountStatus === 'KEY ACCOUNT' ? 'var(--acc)' : dl.accountStatus === 'ACHIEVER' ? 'var(--grn)' : 'var(--t3)')}>{dl.accountStatus}</span>
               {dl.perfStatus && <span style={S.chip('var(--t3)')}>{dl.perfStatus}</span>}
-              {d.lastVisit ? <span style={{ color: 'var(--t3)' }}>Last visit {fmtDT(d.lastVisit.date)} · {d.lastVisit.by}</span> : <span style={{ color: 'var(--t3)' }}>No visit on record</span>}
+              {d.lastVisit ? <span className="dvm-mchip" style={{ color: 'var(--t3)' }}><History size={11} /> Last visit {fmtDT(d.lastVisit.date)} · {d.lastVisit.by}</span> : <span className="dvm-mchip" style={{ color: 'var(--t3)' }}>No visit on record</span>}
             </div>}
           </div>
-          <button onClick={onClose} className="btn" style={{ padding: '4px 7px' }}><X size={14} /></button>
+          <button onClick={requestClose} className="dvm-close" title="Close"><X size={16} /></button>
         </div>
 
         {/* tabs */}
-        <div style={{ display: 'flex', gap: 4, padding: '8px 18px 0', borderBottom: '1px solid var(--b1)' }}>
-          {[['mom', 'Summary & this visit'], ['previous', `Earlier visits${d?.history?.length ? ` (${d.history.length})` : ''}`]].map(([k, l]) => (
-            <button key={k} onClick={() => setTab(k)} style={{ background: 'none', border: 'none', borderBottom: `2px solid ${tab === k ? 'var(--acc)' : 'transparent'}`, color: tab === k ? 'var(--t1)' : 'var(--t3)', fontWeight: 700, fontSize: 12.5, padding: '6px 10px', cursor: 'pointer' }}>{l}</button>
-          ))}
+        <div className="dvm-tabs">
+          <div className="seg">
+            {[['mom', 'Summary & this visit'], ['previous', `Earlier visits${d?.history?.length ? ` (${d.history.length})` : ''}`]].map(([k, l]) => (
+              <button key={k} className={'seg-b' + (tab === k ? ' on' : '')} style={{ '--tone': 'var(--acc)' }} onClick={() => setTab(k)}>{l}</button>
+            ))}
+          </div>
         </div>
 
         <div className="dvm-body" style={{ overflowY: 'auto', padding: 14, flex: 1 }}>
           {err && <div style={{ color: 'var(--red)', fontSize: 12.5, marginBottom: 10 }}>{err}</div>}
-          {!d && !err && <div><div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--t3)', marginBottom: 10 }}><span className="spin" style={{ width: 14, height: 14, borderRadius: 7, border: '2px solid var(--b1)', borderTopColor: 'var(--acc)', display: 'inline-block' }} /> Pulling target, outstanding, samples and previous visits…</div><Skeleton kind="form" rows={4} /></div>}
+          {!d && !err && <div style={{ display: 'grid', gap: 10 }}>{[3, 2, 3, 2, 1, 4, 2].map((n, i) => (
+            <div key={i} style={{ padding: '10px 12px', borderRadius: '0 10px 10px 0', borderLeft: '3px solid var(--b1)', background: 'var(--bg2)' }}>
+              <div className="sk" style={{ width: 150, height: 12, borderRadius: 6, marginBottom: 10 }} />
+              <div style={{ display: 'grid', gridTemplateColumns: `repeat(${n}, 1fr)`, gap: 8 }}>{Array.from({ length: n }).map((_, j) => <div key={j} className="sk" style={{ height: 34, borderRadius: 8 }} />)}</div>
+            </div>))}
+            <style>{`.sk{background:linear-gradient(90deg,var(--b1) 25%,var(--bg1) 50%,var(--b1) 75%);background-size:200% 100%;animation:skm 1.2s linear infinite}@keyframes skm{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
+          </div>}
           {d && tab === 'mom' && (
             <div>
-              {saved && <div style={{ ...S.card, borderColor: 'var(--grn)', color: 'var(--grn)', fontSize: 12.5, marginBottom: 10 }}><CheckCircle2 size={13} style={{ verticalAlign: -2 }} /> MOM saved for {fmtDate(saved.date)}.</div>}
+              {saved && <div className="dvm-flag" style={{ '--tone': 'var(--grn)', display: 'flex', color: 'var(--grn)', fontSize: 13, fontWeight: 700, marginBottom: 12 }}><span className="dvm-dot"><CheckCircle2 size={13} /></span> MOM saved for {fmtDate(saved.date)}.</div>}
               <PlanBox d={d} dealerId={dealerId} onChanged={async () => setD(await api.visitSummary(dealerId))} />
 
               <Sec n={1} icon={Target} title="Volume: this month vs target" sub={v?.avgMonths ? `6-month average from ${v.avgMonths} month${v.avgMonths === 1 ? '' : 's'}` : ''} tone="var(--acc)">
                 {v?.current ? (() => { const c2 = v.current; const col = c2.pct == null ? 'var(--t1)' : c2.pct >= 100 ? 'var(--grn)' : c2.pct >= 70 ? '#b45309' : 'var(--red)'; const vsAvg = v.avg6 > 0 ? Math.round((c2.achieved - v.avg6) / v.avg6 * 100) : null; return (
                   <>
                     <div className="dvm-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                      <div style={{ padding: '12px 14px', borderRadius: '0 10px 10px 0', background: 'var(--bg2)', borderLeft: `4px solid ${col}` }}>
+                      <div className="dvm-tile" style={{ borderLeft: `4px solid ${col}` }}>
                         <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: '.06em' }}>{c2.isThisMonth ? 'This month' : 'Latest month'} · {c2.label}</div>
                         <div style={{ fontSize: 30, fontWeight: 900, lineHeight: 1.1, color: col, marginTop: 4 }}>{num(c2.achieved)} <span style={{ fontSize: 15, color: 'var(--t3)', fontWeight: 700 }}>of {num(c2.target)}</span></div>
                         <div style={{ fontSize: 13, marginTop: 4, color: col, fontWeight: 700 }}>{c2.pct == null ? 'No target set' : c2.pct >= 100 ? `Target achieved · ${c2.pct}%` : `${c2.pct}% done · ${num(c2.toGo)} more to reach target`}</div>
                       </div>
-                      <div style={{ padding: '12px 14px', borderRadius: '0 10px 10px 0', background: 'var(--bg2)', borderLeft: '4px solid var(--acc)' }}>
+                      <div className="dvm-tile" style={{ borderLeft: '4px solid var(--acc)' }}>
                         <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: '.06em' }}>6-month average</div>
                         <div style={{ fontSize: 30, fontWeight: 900, lineHeight: 1.1, marginTop: 4 }}>{num(v.avg6)} <span style={{ fontSize: 15, color: 'var(--t3)', fontWeight: 700 }}>per month</span></div>
                         <div style={{ fontSize: 13, marginTop: 4, color: vsAvg == null ? 'var(--t3)' : vsAvg >= 0 ? 'var(--grn)' : 'var(--red)', fontWeight: 700 }}>{vsAvg == null ? 'No earlier months to compare' : vsAvg >= 0 ? `This month is ${vsAvg}% above the average` : `This month is ${-vsAvg}% below the average`}</div>
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-                      {v.months.map(m => <span key={m.label} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, background: m.ym === c2.ym ? 'rgba(99,102,241,.14)' : 'var(--bg2)', color: 'var(--t2)' }}>{m.label} <b style={{ color: m.pct == null ? 'var(--t1)' : m.pct >= 100 ? 'var(--grn)' : 'var(--red)' }}>{num(m.achieved)}</b>{m.target ? <span style={{ color: 'var(--t3)' }}>/{num(m.target)}</span> : ''}</span>)}
+                      {v.months.map(m => <span key={m.label} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 20, border: '1px solid var(--b1)', background: m.ym === c2.ym ? 'color-mix(in srgb, var(--acc) 14%, transparent)' : 'var(--bg2)', color: 'var(--t2)' }}>{m.label} <b style={{ color: m.pct == null ? 'var(--t1)' : m.pct >= 100 ? 'var(--grn)' : 'var(--red)' }}>{num(m.achieved)}</b>{m.target ? <span style={{ color: 'var(--t3)' }}>/{num(m.target)}</span> : ''}</span>)}
                     </div>
                   </>); })() : <div style={{ fontSize: 12, color: 'var(--t3)' }}>No target or achievement recorded for this dealer yet.</div>}
                 {dl.perfStatus && <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 6 }}>Performance tier {dl.perfStatus}{dl.perfQty ? ` · ${num(dl.perfQty)} units in ${periodLabel(dl.perfMonth)}` : ''} · type {dl.dealerType}</div>}
               </Sec>
 
-              <div style={{ ...S.card, marginBottom: 10, borderLeft: `4px solid ${dl.dealerFormDone ? 'var(--grn)' : 'var(--red)'}`, borderRadius: '0 10px 10px 0', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                <span style={{ width: 20, height: 20, borderRadius: 10, background: dl.dealerFormDone ? 'var(--grn)' : 'var(--red)', color: '#fff', fontSize: 11, fontWeight: 800, display: 'grid', placeItems: 'center', flexShrink: 0 }}>2</span>
-                <b style={{ fontSize: 13 }}>Dealer Form</b>
-                {ed ? <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12.5, cursor: 'pointer' }}>
-                  <input type="checkbox" checked={f.dealerFormFilled} onChange={e => set('dealerFormFilled', e.target.checked)} style={{ width: 14, height: 14 }} />
-                  <span>{dl.dealerFormDone ? 'filled' : 'filled on this visit'}</span>
-                </label> : <span style={{ fontSize: 12.5, fontWeight: 700, color: dl.dealerFormDone ? 'var(--grn)' : 'var(--red)' }}>{dl.dealerFormDone ? 'Filled' : 'Not filled'}</span>}
-                {(dl.dealerFormDone || ed) && <span style={{ fontSize: 11, color: dl.dealerFormDone ? 'var(--t3)' : 'var(--red)' }}>{dl.dealerFormDone ? `${fmtDate(dl.dealerFormDoneAt)}${dl.dealerFormBy ? ' · ' + dl.dealerFormBy : ''}` : 'get it done on this visit'}</span>}
-                <span style={{ width: 1, height: 18, background: 'var(--b1)', margin: '0 4px' }} />
-                <b style={{ fontSize: 13 }}>App usage</b>
-                {ed ? <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12.5, cursor: 'pointer' }}>
-                  <input type="checkbox" checked={f.appUsageShown} onChange={e => set('appUsageShown', e.target.checked)} style={{ width: 14, height: 14 }} />
-                  <span>showed the app and explained the features</span>
-                </label> : <span style={{ fontSize: 12.5, fontWeight: 700, color: prev?.appUsageShown ? 'var(--grn)' : 'var(--t3)' }}>{prev?.appUsageShown ? 'Shown' : 'Not shown yet'}</span>}
-                {ed && prev?.appUsageShown && <span style={{ fontSize: 11, color: 'var(--t3)' }}>marked shown<Added m={prev} /></span>}
+              <div className="dvm-sec" style={{ '--tone': dl.dealerFormDone ? 'var(--grn)' : 'var(--red)', display: 'flex', alignItems: 'stretch', gap: 10, flexWrap: 'wrap', padding: '12px 12px 12px 18px' }}>
+                <div className="dvm-flag" style={{ '--tone': dl.dealerFormDone ? 'var(--grn)' : 'var(--red)' }}>
+                  <span className="dvm-dot" style={{ fontSize: 11, fontWeight: 800 }}>2</span>
+                  <b style={{ fontSize: 13, color: 'var(--t1)' }}>Dealer Form</b>
+                  {ed ? <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12.5, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={f.dealerFormFilled} onChange={e => set('dealerFormFilled', e.target.checked)} style={{ width: 15, height: 15, accentColor: 'var(--grn)' }} />
+                    <span>{dl.dealerFormDone ? 'filled' : 'filled on this visit'}</span>
+                  </label> : <span style={{ fontSize: 12.5, fontWeight: 700, color: dl.dealerFormDone ? 'var(--grn)' : 'var(--red)' }}>{dl.dealerFormDone ? 'Filled' : 'Not filled'}</span>}
+                  {(dl.dealerFormDone || ed) && <span style={{ fontSize: 11, color: dl.dealerFormDone ? 'var(--t3)' : 'var(--red)' }}>{dl.dealerFormDone ? `${fmtDate(dl.dealerFormDoneAt)}${dl.dealerFormBy ? ' · ' + dl.dealerFormBy : ''}` : 'get it done on this visit'}</span>}
+                </div>
+                <div className="dvm-flag" style={{ '--tone': (ed ? f.appUsageShown : prev?.appUsageShown) ? 'var(--grn)' : 'var(--acc)' }}>
+                  <span className="dvm-dot"><CheckCircle2 size={13} /></span>
+                  <b style={{ fontSize: 13, color: 'var(--t1)' }}>App usage</b>
+                  {ed ? <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12.5, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={f.appUsageShown} onChange={e => set('appUsageShown', e.target.checked)} style={{ width: 15, height: 15, accentColor: 'var(--grn)' }} />
+                    <span>showed the app and explained the features</span>
+                  </label> : <span style={{ fontSize: 12.5, fontWeight: 700, color: prev?.appUsageShown ? 'var(--grn)' : 'var(--t3)' }}>{prev?.appUsageShown ? 'Shown' : 'Not shown yet'}</span>}
+                  {ed && prev?.appUsageShown && <span style={{ fontSize: 11, color: 'var(--t3)' }}>marked shown<Added m={prev} /></span>}
+                </div>
               </div>
 
               <Sec n={3} icon={AlertTriangle} title="Threatening · Motivation · Appreciation · Close the counter" sub="any one" tone="#b45309">
@@ -251,7 +325,7 @@ export default function DealerVisitModal({ dealerId, onClose }) {
                   <>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                       {ACTIONS.map(([k, l]) => (
-                        <button key={k} onClick={() => set('action', f.action === k ? '' : k)} className="btn" style={{ fontSize: 12, padding: '5px 12px', fontWeight: 700, borderColor: f.action === k ? '#b45309' : undefined, background: f.action === k ? 'rgba(180,83,9,.14)' : undefined, color: f.action === k ? '#b45309' : undefined }}>{l}</button>
+                        <button key={k} onClick={() => set('action', f.action === k ? '' : k)} className={'thr' + (f.action === k ? ' on' : '')} style={{ '--tone': '#f59e0b', fontSize: 12, padding: '6px 13px' }}>{l}</button>
                       ))}
                     </div>
                     <input value={f.actionNote} onChange={e => set('actionNote', e.target.value)} style={{ ...S.input, marginTop: 8 }} placeholder={f.action ? `What was said (${actionLabel(f.action).toLowerCase()})…` : 'Pick one above, then write what was said…'} />
@@ -269,13 +343,13 @@ export default function DealerVisitModal({ dealerId, onClose }) {
                   <>
                     {/* figures and the dial on one line, same height */}
                     <div className="dvm-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 190px', gap: 10, alignItems: 'stretch' }}>
-                      <div style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--bg2)' }}>
+                      <div className="dvm-tile" style={{ padding: '10px 12px' }}>
                         <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: '.06em' }}>Outstanding</div>
                         <div style={{ fontSize: 22, fontWeight: 900, margin: '2px 0' }}>{money(c.total)}</div>
                         <div style={{ fontSize: 11, color: overLimit ? 'var(--red)' : 'var(--t3)' }}>{overLimit ? `over the limit of ${money(dl.creditLimit)}` : dl.creditLimit ? `limit ${money(dl.creditLimit)}` : 'no limit set'}</div>
                         <div style={{ fontSize: 11, color: 'var(--t2)', marginTop: 6 }}>{c.lastPaymentAt ? <>Last paid <b style={{ color: 'var(--grn)' }}>{money(c.lastPaymentAmount)}</b> · {fmtDate(c.lastPaymentAt)}</> : <span style={{ color: 'var(--red)' }}>No payment on record</span>}</div>
                       </div>
-                      <div style={{ padding: '10px 12px', borderRadius: 10, background: c.dueAmount > 0 ? 'rgba(220,38,38,.07)' : 'rgba(22,163,74,.07)' }}>
+                      <div className="dvm-tile" style={{ padding: '10px 12px', background: c.dueAmount > 0 ? 'color-mix(in srgb, var(--red) 7%, var(--bg2))' : 'color-mix(in srgb, var(--grn) 7%, var(--bg2))', borderColor: c.dueAmount > 0 ? 'color-mix(in srgb, var(--red) 25%, var(--b1))' : 'color-mix(in srgb, var(--grn) 25%, var(--b1))' }}>
                         <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: '.06em' }}>Due from {periodLabel(c.collectionMonth)}</div>
                         <div style={{ fontSize: 22, fontWeight: 900, margin: '2px 0', color: c.dueAmount > 0 ? 'var(--red)' : 'var(--grn)' }}>{c.dueAmount > 0 ? money(c.dueAmount) : 'Clear'}</div>
                         <div style={{ fontSize: 11, color: 'var(--t3)' }}>{c.ageDays != null ? `oldest ${periodLabel(c.oldestPeriod)} · ${c.ageDays} days · credit ${dl.creditDays || 0} days` : ''}</div>
@@ -283,11 +357,11 @@ export default function DealerVisitModal({ dealerId, onClose }) {
                           {Object.entries(c.buckets || {}).map(([p, a]) => <span key={p} style={{ fontSize: 10.5, padding: '2px 7px', borderRadius: 6, background: 'var(--bg1)', color: p === c.collectionMonth && a > 0 ? 'var(--red)' : 'var(--t2)' }}>{periodLabel(p)} <b>{money(a)}</b></span>)}
                         </div>
                       </div>
-                      <div style={{ padding: '4px 6px 6px', borderRadius: 10, background: 'var(--bg2)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                      <div className="dvm-tile" style={{ padding: '4px 6px 6px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                         <ScoreBar score={c.score} reasons={c.scoreReasons} small />
                       </div>
                     </div>
-                    <div style={{ marginTop: 8, padding: '7px 12px', borderRadius: 8, background: `color-mix(in srgb, ${band[1]} 10%, transparent)`, border: `1px solid color-mix(in srgb, ${band[1]} 30%, transparent)`, fontSize: 12.5, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 12, background: `color-mix(in srgb, ${band[1]} 10%, transparent)`, border: `1px solid color-mix(in srgb, ${band[1]} 30%, transparent)`, fontSize: 12.5, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                       <b style={{ color: band[1] }}>{band[0]}</b><span>{verdict}</span>
                       {c.promises?.length > 0 && <span style={{ color: c.promises[0].status === 'BROKEN' ? 'var(--red)' : 'var(--t2)', marginLeft: 'auto' }}>Promise {money(c.promises[0].amount - c.promises[0].received)} by {fmtDate(c.promises[0].date)} · {c.promises[0].status.toLowerCase().replace('_', ' ')}</span>}
                       {c.pendingRecorded > 0 && <span style={{ color: '#b45309' }}>{money(c.pendingRecorded)} recorded, not yet in a statement</span>}
@@ -327,33 +401,25 @@ export default function DealerVisitModal({ dealerId, onClose }) {
                     : <div style={{ fontSize: 13 }}>{prev?.remarks ? <>{prev.remarks}<Added m={prev} /></> : <span style={{ color: 'var(--t3)' }}>No remarks from the office.</span>}</div>}
               </Sec>
 
-              <Sec n={6} icon={History} title="Last visit" sub={(() => { const lv = (d.history || []).find(h => h.kind === 'visit'); return lv ? `${fmtDT(lv.at)} · ${lv.by}${lv.minutes > 0 ? ` · ${lv.minutes} min` : ''}` : 'no visit on record yet'; })()} tone="var(--t3)">
-                {(d.history || []).some(h => h.kind === 'visit') ? (
-                  <>
-                    <VisitCard h={(d.history || []).find(h => h.kind === 'visit')} />
-                    {ed && <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, cursor: 'pointer', marginTop: 6 }}>
-                      <input type="checkbox" checked={f.previousReviewed} onChange={e => set('previousReviewed', e.target.checked)} />
-                      <span>Reviewed the last visit with the dealer</span>
-                    </label>}
-                  </>
-                ) : <div style={{ fontSize: 12, color: 'var(--t3)' }}>No CRM visit on record for this dealer yet. Check in at the counter from Visits; the MOM attaches to that check-in.</div>}
-              </Sec>
-
-              <Sec n={7} icon={Package} title="Samples" sub={`${sm.given.filter(g => !g.takeBack).length} with the dealer · ${sm.toGive.length} to give · ${sm.given.filter(g => g.takeBack).length + sm.toTakeBack.length} to take back`} tone="#0891b2">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, padding: '6px 10px', borderRadius: 8, border: '1px solid var(--b1)', background: 'var(--bg1)' }}>
-                  <Search size={13} color="var(--t3)" />
+              <Sec n={6} icon={Package} title="Samples" sub={`${sm.given.filter(g => !g.takeBack).length} with the dealer · ${sm.toGive.filter(x => x.source !== 'auto').length} to give · ${sm.given.filter(g => g.takeBack).length + sm.toTakeBack.length} to take back`} tone="#0891b2">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, padding: '8px 12px', borderRadius: 12, border: '1px solid var(--b2)', background: 'var(--bg2)' }}>
+                  <Search size={14} color="var(--t3)" />
                   <input value={sq} onChange={e => setSq(e.target.value)} placeholder="Search a sample in all four lists…" style={{ flex: 1, border: 'none', background: 'transparent', color: 'var(--t1)', fontSize: 12.5, outline: 'none' }} />
                   {sq && <button onClick={() => setSq('')} style={{ background: 'none', border: 'none', color: 'var(--t3)', cursor: 'pointer', display: 'flex' }}><X size={13} /></button>}
                 </div>
                 {ed && <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 6 }}>Drag a sample into any column, or tick a few and press "Move here" on the column you want. Changes save at once and the salesman sees them.</div>}
                 {(() => {
                   const cols = [
+                    // automatic allotments (by tier and zone) are suggestions to SHOW; only a confirmed one is "to be given"
                     { key: 'show', title: 'To be shown', tone: 'var(--acc)', more: 'show', empty: 'Nothing new for this zone.',
-                      items: sm.toShow.map(x => ({ kind: 'sample', id: String(x.id), name: x.name, sub: `${x.zone}${x.stock ? ` · ${x.stock} in stock` : ' · no stock'}${x.addedAt ? ` · added ${fmtDate(x.addedAt)}` : ''}` })) },
+                      items: [
+                        ...sm.toGive.filter(x => x.source === 'auto').map(x => ({ kind: 'alloc', id: String(x.id), name: x.name, sub: `suggested for this dealer · ${x.reason}`, star: true })),
+                        ...sm.toShow.map(x => ({ kind: 'sample', id: String(x.id), name: x.name, sub: `${x.zone}${x.stock ? ` · ${x.stock} in stock` : ' · no stock'}${x.addedAt ? ` · added ${fmtDate(x.addedAt)}` : ''}` })),
+                      ] },
                     { key: 'has', title: 'Already has', tone: 'var(--t3)', more: 'has', empty: 'No sample with this dealer.',
                       items: [...sm.given].filter(g => !g.takeBack).sort((x, y) => String(y.date).localeCompare(String(x.date))).map(g => ({ kind: 'given', id: String(g.id), name: g.name, sub: `given ${fmtDate(g.date)}`, extra: g.sold3m ? `selling: ${num(g.sold3m)} in 3 months` : '' })) },
-                    { key: 'give', title: 'To be given', tone: 'var(--grn)', more: 'give', empty: 'Nothing allotted.',
-                      items: sm.toGive.map(x => ({ kind: 'alloc', id: String(x.id), name: x.name, sub: x.reason })) },
+                    { key: 'give', title: 'To be given', tone: 'var(--grn)', more: 'give', empty: ed ? 'Nothing yet — move a sample here once the dealer wants it.' : 'Nothing to give yet.',
+                      items: sm.toGive.filter(x => x.source !== 'auto').map(x => ({ kind: 'alloc', id: String(x.id), name: x.name, sub: x.reason })) },
                     { key: 'back', title: 'To be taken back', tone: 'var(--red)', more: 'back', empty: ed ? 'Nothing yet — drag or move samples here.' : 'Nothing to take back.',
                       items: [...sm.given.filter(g => g.takeBack).map(g => ({ kind: 'given', id: String(g.id), name: g.name, sub: g.takeBackReason, warn: true })), ...sm.toTakeBack.filter(x => !sm.given.some(g => g.allocId === String(x.id))).map(x => ({ kind: 'alloc', id: String(x.id), name: x.name, sub: `flagged by office · given ${fmtDate(x.givenDate)}`, warn: true }))] },
                   ];
@@ -370,17 +436,17 @@ export default function DealerVisitModal({ dealerId, onClose }) {
                           <div key={col.key}
                                onDragOver={e => { if (ed) { e.preventDefault(); setDragOver(col.key); } }} onDragLeave={() => setDragOver('')}
                                onDrop={e => { if (!ed) return; e.preventDefault(); setDragOver(''); try { const it = JSON.parse(e.dataTransfer.getData('text/plain')); if (it && it.from !== col.key) moveItems([it], col.key); } catch {} }}
-                               style={{ ...S.card, background: over ? `color-mix(in srgb, ${col.tone} 12%, var(--bg2))` : 'var(--bg2)', border: over ? `2px dashed ${col.tone}` : S.card.border, minHeight: 120 }}>
+                               className="dvm-scol" style={{ boxShadow: `inset 0 3px 0 ${col.tone}`, ...(over ? { background: `color-mix(in srgb, ${col.tone} 12%, var(--bg2))`, border: `2px dashed ${col.tone}` } : {}) }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                              <span style={{ fontSize: 12, fontWeight: 800, color: col.tone }}>{col.title}</span><span style={S.chip(col.tone)}>{all.length}</span>
+                              <span style={{ fontSize: 12.5, fontWeight: 800, color: col.tone }}>{col.title}</span><span className="count-pill" style={{ color: col.tone, background: `color-mix(in srgb, ${col.tone} 14%, transparent)` }}>{all.length}</span>
                               {ed && selFromElsewhere.length > 0 && <button className="btnp" disabled={busy} style={{ fontSize: 10.5, padding: '2px 8px', marginLeft: 'auto' }} onClick={() => moveItems(selFromElsewhere, col.key)}>Move {selFromElsewhere.length} here</button>}
                             </div>
                             {shown.map(it => (
                               <div key={it.kind + it.id} draggable={ed} onDragStart={e => { e.dataTransfer.setData('text/plain', JSON.stringify(it)); e.dataTransfer.effectAllowed = 'move'; }}
-                                   style={{ display: 'flex', gap: 6, alignItems: 'flex-start', fontSize: 12.5, padding: '4px 0', borderTop: '1px solid var(--b1)', cursor: ed ? 'grab' : 'default', background: isSel(it) ? `color-mix(in srgb, ${col.tone} 10%, transparent)` : 'transparent' }}>
+                                   className="dvm-sitem" style={{ cursor: ed ? 'grab' : 'default', background: isSel(it) ? `color-mix(in srgb, ${col.tone} 10%, transparent)` : 'transparent' }}>
                                 {ed && <input type="checkbox" checked={isSel(it)} onChange={() => toggleSel(it)} style={{ marginTop: 3 }} />}
                                 <span style={{ flex: 1, minWidth: 0 }}>
-                                  <div style={{ fontWeight: 600 }}>{it.name}</div>
+                                  <div style={{ fontWeight: 600 }}>{it.star && <span title="Suggested for this dealer" style={{ color: 'var(--acc)', marginRight: 4 }}>★</span>}{it.name}</div>
                                   <div style={{ fontSize: 10.5, color: it.warn ? 'var(--red)' : 'var(--t3)' }}>{it.sub}{it.extra ? <span style={{ color: 'var(--grn)' }}> · {it.extra}</span> : null}</div>
                                 </span>
                               </div>
@@ -401,6 +467,20 @@ export default function DealerVisitModal({ dealerId, onClose }) {
                   <div><label style={S.label}>Other notes on samples</label><input value={f.samplesGiven} onChange={e => set('samplesGiven', e.target.value)} style={S.input} placeholder="anything else handed over or collected" /></div>
                 </div>}
               </Sec>
+
+              <Sec n={7} icon={History} title="Visit" sub={(() => { const lv = (d.history || []).find(h => h.kind === 'visit'); return lv ? `last visit ${fmtDT(lv.at)} · ${lv.by}${lv.minutes > 0 ? ` · ${lv.minutes} min` : ''}` : 'no visit on record yet'; })()} tone={d.activeVisit?.here ? 'var(--grn)' : 'var(--t3)'}>
+                <VisitBox d={d} dealerId={dealerId} onChanged={async () => setD(await api.visitSummary(dealerId))} />
+                {(d.history || []).some(h => h.kind === 'visit') && (
+                  <div style={{ marginTop: 10 }}>
+                    <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--t3)', marginBottom: 4 }}>Last visit</div>
+                    <VisitCard h={(d.history || []).find(h => h.kind === 'visit')} />
+                    {ed && <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, cursor: 'pointer', marginTop: 6 }}>
+                      <input type="checkbox" checked={f.previousReviewed} onChange={e => set('previousReviewed', e.target.checked)} />
+                      <span>Reviewed the last visit with the dealer</span>
+                    </label>}
+                  </div>
+                )}
+              </Sec>
             </div>
           )}
 
@@ -412,7 +492,7 @@ export default function DealerVisitModal({ dealerId, onClose }) {
         {d && tab === 'mom' && d.canEdit && (
           <div className="dvm-foot" style={{ padding: '10px 18px', borderTop: '1px solid var(--b1)', display: 'flex', gap: 8, alignItems: 'center' }}>
             <button className="btnp" disabled={busy} onClick={save} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, padding: '8px 16px' }}><Save size={14} /> {busy ? 'Saving…' : 'Save MOM'}</button>
-            <button className="btn" onClick={onClose} style={{ fontSize: 13 }}>Close</button>
+            <button className="btn" onClick={requestClose} style={{ fontSize: 13 }}>Close</button>
             <span style={{ fontSize: 11, color: 'var(--t3)', marginLeft: 'auto' }}>{d.today}</span>
           </div>
         )}
@@ -426,6 +506,106 @@ export default function DealerVisitModal({ dealerId, onClose }) {
  * edit the instruction and can plan a new visit right here; the salesman
  * adds his own note. Saving the MOM marks today's plan visited.
  */
+/**
+ * The visit itself, done from here: check in at this counter (purpose +
+ * camera photo + GPS, the same record the Visits page writes), and check out
+ * with the discussion note when leaving. A check-out ticks today's plan.
+ * One open visit at a time: if the user is still checked in elsewhere, this
+ * box says where and lets him close it first.
+ */
+function VisitBox({ d, dealerId, onChanged }) {
+  const av = d.activeVisit;
+  const [purpose, setPurpose] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [step, setStep] = useState('');            // 'photo' while the camera is open, 'send' while saving
+  const cam = useRef(null);
+  const pending = useRef(null);                     // 'in' | 'out' — what the photo is for
+  const input = { fontSize: 13.5, padding: '9px 11px', borderRadius: 9, border: '1px solid var(--b1)', background: 'var(--bg1)', color: 'var(--t1)', width: '100%' };
+  const mins = av?.since ? Math.max(0, Math.round((Date.now() - new Date(av.since).getTime()) / 60000)) : 0;
+
+  // one tap: validate, open the camera; the photo itself completes the check-in / check-out
+  const start = (what) => {
+    setErr('');
+    if (what === 'in' && !purpose) return setErr('Pick the purpose of the visit first');
+    if (what === 'out' && !note.trim()) return setErr('Write what was discussed first');
+    pending.current = what; setStep('photo'); cam.current?.click();
+  };
+  const onPhoto = async e => {
+    const f = e.target.files?.[0]; e.target.value = '';
+    if (!f) { setStep(''); return; }                // camera closed without a photo
+    setBusy(true); setStep('send');
+    try {
+      const photo = await fileToCompressedDataURL(f);
+      const loc = await getLocation(8000);
+      if (pending.current === 'in') { await api.visitsCreate({ dealerId, dealerName: d.dealer.name, purpose, note: note ? `[${purpose}] ${note}` : `[${purpose}]`, photo, lat: loc.lat, lng: loc.lng }); setPurpose(''); }
+      else await api.visitsCheckout(av.id, { note: note.trim(), photo, lat: loc.lat, lng: loc.lng });
+      setNote('');
+    } catch (x) { setErr(x?.message || 'Could not save the visit'); setBusy(false); setStep(''); return; }
+    // Check-in/out is saved; refresh the summary on its own so a failed reload
+    // is not shown as a failed visit (retrying gave "already checked in").
+    try { await onChanged?.(); } catch (_) { /* best-effort refresh */ }
+    setBusy(false); setStep('');
+  };
+  const working = step === 'send' ? 'Saving…' : step === 'photo' ? 'Take the photo…' : '';
+  const tone = av?.here ? 'var(--grn)' : av ? '#f59e0b' : 'var(--acc)';
+  const camBtn = (what, label, alt) => (
+    <button className={'dvm-cam' + (alt ? ' alt' : '')} disabled={busy} onClick={() => start(what)}>
+      <span className="dvm-cam-ico"><Camera size={17} /></span> {working || label}
+    </button>
+  );
+  return (
+    <div className="dvm-visit" style={{ '--tone': tone }}>
+      <input ref={cam} type="file" accept="image/*" capture="environment" onChange={onPhoto} style={{ display: 'none' }} />
+      {av?.here ? (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+            <span className="dvm-visit-ico live"><CheckCircle2 size={22} /></span>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 15, fontWeight: 850, color: 'var(--grn)' }}>You are here · checked in {fmtDT(av.since)}</div>
+              <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 2 }}><b style={{ color: 'var(--t1)' }}>{mins} min</b> on the counter. Fill the sections above, then write the discussion and check out.</div>
+            </div>
+          </div>
+          <textarea value={note} onChange={e => setNote(e.target.value)} rows={3} placeholder="What was discussed, what was agreed…" style={{ ...input, resize: 'vertical' }} />
+          {err && <div style={{ color: 'var(--red)', fontSize: 12.5, marginTop: 6, fontWeight: 600 }}>{err}</div>}
+          {camBtn('out', 'Check out · takes a photo')}
+        </>
+      ) : av ? (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+            <span className="dvm-visit-ico"><AlertTriangle size={22} /></span>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 15, fontWeight: 850, color: '#f59e0b' }}>Still checked in at {av.dealerName}</div>
+              <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 2 }}>Since {fmtDT(av.since)}. One visit at a time: close that one here, then check in at this counter.</div>
+            </div>
+          </div>
+          <textarea value={note} onChange={e => setNote(e.target.value)} rows={2} placeholder={`What was discussed at ${av.dealerName}…`} style={{ ...input, resize: 'vertical' }} />
+          {err && <div style={{ color: 'var(--red)', fontSize: 12.5, marginTop: 6, fontWeight: 600 }}>{err}</div>}
+          {camBtn('out', `Check out of ${av.dealerName.split(' ')[0]} · takes a photo`, true)}
+        </>
+      ) : (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+            <span className="dvm-visit-ico"><LogIn size={22} /></span>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 15, fontWeight: 850, color: 'var(--t1)' }}>At the counter? Check in</div>
+              <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 2 }}>Pick the purpose, press the button, take one photo. Your location is added by itself.</div>
+            </div>
+          </div>
+          <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--t3)', marginBottom: 6 }}>Purpose</div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+            {VISIT_PURPOSES.map(p => <button key={p} type="button" className={'thr' + (purpose === p ? ' on' : '')} style={{ '--tone': 'var(--acc)', fontSize: 12, padding: '6px 12px' }} onClick={() => { setPurpose(p); setErr(''); }}>{p}</button>)}
+          </div>
+          <input value={note} onChange={e => setNote(e.target.value)} placeholder="Note (optional)" style={input} />
+          {err && <div style={{ color: 'var(--red)', fontSize: 12.5, marginTop: 6, fontWeight: 600 }}>{err}</div>}
+          {camBtn('in', 'Check in · takes a photo')}
+        </>
+      )}
+    </div>
+  );
+}
+
 function PlanBox({ d, dealerId, onChanged }) {
   const staff = (d.salesmen || []).length > 0 && !!d.canPlan;
   const plans = (d.plans || []).filter(p => p.isToday || p.upcoming);
@@ -438,17 +618,19 @@ function PlanBox({ d, dealerId, onChanged }) {
   const run = async (fn) => { setBusy(true); setErr(''); try { await fn(); await onChanged?.(); } catch (e) { setErr(e?.message || 'Could not save'); } finally { setBusy(false); } };
   if (!plans.length && !staff) return null;
   return (
-    <div style={{ padding: '8px 12px', marginBottom: 6, borderRadius: '0 8px 8px 0', background: 'rgba(180,83,9,.07)', borderLeft: '3px solid #b45309' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-        <div style={{ fontSize: 12, fontWeight: 800, color: '#b45309' }}>Planned by the office</div>
-        {staff && !adding && <button className="btn" style={{ fontSize: 11, padding: '2px 8px', marginLeft: 'auto' }} onClick={() => setAdding(true)}>+ Plan a visit</button>}
+    <div className="dvm-plan">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+        <span className="sec-ico" style={{ '--tone': '#f59e0b', width: 28, height: 28, borderRadius: 9 }}><ClipboardList size={14} /></span>
+        <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--t1)' }}>Planned by the office</div>
+        {plans.length > 0 && <span className="count-pill" style={{ color: '#f59e0b', background: 'color-mix(in srgb, #f59e0b 14%, transparent)' }}>{plans.length}</span>}
+        {staff && !adding && <button className="btne" style={{ fontSize: 11.5, padding: '4px 10px', marginLeft: 'auto' }} onClick={() => setAdding(true)}>+ Plan a visit</button>}
       </div>
       {!plans.length && <div style={{ fontSize: 12, color: 'var(--t3)' }}>No visit planned for this dealer.</div>}
       {plans.map(p => (
-        <div key={p.id} style={{ fontSize: 12.5, padding: '4px 0', borderTop: '1px solid var(--b1)' }}>
+        <div key={p.id} style={{ fontSize: 12.5, padding: '8px 10px', marginTop: 6, borderRadius: 12, background: 'var(--bg1)', border: '1px solid var(--b1)' }}>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
             <b>{p.isToday ? 'Today' : fmtDate(p.date)}</b> · {p.salesmanName}
-            {p.status === 'DONE' ? <span style={S.chip('var(--grn)')}>visited</span> : <span style={S.chip('#b45309')}>planned</span>}
+            {p.status === 'DONE' ? <span style={S.chip('var(--grn)')}>visited</span> : <span style={S.chip('#f59e0b')}>planned</span>}
             {staff && edit[p.id] === undefined && <button className="btn" style={{ fontSize: 10.5, padding: '1px 7px', marginLeft: 'auto' }} onClick={() => setEdit(e => ({ ...e, [p.id]: p.note || '' }))}>Edit note</button>}
             {staff && p.status !== 'DONE' && <button className="btn" style={{ fontSize: 10.5, padding: '1px 7px', color: 'var(--red)' }} onClick={() => { if (window.confirm('Remove this planned visit?')) run(() => api.deleteVisitPlan(p.id)); }}>Remove</button>}
           </div>
@@ -500,7 +682,7 @@ function ScoreBar({ score, reasons = [], asOn, small = false }) {
   const msg = sc >= 750 ? 'Paying on time. Safe to serve on the usual terms.' : sc >= 650 ? 'Mostly on time. A gentle reminder on the visit is enough.' : sc >= 500 ? 'Slipping. Collect before taking a fresh order.' : 'In bad shape. Collect first — no new credit until it improves.';
   return (
     <div style={{ marginBottom: 10 }}>
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '6px 0 0', borderRadius: 12, background: 'linear-gradient(180deg, rgba(99,102,241,.08), transparent)' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '6px 0 0', borderRadius: 12, background: 'linear-gradient(180deg, color-mix(in srgb, var(--acc) 8%, transparent), transparent)' }}>
         <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ maxWidth: '100%' }}>
           {arc(300, 500, '#dc2626')}{arc(500, 650, '#f59e0b')}{arc(650, 750, '#65a30d')}{arc(750, 900, '#16a34a')}
           {[500, 650, 750].map(v => { const [x0, y0] = pt(v, R - sw / 2 - 2), [x1, y1] = pt(v, R + sw / 2 + 2); return <line key={v} x1={x0} y1={y0} x2={x1} y2={y1} stroke="var(--bg1)" strokeWidth={3} />; })}

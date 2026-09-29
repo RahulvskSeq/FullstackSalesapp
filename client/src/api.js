@@ -1,3 +1,4 @@
+import { saveBlob } from './lib/saveFile';
 // // const BASE = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) || 'http://localhost:5000/api';
 
 // // // Token management
@@ -1714,6 +1715,12 @@ export const api = {
     method:'PUT', headers:authHeaders(), body: JSON.stringify(patch),
   }).then(handle),
 
+  // Live Tally stock (searched on the server; the token never reaches the app)
+  stockSearch: (q, { inStock=false, refresh=false, limit=60, status='' } = {}) => fetch(`${BASE}/stock/search?q=${encodeURIComponent(q||'')}&limit=${limit}${inStock?'&inStock=1':''}${refresh?'&refresh=1':''}${status?'&status='+encodeURIComponent(status):''}`,{headers:authHeaders()}).then(handle),
+  // My profile — photo, contact and personal details the person edits themselves
+  getMyProfile:   ()      => fetch(`${BASE}/auth/me/profile`,{headers:authHeaders()}).then(handle),
+  updateMyProfile:(patch) => fetch(`${BASE}/auth/me/profile`,{method:'PUT',headers:authHeaders(),body:JSON.stringify(patch)}).then(handle),
+  changePassword: (oldPass,newPass) => fetch(`${BASE}/auth/change-password`,{method:'POST',headers:authHeaders(),body:JSON.stringify({oldPass,newPass})}).then(handle),
   updateUser:  (id,d)  => fetch(`${BASE}/auth/users/${id}`,{method:'PUT',headers:authHeaders(),body:JSON.stringify(d)}).then(handle),
   // fromMonth (MO label, e.g. "Jul-26") makes the handover month-aware:
   // sales before it stay attributed to the old salesman. Omit for a full move.
@@ -1796,6 +1803,11 @@ export const api = {
   // ── Sample allocation (stock → STAR/KEY/ACHIEVER first, rest by hand) ──
   uploadSampleStock: (file) => { const fd=new FormData(); fd.append('file',file); return fetch(`${BASE}/samples/stock/upload`,{method:'POST',headers:{Authorization:`Bearer ${getToken()}`},body:fd}).then(handle); },
   uploadSampleAlloc: (file) => { const fd=new FormData(); fd.append('file',file); return fetch(`${BASE}/samples/alloc/upload`,{method:'POST',headers:{Authorization:`Bearer ${getToken()}`},body:fd}).then(handle); },
+  addSampleAuto:   (body)  => fetch(`${BASE}/samples/add`,{method:'POST',headers:{...authHeaders(),'Content-Type':'application/json'},body:JSON.stringify(body)}).then(handle),
+  sampleStatusDealers: () => fetch(`${BASE}/samples/status/dealers`,{headers:authHeaders()}).then(handle),
+  previewSampleAdd:(body)  => fetch(`${BASE}/samples/add/preview`,{method:'POST',headers:{...authHeaders(),'Content-Type':'application/json'},body:JSON.stringify(body)}).then(handle),
+  allotSample:     (id)    => fetch(`${BASE}/samples/${id}/allot`,{method:'POST',headers:authHeaders()}).then(handle),
+  allotAllSamples: ()      => fetch(`${BASE}/samples/alloc/auto`,{method:'POST',headers:authHeaders()}).then(handle),
   sampleAllocations: (params) => fetch(`${BASE}/samples/alloc${params?'?'+new URLSearchParams(params).toString():''}`,{headers:authHeaders()}).then(handle),
   moveSample: (body) => fetch(`${BASE}/samples/move`,{method:'POST',headers:{...authHeaders(),'Content-Type':'application/json'},body:JSON.stringify(body)}).then(handle),
   givenTakeBack: (id, takeBack) => fetch(`${BASE}/samples/given/${id}/take-back`,{method:'POST',headers:{...authHeaders(),'Content-Type':'application/json'},body:JSON.stringify({ takeBack })}).then(handle),
@@ -1807,6 +1819,8 @@ export const api = {
   // ── Samples ────────────────────────────────────────────────────────────────
   getSamples:      (zone)  => fetch(`${BASE}/samples${zone?'?zone='+encodeURIComponent(zone):''}`,{headers:authHeaders()}).then(handle),
   addSample:       (data)  => fetch(`${BASE}/samples`,{method:'POST',headers:{...authHeaders(),'Content-Type':'application/json'},body:JSON.stringify(data)}).then(handle),
+  updateSample:    (id, data) => fetch(`${BASE}/samples/${id}`,{method:'PUT',headers:{...authHeaders(),'Content-Type':'application/json'},body:JSON.stringify(data)}).then(handle),
+  autoAllotSamples: () => fetch(`${BASE}/samples/alloc/auto`,{method:'POST',headers:authHeaders()}).then(handle),
   getSamplesGiven: (params)=> fetch(`${BASE}/samples/given${params?'?'+params:''}`,{headers:authHeaders()}).then(handle),
   markSampleGiven: (data)  => fetch(`${BASE}/samples/given`,{method:'POST',headers:{...authHeaders(),'Content-Type':'application/json'},body:JSON.stringify(data)}).then(handle),
   unmarkSample:    (id)    => fetch(`${BASE}/samples/given/${id}`,{method:'DELETE',headers:authHeaders()}).then(handle),
@@ -1821,12 +1835,7 @@ export const api = {
     });
     if (!res.ok) throw new Error('Download failed');
     const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'Sample_by_Party_by_Zone.xlsx';
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    await saveBlob(blob, 'Sample_by_Party_by_Zone.xlsx');
   },
   // Download an Excel pre-populated with every dealer × every sample. Existing
   // "given" pairs come pre-ticked so admin can see current state.
@@ -1836,12 +1845,7 @@ export const api = {
     });
     if (!res.ok) throw new Error('Download failed');
     const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'Dealer_Samples_Template.xlsx';
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    await saveBlob(blob, 'Dealer_Samples_Template.xlsx');
   },
   // One-shot cleanup that merges duplicate Sample master records where the
   // parser previously mistook code ranges (like "OM 21 - 40") for zones.
@@ -1857,12 +1861,7 @@ export const api = {
     });
     if (!res.ok) throw new Error('Download failed');
     const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'Sample_Master_Template.xlsx';
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    await saveBlob(blob, 'Sample_Master_Template.xlsx');
   },
   deleteSample:    (id)    => fetch(`${BASE}/samples/${id}`,{method:'DELETE',headers:authHeaders()}).then(handle),
   // Nuclear: wipes entire Sample master AND every SampleGiven record.
@@ -2152,12 +2151,7 @@ export const api = {
     const res = await fetch(url, { headers:{ Authorization:`Bearer ${getToken()}` } });
     if(!res.ok) throw new Error(`Template download failed (${res.status})`);
     const blob = await res.blob();
-    const bUrl = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href = bUrl;
-    a.download = `Sales_Upload_Template${opts.monthLabel ? '_'+opts.monthLabel : ''}.xlsx`;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(()=>URL.revokeObjectURL(bUrl), 4000);
+    await saveBlob(blob, `Sales_Upload_Template${opts.monthLabel ? '_'+opts.monthLabel : ''}.xlsx`);
   },
   // Upload the unified Excel.
   //   month       — YYYY-MM (required, normalised on the server)

@@ -170,6 +170,7 @@ import incentiveApiRoutes from './routes/incentiveApi.js';
 import salesIncentiveApiRoutes from './routes/salesIncentiveApi.js';
 import sheetRoutes       from './routes/sheets.js';
 import productTxRoutes  from './routes/producttx.js';
+import stockRoutes      from './routes/stock.js';
 import { auditTrail }    from './lib/auditTrail.js';
 import { seedDefaultCategories } from './routes/categories.js';
 
@@ -212,6 +213,7 @@ app.use('/api/collections',     collectionsRoutes);
 app.use('/api/sales',       salesRoutes);
 app.use('/api/sheets',      sheetRoutes);
 app.use('/api/producttx',   productTxRoutes);  // raw ERP product-transaction import + report
+app.use('/api/stock',       stockRoutes);      // live Tally stock lookup (top-bar search)
 app.use('/api/app',         appUpdateRoutes);   // in-app APK update channel
 app.use('/api/external/incentive', incentiveApiRoutes);   // key-authenticated read API for other software
 app.use('/api/external/sales-incentive', salesIncentiveApiRoutes);   // same key — the salesman (laminate) scheme

@@ -67,7 +67,10 @@ const AddDealerModal = ({users, currentUser, onAdd, onClose, MO:propMO}) => {
       let saved = null;
       const token = localStorage.getItem('stp_jwt');
       if(token){
-        try { saved = await api.createDealer(dealerData); } catch(e){ console.warn('DB save failed, saving locally:', e.message); }
+        // A failed save must not look like a saved one: keep the modal open
+        // with the error instead of adding an unsaved, random-id dealer.
+        try { saved = await api.createDealer(dealerData); }
+        catch(e){ setError(e.message || 'Could not save dealer'); setSaving(false); return; }
       }
 
       // Build app-format dealer for local state
@@ -110,7 +113,7 @@ const AddDealerModal = ({users, currentUser, onAdd, onClose, MO:propMO}) => {
           <Field label="Dealer Name *" full>
             <input className="inp" value={d.name} onChange={e=>set('name',e.target.value)}
               placeholder="Full dealer/firm name" autoFocus
-              onKeyDown={e=>e.key==='Enter'&&save()}/>
+              onKeyDown={e=>e.key==='Enter'&&!saving&&save()}/>
           </Field>
 
           <Field label="City">
@@ -173,7 +176,7 @@ const AddDealerModal = ({users, currentUser, onAdd, onClose, MO:propMO}) => {
           </div>
         </div>
 
-        {error&&<div style={{color:'var(--red)',fontSize:12,marginTop:8,padding:'6px 10px',background:'rgba(248,113,113,0.08)',borderRadius:6}}>{error}</div>}
+        {error&&<div style={{color:'var(--red)',fontSize:12,marginTop:8,padding:'6px 10px',background:'color-mix(in srgb, var(--red) 8%, transparent)',borderRadius:6}}>{error}</div>}
 
         <div style={{display:'flex',gap:8,marginTop:16}}>
           <button onClick={save} disabled={saving} className="btnp" style={{display:'flex',alignItems:'center',gap:6}}>

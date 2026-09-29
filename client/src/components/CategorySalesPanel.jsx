@@ -4,6 +4,8 @@ import { api } from '../api';
 import CategoryFilter from './CategoryFilter';
 import { useGlobalCategoryFilter } from '../hooks/useGlobalCategoryFilter';
 
+const CAT_CLR = ['#3b82f6','#10b981','#f59e0b','#8b5cf6','#06b6d4','#ec4899','#ef4444','#64748b'];
+
 /**
  * Two flavours of the same panel, used in three places:
  *   • Overview   — <CategorySalesPanel monthLabel="Jun-26" onSeeAll={() => navigate('salesCat')}/>
@@ -144,14 +146,14 @@ const CategorySalesPanel = ({
 
   return (
     <div style={{display:'grid',gap:8}}>
-      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:2}}>
-        <BarChart3 size={14} color="var(--acc)"/>
-        <div style={{fontSize:13,fontWeight:700}}>
+      <div className="sec-title" style={{marginBottom:2}}>
+        <span className="sec-ico" style={{'--tone':'var(--pur)'}}><BarChart3 size={15}/></span>
+        <div>
           {dealerName ? 'Category-wise Sales (all months)' : `Category-wise Sales — ${monthLabel||''}`}
         </div>
+        <span className="count-pill">{groups.length}</span>
         <div className="spacer"/>
-        <div style={{fontSize:11,color:'var(--t3)'}}>Total:</div>
-        <div style={{fontSize:14,fontWeight:800,color:'var(--grn)'}}>{fmt(grandTotal)}</div>
+        <span className="kpi-pill">Total <b>{fmt(grandTotal)}</b></span>
         {onSeeAll && (
           <button className="btn" style={{padding:'4px 10px',fontSize:11,display:'inline-flex',alignItems:'center',gap:4}}
             onClick={onSeeAll}>See all <ArrowRight size={11}/></button>
@@ -173,38 +175,34 @@ const CategorySalesPanel = ({
         </div>
       )}
 
-      <div style={{
+      {/* One strip shows how the total splits; each tile wears its category's colour */}
+      {groups.length > 1 && (
+        <div className="cat-strip">
+          {groups.map((g,i) => (
+            <div key={g.category} style={{flex:g.total||0.0001,background:CAT_CLR[i%CAT_CLR.length]}}
+              title={`${g.category} · ${fmt(g.total)} · ${grandTotal?(g.total/grandTotal*100).toFixed(1):0}%`}/>
+          ))}
+        </div>
+      )}
+      <div className="cat-grid" style={{
         display:'grid',
-        gridTemplateColumns: compact ? '1fr' : 'repeat(auto-fill,minmax(220px,1fr))',
+        gridTemplateColumns: compact ? '1fr' : 'repeat(auto-fill,minmax(200px,1fr))',
         gap:8,
       }}>
-        {groups.map(g => {
+        {groups.map((g,i) => {
           const pct = grandTotal ? (g.total / grandTotal * 100) : 0;
           const subs = Object.entries(g.subs).sort((a,b) => b[1]-a[1]);
           return (
-            <div key={g.category} style={{
-              padding:10,borderRadius:8,
-              background:'var(--bg1)',border:'1px solid var(--b1)',
-            }}>
-              <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:6}}>
-                <div style={{fontSize:12,fontWeight:700,flex:1}}>{g.category}</div>
-                <div style={{fontSize:14,fontWeight:800,color:'var(--grn)'}}>{fmt(g.total)}</div>
+            <div key={g.category} className="cat-tile" style={{'--tone':CAT_CLR[i%CAT_CLR.length]}}>
+              <div className="cat-tile-head">
+                <i/><span className="cat-name">{g.category}</span>
+                <span className="cat-share">{pct.toFixed(1)}%</span>
               </div>
-              <div style={{height:4,background:'var(--bg2)',borderRadius:2,overflow:'hidden',marginBottom:6}}>
-                <div style={{width:`${pct.toFixed(1)}%`,height:'100%',background:'linear-gradient(90deg,#6366f1,#34d399)'}}/>
-              </div>
-              <div style={{display:'flex',flexWrap:'wrap',gap:4}}>
+              <div className="cat-num">{fmt(g.total)}</div>
+              <div className="cat-subs">
                 {subs.map(([sub,qty]) => (
-                  <span key={sub} style={{
-                    fontSize:10,padding:'2px 6px',borderRadius:4,
-                    background:'var(--bg2)',color:'var(--t2)',
-                  }}>
-                    {sub}: <b>{fmt(qty)}</b>
-                  </span>
+                  <span key={sub}>{sub} <b>{fmt(qty)}</b></span>
                 ))}
-              </div>
-              <div style={{fontSize:10,color:'var(--t3)',marginTop:5}}>
-                {pct.toFixed(1)}% of total
               </div>
             </div>
           );
@@ -220,8 +218,8 @@ const CategorySalesPanel = ({
           <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
             {data.months.sort((a,b) => b.month.localeCompare(a.month)).map(m => (
               <span key={m.month} style={{
-                fontSize:11,padding:'4px 8px',borderRadius:5,
-                background:'var(--bg2)',border:'1px solid var(--b2)',
+                fontSize:11,padding:'4px 10px',borderRadius:20,
+                background:'var(--bg2)',border:'1px solid var(--b1)',
               }}>
                 {ymToLabel(m.month)}: <b style={{color:'var(--grn)'}}>{fmt(m.total)}</b>
               </span>

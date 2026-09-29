@@ -294,7 +294,7 @@ export default function SalesEntry({ dealers, users, onUpdateDealer, onAddDealer
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontSize:12,fontWeight:600,color:'var(--t1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
                           {e.dealerName}
-                          {e.isNew&&<span style={{fontSize:9,background:'rgba(52,211,153,0.15)',color:'var(--grn)',padding:'1px 5px',borderRadius:4,marginLeft:4}}>NEW</span>}
+                          {e.isNew&&<span style={{fontSize:9,background:'color-mix(in srgb, var(--grn) 15%, transparent)',color:'var(--grn)',padding:'1px 5px',borderRadius:4,marginLeft:4}}>NEW</span>}
                         </div>
                         <div style={{fontSize:10,color:'var(--t3)',display:'flex',gap:6,flexWrap:'wrap',marginTop:2}}>
                           <span>{e.month}</span>
@@ -330,7 +330,7 @@ export default function SalesEntry({ dealers, users, onUpdateDealer, onAddDealer
             )}
 
             {saved&&(
-              <div style={{marginTop:10,padding:'8px 12px',background:'rgba(52,211,153,0.1)',border:'1px solid rgba(52,211,153,0.3)',borderRadius:8,fontSize:12,color:'var(--grn)',textAlign:'center'}}>
+              <div style={{marginTop:10,padding:'8px 12px',background:'color-mix(in srgb, var(--grn) 10%, transparent)',border:'1px solid color-mix(in srgb, var(--grn) 30%, transparent)',borderRadius:8,fontSize:12,color:'var(--grn)',textAlign:'center'}}>
                 ✓ Saved successfully!
               </div>
             )}
@@ -342,10 +342,10 @@ export default function SalesEntry({ dealers, users, onUpdateDealer, onAddDealer
               <div style={{fontSize:11,fontWeight:600,color:'var(--t3)',marginBottom:8,textTransform:'uppercase',letterSpacing:'.07em'}}>Current Data — {selDealer.name.slice(0,20)}</div>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
                 {[
-                  {l:'This Month',v:selDealer.months[CURRENT_MONTH_IDX]||0,c:'#34d399'},
+                  {l:'This Month',v:selDealer.months[CURRENT_MONTH_IDX]||0,c:'#10b981'},
                   {l:'Target',v:selDealer.target||'—',c:'var(--t2)'},
                   {l:'11mo Total',v:selDealer.months.reduce((a,b)=>a+b,0),c:'var(--acc)'},
-                  {l:'Best Month',v:Math.max(...selDealer.months),c:'#fbbf24'},
+                  {l:'Best Month',v:Math.max(...selDealer.months),c:'#f59e0b'},
                 ].map(k=>(
                   <div key={k.l} style={{background:'var(--bg2)',borderRadius:7,padding:'7px 10px'}}>
                     <div style={{fontSize:9,color:'var(--t3)',marginBottom:2,textTransform:'uppercase'}}>{k.l}</div>
@@ -356,7 +356,7 @@ export default function SalesEntry({ dealers, users, onUpdateDealer, onAddDealer
               <div style={{marginTop:10,display:'flex',gap:3,alignItems:'flex-end',height:40}}>
                 {selDealer.months.map((v,i)=>{
                   const mx=Math.max(...selDealer.months,1);
-                  return<div key={i} style={{flex:1,height:Math.max((v/mx)*38,v>0?3:1),background:i===CURRENT_MONTH_IDX?'#6366f1':'var(--b2)',borderRadius:'2px 2px 0 0'}}/>;
+                  return<div key={i} style={{flex:1,height:Math.max((v/mx)*38,v>0?3:1),background:i===CURRENT_MONTH_IDX?'var(--acc)':'var(--b2)',borderRadius:'2px 2px 0 0'}}/>;
                 })}
               </div>
               <div style={{display:'flex',gap:3,marginTop:2}}>

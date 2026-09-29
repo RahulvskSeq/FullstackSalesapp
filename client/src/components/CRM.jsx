@@ -8,14 +8,16 @@ import {
   Camera, LogIn as IconIn, LogOut as IconOut, MapPin, Calendar, Plus,
   X, Phone, Mail, Building2, Trash2, Send, RefreshCw, Image as ImageIcon,
   CheckCircle2, AlertCircle, Briefcase, ClipboardList, Users as UsersIcon,
-  Filter, Upload, Download, Search, ChevronDown,
+  Filter, Upload, Download, Search, ChevronDown, UserCheck, Plane,
 } from 'lucide-react';
+import { PageHead } from '../collections/ui';
 import { api } from '../api';
+import { saveText } from '../lib/saveFile';
 import { Avatar } from './UI';
 import { notify, confirmDialog } from './Toast';
 import { VoiceTextarea, VoiceInput } from './VoiceInput';
 
-const todayStr = () => new Date().toISOString().slice(0,10);
+const todayStr = () => new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0,10);   // IST — must match the server's visit dateStr
 const fmtTime  = (d) => new Date(d).toLocaleString('en-IN', { dateStyle:'medium', timeStyle:'short' });
 const fmtDate  = (d) => new Date(d).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
 
@@ -31,11 +33,9 @@ function exportCSV(filename, headers, rows){
     return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
   };
   const csv = [headers.map(esc).join(','), ...rows.map(r => r.map(esc).join(','))].join('\n');
-  const a = document.createElement('a');
-  a.href = 'data:text/csv;charset=utf-8,﻿' + encodeURIComponent(csv);
-  a.download = filename;
-  a.click();
-  notify.success('Exported ' + rows.length + ' rows');
+  saveText('\ufeff' + csv, filename, 'text/csv;charset=utf-8')
+    .then(() => notify.success('Exported ' + rows.length + ' rows'))
+    .catch(e => notify.error('Export failed: ' + (e?.message || e)));
 }
 
 // Common pipeline statuses for leads
@@ -43,10 +43,10 @@ const LEAD_STATUSES = ['NEW','CONTACTED','QUALIFIED','NEGOTIATION','WON','LOST']
 const LEAD_COLORS   = {
   NEW:         '#a5b4fc',
   CONTACTED:   '#38bdf8',
-  QUALIFIED:   '#fbbf24',
-  NEGOTIATION: '#fb923c',
-  WON:         '#34d399',
-  LOST:        '#f87171',
+  QUALIFIED:   '#f59e0b',
+  NEGOTIATION: '#f97316',
+  WON:         '#10b981',
+  LOST:        '#ef4444',
 };
 const LEAVE_TYPES   = ['CASUAL','SICK','EARNED','UNPAID','OTHER'];
 
@@ -156,6 +156,36 @@ async function reverseGeocode(lat, lng){
   return { address:'', city:'', state:'' };
 }
 
+// GPS fix taken at submit time (check-in / check-out). `prev` is the fix the
+// hidden LocationCapture took when the card mounted:
+//   • its street address is reused when we are still within ~100 m of it, so
+//     the usual case adds no extra reverse-geocode round trip;
+//   • it is used as a fallback only if it is under two minutes old and a new
+//     fix cannot be had — an older one may be from somewhere else entirely.
+const _distM = (a, b) => {
+  const R = 6371000, r = (x) => x * Math.PI / 180;
+  const dLat = r(b.lat - a.lat), dLng = r(b.lng - a.lng);
+  const h = Math.sin(dLat/2)**2 + Math.cos(r(a.lat))*Math.cos(r(b.lat))*Math.sin(dLng/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+};
+async function freshLocation(prev){
+  const r = await getLocation();
+  if(r.lat == null){
+    const recent = prev && prev.lat != null && prev.at && (Date.now() - prev.at) < 120000;
+    return recent ? prev : { lat:null, lng:null };
+  }
+  if(prev && prev.lat != null && prev.address && _distM(prev, r) < 100){
+    return { ...prev, ...r, at: Date.now() };
+  }
+  // Don't let a slow geocoder hold the submit hostage — coordinates matter
+  // most; the address is best-effort.
+  const geo = await Promise.race([
+    reverseGeocode(r.lat, r.lng),
+    new Promise(res => setTimeout(() => res({ address:'', city:'', state:'' }), 6000)),
+  ]);
+  return { ...r, ...geo, at: Date.now() };
+}
+
 // Reusable: AUTOMATIC location capture. Fetches GPS on mount, reverse-geocodes
 // to a human address, and just shows the captured info. No manual button.
 function LocationCapture({ loc, setLoc, hidden=false }){
@@ -184,10 +214,10 @@ function LocationCapture({ loc, setLoc, hidden=false }){
     <div className="crm-loc-pill" style={{
       display:'flex', alignItems:'center', gap:8,
       padding:'8px 12px', borderRadius:7,
-      background: okay ? 'rgba(52,211,153,0.08)' : (error ? 'rgba(251,191,36,0.08)' : 'var(--bg2)'),
+      background: okay ? 'color-mix(in srgb, var(--grn) 8%, transparent)' : (error ? 'color-mix(in srgb, var(--yel) 8%, transparent)' : 'var(--bg2)'),
       border: '1px solid ' + (okay ? '#15803d' : error ? '#92400e' : 'var(--b2)'),
     }}>
-      <MapPin size={14} style={{color: okay ? '#34d399' : error ? '#fbbf24' : 'var(--t3)', flexShrink:0}}/>
+      <MapPin size={14} style={{color: okay ? 'var(--grn)' : error ? 'var(--yel)' : 'var(--t3)', flexShrink:0}}/>
       <div style={{flex:1, minWidth:0, fontSize:11, lineHeight:1.35}}>
         {busy && <span style={{color:'var(--t2)'}}>📡 Locating you…</span>}
         {!busy && okay && (
@@ -240,8 +270,8 @@ function PhotoCapture({ photo, setPhoto, label='Capture photo' }){
       <button type="button" onClick={()=>ref.current?.click()} disabled={busy} className="btn"
         style={{
           display:'inline-flex', alignItems:'center', gap:6, padding:'8px 14px',
-          background: photo ? 'rgba(52,211,153,0.10)' : 'var(--bg2)',
-          color: photo ? '#34d399' : 'var(--t1)',
+          background: photo ? 'color-mix(in srgb, var(--grn) 10%, transparent)' : 'var(--bg2)',
+          color: photo ? 'var(--grn)' : 'var(--t1)',
           border: '1px solid ' + (photo ? '#15803d' : 'var(--b2)'),
           borderRadius:7, fontSize:12, fontWeight:600,
         }}>
@@ -294,13 +324,16 @@ export function AttendancePage({ users, currentUser }){
   const [attPreview, setAttPreview] = useState(false);
   const [pendingType, setPendingType] = useState(null); // 'in' | 'out'
 
+  const loadSeq = useRef(0);   // drops a slower, older response (filter changed mid-flight)
   const load = async () => {
+    const id = ++loadSeq.current;
     setLoading(true);
     try {
       const q = isStaff && filterUser ? { userId: filterUser } : {};
       const data = await api.attListAttendance(q);
+      if(id !== loadSeq.current) return;
       setItems(data || []);
-    } catch(e){ notify.error('Load attendance: ' + e.message); }
+    } catch(e){ if(id !== loadSeq.current) return; notify.error('Load attendance: ' + e.message); }
     setLoading(false);
   };
   useEffect(()=>{ load(); }, [filterUser]);
@@ -422,17 +455,11 @@ export function AttendancePage({ users, currentUser }){
 
   return (
     <div className="fade" style={{display:'flex', flexDirection:'column', gap:14}}>
-      <div>
-        <div style={{fontSize:11, color:'var(--acc)', textTransform:'uppercase', letterSpacing:'.15em', marginBottom:4}}>CRM</div>
-        <div className="crm-page-title" style={{fontSize:22, fontWeight:700}}>Attendance</div>
-        <div className="crm-page-sub" style={{fontSize:13, color:'var(--t3)', marginTop:4}}>
-          Check in / out with selfie + GPS location.
-        </div>
-      </div>
+      <PageHead icon={Camera} tone="var(--acc)" eyebrow="CRM" title="Attendance" sub="Check in / out with selfie + GPS location." />
       {/* Punch card for the current user */}
       <div className="card">
-        <div style={{fontSize:13, fontWeight:700, marginBottom:10, display:'flex', alignItems:'center', gap:8}}>
-          <Briefcase size={14}/> Mark your attendance — {fmtDate(new Date())}
+        <div className="sec-title">
+          <span className="sec-ico" style={{'--tone':'var(--acc)'}}><Briefcase size={15}/></span> Mark your attendance — {fmtDate(new Date())}
         </div>
         {/* GPS captured silently in the background — no visible box. */}
         <LocationCapture loc={loc} setLoc={setLoc} hidden/>
@@ -457,7 +484,7 @@ export function AttendancePage({ users, currentUser }){
                 style={{width:56, height:56, borderRadius:12, objectFit:'cover', border:'2px solid #ef4444', cursor:'pointer'}}/>
             )}
             <div style={{flex:1, minWidth:120}}>
-              <div style={{fontSize:13, fontWeight:800, color: dayDone ? 'var(--t1)' : '#34d399'}}>
+              <div style={{fontSize:13, fontWeight:800, color: dayDone ? 'var(--t1)' : 'var(--grn)'}}>
                 {dayDone ? '✓ Attendance complete for today' : '● Currently checked in'}
               </div>
               <div style={{fontSize:11, color:'var(--t3)', marginTop:2}}>
@@ -499,7 +526,7 @@ export function AttendancePage({ users, currentUser }){
         {todays.length > 0 && (
           <div style={{marginTop:10, fontSize:12, color:'var(--t3)'}}>
             Today: {todays.map(t => t.type.toUpperCase() + ' @ ' + new Date(t.createdAt).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})).join('  ·  ')}
-            {lastType && <span style={{marginLeft:8, color: lastType === 'in' ? '#34d399' : '#fbbf24', fontWeight:700}}>
+            {lastType && <span style={{marginLeft:8, color: lastType === 'in' ? 'var(--grn)' : 'var(--yel)', fontWeight:700}}>
               {lastType === 'in' ? '· Currently checked in' : '· Last action was check out'}
             </span>}
           </div>
@@ -509,8 +536,8 @@ export function AttendancePage({ users, currentUser }){
       {/* History */}
       <div className="card">
         <div className="row" style={{marginBottom:10}}>
-          <div style={{fontSize:13, fontWeight:700, display:'flex', alignItems:'center', gap:6}}>
-            <Calendar size={13}/> History {items.length ? `(${items.length})` : ''}
+          <div className="sec-title" style={{marginBottom:0}}>
+            <span className="sec-ico" style={{'--tone':'var(--acc)'}}><Calendar size={15}/></span> History {items.length ? <span className="count-pill">{items.length}</span> : null}
           </div>
           <div className="spacer"/>
           {isStaff && (
@@ -549,17 +576,20 @@ export function AttendancePage({ users, currentUser }){
             {groupedHistory.map(g => (
               <div key={g.key} style={{background:'var(--bg2)', borderRadius:10, padding:'10px 12px', border:'1px solid var(--b2)'}}>
                 {/* Header: user + day */}
-                <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:8}}>
-                  <div style={{fontSize:12, fontWeight:700}}>{g.userName || g.userId}</div>
-                  <div style={{fontSize:10, color:'var(--t3)'}}>
-                    {fmtDate(new Date(g.in?.createdAt || g.out?.createdAt || g.day))}
+                <div style={{display:'flex', alignItems:'center', gap:9, marginBottom:8, minWidth:0}}>
+                  <span className="ini" style={{'--h':(g.userName || g.userId || '?').charCodeAt(0)*37%360}}>{(g.userName || g.userId || '?').replace(/[^A-Za-z0-9]/g,'').slice(0,2).toUpperCase()}</span>
+                  <div style={{minWidth:0}}>
+                    <div style={{fontSize:12, fontWeight:700, color:'var(--t1)', overflow:'hidden', textOverflow:'ellipsis'}}>{g.userName || g.userId}</div>
+                    <div style={{fontSize:10.5, color:'var(--t3)'}}>
+                      {fmtDate(new Date(g.in?.createdAt || g.out?.createdAt || g.day))}
+                    </div>
                   </div>
                 </div>
                 {/* IN + OUT side by side in ONE chip */}
                 <div style={{display:'flex', gap:10, flexWrap:'wrap'}}>
                   {['in','out'].map(type => {
                     const rec = g[type];
-                    const color = type === 'in' ? '#34d399' : '#fbbf24';
+                    const color = type === 'in' ? 'var(--grn)' : 'var(--yel)';
                     return (
                       <div key={type} style={{flex:'1 1 220px', minWidth:190, display:'flex', gap:8, padding:8,
                         borderRadius:8, background:'var(--bg1)', borderLeft:'3px solid '+(rec ? color : 'var(--b2)'),
@@ -573,7 +603,7 @@ export function AttendancePage({ users, currentUser }){
                           <div style={{fontSize:11, fontWeight:800, color}}>{type === 'in' ? 'IN' : 'OUT'}</div>
                           <div style={{fontSize:10, color:'var(--t3)'}}>{rec ? fmtTime(rec.createdAt) : '—'}</div>
                           {rec?.address && (
-                            <div title={rec.address} style={{fontSize:9, color:'#a5b4fc', marginTop:2, display:'flex', alignItems:'center', gap:3, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
+                            <div title={rec.address} style={{fontSize:9, color:'var(--acc)', marginTop:2, display:'flex', alignItems:'center', gap:3, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
                               <MapPin size={8} style={{flexShrink:0}}/> {rec.address}
                             </div>
                           )}
@@ -739,7 +769,13 @@ export function VisitsPage({ dealers, users, currentUser }){
     return ()=>document.removeEventListener('mousedown', onDoc);
   }, []);
 
+  // The user's own in-progress visit, fetched WITHOUT the date / user filters
+  // so choosing a past range (or another salesman) never hides the check-out
+  // card. undefined = not fetched (fall back to the list).
+  const [activeVisit, setActiveVisit] = useState(undefined);
+  const loadSeq = useRef(0);   // drops a slower, older response (filter changed mid-flight)
   const load = async () => {
+    const id = ++loadSeq.current;
     setLoading(true);
     try {
       const q = isStaff && filterUser ? { userId: filterUser } : {};
@@ -749,9 +785,18 @@ export function VisitsPage({ dealers, users, currentUser }){
       // was pulling 500 visits WITH their photos — 85 MB and 83 seconds — to
       // render five cards. Photos for the handful actually on screen are
       // fetched below, on demand.
-      const data = await api.visitsList({ ...q, light: 1 });
+      // The server has no status filter, but it allows only ONE open visit per
+      // user, so it is always among that user's most recent visits.
+      const [data, mine] = await Promise.all([
+        api.visitsList({ ...q, light: 1 }),
+        api.visitsList({ userId: currentUser.id, limit: 10, light: 1 }).catch(() => null),
+      ]);
+      if(id !== loadSeq.current) return;
       setItems(data || []);
-    } catch(e){ notify.error('Load visits: ' + e.message); }
+      setActiveVisit(Array.isArray(mine)
+        ? (mine.find(v => v.status === 'in-progress' && v.userId === currentUser.id) || null)
+        : undefined);
+    } catch(e){ if(id !== loadSeq.current) return; notify.error('Load visits: ' + e.message); }
     setLoading(false);
   };
   useEffect(()=>{ load(); }, [filterUser, fromDate, toDate]);
@@ -843,7 +888,9 @@ export function VisitsPage({ dealers, users, currentUser }){
   };
 
   // Active visit (in-progress) belonging to the current user
-  const myActive = items.find(v => v.status === 'in-progress' && v.userId === currentUser.id);
+  const myActive = activeVisit !== undefined
+    ? activeVisit
+    : items.find(v => v.status === 'in-progress' && v.userId === currentUser.id);
 
   // Today's visits for current user — used for the day-total card
   const today = todayStr();
@@ -891,6 +938,11 @@ export function VisitsPage({ dealers, users, currentUser }){
     if(!ciPurpose){ notify.error('Pick a Purpose of Visit'); return; }
     if(!ciPhoto){ notify.error('Capture a check-in photo first'); return; }
     setCiBusy(true);
+    // GPS at the moment of check-in, not from when this card mounted — a
+    // salesman who opened Visits at the office would otherwise check in (and
+    // stamp the dealer's location) with the office coordinates.
+    const loc = await freshLocation(ciLoc).catch(() => ({ lat:null, lng:null }));
+    setCiLoc(loc);
     // If user is logging a brand-new dealer, there's no match — keep dealerId empty.
     const match = ciNewDealerMode
       ? null
@@ -905,11 +957,11 @@ export function VisitsPage({ dealers, users, currentUser }){
         // see the reason inline too.
         note:       ciNote ? `[${ciPurpose}] ${ciNote}` : `[${ciPurpose}]`,
         photo:      ciPhoto,
-        lat:        ciLoc.lat,
-        lng:        ciLoc.lng,
-        address:    ciLoc.address || '',
-        city:       ciLoc.city    || '',
-        state:      ciLoc.state   || '',
+        lat:        loc.lat,
+        lng:        loc.lng,
+        address:    loc.address || '',
+        city:       loc.city    || '',
+        state:      loc.state   || '',
       });
       notify.success('Checked in — visit started');
       setCiDealer(''); setCiNote(''); setCiPhoto(''); setCiPurpose('');
@@ -949,15 +1001,17 @@ export function VisitsPage({ dealers, users, currentUser }){
     if(!coNote || !coNote.trim()){ notify.error('Discussion notes are required at check-out'); return; }
     if(!coPhoto){ notify.error('Capture a check-out photo first'); return; }
     setCoBusy(true);
+    // Fresh GPS at check-out time (see checkIn).
+    const loc = await freshLocation(coLoc).catch(() => ({ lat:null, lng:null }));
     try {
       await api.visitsCheckout(myActive._id, {
         photo: coPhoto,
         note:  coNote,
-        lat:   coLoc.lat,
-        lng:   coLoc.lng,
-        address: coLoc.address || '',
-        city:    coLoc.city    || '',
-        state:   coLoc.state   || '',
+        lat:   loc.lat,
+        lng:   loc.lng,
+        address: loc.address || '',
+        city:    loc.city    || '',
+        state:   loc.state   || '',
       });
       notify.success('Checked out — visit completed');
       setCoNote(''); setCoPhoto(''); setCoLoc({ lat:null, lng:null });
@@ -995,13 +1049,7 @@ export function VisitsPage({ dealers, users, currentUser }){
 
   return (
     <div className="fade" style={{display:'flex', flexDirection:'column', gap:14}}>
-      <div>
-        <div style={{fontSize:11, color:'var(--acc)', textTransform:'uppercase', letterSpacing:'.15em', marginBottom:4}}>CRM</div>
-        <div className="crm-page-title" style={{fontSize:22, fontWeight:700}}>Visits</div>
-        <div className="crm-page-sub" style={{fontSize:13, color:'var(--t3)', marginTop:4}}>
-          Check in to a party, do the meeting, then check out with your discussion notes.
-        </div>
-      </div>
+      <PageHead icon={ClipboardList} tone="var(--acc)" eyebrow="CRM" title="Visits" sub="Check in to a party, do the meeting, then check out with your discussion notes." />
 
       {/* Today summary */}
       <div className="card" style={{display:'flex', alignItems:'center', gap:14, flexWrap:'wrap'}}>
@@ -1029,17 +1077,15 @@ export function VisitsPage({ dealers, users, currentUser }){
 
       {/* Active visit — show check-out card */}
       {myActive ? (
-        <div className="card crm-checkin" style={{borderColor:'#fbbf24', borderRadius:18}}>
+        <div className="card crm-checkin" style={{borderColor:'var(--yel)', borderRadius:18}}>
           <style>{`
             .crm-checkin textarea, .crm-checkin input.inp, .crm-checkin select.inp {
               border-radius: 13px !important; transition: border-color .15s ease, box-shadow .15s ease;
             }
-            .crm-checkin textarea:focus { border-color:var(--acc); box-shadow:0 0 0 3px rgba(99,102,241,0.18); outline:none; }
+            .crm-checkin textarea:focus { border-color:var(--acc); box-shadow:0 0 0 3px color-mix(in srgb, var(--acc) 18%, transparent); outline:none; }
           `}</style>
-          <div style={{fontSize:14, fontWeight:800, marginBottom:6, display:'flex', alignItems:'center', gap:8, color:'var(--yel)'}}>
-            <span style={{width:30, height:30, borderRadius:'50%', background:'rgba(251,191,36,0.15)', display:'inline-flex', alignItems:'center', justifyContent:'center'}}>
-              <ClipboardList size={15}/>
-            </span>
+          <div className="sec-title" style={{marginBottom:6}}>
+            <span className="sec-ico" style={{'--tone':'var(--yel)'}}><ClipboardList size={15}/></span>
             Currently visiting · {myActive.dealerName}
           </div>
           <div style={{fontSize:11, color:'var(--t3)', marginBottom:12}}>
@@ -1047,7 +1093,7 @@ export function VisitsPage({ dealers, users, currentUser }){
             {myActive.checkInAddress ? ' · ' + myActive.checkInAddress : ''}
           </div>
           <div style={{display:'flex', flexDirection:'column', gap:8}}>
-            <div style={coMissing ? { borderRadius:13, boxShadow:'0 0 0 2px #f87171' } : undefined}>
+            <div style={coMissing ? { borderRadius:13, boxShadow:'0 0 0 2px var(--red)' } : undefined}>
               <VoiceTextarea
                 placeholder="REQUIRED: what was discussed in the meeting…"
                 value={coNote}
@@ -1058,7 +1104,7 @@ export function VisitsPage({ dealers, users, currentUser }){
               <div style={{fontSize:11, color:'var(--red)', marginTop:-4}}>Discussion notes are required to check out</div>
             )}
             {/* GPS captured silently — box hidden. */}
-            <LocationCapture loc={coLoc} setLoc={setCoLoc} hidden/>
+            <LocationCapture loc={coLoc} setLoc={l=>setCoLoc({ ...l, at:Date.now() })} hidden/>
             {/* Hidden camera — the Check-out button opens it directly. */}
             <input ref={coCamRef} type="file" accept="image/*" capture="environment"
               style={{display:'none'}} onChange={onCoPhotoPicked}/>
@@ -1091,15 +1137,13 @@ export function VisitsPage({ dealers, users, currentUser }){
             }
             .crm-checkin input.inp:focus, .crm-checkin select.inp:focus, .crm-checkin textarea:focus {
               border-color: var(--acc);
-              box-shadow: 0 0 0 3px rgba(99,102,241,0.18);
+              box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 18%, transparent);
               outline: none;
             }
             .crm-checkin .btnp { border-radius: 14px; }
           `}</style>
-          <div style={{fontSize:14, fontWeight:800, marginBottom:12, display:'flex', alignItems:'center', gap:8}}>
-            <span style={{width:30, height:30, borderRadius:'50%', background:'rgba(99,102,241,0.15)', display:'inline-flex', alignItems:'center', justifyContent:'center'}}>
-              <IconIn size={15} style={{color:'var(--acc)'}}/>
-            </span>
+          <div className="sec-title">
+            <span className="sec-ico" style={{'--tone':'#0891b2'}}><IconIn size={15}/></span>
             Check in to a party
           </div>
           <div style={{display:'flex', flexDirection:'column', gap:8}}>
@@ -1124,12 +1168,12 @@ export function VisitsPage({ dealers, users, currentUser }){
                       style={{
                         display:'inline-flex', alignItems:'center', gap:6,
                         padding:'6px 10px', borderRadius:18,
-                        background: ciDealer === d.name ? 'rgba(52,211,153,0.18)' : 'var(--bg1)',
-                        color:      ciDealer === d.name ? '#34d399' : 'var(--t1)',
+                        background: ciDealer === d.name ? 'color-mix(in srgb, var(--grn) 18%, transparent)' : 'var(--bg1)',
+                        color:      ciDealer === d.name ? 'var(--grn)' : 'var(--t1)',
                         border: '1px solid ' + (ciDealer === d.name ? '#15803d' : 'var(--b2)'),
                         cursor:'pointer', fontSize:11, fontWeight:600,
                       }}>
-                      <MapPin size={11} style={{flexShrink:0, color: m != null ? '#34d399' : '#a5b4fc'}}/>
+                      <MapPin size={11} style={{flexShrink:0, color: m != null ? 'var(--grn)' : 'var(--acc)'}}/>
                       <span style={{maxWidth:180, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{d.name}</span>
                       {m != null && (
                         <span style={{fontSize:9, color:'var(--t3)', fontWeight:500}}>{fmtMeters(m)}</span>
@@ -1160,7 +1204,7 @@ export function VisitsPage({ dealers, users, currentUser }){
                 style={{
                   flex:1, minWidth:120,
                   padding:'9px 12px', borderRadius:11, fontSize:12.5, fontWeight:700, cursor:'pointer',
-                  background: ciNewDealerMode ? '#fbbf24' : 'transparent',
+                  background: ciNewDealerMode ? 'var(--yel)' : 'transparent',
                   border: 'none',
                   color: ciNewDealerMode ? '#111' : 'var(--t2)',
                   transition:'all .15s ease',
@@ -1173,7 +1217,7 @@ export function VisitsPage({ dealers, users, currentUser }){
               <input className="inp" placeholder="Type new dealer / party name"
                 value={ciDealer}
                 onChange={e=>{ setCiDealer(e.target.value); if(ciMissing.dealer) setCiMissing(m=>({...m, dealer:false})); }}
-                style={ciMissing.dealer ? { borderColor:'#f87171', boxShadow:'0 0 0 1px #f87171' } : undefined}
+                style={ciMissing.dealer ? { borderColor:'var(--red)', boxShadow:'0 0 0 1px var(--red)' } : undefined}
                 autoFocus/>
             ) : (
               <div ref={ciDealerRef} style={{position:'relative'}}>
@@ -1182,7 +1226,7 @@ export function VisitsPage({ dealers, users, currentUser }){
                     value={ciDealer}
                     onChange={e=>{ setCiDealer(e.target.value); setCiDealerOpen(true); if(ciMissing.dealer) setCiMissing(m=>({...m, dealer:false})); }}
                     onFocus={()=>setCiDealerOpen(true)}
-                    style={{width:'100%', ...(ciMissing.dealer ? { borderColor:'#f87171', boxShadow:'0 0 0 2px #f87171' } : {})}}/>
+                    style={{width:'100%', ...(ciMissing.dealer ? { borderColor:'var(--red)', boxShadow:'0 0 0 2px var(--red)' } : {})}}/>
                   {ciDealer && (
                     <button type="button" title="Clear"
                       onClick={()=>{ setCiDealer(''); setCiDealerOpen(true); }}
@@ -1234,7 +1278,7 @@ export function VisitsPage({ dealers, users, currentUser }){
             {/* Purpose of Visit — required */}
             <select className="inp" value={ciPurpose}
               onChange={e=>{ setCiPurpose(e.target.value); if(ciMissing.purpose) setCiMissing(m=>({...m, purpose:false})); }}
-              style={ciMissing.purpose ? { borderColor:'#f87171', boxShadow:'0 0 0 1px #f87171' } : undefined}>
+              style={ciMissing.purpose ? { borderColor:'var(--red)', boxShadow:'0 0 0 1px var(--red)' } : undefined}>
               <option value="">— Purpose of Visit —</option>
               {VISIT_PURPOSES.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
@@ -1245,7 +1289,7 @@ export function VisitsPage({ dealers, users, currentUser }){
             <VoiceTextarea placeholder="Quick note (optional)"
               value={ciNote} onChange={setCiNote} rows={3}/>
             {/* GPS is captured silently in the background — box hidden. */}
-            <LocationCapture loc={ciLoc} setLoc={setCiLoc} hidden/>
+            <LocationCapture loc={ciLoc} setLoc={l=>setCiLoc({ ...l, at:Date.now() })} hidden/>
             {/* Hidden camera — the Check-in button opens it directly. */}
             <input ref={ciCamRef} type="file" accept="image/*" capture="environment"
               style={{display:'none'}} onChange={onCiPhotoPicked}/>
@@ -1256,8 +1300,8 @@ export function VisitsPage({ dealers, users, currentUser }){
                 display:'inline-flex', alignItems:'center', justifyContent:'center', gap:8, width:'100%',
                 padding:'14px', borderRadius:15, border:'none', cursor:'pointer',
                 fontSize:15, fontWeight:800, color:'#fff', marginTop:2,
-                background:'linear-gradient(135deg, #6366f1, #818cf8)',
-                boxShadow:'0 8px 22px rgba(99,102,241,0.35)',
+                background:'linear-gradient(135deg, var(--acc), var(--acc))',
+                boxShadow:'0 8px 22px color-mix(in srgb, var(--acc) 35%, transparent)',
                 opacity: (ciBusy || !ciDealer.trim() || !ciPurpose) ? 0.55 : 1,
                 transition:'opacity .15s ease, transform .1s ease',
               }}
@@ -1273,8 +1317,8 @@ export function VisitsPage({ dealers, users, currentUser }){
       {/* History */}
       <div className="card">
         <div className="row" style={{marginBottom:10, flexWrap:'wrap', gap:8}}>
-          <div style={{fontSize:13, fontWeight:700, display:'flex', alignItems:'center', gap:6}}>
-            <Calendar size={13}/> Visit history {items.length ? `(${items.length})` : ''}
+          <div className="sec-title" style={{marginBottom:0}}>
+            <span className="sec-ico" style={{'--tone':'#0891b2'}}><Calendar size={15}/></span> Visit history {items.length ? <span className="count-pill">{items.length}</span> : null}
           </div>
           <div className="spacer"/>
           {/* ── Date range ─────────────────────────────────────────────── */}
@@ -1284,11 +1328,7 @@ export function VisitsPage({ dealers, users, currentUser }){
               return (
                 <button key={p.label} type="button"
                   onClick={()=>{ if(on){ clearDates(); } else { setFromDate(p.from); setToDate(p.to); } }}
-                  className="btn"
-                  style={{padding:'4px 9px', fontSize:11,
-                    color: on ? 'var(--acc)' : 'var(--t3)',
-                    borderColor: on ? 'var(--acc)' : undefined,
-                    background: on ? 'var(--accL)' : undefined}}>
+                  className={'thr'+(on?' on':'')} style={{'--tone':'var(--acc)'}}>
                   {p.label}
                 </button>
               );
@@ -1498,17 +1538,13 @@ export function VisitsPage({ dealers, users, currentUser }){
               return s;
             };
             const csv = '﻿' + rows.map(r => r.map(csvCell).join(',')).join('\r\n');
-            const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
-            const url  = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
             // Name the file after the active range so successive exports of
             // different periods don't collide in the downloads folder.
-            a.download = dateFilterOn
+            const fname = dateFilterOn
               ? `Visits_${fromDate || 'start'}_to_${toDate || todayStr()}.csv`
               : `Visits_${todayStr()}.csv`;
-            document.body.appendChild(a); a.click(); a.remove();
-            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            saveText(csv, fname, 'text/csv;charset=utf-8')
+              .catch(e => notify.error('Export failed: ' + (e?.message || e)));
           }} className="btn" title="Export grouped Visit Report as Excel"
             style={{padding:'4px 10px', fontSize:11, display:'inline-flex', alignItems:'center', gap:4}}>
             <Download size={11}/> Export
@@ -1563,19 +1599,24 @@ export function VisitsPage({ dealers, users, currentUser }){
                   display:'flex', flexDirection:'column', gap:8, padding:'12px 14px',
                   background:'var(--bg2)', borderRadius:14,
                   border:'1px solid var(--b2)',
-                  borderLeft:'3px solid ' + (v.status === 'in-progress' ? '#fbbf24' : '#34d399'),
+                  borderLeft:'3px solid ' + (v.status === 'in-progress' ? 'var(--yel)' : 'var(--grn)'),
                 }}>
                   {/* Header line */}
                   <div style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
-                    <div style={{fontSize:13, fontWeight:700}}>{v.dealerName}</div>
-                    <span style={{fontSize:10, color:'var(--t3)'}}>by {v.userName || v.userId}</span>
+                    <div style={{display:'flex', alignItems:'center', gap:9, minWidth:0}}>
+                      <span className="ini" style={{'--h':(v.dealerName||'?').charCodeAt(0)*37%360}}>{(v.dealerName||'?').replace(/[^A-Za-z0-9]/g,'').slice(0,2).toUpperCase()}</span>
+                      <div style={{minWidth:0}}>
+                        <div style={{fontSize:13, fontWeight:700, color:'var(--t1)', overflow:'hidden', textOverflow:'ellipsis'}}>{v.dealerName}</div>
+                        <div style={{fontSize:10.5, color:'var(--t3)'}}>by {v.userName || v.userId}</div>
+                      </div>
+                    </div>
                     <span style={{
-                      fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:3,
-                      background: v.status==='in-progress' ? 'rgba(251,191,36,0.15)' : 'rgba(52,211,153,0.15)',
-                      color:      v.status==='in-progress' ? '#fbbf24' : '#34d399',
+                      fontSize:9, fontWeight:700, padding:'2px 8px', borderRadius:20,
+                      background: v.status==='in-progress' ? 'color-mix(in srgb, var(--yel) 15%, transparent)' : 'color-mix(in srgb, var(--grn) 15%, transparent)',
+                      color:      v.status==='in-progress' ? 'var(--yel)' : 'var(--grn)',
                     }}>{v.status === 'in-progress' ? 'IN PROGRESS' : 'COMPLETED'}</span>
                     {v.status === 'completed' && autoClosed && (
-                      <span style={{fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:3, background:'rgba(148,163,184,0.15)', color:'#94a3b8'}}
+                      <span style={{fontSize:9, fontWeight:700, padding:'2px 8px', borderRadius:20, background:'var(--bg3)', color:'var(--t3)'}}
                         title="Closed without a check-out (forgot to check out / reset by admin)">AUTO-CLOSED</span>
                     )}
                     <span style={{marginLeft:'auto', fontSize:11, color:'var(--t2)', fontWeight:700}}>
@@ -1626,7 +1667,7 @@ export function VisitsPage({ dealers, users, currentUser }){
 
                   {/* Addresses */}
                   {(inAddr || outAddr) && (
-                    <div style={{fontSize:10, color:'#a5b4fc', display:'flex', flexDirection:'column', gap:2}}>
+                    <div style={{fontSize:10, color:'var(--acc)', display:'flex', flexDirection:'column', gap:2}}>
                       {inAddr  && <span><MapPin size={9} style={{display:'inline'}}/> In:  {inAddr}</span>}
                       {outAddr && <span><MapPin size={9} style={{display:'inline'}}/> Out: {outAddr}</span>}
                     </div>
@@ -1639,7 +1680,7 @@ export function VisitsPage({ dealers, users, currentUser }){
                           the salesman can start fresh. */}
                       {isSuper && v.status === 'in-progress' && (
                         <button onClick={()=>forceCloseVisit(v._id)} title="Force-close this stuck visit so the salesman can check in again"
-                          style={{background:'none', border:'1px solid #fbbf24', borderRadius:6, color:'var(--yel)', cursor:'pointer', padding:'4px 10px', fontSize:11, display:'inline-flex', alignItems:'center', gap:4}}>
+                          style={{background:'none', border:'1px solid var(--yel)', borderRadius:6, color:'var(--yel)', cursor:'pointer', padding:'4px 10px', fontSize:11, display:'inline-flex', alignItems:'center', gap:4}}>
                           <RefreshCw size={11}/> Reset / Force close
                         </button>
                       )}
@@ -1678,7 +1719,7 @@ export function VisitsPage({ dealers, users, currentUser }){
             }}>
             {/* Header */}
             <div style={{display:'flex', alignItems:'center', gap:8}}>
-              <div style={{width:30, height:30, borderRadius:'50%', background:'rgba(99,102,241,0.15)',
+              <div style={{width:30, height:30, borderRadius:'50%', background:'color-mix(in srgb, var(--acc) 15%, transparent)',
                 display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0}}>
                 <Camera size={15} style={{color:'var(--acc)'}}/>
               </div>
@@ -1702,7 +1743,7 @@ export function VisitsPage({ dealers, users, currentUser }){
                     overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{ciDealer || '—'}</div>
                   {ciPurpose && (
                     <div style={{marginTop:4, display:'inline-flex', alignItems:'center', gap:5,
-                      background:'rgba(99,102,241,0.9)', color:'#fff', fontSize:10, fontWeight:700,
+                      background:'color-mix(in srgb, var(--acc) 90%, transparent)', color:'#fff', fontSize:10, fontWeight:700,
                       padding:'2px 9px', borderRadius:999}}>{ciPurpose}</div>
                   )}
                 </div>
@@ -1791,6 +1832,7 @@ function _LeadsBody({ users, currentUser, isStaff }){
   const [showForm, setShowForm]         = useState(false);
   const [editing, setEditing]           = useState(null); // lead being viewed/updated
   const [bulkBusy, setBulkBusy]         = useState(false);
+  const [busy, setBusy]                 = useState(false);   // create in flight — blocks a double tap
   const bulkFileRef = useRef(null);
 
   // Form state for create
@@ -1811,11 +1853,9 @@ function _LeadsBody({ users, currentUser, isStaff }){
     ];
     const esc = v => { const s=String(v??''); return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; };
     const csv = [headers.map(esc).join(','), ...sample.map(r=>r.map(esc).join(','))].join('\n');
-    const a = document.createElement('a');
-    a.href = 'data:text/csv;charset=utf-8,﻿' + encodeURIComponent(csv);
-    a.download = 'Leads_Template.csv';
-    a.click();
-    notify.info('Template downloaded. Fill it and click "Upload Leads".');
+    saveText('\ufeff' + csv, 'Leads_Template.csv', 'text/csv;charset=utf-8')
+      .then(() => notify.info('Template downloaded. Fill it and click "Upload Leads".'))
+      .catch(e => notify.error('Download failed: ' + (e?.message || e)));
   };
   const onBulkFile = async (e) => {
     const f = e.target.files?.[0];
@@ -1846,7 +1886,9 @@ function _LeadsBody({ users, currentUser, isStaff }){
   useEffect(()=>{ load(); }, [filterStatus, filterUser]);
 
   const submit = async () => {
+    if(busy) return;
     if(!form.name.trim()){ notify.error('Name required'); return; }
+    setBusy(true);
     try {
       await api.leadsCreate(form);
       notify.success('Lead created');
@@ -1854,6 +1896,7 @@ function _LeadsBody({ users, currentUser, isStaff }){
       setShowForm(false);
       load();
     } catch(e){ notify.error('Create: ' + e.message); }
+    finally { setBusy(false); }
   };
 
   const removeLead = async (id) => {
@@ -1865,17 +1908,11 @@ function _LeadsBody({ users, currentUser, isStaff }){
 
   return (
     <div className="fade" style={{display:'flex', flexDirection:'column', gap:14}}>
-      <div>
-        <div style={{fontSize:11, color:'var(--acc)', textTransform:'uppercase', letterSpacing:'.15em', marginBottom:4}}>CRM</div>
-        <div className="crm-page-title" style={{fontSize:22, fontWeight:700}}>Leads</div>
-        <div className="crm-page-sub" style={{fontSize:13, color:'var(--t3)', marginTop:4}}>
-          {isStaff ? 'Create leads, assign to salesmen, track the pipeline.' : 'Leads assigned to you. Update status as you progress.'}
-        </div>
-      </div>
+      <PageHead icon={UserCheck} tone="var(--acc)" eyebrow="CRM" title="Leads" sub={isStaff ? 'Create leads, assign to salesmen, track the pipeline.' : 'Leads assigned to you. Update status as you progress.'} />
       <div className="card">
         <div className="row" style={{marginBottom:10}}>
-          <div style={{fontSize:13, fontWeight:700, display:'flex', alignItems:'center', gap:6}}>
-            <UsersIcon size={14}/> Leads {items.length ? `(${items.length})` : ''}
+          <div className="sec-title" style={{marginBottom:0}}>
+            <span className="sec-ico" style={{'--tone':'var(--acc)'}}><UsersIcon size={15}/></span> Leads {items.length ? <span className="count-pill">{items.length}</span> : null}
           </div>
           <div className="spacer"/>
           <select className="inp" value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}
@@ -1905,7 +1942,7 @@ function _LeadsBody({ users, currentUser, isStaff }){
                 title="Bulk-upload leads from CSV / Excel"
                 style={{
                   display:'inline-flex', alignItems:'center', gap:4, padding:'4px 10px', fontSize:11,
-                  background:'rgba(52,211,153,0.10)', color:'var(--grn)', border:'1px solid #15803d',
+                  background:'color-mix(in srgb, var(--grn) 10%, transparent)', color:'var(--grn)', border:'1px solid #15803d',
                 }}>
                 <Upload size={11}/> {bulkBusy ? 'Uploading…' : 'Upload Leads'}
               </button>
@@ -1971,8 +2008,8 @@ function _LeadsBody({ users, currentUser, isStaff }){
             </div>
             <div style={{display:'flex', justifyContent:'flex-end', gap:8, marginTop:10}}>
               <button onClick={()=>setShowForm(false)} className="btn" style={{fontSize:12}}>Cancel</button>
-              <button onClick={submit} className="btnp" style={{display:'inline-flex', alignItems:'center', gap:6, fontSize:12}}>
-                <Plus size={12}/> Create
+              <button onClick={submit} disabled={busy} className="btnp" style={{display:'inline-flex', alignItems:'center', gap:6, fontSize:12}}>
+                <Plus size={12}/> {busy ? 'Creating…' : 'Create'}
               </button>
             </div>
           </div>
@@ -1991,10 +2028,15 @@ function _LeadsBody({ users, currentUser, isStaff }){
                   borderLeft:'3px solid ' + color,
                 }}>
                   <div style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
-                    <div style={{fontSize:13, fontWeight:700}}>{L.name}</div>
-                    {L.company && <span style={{fontSize:11, color:'var(--t3)'}}>· {L.company}</span>}
+                    <div style={{display:'flex', alignItems:'center', gap:9, minWidth:0}}>
+                      <span className="ini" style={{'--h':(L.name||'?').charCodeAt(0)*37%360}}>{(L.name||'?').replace(/[^A-Za-z0-9]/g,'').slice(0,2).toUpperCase()}</span>
+                      <div style={{minWidth:0}}>
+                        <div style={{fontSize:13, fontWeight:700, color:'var(--t1)', overflow:'hidden', textOverflow:'ellipsis'}}>{L.name}</div>
+                        {L.company && <div style={{fontSize:10.5, color:'var(--t3)'}}>{L.company}</div>}
+                      </div>
+                    </div>
                     <span style={{
-                      fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:3,
+                      fontSize:9, fontWeight:700, padding:'2px 8px', borderRadius:20,
                       background:color + '22', color,
                     }}>{L.status}</span>
                     <div style={{flex:1}}/>
@@ -2146,7 +2188,7 @@ function LeadDetailModal({ lead, users, currentUser, isStaff, onClose, onSaved, 
               {LEAD_STATUSES.map(s => <option key={s} value={s}>Set: {s}</option>)}
             </select>
             <div style={{flex:1}}/>
-            {isStaff && <button onClick={onDelete} className="btn" style={{color:'var(--red)', border:'1px solid #7f1d1d', fontSize:12, display:'inline-flex', alignItems:'center', gap:4}}><Trash2 size={11}/> Delete</button>}
+            {isStaff && <button onClick={onDelete} className="btn" style={{color:'var(--red)', border:'1px solid color-mix(in srgb, var(--red) 45%, transparent)', fontSize:12, display:'inline-flex', alignItems:'center', gap:4}}><Trash2 size={11}/> Delete</button>}
             <button onClick={save} disabled={busy} className="btnp" style={{display:'inline-flex', alignItems:'center', gap:6}}>
               <Send size={12}/> {busy ? 'Saving…' : 'Save'}
             </button>
@@ -2183,6 +2225,7 @@ function _LeavesBody({ users, currentUser, isStaff }){
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ fromDate:todayStr(), toDate:todayStr(), leaveType:'CASUAL', reason:'' });
   const [filterUser, setFilterUser] = useState('');
+  const [busy, setBusy] = useState(false);   // apply in flight — blocks a double tap
 
   const load = async () => {
     setLoading(true);
@@ -2196,8 +2239,10 @@ function _LeavesBody({ users, currentUser, isStaff }){
   useEffect(()=>{ load(); }, [filterUser]);
 
   const apply = async () => {
+    if(busy) return;
     if(!form.fromDate || !form.toDate){ notify.error('Pick from/to dates'); return; }
     if(form.toDate < form.fromDate){ notify.error('To date is before From date'); return; }
+    setBusy(true);
     try {
       await api.leavesApply(form);
       notify.success('Leave application sent');
@@ -2205,6 +2250,7 @@ function _LeavesBody({ users, currentUser, isStaff }){
       setShowForm(false);
       load();
     } catch(e){ notify.error(e.message); }
+    finally { setBusy(false); }
   };
 
   const review = async (l, status) => {
@@ -2218,17 +2264,11 @@ function _LeavesBody({ users, currentUser, isStaff }){
 
   return (
     <div className="fade" style={{display:'flex', flexDirection:'column', gap:14}}>
-      <div>
-        <div style={{fontSize:11, color:'var(--acc)', textTransform:'uppercase', letterSpacing:'.15em', marginBottom:4}}>CRM</div>
-        <div className="crm-page-title" style={{fontSize:22, fontWeight:700}}>Leaves</div>
-        <div className="crm-page-sub" style={{fontSize:13, color:'var(--t3)', marginTop:4}}>
-          {isStaff ? 'Approve / reject leave applications.' : 'Apply for leave and track approval status.'}
-        </div>
-      </div>
+      <PageHead icon={Plane} tone="var(--acc)" eyebrow="CRM" title="Leaves" sub={isStaff ? 'Approve / reject leave applications.' : 'Apply for leave and track approval status.'} />
       <div className="card">
         <div className="row" style={{marginBottom:10}}>
-          <div style={{fontSize:13, fontWeight:700, display:'flex', alignItems:'center', gap:6}}>
-            <Calendar size={13}/> Leave applications {items.length ? `(${items.length})` : ''}
+          <div className="sec-title" style={{marginBottom:0}}>
+            <span className="sec-ico" style={{'--tone':'var(--acc)'}}><Calendar size={15}/></span> Leave applications {items.length ? <span className="count-pill">{items.length}</span> : null}
           </div>
           <div className="spacer"/>
           {isStaff && (
@@ -2292,8 +2332,8 @@ function _LeavesBody({ users, currentUser, isStaff }){
             </div>
             <div style={{display:'flex', justifyContent:'flex-end', gap:8, marginTop:10}}>
               <button onClick={()=>setShowForm(false)} className="btn" style={{fontSize:12}}>Cancel</button>
-              <button onClick={apply} className="btnp" style={{display:'inline-flex', alignItems:'center', gap:6, fontSize:12}}>
-                <Send size={12}/> Submit
+              <button onClick={apply} disabled={busy} className="btnp" style={{display:'inline-flex', alignItems:'center', gap:6, fontSize:12}}>
+                <Send size={12}/> {busy ? 'Submitting…' : 'Submit'}
               </button>
             </div>
           </div>
@@ -2304,10 +2344,10 @@ function _LeavesBody({ users, currentUser, isStaff }){
         ) : (
           <div style={{display:'flex', flexDirection:'column', gap:8, maxHeight:540, overflowY:'auto'}}>
             {items.map(l => {
-              const statusColor = l.status === 'APPROVED' ? '#34d399'
-                                : l.status === 'REJECTED' ? '#f87171'
-                                : l.status === 'CANCELLED' ? '#94a3b8'
-                                : '#fbbf24';
+              const statusColor = l.status === 'APPROVED' ? 'var(--grn)'
+                                : l.status === 'REJECTED' ? 'var(--red)'
+                                : l.status === 'CANCELLED' ? 'var(--t3)'
+                                : 'var(--yel)';
               return (
                 <div key={l._id} style={{
                   display:'flex', alignItems:'flex-start', gap:10, padding:'10px 12px',
@@ -2316,9 +2356,14 @@ function _LeavesBody({ users, currentUser, isStaff }){
                 }}>
                   <div style={{flex:1}}>
                     <div style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
-                      <span style={{fontSize:13, fontWeight:700}}>{l.userName || l.userId}</span>
-                      <span style={{fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:3, background:statusColor+'22', color:statusColor}}>{l.status}</span>
-                      <span style={{fontSize:10, color:'var(--t3)'}}>{l.leaveType}</span>
+                      <div style={{display:'flex', alignItems:'center', gap:9, minWidth:0}}>
+                        <span className="ini" style={{'--h':(l.userName || l.userId || '?').charCodeAt(0)*37%360}}>{(l.userName || l.userId || '?').replace(/[^A-Za-z0-9]/g,'').slice(0,2).toUpperCase()}</span>
+                        <div style={{minWidth:0}}>
+                          <div style={{fontSize:13, fontWeight:700, color:'var(--t1)', overflow:'hidden', textOverflow:'ellipsis'}}>{l.userName || l.userId}</div>
+                          <div style={{fontSize:10.5, color:'var(--t3)'}}>{l.leaveType}</div>
+                        </div>
+                      </div>
+                      <span style={{fontSize:9, fontWeight:700, padding:'2px 8px', borderRadius:20, background:`color-mix(in srgb, ${statusColor} 14%, transparent)`, color:statusColor}}>{l.status}</span>
                     </div>
                     <div style={{fontSize:12, color:'var(--t2)', marginTop:4}}>
                       {l.fromDate} → {l.toDate}
@@ -2329,7 +2374,7 @@ function _LeavesBody({ users, currentUser, isStaff }){
                       const ap = users[l.userId]?.approver;
                       const apName = ap ? (users[ap]?.name || ap) : null;
                       return apName && l.status === 'PENDING' ? (
-                        <div style={{fontSize:10, color:'#a5b4fc', marginTop:4}}>
+                        <div style={{fontSize:10, color:'var(--acc)', marginTop:4}}>
                           Waiting on approver: {apName}
                         </div>
                       ) : null;
@@ -2343,11 +2388,11 @@ function _LeavesBody({ users, currentUser, isStaff }){
                   {isStaff && l.status === 'PENDING' && (
                     <div style={{display:'flex', gap:4}}>
                       <button onClick={()=>review(l,'APPROVED')} className="btn" title="Approve"
-                        style={{background:'rgba(52,211,153,0.10)', color:'var(--grn)', border:'1px solid #15803d', padding:'4px 8px', fontSize:11}}>
+                        style={{background:'color-mix(in srgb, var(--grn) 10%, transparent)', color:'var(--grn)', border:'1px solid #15803d', padding:'4px 8px', fontSize:11}}>
                         <CheckCircle2 size={11}/>
                       </button>
                       <button onClick={()=>review(l,'REJECTED')} className="btn" title="Reject"
-                        style={{background:'rgba(248,113,113,0.10)', color:'var(--red)', border:'1px solid #7f1d1d', padding:'4px 8px', fontSize:11}}>
+                        style={{background:'color-mix(in srgb, var(--red) 10%, transparent)', color:'var(--red)', border:'1px solid color-mix(in srgb, var(--red) 45%, transparent)', padding:'4px 8px', fontSize:11}}>
                         <X size={11}/>
                       </button>
                     </div>

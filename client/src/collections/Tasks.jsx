@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ClipboardList, Check, X, MessageSquare, ClipboardCheck } from 'lucide-react';
 import { col } from './api';
-import { useLoad, PageHead, Card, Table, Pager, Badge, Busy, ErrorBox, num, fmtDate, DealerLink, userName, useDealerCtx, title, today, CardRow, monthCols, MonthKVs } from './ui';
+import { useLoad, PageHead, Card, Table, Pager, Badge, Busy, ErrorBox, num, money, fmtDate, DealerLink, userName, useDealerCtx, title, today, CardRow, monthCols, MonthKVs } from './ui';
 import { TaskForm } from './forms';
 import { CompleteTask } from './Today';
 

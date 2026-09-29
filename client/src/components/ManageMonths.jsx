@@ -2,12 +2,14 @@ import React, { useState, useMemo, useRef } from 'react';
 import {
   Calendar, Plus, Check, Upload, RefreshCw, Trash2, AlertCircle,
   CheckCircle, Database, ChevronRight, Edit3, Download, X,
-  Users as UsersIcon, ChevronDown,
+  Users as UsersIcon, ChevronDown, Search,
 } from 'lucide-react';
 import { api } from '../api';
 import { monthTarget, fetchCSV, parseRow, parseCSV } from '../utils';
 import { notify, confirmDialog } from './Toast';
 import { SHEET_SYNC_ENABLED } from '../featureFlags';
+import { PageHead, Tile } from '../collections/ui';
+import { IMPORT_CSS, ImportStepper, DropZone, ResultCard } from './ErpDailyUpload';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -456,8 +458,10 @@ export default function ManageMonths({
 
   const beginUpload = (m) => {
     setUploadFor(m);
-    setUploadSm(currentUser?.id || '');
-    setTimeout(() => fileRef.current?.click(), 50);
+    // Admins are not in the salesman list, so defaulting to their own id left
+    // the select showing the first salesman while dealers went to the admin.
+    // The file is picked from the dialog once the salesman has been chosen.
+    setUploadSm(isAdmin ? (salesmen[0]?.id || '') : (currentUser?.id || ''));
   };
 
   const handleFile = async (e) => {
@@ -486,10 +490,7 @@ export default function ManageMonths({
       ['SAMPLE DEALER 2','Mumbai','Maharashtra','ZONE 2','ACTIVE',300,280,'POLYMENT SHEET','GAG',30,200000],
     ];
     const csv = [headers, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n');
-    const a = document.createElement('a');
-    a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
-    a.download = `Upload_${m}.csv`;
-    a.click();
+    import('../lib/saveFile').then(({ saveText }) => saveText(csv, `Upload_${m}.csv`, 'text/csv;charset=utf-8'));
   };
 
   if(!isAdmin){
@@ -501,91 +502,56 @@ export default function ManageMonths({
     );
   }
 
+  const iniOf = s => ((String(s || '?')).replace(/[^A-Za-z0-9]/g, '').slice(0, 2) || '?').toUpperCase();
+  const hueOf = s => String(s || '?').charCodeAt(0) * 37 % 360;
+  const achTone = p => p >= 100 ? 'var(--grn)' : p >= 70 ? 'var(--yel)' : 'var(--red)';
+  const toolBtn = { display:'inline-flex', alignItems:'center', justifyContent:'center', gap:6, fontSize:12, fontWeight:700, whiteSpace:'nowrap' };
+
   return (
-    <div className="fade" style={{padding:0}}>
+    <div className="fade mm-page" style={{padding:0}}>
+      <style>{IMPORT_CSS + MM_CSS}</style>
       {/* Hidden file input — reused for any month */}
       <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls"
         style={{display:'none'}} onChange={handleFile}/>
 
       {/* ── Header ──────────────────────────────────────────────────────── */}
-      <div style={{marginBottom:14}}>
-        <div style={{fontSize:11, color:'var(--acc)', textTransform:'uppercase', letterSpacing:'.15em', marginBottom:2}}>
-          Admin · Data Management
-        </div>
-        <div style={{fontSize:22, fontWeight:700, color:'var(--t1)'}}>Manage Months</div>
-        <div style={{fontSize:12, color:'var(--t3)', marginTop:4}}>
-          One place to add, upload, and organize month-wise data. Removing a month here never deletes data —
-          it only hides it from the dashboard.
-        </div>
-      </div>
+      <PageHead icon={Calendar} tone="var(--acc)" eyebrow="Admin · Data Management" title="Manage Months"
+        sub="One place to add, upload, and organize month-wise data. Removing a month here never deletes data — it only hides it from the dashboard."/>
 
       {/* ── Status banner ────────────────────────────────────────────────── */}
       {msg && (
-        <div style={{
-          padding:'10px 14px', borderRadius:8, marginBottom:12,
-          background: msg.type === 'success' ? 'rgba(34,197,94,0.10)' : 'rgba(239,68,68,0.10)',
-          border: '1px solid ' + (msg.type === 'success' ? '#15803d' : '#7f1d1d'),
-          color:  msg.type === 'success' ? '#86efac' : '#fca5a5',
-          display:'flex', alignItems:'center', gap:8, fontSize:12,
-        }}>
-          {msg.type === 'success' ? <CheckCircle size={14}/> : <AlertCircle size={14}/>}
-          <span style={{flex:1}}>{msg.text}</span>
-          <button onClick={() => setMsg(null)} style={{background:'none', border:'none', color:'inherit', cursor:'pointer'}}>
-            <X size={13}/>
-          </button>
-        </div>
+        <ResultCard kind={msg.type === 'success' ? 'ok' : 'err'} style={{marginBottom:12}}
+          title={msg.type === 'success' ? 'Done' : 'Something went wrong'} onClose={() => setMsg(null)}>
+          {msg.text}
+        </ResultCard>
       )}
 
       {/* ── Summary cards ───────────────────────────────────────────────── */}
-      <div style={{
-        display:'grid', gap:10, marginBottom:14,
-        gridTemplateColumns:'repeat(auto-fit, minmax(180px,1fr))',
-      }}>
-        {[
-          { l:'Total months',   v:MO.length,        c:'#6366f1', i:Calendar },
-          { l:'Months with data', v:filledMonths,   c:'#86efac', i:Database },
-          { l:'Blank months',   v:blankMonths,      c:'#fbbf24', i:AlertCircle },
-          { l:'Current month',  v:MO[currentIdx] || '—', c:'#22d3ee', i:Check },
-        ].map(k => {
-          const Icon = k.i;
-          return (
-            <div key={k.l} className="card" style={{display:'flex', alignItems:'center', gap:10}}>
-              <Icon size={22} color={k.c}/>
-              <div style={{flex:1, minWidth:0}}>
-                <div style={{fontSize:10, color:'var(--t3)', textTransform:'uppercase', letterSpacing:'.08em'}}>{k.l}</div>
-                <div style={{fontSize:18, fontWeight:800, color:k.c, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{k.v}</div>
-              </div>
-            </div>
-          );
-        })}
+      <div className="mm-tiles">
+        <Tile icon={Calendar}    label="Total months"     value={MO.length}             tone="var(--acc)"/>
+        <Tile icon={Database}    label="Months with data" value={filledMonths}          tone="var(--grn)"/>
+        <Tile icon={AlertCircle} label="Blank months"     value={blankMonths}           tone="var(--yel)"/>
+        <Tile icon={Check}       label="Current month"    value={MO[currentIdx] || '—'} tone="var(--pur)"/>
       </div>
 
       {/* ── DANGER ZONE: Start Fresh — SUPERADMIN ONLY ─────────────────── */}
       {isSuperAdmin && (
         <div className="card" style={{
           padding:14, marginBottom:14,
-          background:'rgba(239,68,68,0.06)', border:'1px solid rgba(239,68,68,0.3)',
+          background:'color-mix(in srgb, var(--red) 6%, var(--bg1))', border:'1px solid color-mix(in srgb, var(--red) 30%, transparent)',
         }}>
           <div style={{display:'flex', alignItems:'center', gap:10, flexWrap:'wrap'}}>
-            <span style={{fontSize:16}}>⚠️</span>
             <div style={{flex:1, minWidth:200}}>
-              <div style={{fontSize:13, fontWeight:700, color:'#fca5a5', marginBottom:3}}>
+              <div className="sec-title" style={{marginBottom:6}}>
+                <span className="sec-ico" style={{'--tone':'var(--red)'}}><AlertCircle size={15}/></span>
                 Start Fresh — Wipe all dealer data
-                <span style={{fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:3, background:'rgba(251,191,36,0.15)', color:'var(--yel)', marginLeft:8, letterSpacing:'.06em'}}>SUPERADMIN ONLY</span>
+                <span className="mm-pill" style={{'--tone':'var(--yel)'}}>SUPERADMIN ONLY</span>
               </div>
-              <div style={{fontSize:11, color:'var(--t3)'}}>
+              <div style={{fontSize:11.5, color:'var(--t3)', lineHeight:1.5}}>
                 Deletes every dealer record from MongoDB. After wiping you'll have a clean DB. You can re-populate it by clicking <b>Sync now</b> (re-loads from Google Sheets) or by uploading Excel files via <b>Monthly Entry</b>. Once data is in DB, refreshes and uploads will work cleanly.
               </div>
             </div>
-            <button onClick={handleWipeAll} disabled={busy}
-              style={{
-                display:'flex', alignItems:'center', gap:6,
-                background:'transparent', color:'#fca5a5',
-                border:'1px solid #f87171', borderRadius:6,
-                padding:'8px 14px', fontSize:12, fontWeight:700,
-                cursor: busy ? 'not-allowed' : 'pointer',
-                whiteSpace:'nowrap',
-              }}>
+            <button onClick={handleWipeAll} disabled={busy} className="btnd" style={{...toolBtn, padding:'8px 14px'}}>
               <Trash2 size={14}/>
               Wipe All Data
             </button>
@@ -594,122 +560,78 @@ export default function ManageMonths({
       )}
 
       {/* ── Add month + Sync row ────────────────────────────────────────── */}
-      <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(260px,1fr))', gap:10, marginBottom:14}}>
-        <div className="card" style={{padding:14}}>
-          <div style={{fontSize:11, fontWeight:700, color:'var(--t3)', textTransform:'uppercase', letterSpacing:'.08em', marginBottom:8}}>
-            Add a new month
+      <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,280px),1fr))', gap:12, marginBottom:14}}>
+        <div className="card" style={{padding:16}}>
+          <div className="sec-title">
+            <span className="sec-ico" style={{'--tone':'var(--grn)'}}><Plus size={15}/></span> Add a new month
           </div>
           <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
             <input
               type="text"
+              className="inp"
               placeholder={suggestedNext ? `e.g. ${suggestedNext}` : 'e.g. Jun-26'}
               value={newMonth}
               onChange={e => setNewMonth(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleAddMonth()}
               disabled={busy}
-              style={{
-                flex:'1 1 160px', padding:'8px 12px',
-                background:'var(--bg2)', color:'var(--t1)',
-                border:'1px solid var(--b1)', borderRadius:6,
-                fontSize:13, fontWeight:600,
-              }}
+              style={{flex:'1 1 160px', width:'auto', fontSize:13, fontWeight:700}}
             />
-            <button onClick={handleAddMonth} disabled={busy}
-              style={{
-                display:'flex', alignItems:'center', gap:6,
-                background:'#22c55e', color:'#0c0c1e', border:'none',
-                padding:'8px 14px', borderRadius:6, fontSize:12, fontWeight:700,
-                cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.6 : 1,
-              }}>
+            <button onClick={handleAddMonth} disabled={busy} className="btnp" style={toolBtn}>
               <Plus size={14}/> Add Month
             </button>
-            {suggestedNext && !newMonth && (
-              <button onClick={() => setNewMonth(suggestedNext)} disabled={busy}
-                style={{
-                  background:'transparent', color:'var(--t3)',
-                  border:'1px dashed var(--b1)', padding:'6px 10px',
-                  borderRadius:6, fontSize:11, cursor:'pointer',
-                }}>
-                Use next: {suggestedNext}
-              </button>
-            )}
           </div>
-          <div style={{fontSize:11, color:'var(--t3)', marginTop:8}}>
+          {suggestedNext && !newMonth && (
+            <button onClick={() => setNewMonth(suggestedNext)} disabled={busy}
+              className="thr" style={{'--tone':'var(--acc)', marginTop:10}}>
+              Use next: {suggestedNext}
+            </button>
+          )}
+          <div style={{fontSize:11.5, color:'var(--t3)', marginTop:10}}>
             Format examples: <b>Jun-26</b>, <b>Jul-26</b>, <b>Jan-27</b>. New month starts blank — upload Excel below.
           </div>
         </div>
 
-        <div className="card" style={{padding:14, display:'flex', flexDirection:'column', justifyContent:'space-between'}}>
+        <div className="card" style={{padding:16, display:'flex', flexDirection:'column', justifyContent:'space-between'}}>
           <div>
-            <div style={{fontSize:11, fontWeight:700, color:'var(--t3)', textTransform:'uppercase', letterSpacing:'.08em', marginBottom:8}}>
-              Data sources
+            <div className="sec-title">
+              <span className="sec-ico" style={{'--tone':'var(--acc)'}}><Database size={15}/></span> Data sources
+              {lastSync ? <span className="kpi-pill">Last sync <b>{lastSync}</b></span> : null}
             </div>
-            <div style={{fontSize:11, color:'var(--t3)', marginBottom:8}}>
+            <div style={{fontSize:11.5, color:'var(--t3)', marginBottom:12, lineHeight:1.5}}>
               <b style={{color:'var(--grn)'}}>Reload from DB</b> = safe refresh, never touches Sheets.
-              <b style={{color:'#a5b4fc'}}> Sync now</b> = pull from Google Sheets (preserves uploaded months).
-              {lastSync ? ' · Last sync: ' + lastSync : ''}
+              <b style={{color:'var(--acc)'}}> Sync now</b> = pull from Google Sheets (preserves uploaded months).
             </div>
           </div>
-          <div style={{display:'flex', gap:6, flexWrap:'wrap'}}>
+          <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
             <button onClick={handleReloadDB} disabled={busy}
               title="Re-fetch all dealer data from MongoDB. Safe — only reads, never writes."
-              style={{
-                flex:'1 1 130px',
-                display:'flex', alignItems:'center', justifyContent:'center', gap:6,
-                background:'#15803d', color:'#fff', border:'none',
-                padding:'8px 12px', borderRadius:6, fontSize:12, fontWeight:700,
-                cursor: busy ? 'not-allowed' : 'pointer',
-                opacity: busy ? 0.7 : 1,
-              }}>
+              className="btnp" style={{...toolBtn, flex:'1 1 130px'}}>
               <RefreshCw size={14}/>
               Reload from DB
             </button>
             {SHEET_SYNC_ENABLED && <button onClick={handleSync} disabled={busy || syncing}
               title="Pull latest from Google Sheets. Months not in the sheet (e.g. June) are preserved."
-              style={{
-                flex:'1 1 130px',
-                display:'flex', alignItems:'center', justifyContent:'center', gap:6,
-                background:'#6366f1', color:'#fff', border:'none',
-                padding:'8px 12px', borderRadius:6, fontSize:12, fontWeight:700,
-                cursor: (busy || syncing) ? 'not-allowed' : 'pointer',
-                opacity: (busy || syncing) ? 0.7 : 1,
-              }}>
+              className="btne" style={{...toolBtn, flex:'1 1 130px', padding:'7px 12px'}}>
               <RefreshCw size={14} className={syncing ? 'spin' : ''}/>
               {syncing ? 'Syncing…' : 'Sync from Sheets'}
             </button>}
+          </div>
+          <div style={{display:'flex', gap:6, flexWrap:'wrap', marginTop:8}}>
             <button onClick={handleRepairTargets} disabled={busy}
               title="Back-fill per-month targets from each dealer's baseline target. Run once after a sync if targets look wrong."
-              style={{
-                display:'flex', alignItems:'center', justifyContent:'center', gap:6,
-                background:'transparent', color:'var(--yel)',
-                border:'1px solid #92400e',
-                padding:'8px 10px', borderRadius:6, fontSize:11, fontWeight:700,
-                cursor: busy ? 'not-allowed' : 'pointer', whiteSpace:'nowrap',
-              }}>
+              className="btn" style={{...toolBtn, fontSize:11.5, color:'var(--yel)', borderColor:'color-mix(in srgb, var(--yel) 40%, transparent)'}}>
               <CheckCircle size={13}/>
               Repair Targets
             </button>
             <button onClick={handleDedupe} disabled={busy}
               title="Find dealers stored twice under the same salesman (e.g. from old syncs with name variations) and merge them. Fixes inflated totals."
-              style={{
-                display:'flex', alignItems:'center', justifyContent:'center', gap:6,
-                background:'transparent', color:'var(--red)',
-                border:'1px solid #7f1d1d',
-                padding:'8px 10px', borderRadius:6, fontSize:11, fontWeight:700,
-                cursor: busy ? 'not-allowed' : 'pointer', whiteSpace:'nowrap',
-              }}>
+              className="btnd" style={{...toolBtn, fontSize:11.5}}>
               <Trash2 size={13}/>
               Find Duplicates
             </button>
             <button onClick={handleNormalizeCityState} disabled={busy}
               title="Re-write every dealer's City and State in uniform Title Case (e.g. BANGALORE → Bangalore). Run this once to clean up messy capitalizations from imports."
-              style={{
-                display:'flex', alignItems:'center', justifyContent:'center', gap:6,
-                background:'transparent', color:'#a5b4fc',
-                border:'1px solid #4338ca',
-                padding:'8px 10px', borderRadius:6, fontSize:11, fontWeight:700,
-                cursor: busy ? 'not-allowed' : 'pointer', whiteSpace:'nowrap',
-              }}>
+              className="btn" style={{...toolBtn, fontSize:11.5, color:'var(--acc)'}}>
               <CheckCircle size={13}/>
               Normalize City / State
             </button>
@@ -717,173 +639,120 @@ export default function ManageMonths({
         </div>
       </div>
 
-      {/* ── Month list table ─────────────────────────────────────────────── */}
+      {/* ── Month cards ──────────────────────────────────────────────────── */}
       <div className="card" style={{padding:0, overflow:'hidden'}}>
-        <div style={{
-          padding:'10px 14px', background:'var(--bg2)',
-          borderBottom:'1px solid var(--b1)',
-          display:'flex', alignItems:'center', gap:8,
-        }}>
-          <Calendar size={14} color="#22c55e"/>
-          <span style={{fontSize:13, fontWeight:700, color:'var(--t1)'}}>All months ({MO.length})</span>
-          <span style={{fontSize:11, color:'var(--t3)'}}>— oldest to newest</span>
+        <div className="sec-title" style={{padding:'12px 14px', borderBottom:'1px solid var(--b1)', marginBottom:0}}>
+          <span className="sec-ico" style={{'--tone':'var(--acc)'}}><Calendar size={15}/></span>
+          <span>All months</span>
+          <span className="count-pill">{MO.length}</span>
+          <span className="sec-note">oldest to newest</span>
+          <div style={{flex:1}}/>
+          <span className="mm-pill" style={{'--tone':'var(--acc)'}}>Current</span>
+          <span className="mm-pill" style={{'--tone':'var(--grn)'}}>Has data</span>
+          <span className="mm-pill blank">Blank</span>
         </div>
 
         {MO.length === 0 ? (
-          <div style={{padding:30, textAlign:'center', color:'var(--t3)', fontSize:13}}>
+          <div style={{padding:36, textAlign:'center', color:'var(--t3)', fontSize:13}}>
+            <Calendar size={26} style={{display:'block', margin:'0 auto 8px', opacity:.6}}/>
             No months yet. Add one above to begin.
           </div>
         ) : (
-          <div style={{overflowX:'auto'}}>
-            <table style={{width:'100%', borderCollapse:'collapse', fontSize:12, minWidth:760}}>
-              <thead>
-                <tr style={{background:'var(--bg2)'}}>
-                  {['#','Month','Status','Dealers','Sales (V)','Target','Achievement','Salesmen','Actions'].map(h => (
-                    <th key={h} style={{
-                      padding:'8px 10px', textAlign: ['Dealers','Sales (V)','Target'].includes(h) ? 'right' : 'left',
-                      color:'var(--t3)', fontSize:10, fontWeight:700, textTransform:'uppercase',
-                      borderBottom:'1px solid var(--b1)', whiteSpace:'nowrap',
-                    }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {MO.map((m, i) => {
-                  const st = monthStats[m] || {};
-                  const isCurrent = i === currentIdx;
-                  const achPct = st.totalTarget ? Math.round((st.totalSales / st.totalTarget) * 100) : null;
-                  return (
-                    <tr key={m} style={{
-                      background: isCurrent ? 'rgba(34,197,94,0.06)' : 'transparent',
-                      borderLeft: '3px solid ' + (isCurrent ? '#22c55e' : 'transparent'),
-                      borderBottom:'1px solid var(--b1)',
-                    }}>
-                      <td style={{padding:'8px 10px', color:'var(--t3)', width:30}}>{i+1}</td>
-                      <td style={{padding:'8px 10px', fontWeight:700, color: isCurrent ? '#86efac' : 'var(--t1)', whiteSpace:'nowrap'}}>
-                        {m}
-                        {isCurrent && <span style={{
-                          marginLeft:6, fontSize:9, color:'#0c0c1e', background:'#86efac',
-                          padding:'1px 6px', borderRadius:3, fontWeight:700, letterSpacing:'.05em',
-                        }}>CURRENT</span>}
-                      </td>
-                      <td style={{padding:'8px 10px'}}>
-                        {st.hasData ? (
-                          <span style={{fontSize:10, color:'var(--grn)', background:'rgba(34,197,94,0.12)',
-                            padding:'2px 8px', borderRadius:4, fontWeight:700, border:'1px solid #15803d'}}>
-                            HAS DATA
-                          </span>
-                        ) : (
-                          <span style={{fontSize:10, color:'var(--t3)', background:'var(--bg2)',
-                            padding:'2px 8px', borderRadius:4, fontWeight:700, border:'1px dashed var(--b1)'}}>
-                            BLANK
-                          </span>
-                        )}
-                      </td>
-                      <td style={{padding:'8px 10px', textAlign:'right', fontWeight:700, color: st.withData ? 'var(--t1)' : 'var(--t3)'}}>
-                        {st.withData || '—'}
-                      </td>
-                      <td style={{padding:'8px 10px', textAlign:'right', fontWeight:700, color: st.totalSales ? '#86efac' : 'var(--t3)'}}>
-                        {st.totalSales ? fmtIN(st.totalSales) : '—'}
-                      </td>
-                      <td style={{padding:'8px 10px', textAlign:'right', fontWeight:700, color: st.totalTarget ? '#22d3ee' : 'var(--t3)'}}>
-                        {st.totalTarget ? fmtIN(st.totalTarget) : '—'}
-                      </td>
-                      <td style={{padding:'8px 10px'}}>
-                        {achPct !== null ? (
-                          <div style={{display:'flex', alignItems:'center', gap:6, minWidth:110}}>
-                            <div style={{flex:1, height:5, background:'var(--b1)', borderRadius:3, overflow:'hidden'}}>
-                              <div style={{
-                                height:'100%',
-                                width: Math.min(achPct, 100) + '%',
-                                background: achPct >= 100 ? '#22c55e' : achPct >= 70 ? '#fbbf24' : '#f87171',
-                              }}/>
-                            </div>
-                            <span style={{fontSize:11, fontWeight:700, color: achPct >= 100 ? '#86efac' : achPct >= 70 ? '#fbbf24' : '#fca5a5'}}>
-                              {achPct}%
-                            </span>
-                          </div>
-                        ) : <span style={{color:'var(--t3)'}}>—</span>}
-                      </td>
-                      <td style={{padding:'8px 10px', fontSize:11, color:'var(--t2)', maxWidth:140, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
-                        {st.salesmen && st.salesmen.length
-                          ? st.salesmen.map(sm => users[sm]?.name || sm).join(', ')
-                          : <span style={{color:'var(--t3)'}}>—</span>}
-                      </td>
-                      <td style={{padding:'6px 10px', whiteSpace:'nowrap'}}>
-                        <div style={{display:'flex', gap:4, alignItems:'center', flexWrap:'wrap'}}>
-                          <button onClick={() => beginUpload(m)} disabled={busy} title="Upload Excel for this month"
-                            style={{
-                              display:'flex', alignItems:'center', gap:3,
-                              background:'rgba(34,197,94,0.12)', color:'var(--grn)',
-                              border:'1px solid #15803d', borderRadius:5,
-                              padding:'4px 8px', fontSize:10, fontWeight:700, cursor:'pointer',
-                            }}>
-                            <Upload size={11}/>Upload
-                          </button>
-                          <button onClick={() => downloadTemplate(m)} title="Download Excel template"
-                            style={{
-                              display:'flex', alignItems:'center', gap:3,
-                              background:'transparent', color:'var(--t2)',
-                              border:'1px solid var(--b1)', borderRadius:5,
-                              padding:'4px 7px', fontSize:10, fontWeight:600, cursor:'pointer',
-                            }}>
-                            <Download size={11}/>
-                          </button>
-                          {!isCurrent && (
-                            <button onClick={() => handleSetCurrent(i)} disabled={busy} title="Set as current month"
-                              style={{
-                                display:'flex', alignItems:'center', gap:3,
-                                background:'transparent', color:'#22d3ee',
-                                border:'1px solid #0e7490', borderRadius:5,
-                                padding:'4px 7px', fontSize:10, fontWeight:600, cursor:'pointer',
-                              }}>
-                              <Check size={11}/>
-                            </button>
-                          )}
-                          <button onClick={() => handleRemoveMonth(m)} disabled={busy} title="Remove this month from the active list (does not delete data)"
-                            style={{
-                              display:'flex', alignItems:'center', gap:3,
-                              background:'transparent', color:'var(--red)',
-                              border:'1px solid #7f1d1d', borderRadius:5,
-                              padding:'4px 7px', fontSize:10, fontWeight:600, cursor:'pointer',
-                            }}>
-                            <Trash2 size={11}/>
-                          </button>
+          <div className="mm-grid">
+            {MO.map((m, i) => {
+              const st = monthStats[m] || {};
+              const isCurrent = i === currentIdx;
+              const achPct = st.totalTarget ? Math.round((st.totalSales / st.totalTarget) * 100) : null;
+              const tone = isCurrent ? 'var(--acc)' : st.hasData ? 'var(--grn)' : 'var(--t3)';
+              const smNames = (st.salesmen || []).map(sm => users[sm]?.name || sm);
+              return (
+                <div key={m} className={'mm-card' + (isCurrent ? ' cur' : '') + (st.hasData ? '' : ' blank')} style={{'--tone':tone}}>
+                  <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:10}}>
+                    <span className="mm-idx">{i+1}</span>
+                    <div style={{flex:1, minWidth:0}}>
+                      <div style={{fontSize:17, fontWeight:850, color:'var(--t1)', lineHeight:1.1}}>{m}</div>
+                      <div style={{display:'flex', gap:5, flexWrap:'wrap', marginTop:5}}>
+                        {isCurrent && <span className="mm-pill" style={{'--tone':'var(--acc)'}}>Current</span>}
+                        {st.hasData
+                          ? <span className="mm-pill" style={{'--tone':'var(--grn)'}}>Has data</span>
+                          : <span className="mm-pill blank">Blank</span>}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{display:'grid', gridTemplateColumns:'repeat(3,minmax(0,1fr))', gap:6, marginBottom:10}}>
+                    <div className="mm-kv"><span>Dealers</span><b style={{color: st.withData ? 'var(--t1)' : 'var(--t3)'}}>{st.withData || '—'}</b></div>
+                    <div className="mm-kv"><span>Sales (V)</span><b style={{color: st.totalSales ? 'var(--grn)' : 'var(--t3)'}}>{st.totalSales ? fmtIN(st.totalSales) : '—'}</b></div>
+                    <div className="mm-kv"><span>Target</span><b style={{color: st.totalTarget ? 'var(--acc)' : 'var(--t3)'}}>{st.totalTarget ? fmtIN(st.totalTarget) : '—'}</b></div>
+                  </div>
+
+                  <div style={{marginBottom:10}}>
+                    <div style={{display:'flex', justifyContent:'space-between', fontSize:10.5, fontWeight:700, color:'var(--t3)', textTransform:'uppercase', letterSpacing:'.07em', marginBottom:4}}>
+                      <span>Achievement</span>
+                      <span style={{color: achPct !== null ? achTone(achPct) : 'var(--t3)', fontSize:12}}>{achPct !== null ? achPct + '%' : '—'}</span>
+                    </div>
+                    <div className="pbar"><div style={{width: (achPct !== null ? Math.min(achPct, 100) : 0) + '%', background: achPct !== null ? achTone(achPct) : 'var(--b2)'}}/></div>
+                  </div>
+
+                  <div style={{display:'flex', alignItems:'center', gap:8, minHeight:28, marginBottom:12}} title={smNames.join(', ')}>
+                    {smNames.length ? (
+                      <>
+                        <div className="mm-stack">
+                          {smNames.slice(0, 4).map((nm, k) => (
+                            <span key={k} className="ini" style={{'--h':hueOf(nm), width:24, height:24, fontSize:9, borderRadius:8}}>{iniOf(nm)}</span>
+                          ))}
                         </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        <span style={{fontSize:11.5, color:'var(--t2)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', minWidth:0}}>
+                          {smNames.length > 4 ? `+${smNames.length - 4} more · ` : ''}{smNames.length} salesm{smNames.length === 1 ? 'an' : 'en'}
+                        </span>
+                      </>
+                    ) : <span style={{fontSize:11.5, color:'var(--t3)'}}>No salesmen yet</span>}
+                  </div>
+
+                  <div style={{display:'flex', gap:6, alignItems:'center', flexWrap:'wrap', marginTop:'auto'}}>
+                    <button onClick={() => beginUpload(m)} disabled={busy} title="Upload Excel for this month"
+                      className="btne" style={{...toolBtn, flex:'1 1 auto', padding:'6px 10px'}}>
+                      <Upload size={13}/>Upload
+                    </button>
+                    <button onClick={() => downloadTemplate(m)} title="Download Excel template"
+                      className="btn mm-ic">
+                      <Download size={13}/>
+                    </button>
+                    {!isCurrent && (
+                      <button onClick={() => handleSetCurrent(i)} disabled={busy} title="Set as current month"
+                        className="btn mm-ic" style={{color:'var(--acc)'}}>
+                        <Check size={13}/>
+                      </button>
+                    )}
+                    <button onClick={() => handleRemoveMonth(m)} disabled={busy} title="Remove this month from the active list (does not delete data)"
+                      className="btnd mm-ic">
+                      <Trash2 size={13}/>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
 
       {/* ── Salesman Diagnostic ──────────────────────────────────────────── */}
       <div className="card" style={{padding:0, overflow:'hidden', marginTop:14}}>
-        <div style={{
-          padding:'10px 14px', background:'var(--bg2)',
-          borderBottom:'1px solid var(--b1)',
-          display:'flex', alignItems:'center', gap:8, flexWrap:'wrap',
-        }}>
-          <UsersIcon size={14} color="#6366f1"/>
-          <span style={{fontSize:13, fontWeight:700, color:'var(--t1)'}}>Salesman Diagnostic</span>
-          <span style={{fontSize:11, color:'var(--t3)'}}>— compare DB numbers against your Google Sheet</span>
+        <div className="sec-title" style={{padding:'12px 14px', borderBottom:'1px solid var(--b1)', marginBottom:0}}>
+          <span className="sec-ico" style={{'--tone':'var(--pur)'}}><UsersIcon size={15}/></span>
+          <span>Salesman Diagnostic</span>
+          <span className="sec-note">compare DB numbers against your Google Sheet</span>
           <div style={{flex:1}}/>
-          <label style={{fontSize:11, color:'var(--t3)'}}>Month:</label>
-          <select value={diagMonth} onChange={e => setDiagMonth(e.target.value)}
-            style={{
-              background:'var(--bg1)', color:'var(--t1)', border:'1px solid var(--b1)',
-              borderRadius:6, padding:'4px 8px', fontSize:11, fontWeight:600,
-            }}>
+          <label style={{fontSize:11, fontWeight:700, color:'var(--t3)', textTransform:'uppercase', letterSpacing:'.07em'}}>Month</label>
+          <select className="sel" value={diagMonth} onChange={e => setDiagMonth(e.target.value)}
+            style={{fontSize:12, fontWeight:700, padding:'5px 10px'}}>
             {[...MO].reverse().map(m => <option key={m} value={m}>{m}</option>)}
           </select>
         </div>
 
-        <div style={{padding:'4px 0'}}>
+        <div>
           {salesmanList.length === 0 ? (
-            <div style={{padding:20, textAlign:'center', color:'var(--t3)', fontSize:12}}>
+            <div style={{padding:24, textAlign:'center', color:'var(--t3)', fontSize:12}}>
               No salesmen found. Add salesman users via Admin Panel → User Management.
             </div>
           ) : salesmanList.map(sm => {
@@ -892,79 +761,58 @@ export default function ManageMonths({
             const achPct = ms.tgt ? Math.round((ms.ach / ms.tgt) * 100) : null;
             return (
               <div key={sm.id} style={{borderBottom:'1px solid var(--b1)'}}>
-                <div onClick={() => setDiagOpenSm(o => o === sm.id ? null : sm.id)}
-                  style={{
-                    padding:'10px 14px', cursor:'pointer',
-                    display:'flex', alignItems:'center', gap:10, flexWrap:'wrap',
-                    background: isOpen ? 'rgba(99,102,241,0.06)' : 'transparent',
-                    transition:'background .15s',
-                  }}>
+                <div onClick={() => setDiagOpenSm(o => o === sm.id ? null : sm.id)} className="mm-row"
+                  style={{background: isOpen ? 'color-mix(in srgb, var(--acc) 6%, transparent)' : undefined}}>
                   {isOpen ? <ChevronDown size={14} color="var(--t2)"/> : <ChevronRight size={14} color="var(--t2)"/>}
-                  <div style={{
-                    width:24, height:24, borderRadius:'50%',
-                    background:'rgba(99,102,241,0.15)', color:'#a5b4fc',
-                    display:'flex', alignItems:'center', justifyContent:'center',
-                    fontSize:9, fontWeight:700,
-                  }}>{(users[sm.id]?.ini) || sm.name.slice(0,2).toUpperCase()}</div>
-                  <span style={{fontSize:13, fontWeight:700, color:'var(--t1)', minWidth:120}}>{sm.name}</span>
-                  <span style={{fontSize:11, color:'var(--t3)'}}>{sm.dealers.length} dealers</span>
-                  <div style={{flex:1}}/>
-                  <span style={{fontSize:11, color:'var(--t3)'}}>{diagMonth}:</span>
-                  <span style={{fontSize:11, color:'var(--t2)'}}>{ms.withData} active</span>
-                  <span style={{fontSize:13, fontWeight:800, color: ms.ach > 0 ? '#86efac' : 'var(--t3)', minWidth:80, textAlign:'right'}}>{fmtIN(ms.ach)}</span>
-                  <span style={{fontSize:11, color:'var(--t3)'}}>/</span>
-                  <span style={{fontSize:11, fontWeight:700, color: ms.tgt > 0 ? '#22d3ee' : 'var(--t3)', minWidth:70, textAlign:'right'}}>{fmtIN(ms.tgt)}</span>
+                  <span className="ini" style={{'--h':hueOf(sm.name)}}>{(users[sm.id]?.ini) || sm.name.slice(0,2).toUpperCase()}</span>
+                  <div style={{minWidth:0, flex:'1 1 140px'}}>
+                    <div style={{fontSize:13, fontWeight:700, color:'var(--t1)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{sm.name}</div>
+                    <div style={{fontSize:10.5, color:'var(--t3)'}}>{sm.dealers.length} dealers · {ms.withData} active in {diagMonth}</div>
+                  </div>
+                  <div style={{textAlign:'right', minWidth:0}}>
+                    <div style={{fontSize:13, fontWeight:800, fontVariantNumeric:'tabular-nums'}}>
+                      <span style={{color: ms.ach > 0 ? 'var(--grn)' : 'var(--t3)'}}>{fmtIN(ms.ach)}</span>
+                      <span style={{color:'var(--t3)', fontWeight:500}}> / </span>
+                      <span style={{fontSize:11.5, color: ms.tgt > 0 ? 'var(--acc)' : 'var(--t3)'}}>{fmtIN(ms.tgt)}</span>
+                    </div>
+                    {achPct !== null && <div className="pbar" style={{width:110, marginLeft:'auto', marginTop:4}}><div style={{width:Math.min(achPct,100)+'%', background:achTone(achPct)}}/></div>}
+                  </div>
                   {achPct !== null && (
-                    <span style={{
-                      fontSize:11, fontWeight:700,
-                      color: achPct >= 100 ? '#86efac' : achPct >= 70 ? '#fbbf24' : '#fca5a5',
-                      minWidth:42, textAlign:'right',
-                    }}>{achPct}%</span>
+                    <span className="mm-pill" style={{'--tone':achTone(achPct), minWidth:46, justifyContent:'center'}}>{achPct}%</span>
                   )}
                 </div>
 
                 {isOpen && (
-                  <div style={{padding:'10px 14px 14px 50px', background:'var(--bg2)'}}>
+                  <div className="mm-open">
                     {/* Source breakdown + Inspector button */}
-                    <div style={{display:'flex', gap:14, marginBottom:10, fontSize:11, color:'var(--t3)', flexWrap:'wrap', alignItems:'center'}}>
-                      <span><b style={{color:'var(--grn)'}}>{sm.sources.sheet}</b> from Sheets</span>
-                      <span>·</span>
-                      <span><b style={{color:'#a5b4fc'}}>{sm.sources.upload}</b> from Excel upload</span>
-                      {sm.sources.other > 0 && <><span>·</span><span><b style={{color:'var(--t2)'}}>{sm.sources.other}</b> other</span></>}
+                    <div style={{display:'flex', gap:8, marginBottom:12, fontSize:11.5, color:'var(--t3)', flexWrap:'wrap', alignItems:'center'}}>
+                      <span className="kpi-pill">From Sheets <b style={{color:'var(--grn)'}}>{sm.sources.sheet}</b></span>
+                      <span className="kpi-pill">From Excel upload <b style={{color:'var(--acc)'}}>{sm.sources.upload}</b></span>
+                      {sm.sources.other > 0 && <span className="kpi-pill">Other <b style={{color:'var(--t2)'}}>{sm.sources.other}</b></span>}
                       <div style={{flex:1}}/>
-                      <button onClick={() => openInspector(sm.id)}
-                        style={{
-                          background:'#6366f1', color:'#fff', border:'none',
-                          padding:'4px 10px', borderRadius:5, fontSize:10, fontWeight:700,
-                          cursor:'pointer', display:'flex', alignItems:'center', gap:4,
-                        }}>
-                        🔍 Inspect Sheet
+                      <button onClick={() => openInspector(sm.id)} className="btne" style={{...toolBtn, padding:'5px 11px'}}>
+                        <Search size={13}/> Inspect Sheet
                       </button>
                     </div>
 
                     {/* Month-by-month mini grid */}
                     <div style={{marginBottom:12}}>
-                      <div style={{fontSize:10, fontWeight:700, color:'var(--t3)', textTransform:'uppercase', letterSpacing:'.08em', marginBottom:6}}>
-                        All Months
-                      </div>
-                      <div style={{
-                        display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(110px, 1fr))', gap:6,
-                      }}>
+                      <div className="mm-sub">All Months</div>
+                      <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(104px, 1fr))', gap:6}}>
                         {MO.map(m => {
                           const v = sm.byMonth[m];
                           const isMS = m === diagMonth;
                           const hasD = (v?.ach || 0) > 0 || (v?.tgt || 0) > 0;
                           return (
-                            <div key={m} onClick={() => setDiagMonth(m)}
+                            <div key={m} onClick={() => setDiagMonth(m)} className="mm-mini"
                               style={{
-                                background: isMS ? 'rgba(99,102,241,0.12)' : 'var(--bg1)',
-                                border: '1px solid ' + (isMS ? '#6366f1' : 'var(--b1)'),
-                                borderRadius:6, padding:'6px 8px', cursor:'pointer', textAlign:'center',
+                                background: isMS ? 'color-mix(in srgb, var(--acc) 12%, var(--bg1))' : 'var(--bg1)',
+                                borderColor: isMS ? 'var(--acc)' : 'var(--b1)',
                                 opacity: hasD ? 1 : 0.55,
                               }}>
-                              <div style={{fontSize:10, color: isMS ? '#a5b4fc' : 'var(--t3)', fontWeight:700, marginBottom:2}}>{m}</div>
-                              <div style={{fontSize:12, fontWeight:800, color: v?.ach ? '#86efac' : 'var(--t3)'}}>{v?.ach ? fmtIN(v.ach) : '—'}</div>
-                              <div style={{fontSize:9, color: v?.tgt ? '#22d3ee' : 'var(--t3)'}}>tgt: {v?.tgt ? fmtIN(v.tgt) : '—'}</div>
+                              <div style={{fontSize:10.5, color: isMS ? 'var(--acc)' : 'var(--t3)', fontWeight:800, marginBottom:2}}>{m}</div>
+                              <div style={{fontSize:12.5, fontWeight:800, color: v?.ach ? 'var(--grn)' : 'var(--t3)'}}>{v?.ach ? fmtIN(v.ach) : '—'}</div>
+                              <div style={{fontSize:9.5, color: v?.tgt ? 'var(--acc)' : 'var(--t3)'}}>tgt: {v?.tgt ? fmtIN(v.tgt) : '—'}</div>
                             </div>
                           );
                         })}
@@ -973,44 +821,41 @@ export default function ManageMonths({
 
                     {/* Top dealers for selected month */}
                     <div>
-                      <div style={{fontSize:10, fontWeight:700, color:'var(--t3)', textTransform:'uppercase', letterSpacing:'.08em', marginBottom:6}}>
-                        Top dealers — {diagMonth}
-                      </div>
+                      <div className="mm-sub">Top dealers — {diagMonth}</div>
                       {(() => {
                         const top = topDealersForSm(sm.id);
                         if(top.length === 0 || top.every(t => t.ach === 0)){
-                          return <div style={{fontSize:11, color:'var(--t3)', padding:8}}>No sales data for this month.</div>;
+                          return <div style={{fontSize:11.5, color:'var(--t3)', padding:8}}>No sales data for this month.</div>;
                         }
                         return (
-                          <div style={{
-                            border:'1px solid var(--b1)', borderRadius:6, overflow:'hidden',
-                            background:'var(--bg1)',
-                          }}>
-                            <table style={{width:'100%', borderCollapse:'collapse', fontSize:11}}>
+                          <div style={{border:'1px solid var(--b1)', borderRadius:12, overflow:'auto', background:'var(--bg1)'}}>
+                            <table className="imp-tbl" style={{fontSize:11.5}}>
                               <thead>
-                                <tr style={{background:'var(--bg2)'}}>
-                                  <th style={{textAlign:'left', padding:'5px 8px', fontSize:9, color:'var(--t3)', fontWeight:700, textTransform:'uppercase'}}>Dealer</th>
-                                  <th style={{textAlign:'right', padding:'5px 8px', fontSize:9, color:'var(--t3)', fontWeight:700, textTransform:'uppercase'}}>Sales</th>
-                                  <th style={{textAlign:'right', padding:'5px 8px', fontSize:9, color:'var(--t3)', fontWeight:700, textTransform:'uppercase'}}>Target</th>
-                                  <th style={{textAlign:'right', padding:'5px 8px', fontSize:9, color:'var(--t3)', fontWeight:700, textTransform:'uppercase'}}>Ach%</th>
-                                  <th style={{textAlign:'center', padding:'5px 8px', fontSize:9, color:'var(--t3)', fontWeight:700, textTransform:'uppercase'}}>Source</th>
+                                <tr>
+                                  <th style={{textAlign:'left'}}>Dealer</th>
+                                  <th style={{textAlign:'right'}}>Sales</th>
+                                  <th style={{textAlign:'right'}}>Target</th>
+                                  <th style={{textAlign:'right'}}>Ach%</th>
+                                  <th style={{textAlign:'center'}}>Source</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {top.filter(t => t.ach > 0).map(t => {
                                   const p = t.tgt ? Math.round((t.ach / t.tgt) * 100) : null;
                                   return (
-                                    <tr key={t.id} style={{borderTop:'1px solid var(--b1)'}}>
-                                      <td style={{padding:'5px 8px', color:'var(--t1)', fontWeight:600, maxWidth:200, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{t.name}</td>
-                                      <td style={{padding:'5px 8px', textAlign:'right', color:'var(--grn)', fontWeight:700}}>{fmtIN(t.ach)}</td>
-                                      <td style={{padding:'5px 8px', textAlign:'right', color:t.tgt ? '#22d3ee' : 'var(--t3)'}}>{t.tgt ? fmtIN(t.tgt) : '—'}</td>
-                                      <td style={{padding:'5px 8px', textAlign:'right', color: p===null ? 'var(--t3)' : p>=100 ? '#86efac' : p>=70 ? '#fbbf24' : '#fca5a5', fontWeight:700}}>{p===null ? '—' : p+'%'}</td>
-                                      <td style={{padding:'5px 8px', textAlign:'center'}}>
-                                        <span style={{
-                                          fontSize:9, fontWeight:700, padding:'1px 6px', borderRadius:3,
-                                          background: t.source === 'sheet' ? 'rgba(34,197,94,0.15)' : t.source === 'upload' ? 'rgba(99,102,241,0.15)' : 'var(--bg2)',
-                                          color: t.source === 'sheet' ? '#86efac' : t.source === 'upload' ? '#a5b4fc' : 'var(--t3)',
-                                        }}>{t.source}</span>
+                                    <tr key={t.id}>
+                                      <td style={{maxWidth:220}}>
+                                        <div style={{display:'flex', alignItems:'center', gap:8, minWidth:0}}>
+                                          <span className="ini" style={{'--h':hueOf(t.name), width:24, height:24, fontSize:9, borderRadius:8}}>{iniOf(t.name)}</span>
+                                          <span style={{color:'var(--t1)', fontWeight:700, overflow:'hidden', textOverflow:'ellipsis'}}>{t.name}</span>
+                                        </div>
+                                      </td>
+                                      <td style={{textAlign:'right', color:'var(--grn)', fontWeight:700}}>{fmtIN(t.ach)}</td>
+                                      <td style={{textAlign:'right', color:t.tgt ? 'var(--acc)' : 'var(--t3)'}}>{t.tgt ? fmtIN(t.tgt) : '—'}</td>
+                                      <td style={{textAlign:'right', color: p===null ? 'var(--t3)' : achTone(p), fontWeight:800}}>{p===null ? '—' : p+'%'}</td>
+                                      <td style={{textAlign:'center'}}>
+                                        <span className={'mm-pill' + (t.source === 'sheet' || t.source === 'upload' ? '' : ' blank')}
+                                          style={{'--tone': t.source === 'sheet' ? 'var(--grn)' : 'var(--acc)'}}>{t.source}</span>
                                       </td>
                                     </tr>
                                   );
@@ -1018,7 +863,7 @@ export default function ManageMonths({
                               </tbody>
                             </table>
                             {sm.dealers.length > 15 && (
-                              <div style={{padding:'6px 8px', fontSize:10, color:'var(--t3)', background:'var(--bg2)', borderTop:'1px solid var(--b1)'}}>
+                              <div style={{padding:'7px 10px', fontSize:10.5, color:'var(--t3)', background:'var(--bg2)', borderTop:'1px solid var(--b1)'}}>
                                 Showing top 15 by sales · this salesman has {sm.dealers.length} total dealers
                               </div>
                             )}
@@ -1033,7 +878,7 @@ export default function ManageMonths({
           })}
         </div>
 
-        <div style={{padding:'8px 14px', background:'var(--bg2)', fontSize:10, color:'var(--t3)', borderTop:'1px solid var(--b1)'}}>
+        <div style={{padding:'9px 14px', background:'var(--bg2)', fontSize:11, color:'var(--t3)', borderTop:'1px solid var(--b1)', lineHeight:1.5}}>
           Tip: pick a month at the top right, then click each salesman to see their per-month breakdown and top dealers.
           Compare these numbers against your Google Sheet to spot where data is wrong.
         </div>
@@ -1067,13 +912,13 @@ export default function ManageMonths({
             <div style={{padding:16, overflow:'auto', flex:1}}>
               {inspectorBusy && (
                 <div style={{textAlign:'center', padding:30, color:'var(--t3)'}}>
-                  <div style={{width:28, height:28, border:'3px solid var(--b1)', borderTop:'3px solid #6366f1', borderRadius:'50%', animation:'spin .7s linear infinite', margin:'0 auto 8px'}}/>
+                  <div style={{width:28, height:28, border:'3px solid var(--b1)', borderTop:'3px solid var(--acc)', borderRadius:'50%', animation:'spin .7s linear infinite', margin:'0 auto 8px'}}/>
                   Fetching sheet…
                 </div>
               )}
 
               {inspectorData?.error && (
-                <div style={{padding:14, background:'rgba(248,113,113,0.10)', border:'1px solid #7f1d1d', borderRadius:7, color:'#fca5a5', fontSize:13}}>
+                <div style={{padding:14, background:'color-mix(in srgb, var(--red) 10%, transparent)', border:'1px solid #7f1d1d', borderRadius:7, color:'var(--red)', fontSize:13}}>
                   {inspectorData.error}
                 </div>
               )}
@@ -1089,8 +934,8 @@ export default function ManageMonths({
                     const dbg = (typeof window !== 'undefined' && window.__lastCSVDebug) ? window.__lastCSVDebug[inspectorSm] : null;
                     if(!dbg) return null;
                     return (
-                      <div style={{marginBottom:14, padding:10, background:'rgba(99,102,241,0.06)', border:'1px solid rgba(99,102,241,0.3)', borderRadius:7}}>
-                        <div style={{fontSize:11, fontWeight:700, color:'#a5b4fc', textTransform:'uppercase', letterSpacing:'.08em', marginBottom:8}}>
+                      <div style={{marginBottom:14, padding:10, background:'color-mix(in srgb, var(--acc) 6%, transparent)', border:'1px solid color-mix(in srgb, var(--acc) 30%, transparent)', borderRadius:7}}>
+                        <div style={{fontSize:11, fontWeight:700, color:'var(--acc)', textTransform:'uppercase', letterSpacing:'.08em', marginBottom:8}}>
                           Parser debug — what was detected
                         </div>
 
@@ -1098,7 +943,7 @@ export default function ManageMonths({
                         <div style={{fontSize:11, color:'var(--t2)', marginBottom:8}}>
                           <b>Label row (line {dbg.labelRowIdx + 1}) — month label cells:</b><br/>
                           {dbg.labelRowCells.length === 0
-                            ? <span style={{color:'#fca5a5'}}>NONE FOUND — parser couldn't see any labels above the headers</span>
+                            ? <span style={{color:'var(--red)'}}>NONE FOUND — parser couldn't see any labels above the headers</span>
                             : dbg.labelRowCells.map((c, i) => (
                                 <span key={i} style={{display:'inline-block', marginRight:8, padding:'1px 6px', background:'var(--bg1)', borderRadius:3, fontFamily:'monospace'}}>
                                   <b style={{color:'var(--yel)'}}>{c.colLetter}</b>="{c.value}"
@@ -1109,7 +954,7 @@ export default function ManageMonths({
                         {/* Detected sections */}
                         <div style={{fontSize:11, color:'var(--t2)'}}>
                           <b>Detected {dbg.sections.length} month sections:</b>
-                          {dbg.sections.length === 0 && <span style={{color:'#fca5a5', marginLeft:8}}>NONE — parser dropped every section</span>}
+                          {dbg.sections.length === 0 && <span style={{color:'var(--red)', marginLeft:8}}>NONE — parser dropped every section</span>}
                           <table style={{width:'100%', borderCollapse:'collapse', fontSize:11, marginTop:6, background:'var(--bg1)', borderRadius:6, overflow:'hidden'}}>
                             <thead>
                               <tr style={{background:'var(--bg2)'}}>
@@ -1124,7 +969,7 @@ export default function ManageMonths({
                               {dbg.sections.map((s, i) => (
                                 <tr key={i} style={{borderTop:'1px solid var(--b1)'}}>
                                   <td style={{padding:'4px 8px', color:'var(--t1)', fontWeight:700}}>{s.label || '(none)'}</td>
-                                  <td style={{padding:'4px 8px', color: s.moIdx >= 0 ? '#86efac' : '#fca5a5', fontWeight:600}}>{s.monthLabel}</td>
+                                  <td style={{padding:'4px 8px', color: s.moIdx >= 0 ? 'var(--grn)' : 'var(--red)', fontWeight:600}}>{s.monthLabel}</td>
                                   <td style={{padding:'4px 8px', textAlign:'center', fontFamily:'monospace', color:'var(--yel)', fontWeight:700}}>{s.targetColLetter}</td>
                                   <td style={{padding:'4px 8px', textAlign:'center', fontFamily:'monospace', color:'var(--grn)', fontWeight:700}}>{s.achColLetter}</td>
                                   <td style={{padding:'4px 8px', color:'var(--t2)', fontSize:10}}>{s.achHdr}</td>
@@ -1163,18 +1008,18 @@ export default function ManageMonths({
                         const isCity = lh.includes('city');
                         const isState = lh.includes('state');
                         let color = 'var(--t2)';
-                        if(isTarget)        color = '#fbbf24';
+                        if(isTarget)        color = '#f59e0b';
                         else if(isAchieved) color = '#86efac';
                         else if(isName)     color = '#a5b4fc';
-                        else if(isCity || isState) color = '#22d3ee';
+                        else if(isCity || isState) color = '#06b6d4';
                         return (
                           <div key={i} style={{
                             padding:'5px 8px', background:'var(--bg1)', borderRadius:4,
                             border:'1px solid var(--b1)', fontSize:11,
                           }}>
                             <span style={{
-                              fontWeight:800, color: i === 3 ? '#fbbf24' : '#6366f1',
-                              marginRight:6, background: i === 3 ? 'rgba(251,191,36,0.15)' : 'transparent',
+                              fontWeight:800, color: i === 3 ? 'var(--yel)' : 'var(--acc)',
+                              marginRight:6, background: i === 3 ? 'color-mix(in srgb, var(--yel) 15%, transparent)' : 'transparent',
                               padding:'1px 5px', borderRadius:3,
                             }}>{colLetter(i)}</span>
                             <span style={{color, fontWeight: i === 3 ? 700 : 500}}>{h || <i style={{color:'var(--t3)'}}>(empty)</i>}</span>
@@ -1183,7 +1028,7 @@ export default function ManageMonths({
                       })}
                     </div>
                     <div style={{fontSize:10, color:'var(--t3)', marginTop:6}}>
-                      <b style={{color:'var(--yel)'}}>Yellow</b> = parser thinks this is Target. <b style={{color:'var(--grn)'}}>Green</b> = Achieved. <b style={{color:'#a5b4fc'}}>Lavender</b> = Dealer name. <b style={{color:'#22d3ee'}}>Cyan</b> = City/State. <b style={{color:'var(--yel)'}}>Column D</b> is highlighted yellow as the configured Target column.
+                      <b style={{color:'var(--yel)'}}>Yellow</b> = parser thinks this is Target. <b style={{color:'var(--grn)'}}>Green</b> = Achieved. <b style={{color:'#a5b4fc'}}>Lavender</b> = Dealer name. <b style={{color:'#06b6d4'}}>Cyan</b> = City/State. <b style={{color:'var(--yel)'}}>Column D</b> is highlighted yellow as the configured Target column.
                     </div>
                   </div>
 
@@ -1196,9 +1041,9 @@ export default function ManageMonths({
                       <table style={{borderCollapse:'collapse', fontSize:10, width:'100%'}}>
                         <thead>
                           <tr style={{background:'var(--bg2)'}}>
-                            <th style={{padding:'5px 8px', color:'#6366f1', fontWeight:800, position:'sticky', left:0, background:'var(--bg2)', borderRight:'1px solid var(--b1)'}}>#</th>
+                            <th style={{padding:'5px 8px', color:'var(--acc)', fontWeight:800, position:'sticky', left:0, background:'var(--bg2)', borderRight:'1px solid var(--b1)'}}>#</th>
                             {inspectorData.headers.map((h, i) => (
-                              <th key={i} style={{padding:'5px 8px', color: i === 3 ? '#fbbf24' : '#6366f1', fontWeight:800, whiteSpace:'nowrap', borderBottom:'1px solid var(--b1)', background: i === 3 ? 'rgba(251,191,36,0.10)' : 'transparent'}}>
+                              <th key={i} style={{padding:'5px 8px', color: i === 3 ? 'var(--yel)' : 'var(--acc)', fontWeight:800, whiteSpace:'nowrap', borderBottom:'1px solid var(--b1)', background: i === 3 ? 'color-mix(in srgb, var(--yel) 10%, transparent)' : 'transparent'}}>
                                 {colLetter(i)}
                               </th>
                             ))}
@@ -1206,7 +1051,7 @@ export default function ManageMonths({
                           <tr style={{background:'var(--bg2)'}}>
                             <th style={{padding:'3px 8px', color:'var(--t3)', fontSize:9, position:'sticky', left:0, background:'var(--bg2)'}}></th>
                             {inspectorData.headers.map((h, i) => (
-                              <th key={i} style={{padding:'3px 8px', color:'var(--t3)', fontSize:9, fontWeight:500, whiteSpace:'nowrap', maxWidth:140, overflow:'hidden', textOverflow:'ellipsis', background: i === 3 ? 'rgba(251,191,36,0.08)' : 'transparent'}}>
+                              <th key={i} style={{padding:'3px 8px', color:'var(--t3)', fontSize:9, fontWeight:500, whiteSpace:'nowrap', maxWidth:140, overflow:'hidden', textOverflow:'ellipsis', background: i === 3 ? 'color-mix(in srgb, var(--yel) 8%, transparent)' : 'transparent'}}>
                                 {h || '(empty)'}
                               </th>
                             ))}
@@ -1220,8 +1065,8 @@ export default function ManageMonths({
                                 <td key={ci} style={{
                                   padding:'4px 8px', whiteSpace:'nowrap', maxWidth:140,
                                   overflow:'hidden', textOverflow:'ellipsis',
-                                  color: ci === 3 ? '#fbbf24' : 'var(--t1)',
-                                  background: ci === 3 ? 'rgba(251,191,36,0.05)' : 'transparent',
+                                  color: ci === 3 ? 'var(--yel)' : 'var(--t1)',
+                                  background: ci === 3 ? 'color-mix(in srgb, var(--yel) 5%, transparent)' : 'transparent',
                                   fontWeight: ci === 3 ? 700 : 400,
                                 }}>{cell || <span style={{color:'var(--t3)'}}>—</span>}</td>
                               ))}
@@ -1265,8 +1110,8 @@ export default function ManageMonths({
                     </div>
                   </div>
 
-                  <div style={{marginTop:14, padding:10, background:'rgba(99,102,241,0.08)', border:'1px solid rgba(99,102,241,0.25)', borderRadius:6, fontSize:11, color:'var(--t2)'}}>
-                    <b style={{color:'#a5b4fc'}}>How to read this:</b> Each row above shows what the parser pulled out for one dealer.
+                  <div style={{marginTop:14, padding:10, background:'color-mix(in srgb, var(--acc) 8%, transparent)', border:'1px solid color-mix(in srgb, var(--acc) 25%, transparent)', borderRadius:6, fontSize:11, color:'var(--t2)'}}>
+                    <b style={{color:'var(--acc)'}}>How to read this:</b> Each row above shows what the parser pulled out for one dealer.
                     The yellow <b>Target</b> column shows what it read from column D. Compare it against the same dealer's Target in the raw rows above.
                     If the numbers don't match, tell me which column actually has the target — I'll fix the parser.
                   </div>
@@ -1279,46 +1124,54 @@ export default function ManageMonths({
 
       {/* ── Upload-for picker (shows when an upload starts and admin must pick salesman) ── */}
       {uploadFor && isAdmin && (
-        <div style={{
-          position:'fixed', inset:0, background:'rgba(0,0,0,.6)', zIndex:9999,
-          display:'flex', alignItems:'center', justifyContent:'center', padding:14,
-        }}
+        <div className="overlay" style={{zIndex:9999, padding:14}}
           onClick={() => setUploadFor(null)}
         >
-          <div onClick={e => e.stopPropagation()} style={{
-            background:'var(--bg1)', border:'1px solid var(--b1)',
-            borderRadius:12, padding:18, width:'100%', maxWidth:380,
-          }}>
-            <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:12}}>
-              <Upload size={16} color="#22c55e"/>
-              <span style={{fontSize:14, fontWeight:700, color:'var(--t1)', flex:1}}>Upload for {uploadFor}</span>
-              <button onClick={() => setUploadFor(null)} style={{background:'none', border:'none', color:'var(--t3)', cursor:'pointer'}}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{maxWidth:460, padding:18}}>
+            <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:14}}>
+              <span className="sec-ico" style={{'--tone':'var(--grn)'}}><Upload size={15}/></span>
+              <div style={{flex:1, minWidth:0}}>
+                <div style={{fontSize:15, fontWeight:800, color:'var(--t1)'}}>Upload for {uploadFor}</div>
+                <div style={{fontSize:11.5, color:'var(--t3)'}}>Monthly sales data · Excel or CSV</div>
+              </div>
+              <button onClick={() => setUploadFor(null)} className="imp-x" title="Close">
                 <X size={14}/>
               </button>
             </div>
-            <div style={{fontSize:11, color:'var(--t3)', marginBottom:6}}>Upload for which salesman?</div>
+
+            <ImportStepper steps={['Month', 'Salesman', 'Choose file', 'Done']} current={uploadSm ? 2 : 1}/>
+
+            <label style={{fontSize:10.5, fontWeight:800, color:'var(--t3)', display:'block', marginBottom:6, textTransform:'uppercase', letterSpacing:'.08em'}}>Upload for which salesman?</label>
             <select
+              className="sel"
               value={uploadSm}
               onChange={e => setUploadSm(e.target.value)}
-              style={{
-                width:'100%', padding:'8px 10px',
-                background:'var(--bg2)', color:'var(--t1)',
-                border:'1px solid var(--b1)', borderRadius:6,
-                fontSize:13, marginBottom:12,
-              }}>
+              style={{width:'100%', fontSize:13, marginBottom:12}}>
               {salesmen.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               {!salesmen.length && <option value="">No salesmen found</option>}
             </select>
-            <button onClick={() => fileRef.current?.click()} disabled={busy}
-              style={{
-                width:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:6,
-                background:'#22c55e', color:'#0c0c1e', border:'none',
-                padding:'10px', borderRadius:6, fontSize:13, fontWeight:700,
-                cursor: busy ? 'not-allowed' : 'pointer',
-              }}>
-              <Upload size={14}/> Choose Excel / CSV file
-            </button>
-            <div style={{fontSize:10, color:'var(--t3)', marginTop:8, textAlign:'center'}}>
+
+            <DropZone
+              onBrowse={() => fileRef.current?.click()}
+              onDropFiles={files => handleFile({ target: { files, value: '' } })}
+              disabled={busy}
+              busy={busy}
+              busyText={`Uploading to ${uploadFor}…`}
+              title="Drop the Excel / CSV file here"
+              formats={['.XLSX', '.XLS', '.CSV']}
+              tone="var(--grn)"
+            />
+
+            <div style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', marginTop:12}}>
+              <button onClick={() => downloadTemplate(uploadFor)} className="btne" style={{display:'inline-flex', alignItems:'center', gap:6}}>
+                <Download size={13}/> Template for {uploadFor}
+              </button>
+              <div style={{flex:1}}/>
+              <button onClick={() => fileRef.current?.click()} disabled={busy} className="btnp" style={{display:'inline-flex', alignItems:'center', gap:6}}>
+                <Upload size={14}/> Choose Excel / CSV file
+              </button>
+            </div>
+            <div style={{fontSize:11, color:'var(--t3)', marginTop:10, textAlign:'center'}}>
               Existing dealers in this month will be updated. New dealers will be added.
             </div>
           </div>
@@ -1327,3 +1180,31 @@ export default function ManageMonths({
     </div>
   );
 }
+
+const MM_CSS = `
+.mm-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px}
+.mm-pill{--tone:var(--acc);display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;
+  padding:2px 9px;border-radius:20px;color:var(--tone);background:color-mix(in srgb,var(--tone) 13%,transparent);border:1px solid color-mix(in srgb,var(--tone) 30%,transparent)}
+.mm-pill.blank{color:var(--t3);background:var(--bg2);border:1px dashed var(--b2)}
+.mm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,250px),1fr));gap:12px;padding:14px}
+.mm-card{--tone:var(--t3);position:relative;overflow:hidden;display:flex;flex-direction:column;background:var(--bg1);border:1px solid var(--b1);border-radius:16px;padding:14px 14px 12px 17px;transition:transform .15s,box-shadow .15s}
+.mm-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--tone)}
+.mm-card:hover{transform:translateY(-2px);box-shadow:var(--shadowHover,0 6px 20px rgba(16,24,40,.12))}
+.mm-card.cur{border-color:color-mix(in srgb,var(--acc) 45%,var(--b1));background:color-mix(in srgb,var(--acc) 4%,var(--bg1));box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 12%,transparent)}
+.mm-card.blank{background:color-mix(in srgb,var(--bg2) 50%,var(--bg1))}
+.mm-idx{width:32px;height:32px;border-radius:10px;display:grid;place-items:center;flex-shrink:0;font-size:12px;font-weight:800;color:var(--tone);background:color-mix(in srgb,var(--tone) 13%,transparent)}
+.mm-kv{min-width:0;padding:7px 8px;border-radius:10px;background:var(--bg2);border:1px solid var(--b1)}
+.mm-kv span{display:block;font-size:9.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--t3)}
+.mm-kv b{display:block;font-size:13px;font-weight:800;font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mm-stack{display:flex;flex-shrink:0}
+.mm-stack .ini{box-shadow:0 0 0 2px var(--bg1)}
+.mm-stack .ini+.ini{margin-left:-7px}
+.mm-ic{display:inline-grid;place-items:center;padding:6px 9px}
+.mm-row{padding:11px 14px;cursor:pointer;display:flex;align-items:center;gap:10px;flex-wrap:wrap;transition:background .15s}
+.mm-row:hover{background:color-mix(in srgb,var(--acc) 4%,transparent)}
+.mm-open{padding:12px 14px 14px 14px;background:var(--bg2);border-top:1px solid var(--b1)}
+.mm-sub{font-size:10.5px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:7px}
+.mm-mini{border:1px solid var(--b1);border-radius:10px;padding:7px 8px;cursor:pointer;text-align:center;transition:border-color .15s}
+.mm-mini:hover{border-color:var(--acc)}
+@media(max-width:900px){.mm-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+`;

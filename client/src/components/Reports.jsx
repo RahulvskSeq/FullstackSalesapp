@@ -3,15 +3,17 @@
 // the selected one as a full data table (search, per-column filters, sort,
 // pagination, column show/hide, export). The Visit report opens by default.
 
-import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import {
   FileSpreadsheet, Download, Calendar, Users, TrendingUp, Activity,
   ClipboardList, UserCheck, Plane, AlertTriangle, Camera, Layers,
-  ChevronRight, ChevronDown, Search,
+  ChevronRight, ChevronDown, Search, ArrowUpRight, ArrowDownRight,
 } from 'lucide-react';
+import { PageHead } from '../collections/ui';
 import { api } from '../api';
+import { saveText } from '../lib/saveFile';
 import { notify } from './Toast';
-import { monthTarget, pct, spct } from '../utils';
+import { monthTarget, pct, spct, pclr } from '../utils';
 
 // "Jun-26" → "2026-06"
 const _moMonths = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
@@ -33,11 +35,9 @@ function exportCSV(filename, headers, rows){
     return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
   };
   const csv = [headers.map(esc).join(','), ...rows.map(r => r.map(esc).join(','))].join('\n');
-  const a = document.createElement('a');
-  a.href = 'data:text/csv;charset=utf-8,﻿' + encodeURIComponent(csv);
-  a.download = filename;
-  a.click();
-  notify.success('Exported ' + rows.length + ' rows');
+  saveText('\ufeff' + csv, filename, 'text/csv;charset=utf-8')
+    .then(() => notify.success('Exported ' + rows.length + ' rows'))
+    .catch(e => notify.error('Export failed: ' + (e?.message || e)));
 }
 
 const fmtTime = (d) => d ? new Date(d).toLocaleString('en-IN', { dateStyle:'medium', timeStyle:'short' }) : '';
@@ -99,6 +99,47 @@ const workingDays = (from, to) => {
 
 const fmtHM   = (m) => { const n=Number(m)||0; if(!n) return ''; return n>=60?`${Math.floor(n/60)}h ${n%60}m`:`${n}m`; };
 
+// Display-only cell renderers (design kit). The underlying cell values — what
+// search, the column filters, sort and CSV export all read — are untouched.
+const nameCell = (name, sub) => {
+  const n = name == null ? '' : String(name);
+  if(!n) return <span style={{color:'var(--t3)'}}>—</span>;
+  return (
+    <div style={{display:'flex',alignItems:'center',gap:9,minWidth:0,maxWidth:240}}>
+      <span className="ini" style={{'--h':(n||'?').charCodeAt(0)*37%360}}>{(n||'?').replace(/[^A-Za-z0-9]/g,'').slice(0,2).toUpperCase()}</span>
+      <div style={{minWidth:0}}>
+        <div title={n} style={{fontWeight:700,fontSize:11.5,color:'var(--t1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{n}</div>
+        {sub ? <div style={{fontSize:10.5,color:'var(--t3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{sub}</div> : null}
+      </div>
+    </div>
+  );
+};
+
+// '85%' → value + thin progress bar. Non-numeric values ('' / '—') pass through.
+const pctCell = (v, colorOf = pclr) => {
+  const p = parseFloat(v);
+  if(v === '' || v == null || isNaN(p)) return <span style={{color:'var(--t3)'}}>{v === '' || v == null ? '—' : String(v)}</span>;
+  const c = colorOf(p);
+  return (<>
+    <div style={{fontWeight:800,fontSize:11.5,color:c}}>{String(v)}</div>
+    <div className="pbar"><div style={{width:Math.min(Math.max(p,0),100)+'%',background:c}}/></div>
+  </>);
+};
+const attendanceClr = (p) => p >= 90 ? '#10b981' : p >= 75 ? '#f59e0b' : '#ef4444';
+
+// Up/down delta ('+12', -5, '12%', 'new') → trend pill.
+const trendCell = (v) => {
+  if(v === '' || v == null || v === '—') return <span style={{color:'var(--t3)'}}>—</span>;
+  if(v === 'new') return <span className="trend up"><ArrowUpRight size={11}/>new</span>;
+  const s = String(v), n = parseFloat(s);
+  if(isNaN(n)) return s;
+  return (
+    <span className={'trend '+(n>0?'up':n<0?'down':'')}>
+      {n>0?<ArrowUpRight size={11}/>:n<0?<ArrowDownRight size={11}/>:null}{n===0 ? s : s.replace(/^[+-]/,'')}
+    </span>
+  );
+};
+
 /* ─────────────────────────────────────────────────────────────────────── *
  *  VisitDetailModal — one visit in full, incl. check-in/out photos.        *
  *  Lists are fetched WITHOUT photos (base64, huge); this pulls the single  *
@@ -139,8 +180,8 @@ function VisitDetailModal({ visitId, users, onClose }){
               <div style={{fontSize:17,fontWeight:700,marginBottom:4}}>{v.dealerName}</div>
               <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
                 <span style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:3,
-                  background:v.status==='completed'?'rgba(52,211,153,.15)':'rgba(251,191,36,.15)',
-                  color:v.status==='completed'?'#34d399':'#fbbf24'}}>
+                  background:v.status==='completed'?'color-mix(in srgb, var(--grn) 15%, transparent)':'color-mix(in srgb, var(--yel) 15%, transparent)',
+                  color:v.status==='completed'?'var(--grn)':'var(--yel)'}}>
                   {v.status==='completed'?'COMPLETED':'IN PROGRESS'}
                 </span>
                 {v.autoClosed&&<span style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:3,background:'rgba(148,163,184,.15)',color:'#94a3b8'}}>AUTO-CLOSED</span>}
@@ -154,7 +195,7 @@ function VisitDetailModal({ visitId, users, onClose }){
           </div>
 
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
-            {[{p:inPhoto,l:'Check-in photo',c:'#34d399'},{p:outPhoto,l:'Check-out photo',c:'#fbbf24'}].map(x=>(
+            {[{p:inPhoto,l:'Check-in photo',c:'#10b981'},{p:outPhoto,l:'Check-out photo',c:'#f59e0b'}].map(x=>(
               <div key={x.l}>
                 <div style={{fontSize:10,color:x.c,textTransform:'uppercase',letterSpacing:'.07em',marginBottom:5,fontWeight:700}}>{x.l}</div>
                 {x.p ? (
@@ -354,7 +395,7 @@ function DataTable({ columns, rows, loading, err, onRefresh, exportName, kpis=[]
                     style={{cursor:onRowClick?'pointer':'default'}}>
                     {visibleIdx.map(i=>{
                       const c=columns[i], v=r.cells[i];
-                      if(c.render) return <td key={i} style={{textAlign:c.align||'left'}}>{c.render(v,r.meta)}</td>;
+                      if(c.render) return <td key={i} style={{textAlign:c.align||'left'}}>{c.render(v,r.meta,r)}</td>;
                       return (
                         <td key={i}
                           onMouseEnter={e=>showTip(e,v)}
@@ -422,12 +463,17 @@ function VisitsReport({ fromDate, toDate, users }){
   const [preview,setPreview]= useState(null);
   const [zoom,   setZoom]   = useState('');
 
+  const seq = useRef(0);
   const load = useCallback(async ()=>{
+    const id = ++seq.current;
     setLoading(true); setErr('');
     try {
       const d = await api.visitsList({ from: fromDate, to: toDate, limit: 5000, light: 1 });
-      setItems(Array.isArray(d)?d:[]); setPhotos({});
-    } catch(e){ setErr(e.message||'Could not load visits'); setItems([]); }
+      if(id !== seq.current) return;
+      // Photos are keyed by visit id and never change, so keep the ones already
+      // loaded — they are only fetched again when the visible row ids change.
+      setItems(Array.isArray(d)?d:[]);
+    } catch(e){ if(id !== seq.current) return; setErr(e.message||'Could not load visits'); setItems([]); }
     setLoading(false);
   },[fromDate,toDate]);
   useEffect(()=>{ load(); },[load]);
@@ -448,12 +494,12 @@ function VisitsReport({ fromDate, toDate, users }){
         display:'flex',alignItems:'center',justifyContent:'center',fontSize:8,color:'var(--t3)'}}>none</div>;
 
   const columns = [
-    { label:'Salesman',    w:130 },
-    { label:'Party',       w:190, render:(v)=><span style={{fontSize:11.5,fontWeight:600,color:'var(--acc)'}}>{v}</span> },
+    { label:'Salesman',    w:130, render:(v)=>nameCell(v) },
+    { label:'Party',       w:190, render:(v,_m,r)=>nameCell(v, r?.cells[6]) },
     { label:'Status',      w:96,  render:(v)=>(
         <span style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:3,whiteSpace:'nowrap',
-          background:v==='Completed'?'rgba(52,211,153,.15)':'rgba(251,191,36,.15)',
-          color:v==='Completed'?'#34d399':'#fbbf24'}}>{v}</span>) },
+          background:v==='Completed'?'color-mix(in srgb, var(--grn) 15%, transparent)':'color-mix(in srgb, var(--yel) 15%, transparent)',
+          color:v==='Completed'?'var(--grn)':'var(--yel)'}}>{v}</span>) },
     { label:'In Date',     w:140 },
     { label:'In Image',    w:76, noFilter:true, render:(_v,meta)=><Thumb src={photos[meta.id]?.in}/> },
     { label:'In Address',  w:230 },
@@ -522,13 +568,17 @@ function AttendanceReport({ fromDate, toDate, users }){
   const [photos, setPhotos] = useState({});
   const [zoom,   setZoom]   = useState('');
 
+  const seq = useRef(0);
   const load = useCallback(async ()=>{
+    const id = ++seq.current;
     setLoading(true); setErr('');
     try {
       // light=1: no base64 in the list. Thumbnails arrive per visible page.
       const d = await api.attListAttendance({ from: fromDate, to: toDate, limit: 5000, light: 1 });
-      setItems(Array.isArray(d)?d:[]); setPhotos({});
-    } catch(e){ setErr(e.message||'Could not load attendance'); setItems([]); }
+      if(id !== seq.current) return;
+      // Photos are keyed by punch id — keep them (see VisitsReport).
+      setItems(Array.isArray(d)?d:[]);
+    } catch(e){ if(id !== seq.current) return; setErr(e.message||'Could not load attendance'); setItems([]); }
     setLoading(false);
   },[fromDate,toDate]);
   useEffect(()=>{ load(); },[load]);
@@ -558,18 +608,18 @@ function AttendanceReport({ fromDate, toDate, users }){
   // Every column filters except the two image cells — there is nothing to type
   // against a photo.
   const columns = [
-    { label:'Salesman',    w:140 },
+    { label:'Salesman',    w:140, render:(v,_m,r)=>nameCell(v, r?.cells[16]) },
     { label:'Date',        w:110 },
     { label:'Day',         w:70  },
     { label:'Status',      w:110, render:(v)=>(
         <span style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:3,whiteSpace:'nowrap',
-          background:v==='Complete'?'rgba(52,211,153,.15)':v==='No check-out'?'rgba(251,146,60,.15)':'rgba(248,113,113,.15)',
-          color:v==='Complete'?'#34d399':v==='No check-out'?'#fb923c':'#f87171'}}>{v}</span>) },
+          background:v==='Complete'?'color-mix(in srgb, var(--grn) 15%, transparent)':v==='No check-out'?'rgba(251,146,60,.15)':'color-mix(in srgb, var(--red) 15%, transparent)',
+          color:v==='Complete'?'var(--grn)':v==='No check-out'?'#f97316':'var(--red)'}}>{v}</span>) },
     { label:'In Time',     w:90  },
     { label:'Punctuality', w:100, render:(v)=> v ? (
         <span style={{fontSize:9,fontWeight:700,padding:'2px 7px',borderRadius:3,whiteSpace:'nowrap',
-          background:v==='On time'?'rgba(52,211,153,.15)':v==='Late'?'rgba(251,191,36,.15)':'rgba(248,113,113,.15)',
-          color:v==='On time'?'#34d399':v==='Late'?'#fbbf24':'#f87171'}}>{v}</span>
+          background:v==='On time'?'color-mix(in srgb, var(--grn) 15%, transparent)':v==='Late'?'color-mix(in srgb, var(--yel) 15%, transparent)':'color-mix(in srgb, var(--red) 15%, transparent)',
+          color:v==='On time'?'var(--grn)':v==='Late'?'var(--yel)':'var(--red)'}}>{v}</span>
       ) : <span style={{color:'var(--t3)'}}>—</span> },
     { label:'In Photo',    w:76, noFilter:true, render:(_v,meta)=><Thumb src={photos[meta.inId]}/> },
     { label:'In Address',  w:250 },
@@ -648,11 +698,11 @@ function AttendanceReport({ fromDate, toDate, users }){
   const half = rows.filter(r=>r.cells[5]==='Half day').length;
   const kpis = [
     { label:'Days marked',   value:rows.length },
-    { label:'Working days',  value:wdInRange, accent:'#818cf8' },
-    { label:'Late',          value:late, accent:'#fbbf24' },
-    { label:'Half day',      value:half, accent:'#f87171' },
-    { label:'Complete',      value:complete, accent:'#34d399' },
-    { label:'No check-out',  value:noCheckout, accent:'#fb923c' },
+    { label:'Working days',  value:wdInRange, accent:'#6366f1' },
+    { label:'Late',          value:late, accent:'#f59e0b' },
+    { label:'Half day',      value:half, accent:'#ef4444' },
+    { label:'Complete',      value:complete, accent:'#10b981' },
+    { label:'No check-out',  value:noCheckout, accent:'#f97316' },
     { label:'People',        value:new Set(items.map(a=>a.userId).filter(Boolean)).size },
     { label:'Total hours',   value:`${Math.floor(totalMin/60)}h ${totalMin%60}m`, accent:'#7c3aed' },
   ];
@@ -682,18 +732,21 @@ function AttendanceSummaryReport({ fromDate, toDate, users }){
   const [loading,setLoading]= useState(false);
   const [err,    setErr]    = useState('');
 
+  const seq = useRef(0);
   const load = useCallback(async ()=>{
+    const id = ++seq.current;
     setLoading(true); setErr('');
     try {
       const d = await api.attListAttendance({ from: fromDate, to: toDate, limit: 5000, light: 1 });
+      if(id !== seq.current) return;
       setItems(Array.isArray(d)?d:[]);
-    } catch(e){ setErr(e.message||'Could not load attendance'); setItems([]); }
+    } catch(e){ if(id !== seq.current) return; setErr(e.message||'Could not load attendance'); setItems([]); }
     setLoading(false);
   },[fromDate,toDate]);
   useEffect(()=>{ load(); },[load]);
 
   const columns = [
-    { label:'Salesman',     w:150 },
+    { label:'Salesman',     w:150, render:(v)=>nameCell(v) },
     { label:'Working days', w:110, align:'right' },
     { label:'Present',      w:90,  align:'right' },
     { label:'Absent',       w:90,  align:'right' },
@@ -702,7 +755,7 @@ function AttendanceSummaryReport({ fromDate, toDate, users }){
     { label:'Half day',     w:90,  align:'right' },
     { label:'No check-out', w:110, align:'right' },
     { label:'Hours',        w:100, align:'right' },
-    { label:'Attendance %', w:110, align:'right' },
+    { label:'Attendance %', w:110, align:'right', render:(v)=>pctCell(v, attendanceClr) },
   ];
 
   const rows = useMemo(()=>{
@@ -766,10 +819,10 @@ function AttendanceSummaryReport({ fromDate, toDate, users }){
   const sum = (i) => rows.reduce((s,r)=>s+(Number(r.cells[i])||0),0);
   const kpis = [
     { label:'People',       value:rows.length },
-    { label:'Working days', value:workingDayList(fromDate,toDate).length, accent:'#818cf8' },
-    { label:'Absent days',  value:sum(3), accent:'#f87171' },
-    { label:'Late',         value:sum(5), accent:'#fbbf24' },
-    { label:'Half days',    value:sum(6), accent:'#fb923c' },
+    { label:'Working days', value:workingDayList(fromDate,toDate).length, accent:'#6366f1' },
+    { label:'Absent days',  value:sum(3), accent:'#ef4444' },
+    { label:'Late',         value:sum(5), accent:'#f59e0b' },
+    { label:'Half days',    value:sum(6), accent:'#f97316' },
   ];
 
   return <DataTable columns={columns} rows={rows} loading={loading} err={err}
@@ -796,7 +849,7 @@ function LeaveSummaryReport({ users }){
   useEffect(()=>{ load(); },[load]);
 
   const columns = [
-    { label:'Salesman',       w:150 },
+    { label:'Salesman',       w:150, render:(v,_m,r)=>nameCell(v, r?.cells[7] ? 'last leave '+r.cells[7] : '') },
     { label:'Applications',   w:110, align:'right' },
     { label:'Approved days',  w:120, align:'right' },
     { label:'Pending days',   w:115, align:'right' },
@@ -847,8 +900,8 @@ function LeaveSummaryReport({ users }){
   const kpis = [
     { label:'People who took leave', value:rows.length },
     { label:'Applications',          value:items.length },
-    { label:'Approved days',         value:tot(2), accent:'#34d399' },
-    { label:'Pending days',          value:tot(3), accent:'#fb923c' },
+    { label:'Approved days',         value:tot(2), accent:'#10b981' },
+    { label:'Pending days',          value:tot(3), accent:'#f97316' },
   ];
 
   return <DataTable columns={columns} rows={rows} loading={loading} err={err}
@@ -861,10 +914,12 @@ function ApiReport({ loader, columns, exportName, deps=[], kpis }){
   const [rows,setRows]=useState([]);
   const [loading,setLoading]=useState(false);
   const [err,setErr]=useState('');
+  const seq = useRef(0);
   const load = useCallback(async ()=>{
+    const id = ++seq.current;
     setLoading(true); setErr('');
-    try { setRows(await loader()); }
-    catch(e){ setErr(e.message||'Could not load'); setRows([]); }
+    try { const r = await loader(); if(id !== seq.current) return; setRows(r); }
+    catch(e){ if(id !== seq.current) return; setErr(e.message||'Could not load'); setRows([]); }
     setLoading(false);
   // eslint-disable-next-line
   },deps);
@@ -883,7 +938,10 @@ export default function Reports({ dealers, users, currentUser, monthConfig, outs
   const currentIdx = monthConfig?.currentIdx ?? Math.max(0, MO.length - 1);
   const [fromIdx, setFromIdx] = useState(currentIdx);
   const [toIdx,   setToIdx]   = useState(currentIdx);
-  const today = new Date().toISOString().slice(0,10);
+  // Local calendar date — toISOString() is UTC, which is still "yesterday" in
+  // IST until 05:30.
+  const _now = new Date();
+  const today = `${_now.getFullYear()}-${String(_now.getMonth()+1).padStart(2,'0')}-${String(_now.getDate()).padStart(2,'0')}`;
   const startOfMonth = today.slice(0,8) + '01';
   const [fromDate, setFromDate] = useState(startOfMonth);
   const [toDate,   setToDate]   = useState(today);
@@ -894,26 +952,17 @@ export default function Reports({ dealers, users, currentUser, monthConfig, outs
   const rangeMonths = MO.slice(fromI, toI + 1);
   const rangeLabel  = rangeMonths.length === 1 ? rangeMonths[0] : (MO[fromI] + ' to ' + MO[toI]);
 
-  if(!isStaff){
-    return (
-      <div className="fade" style={{padding:24, textAlign:'center', color:'var(--t2)'}}>
-        <AlertTriangle size={28} style={{margin:'0 auto 8px', color:'var(--t3)'}}/>
-        <div style={{fontSize:14}}>Reports are admin-only.</div>
-      </div>
-    );
-  }
-
   const nameOf = (id) => (id && users?.[id]?.name) || id || '';
 
   // ── Sales reports (built from data already in the app) ────────────────
   const dealerPerf = useMemo(()=>{
     const columns = [
-      { label:'Salesman', w:130 }, { label:'Dealer', w:200 }, { label:'City', w:110 },
+      { label:'Salesman', w:130 }, { label:'Dealer', w:200, render:(v,_m,r)=>nameCell(v, r?.cells[2]) }, { label:'City', w:110 },
       { label:'State', w:110 }, { label:'Zone', w:90 },
       { label:'Performance Status', w:150 }, { label:'Selected User', w:130 }, { label:'Category', w:120 },
     ];
-    rangeMonths.forEach(m=>{ columns.push({label:m+' Tgt',w:90,align:'right'},{label:m+' Ach',w:90,align:'right'},{label:m+' %',w:70,align:'right'}); });
-    columns.push({label:'Total Tgt',w:100,align:'right'},{label:'Total Ach',w:100,align:'right'},{label:'Total %',w:80,align:'right'});
+    rangeMonths.forEach(m=>{ columns.push({label:m+' Tgt',w:90,align:'right'},{label:m+' Ach',w:90,align:'right'},{label:m+' %',w:70,align:'right',render:(v)=>pctCell(v)}); });
+    columns.push({label:'Total Tgt',w:100,align:'right'},{label:'Total Ach',w:100,align:'right'},{label:'Total %',w:80,align:'right',render:(v)=>pctCell(v)});
     const rows = (dealers||[]).map(d=>{
       const cells=[nameOf(d.salesman), d.name, d.city||'', d.state||'', d.zone||'', d.perfStatus||'', d.status||'', d.category||''];
       let tT=0,tA=0;
@@ -928,9 +977,9 @@ export default function Reports({ dealers, users, currentUser, monthConfig, outs
   },[dealers,rangeMonths,fromI,users]);
 
   const salesmanSummary = useMemo(()=>{
-    const columns=[{label:'Salesman',w:150},{label:'Dealers',w:90,align:'right'}];
-    rangeMonths.forEach(m=>{ columns.push({label:m+' Tgt',w:90,align:'right'},{label:m+' Ach',w:90,align:'right'},{label:m+' %',w:70,align:'right'}); });
-    columns.push({label:'Total Tgt',w:100,align:'right'},{label:'Total Ach',w:100,align:'right'},{label:'Total %',w:80,align:'right'});
+    const columns=[{label:'Salesman',w:150,render:(v,_m,r)=>nameCell(v, r?.cells[1]!=null ? r.cells[1]+' dealers' : '')},{label:'Dealers',w:90,align:'right'}];
+    rangeMonths.forEach(m=>{ columns.push({label:m+' Tgt',w:90,align:'right'},{label:m+' Ach',w:90,align:'right'},{label:m+' %',w:70,align:'right',render:(v)=>pctCell(v)}); });
+    columns.push({label:'Total Tgt',w:100,align:'right'},{label:'Total Ach',w:100,align:'right'},{label:'Total %',w:80,align:'right',render:(v)=>pctCell(v)});
     const by={};
     (dealers||[]).forEach(d=>{ const id=d.salesman||'_unassigned'; (by[id]=by[id]||{list:[],name:nameOf(id)}).list.push(d); });
     const rows=Object.values(by).map(g=>{
@@ -949,7 +998,7 @@ export default function Reports({ dealers, users, currentUser, monthConfig, outs
 
   const userMaster = useMemo(()=>{
     const columns=[
-      {label:'User ID',w:110},{label:'Name',w:150},{label:'Email',w:200},{label:'Role',w:110},{label:'Active',w:80},
+      {label:'User ID',w:110},{label:'Name',w:150,render:(v,_m,r)=>nameCell(v, r?.cells[3])},{label:'Email',w:200},{label:'Role',w:110},{label:'Active',w:80},
       {label:'Approver',w:130},{label:'Perm States',w:160},{label:'Perm Cities',w:160},
       {label:'Perm Zones',w:130},{label:'Perm Salesmen',w:180},{label:'Pages',w:200},
       {label:'Features',w:160},{label:'Sheet URL',w:200},
@@ -980,11 +1029,11 @@ export default function Reports({ dealers, users, currentUser, monthConfig, outs
     const has  = i => i >= 0 && i < MO.length;
 
     const columns = [
-      { label:'Salesman', w:130 }, { label:'Dealer', w:220 }, { label:'City', w:110 },
+      { label:'Salesman', w:130 }, { label:'Dealer', w:220, render:(v,_m,r)=>nameCell(v, r?.cells[2]) }, { label:'City', w:110 },
       { label:MO[curI] || 'This', w:95, align:'right' },
     ];
-    if(has(prevI)) columns.push({label:MO[prevI],w:95,align:'right'},{label:'Δ MoM',w:90,align:'right'},{label:'MoM %',w:85,align:'right'});
-    if(has(lyI))   columns.push({label:MO[lyI],  w:95,align:'right'},{label:'Δ YoY',w:90,align:'right'},{label:'YoY %',w:85,align:'right'});
+    if(has(prevI)) columns.push({label:MO[prevI],w:95,align:'right'},{label:'Δ MoM',w:90,align:'right',render:trendCell},{label:'MoM %',w:85,align:'right',render:trendCell});
+    if(has(lyI))   columns.push({label:MO[lyI],  w:95,align:'right'},{label:'Δ YoY',w:90,align:'right',render:trendCell},{label:'YoY %',w:85,align:'right',render:trendCell});
 
     // "new" rather than a bogus percentage — growth off a zero base is undefined,
     // and printing 100% or ∞ there quietly misleads.
@@ -1032,20 +1081,30 @@ export default function Reports({ dealers, users, currentUser, monthConfig, outs
     return { columns, rows, kpis };
   },[dealers,toI,MO,users]);
 
+  // After every hook — returning earlier changed the hook count between renders.
+  if(!isStaff){
+    return (
+      <div className="fade" style={{padding:24, textAlign:'center', color:'var(--t2)'}}>
+        <AlertTriangle size={28} style={{margin:'0 auto 8px', color:'var(--t3)'}}/>
+        <div style={{fontSize:14}}>Reports are admin-only.</div>
+      </div>
+    );
+  }
+
   // ── Report registry — drives the left rail ───────────────────────────
   const REPORTS = [
     { id:'visits',     label:'Visit',              group:'CRM',   icon:ClipboardList, color:'var(--pur)' },
     { id:'attendance', label:'Attendance',         group:'CRM',   icon:Camera,        color:'var(--yel)' },
-    { id:'leads',      label:'Leads',              group:'CRM',   icon:UserCheck,     color:'#22d3ee' },
-    { id:'leaves',     label:'Leaves',             group:'CRM',   icon:Plane,         color:'#fb923c' },
-    { id:'attSummary', label:'Attendance Summary',group:'CRM',   icon:Camera,        color:'#22d3ee' },
+    { id:'leads',      label:'Leads',              group:'CRM',   icon:UserCheck,     color:'#06b6d4' },
+    { id:'leaves',     label:'Leaves',             group:'CRM',   icon:Plane,         color:'#f97316' },
+    { id:'attSummary', label:'Attendance Summary',group:'CRM',   icon:Camera,        color:'#06b6d4' },
     { id:'leaveSummary',label:'Leave Summary',     group:'CRM',   icon:Plane,         color:'#f59e0b' },
     { id:'dailySales', label:'Daily Sales',        group:'Sales', icon:Calendar,      color:'#14b8a6' },
     { id:'monthCompare',label:'Month Comparison',  group:'Sales', icon:Activity,      color:'#0ea5e9' },
-    { id:'dealerPerf', label:'Dealer Performance', group:'Sales', icon:TrendingUp,    color:'#6366f1' },
+    { id:'dealerPerf', label:'Dealer Performance', group:'Sales', icon:TrendingUp,    color:'#3b82f6' },
     { id:'smSummary',  label:'Salesman Summary',   group:'Sales', icon:Users,         color:'var(--grn)' },
     { id:'outstanding',label:'Outstanding',        group:'Sales', icon:AlertTriangle, color:'var(--red)' },
-    { id:'category',   label:'Category Drill-down',group:'Sales', icon:Layers,        color:'#818cf8' },
+    { id:'category',   label:'Category Drill-down',group:'Sales', icon:Layers,        color:'#6366f1' },
     { id:'userMaster', label:'User Master',        group:'Admin', icon:Users,         color:'#a5b4fc' },
   ];
   const groups = ['CRM','Sales','Admin'];
@@ -1063,7 +1122,7 @@ export default function Reports({ dealers, users, currentUser, monthConfig, outs
         return <AttendanceReport fromDate={fromDate} toDate={toDate} users={users}/>;
       case 'leads':
         return <ApiReport exportName="Leads" deps={[]}
-          columns={[{label:'Name',w:160},{label:'Company',w:160},{label:'Phone',w:120},{label:'Email',w:180},
+          columns={[{label:'Name',w:160,render:(v,_m,r)=>nameCell(v, r?.cells[1])},{label:'Company',w:160},{label:'Phone',w:120},{label:'Email',w:180},
                     {label:'City',w:120},{label:'State',w:120},{label:'Source',w:110},{label:'Status',w:110},
                     {label:'Assigned To',w:140},{label:'Value',w:100,align:'right'},{label:'Notes',w:220},
                     {label:'Updates',w:90,align:'right'},{label:'Last Update',w:240},{label:'Created',w:140}]}
@@ -1080,7 +1139,7 @@ export default function Reports({ dealers, users, currentUser, monthConfig, outs
           kpis={rows=>[{label:'Leads',value:rows.length}]}/>;
       case 'leaves':
         return <ApiReport exportName="Leaves" deps={[]}
-          columns={[{label:'User',w:140},{label:'Type',w:110},{label:'From',w:110},{label:'To',w:110},
+          columns={[{label:'User',w:140,render:(v,_m,r)=>nameCell(v, r?.cells[1])},{label:'Type',w:110},{label:'From',w:110},{label:'To',w:110},
                     {label:'Days',w:80,align:'right'},{label:'Status',w:110},{label:'Reason',w:240},
                     {label:'Reviewed By',w:140},{label:'Review Comment',w:220},{label:'Applied On',w:140}]}
           loader={async ()=>{
@@ -1100,7 +1159,7 @@ export default function Reports({ dealers, users, currentUser, monthConfig, outs
         return <ApiReport exportName="DailySales" deps={[fromDate,toDate]}
           columns={[{label:'Date',w:110},{label:'Day',w:80},{label:'Entries',w:80,align:'right'},
                     {label:'Dealers',w:80,align:'right'},{label:'Qty',w:90,align:'right'},
-                    {label:'Same day last month',w:150,align:'right'},{label:'Δ',w:90,align:'right'}]}
+                    {label:'Same day last month',w:150,align:'right'},{label:'Δ',w:90,align:'right',render:trendCell}]}
           loader={async ()=>{
             // Build a date one calendar month earlier. Returns null when that
             // day doesn't exist (e.g. the 31st of a 30-day month) rather than
@@ -1168,16 +1227,14 @@ export default function Reports({ dealers, users, currentUser, monthConfig, outs
   };
 
   return (
-    <div className="fade" style={{display:'flex', gap:14, alignItems:'stretch',
+    <div className="fade" style={{display:'flex', flexDirection:'column',
       height:'calc(100vh - 150px)', minHeight:520}}>
+    <PageHead icon={FileSpreadsheet} tone="var(--acc)" eyebrow="Admin" title="Reports" />
+    <div style={{display:'flex', gap:14, alignItems:'stretch', flex:1, minHeight:0}}>
 
       {/* ── Left rail: every report ─────────────────────────────────── */}
-      <div style={{width:212, flexShrink:0, display:'flex', flexDirection:'column',
-        background:'var(--bg1)', border:'1px solid var(--b1)', borderRadius:12, overflow:'hidden'}}>
-        <div style={{padding:'12px 14px', borderBottom:'1px solid var(--b1)'}}>
-          <div style={{fontSize:10,color:'var(--acc)',textTransform:'uppercase',letterSpacing:'.15em'}}>Admin</div>
-          <div style={{fontSize:15,fontWeight:700,marginTop:2}}>Reports</div>
-        </div>
+      <div className="card" style={{width:212, flexShrink:0, display:'flex', flexDirection:'column',
+        padding:0, overflow:'hidden'}}>
         <div style={{overflowY:'auto',flex:1,padding:'6px 0'}}>
           {groups.map(g=>(
             <div key={g}>
@@ -1206,17 +1263,11 @@ export default function Reports({ dealers, users, currentUser, monthConfig, outs
       <div style={{flex:1, minWidth:0, display:'flex', flexDirection:'column', minHeight:0}}>
         {/* Header + the filter this report actually uses */}
         <div className="card" style={{marginBottom:12, display:'flex', gap:12, alignItems:'center', flexWrap:'wrap'}}>
-          <div style={{display:'flex',alignItems:'center',gap:9,minWidth:0}}>
-            <div style={{width:32,height:32,borderRadius:8,background:activeReport.color+'22',
-              color:activeReport.color,display:'flex',alignItems:'center',justifyContent:'center'}}>
-              <activeReport.icon size={16}/>
-            </div>
-            <div>
-              <div style={{fontSize:15,fontWeight:700}}>{activeReport.label} Report</div>
-              <div style={{fontSize:11,color:'var(--t3)'}}>
-                {usesDates ? `${fromDate} → ${toDate}` : usesMonths ? rangeLabel : 'All records'}
-              </div>
-            </div>
+          <div className="sec-title" style={{marginBottom:0,minWidth:0}}>
+            <span className="sec-ico" style={{'--tone':activeReport.color}}><activeReport.icon size={15}/></span> {activeReport.label} Report
+            <span className="sec-note">
+              {usesDates ? `${fromDate} → ${toDate}` : usesMonths ? rangeLabel : 'All records'}
+            </span>
           </div>
           <div style={{flex:1}}/>
           {usesDates && (
@@ -1226,15 +1277,20 @@ export default function Reports({ dealers, users, currentUser, monthConfig, outs
               <span style={{color:'var(--t3)'}}>→</span>
               <input type="date" className="inp" value={toDate} min={fromDate||undefined}
                 onChange={e=>setToDate(e.target.value)} style={{padding:'6px 10px',fontSize:12,width:'auto',flex:'1 1 140px',minWidth:0,maxWidth:'100%'}}/>
-              {[['Today',0],['7d',-6],['30d',-29]].map(([lbl,off])=>(
-                <button key={lbl} className="btn" style={{fontSize:11,padding:'4px 9px'}}
+              {[['Today',0],['7d',-6],['30d',-29]].map(([lbl,off])=>{
+                // Highlight the preset that matches the current range (display only).
+                const d0=new Date(); d0.setDate(d0.getDate()+off);
+                const on = toDate===today && fromDate===`${d0.getFullYear()}-${String(d0.getMonth()+1).padStart(2,'0')}-${String(d0.getDate()).padStart(2,'0')}`;
+                return (
+                <button key={lbl} className={'thr'+(on?' on':'')} style={{'--tone':'var(--acc)'}}
                   onClick={()=>{
                     const d=new Date(); d.setDate(d.getDate()+off);
                     const s=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
                     const t=new Date();
                     setFromDate(s); setToDate(`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`);
                   }}>{lbl}</button>
-              ))}
+                );
+              })}
             </div>
           )}
           {usesMonths && (
@@ -1252,8 +1308,11 @@ export default function Reports({ dealers, users, currentUser, monthConfig, outs
           )}
         </div>
 
-        {renderActive()}
+        {/* Keyed on the report so switching Leads → Leaves → Daily Sales mounts a
+            fresh ApiReport instead of reusing the previous one's rows. */}
+        <React.Fragment key={active}>{renderActive()}</React.Fragment>
       </div>
+    </div>
     </div>
   );
 }
@@ -1280,7 +1339,7 @@ function OutstandingReport({ dealers, users, outstandingData }){
       Object.values(byDealer).forEach(a=>a.sort((x,y)=>String(x.followupDate||x.createdAt||'').localeCompare(String(y.followupDate||y.createdAt||''))));
 
       const monthCols=Object.keys(outstandingData?.[0]?.monthlyOutstanding||{});
-      const cols=[{label:'Dealer',w:200},{label:'Salesman',w:130},
+      const cols=[{label:'Dealer',w:200,render:(v)=>nameCell(v)},{label:'Salesman',w:130},
         {label:'Latest O/S',w:120,align:'right'},{label:'Latest Month',w:110}];
       monthCols.forEach(m=>cols.push({label:m,w:110,align:'right'}));
       ['Entry Date','Entry Amount','Reason','Remark','Applies To','Status','Type',
@@ -1407,31 +1466,25 @@ function CategoryDealerDrill({ rangeMonths, users }) {
   };
 
   return (
-    <div className="card" style={{display:'flex', flexDirection:'column', gap:8, borderLeft:'3px solid #f472b6'}}>
-      <div style={{display:'flex', alignItems:'center', gap:10, padding:'4px 0 8px'}}>
-        <div style={{
-          width:36, height:36, borderRadius:8,
-          background:'rgba(244,114,182,0.15)', color:'#f472b6',
-          display:'flex', alignItems:'center', justifyContent:'center',
-        }}>
-          <Layers size={18}/>
+    <div className="card" style={{display:'flex', flexDirection:'column', gap:8, borderLeft:'3px solid #ec4899'}}>
+      <div style={{padding:'4px 0 8px'}}>
+        <div className="sec-title" style={{marginBottom:4}}>
+          <span className="sec-ico" style={{'--tone':'var(--pur)'}}><Layers size={15}/></span> Category → Sub-Category → Dealers
+          <div style={{flex:1}}/>
+          <button className="btn" onClick={exportFlat} disabled={!rows.length}
+            style={{display:'inline-flex', alignItems:'center', gap:6, fontSize:11}}>
+            <Download size={12}/> Export CSV
+          </button>
         </div>
-        <div style={{flex:1}}>
-          <div style={{fontSize:13, fontWeight:700}}>Category → Sub-Category → Dealers</div>
-          <div style={{fontSize:11, color:'var(--t3)'}}>
-            Click a category to expand. Click a sub-category to see the exact dealers who gave sale in it.
-            {totalSales > 0 && <> · Total in range: <b style={{color:'var(--grn)'}}>{Number(totalSales).toLocaleString('en-IN')}</b></>}
-          </div>
+        <div style={{fontSize:11, color:'var(--t3)'}}>
+          Click a category to expand. Click a sub-category to see the exact dealers who gave sale in it.
+          {totalSales > 0 && <> · Total in range: <b style={{color:'var(--grn)'}}>{Number(totalSales).toLocaleString('en-IN')}</b></>}
         </div>
-        <button className="btn" onClick={exportFlat} disabled={!rows.length}
-          style={{display:'inline-flex', alignItems:'center', gap:6, fontSize:11}}>
-          <Download size={12}/> Export CSV
-        </button>
       </div>
 
       {loading && <div style={{fontSize:12, color:'var(--t3)', padding:14, textAlign:'center'}}>Loading category sales…</div>}
       {!loading && catList.length === 0 && (
-        <div style={{fontSize:12, color:'var(--t3)', padding:14, textAlign:'center', background:'var(--bg1)', borderRadius:8}}>
+        <div className="card" style={{fontSize:12, color:'var(--t3)', padding:14, textAlign:'center'}}>
           No category-wise sales found for this month range. Upload from Monthly Entry → Bulk Excel.
         </div>
       )}
@@ -1448,12 +1501,15 @@ function CategoryDealerDrill({ rangeMonths, users }) {
                 style={{
                   display:'flex', alignItems:'center', gap:10,
                   padding:'10px 12px', cursor:'pointer',
-                  background: isOpen ? 'rgba(99,102,241,.08)' : 'transparent',
+                  background: isOpen ? 'color-mix(in srgb, var(--acc) 8%, transparent)' : 'transparent',
                 }}>
                 {isOpen ? <ChevronDown size={14} color="var(--acc)"/> : <ChevronRight size={14} color="var(--t3)"/>}
                 <div style={{flex:1, fontSize:13, fontWeight:600}}>{C.name}</div>
                 <div style={{fontSize:11, color:'var(--t3)'}}>{[...C.subs.keys()].length} sub-cats</div>
-                <div style={{fontSize:11, color:'var(--t3)', width:60, textAlign:'right'}}>{pct.toFixed(1)}%</div>
+                <div style={{width:64, textAlign:'right'}}>
+                  <div style={{fontSize:11, fontWeight:700, color:'var(--t2)'}}>{pct.toFixed(1)}%</div>
+                  <div className="pbar"><div style={{width:Math.min(pct,100)+'%', background:'var(--acc)'}}/></div>
+                </div>
                 <div style={{fontSize:14, fontWeight:700, color:'var(--grn)', minWidth:70, textAlign:'right'}}>
                   {Number(C.total).toLocaleString('en-IN')}
                 </div>
@@ -1473,7 +1529,7 @@ function CategoryDealerDrill({ rangeMonths, users }) {
                             padding:'8px 10px', cursor:'pointer',
                             background: isSubOpen ? 'rgba(244,114,182,.06)' : 'transparent',
                           }}>
-                          {isSubOpen ? <ChevronDown size={12} color="#f472b6"/> : <ChevronRight size={12} color="var(--t3)"/>}
+                          {isSubOpen ? <ChevronDown size={12} color="#ec4899"/> : <ChevronRight size={12} color="var(--t3)"/>}
                           <div style={{flex:1, fontSize:12, fontWeight:500, color:'var(--t2)'}}>{subName}</div>
                           <div style={{fontSize:11, color:'var(--t3)'}}>{S.dealers.size} dealers</div>
                           <div style={{fontSize:13, fontWeight:700, color:'var(--pur)', minWidth:60, textAlign:'right'}}>
@@ -1493,9 +1549,14 @@ function CategoryDealerDrill({ rangeMonths, users }) {
                                 </tr>
                               </thead>
                               <tbody>
-                                {[...S.dealers.values()].sort((a,b) => b.qty - a.qty).map(D => (
+                                {[...S.dealers.values()].sort((a,b) => b.qty - a.qty).map((D, di) => (
                                   <tr key={D.name} style={{borderTop:'1px solid var(--b1)'}}>
-                                    <td style={{padding:'5px 6px', color:'var(--t1)', fontWeight:500}}>{D.name}</td>
+                                    <td style={{padding:'5px 6px'}}>
+                                      <div style={{display:'flex', alignItems:'center', gap:9, minWidth:0}}>
+                                        <span className={'rank rank-'+(di+1)}>{di+1}</span>
+                                        {nameCell(D.name)}
+                                      </div>
+                                    </td>
                                     <td style={{padding:'5px 6px', color:'var(--t3)'}}>{users[D.sm]?.name || D.sm || '—'}</td>
                                     <td style={{padding:'5px 6px', textAlign:'right', color:'var(--grn)', fontWeight:600}}>
                                       {Number(D.qty).toLocaleString('en-IN')}

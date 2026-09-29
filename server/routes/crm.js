@@ -37,7 +37,7 @@ router.use('/tickets',    featureEnabled('tickets'));
 
 // Helper: admin OR superadmin (same set we use elsewhere)
 const isStaff = (req) => req.user?.role === 'admin' || req.user?.role === 'superadmin' || req.user?.role === 'employee';
-const todayStr = () => new Date().toISOString().slice(0,10);
+const todayStr = () => new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0,10);   // IST: a 5 am check-in belongs to today
 
 // Return the list of dealer NAMES a user is permitted to see based on their
 // permissions.states/cities/zones/salesmen. Superadmin gets null (see all).
@@ -537,12 +537,9 @@ router.post('/leads', protect, adminOnly, requireFeature('manageLeads'), async (
 router.get('/leads', protect, async (req, res) => {
   try {
     const q = {};
-    const names = await permittedDealerNames(req);
-    if (names !== null) {
-      q.dealerName = names.length ? { $in: names } : { $in: ['__no_match__'] };
-    } else if (!isStaff(req)) {
-      q.assignedTo = req.user.id;
-    }
+    // Leads are prospects, not dealers of the master, so there is no dealer
+    // name to scope by: a salesman sees the leads assigned to him, the office sees all.
+    if (!isStaff(req)) q.assignedTo = req.user.id;
     if(req.query.status) q.status = req.query.status;
     if(req.query.assignedTo && isStaff(req)) q.assignedTo = req.query.assignedTo;
     const items = await Lead.find(q).sort({ updatedAt:-1 }).limit(500).lean();
@@ -800,10 +797,12 @@ router.get('/tasks', protect, async (req, res) => {
     if(req.query.status) q.status = req.query.status;
     // Permission-first: users with state/city perms only see tasks whose
     // dealerName is in their permitted area set (regardless of assignee).
-    const names = await permittedDealerNames(req);
-    if (names !== null) {
-      q.dealerName = names.length ? { $in: names } : { $in: ['__no_match__'] };
-      if (isStaff(req) && req.query.assignedTo) q.assignedTo = req.query.assignedTo;
+    // Tasks carry the dealer in refName. A salesman sees the tasks that touch him;
+    // territory-limited office staff see tasks on their dealers plus their own.
+    const names = isStaff(req) ? await permittedDealerNames(req) : null;
+    if (isStaff(req) && names !== null) {
+      q.$or = [{ refName: { $in: names } }, { assignedTo: req.user.id }, { createdBy: req.user.id }];
+      if (req.query.assignedTo) q.assignedTo = req.query.assignedTo;
     } else if(isStaff(req)){
       if(req.query.assignedTo) q.assignedTo = req.query.assignedTo;
     } else {

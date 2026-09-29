@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { X, ClipboardList, NotebookPen, Banknote } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { X, ClipboardList, NotebookPen, Banknote, Layers, TrendingUp, Repeat } from 'lucide-react';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { col } from './api';
-import { useLoad, Card, Table, Badge, Tabs, Busy, ErrorBox, money, num, fmtDate, fmtWhen, periodLabel, title, userName, useDealerCtx, WhatsAppIcon, StatusBadge, CallButton, OLDEST_BG, FollowupDate, OldestPill } from './ui';
+import { useLoad, Card, Table, Badge, Tabs, Busy, ErrorBox, money, num, fmtDate, fmtWhen, periodLabel, title, userName, useDealerCtx, WhatsAppIcon, StatusBadge, CallButton, OLDEST_BG, FollowupDate, OldestPill, useEscapeLayer, Ini, Trend } from './ui';
 import { FollowupForm, PaymentForm, TaskForm, WhatsAppForm } from './forms';
 
 /**
@@ -18,17 +18,20 @@ export default function Dealer360({ dealerId, onClose }) {
   const d = data;
   const dealer = d ? { id: dealerId, name: d.dealer.name, code: d.dealer.code, total: d.balance?.total, phone: d.dealer.phone || '', whatsappOptOut: !!d.dealer.whatsappOptOut } : null;
   const both = () => { reload(); tl.reload(); };
-  // Escape closes the drawer only when no inner form is open (the form's own Modal handles its Escape)
-  useEffect(() => { const k = e => { if (e.key === 'Escape' && !form) onClose(); }; window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k); }, [onClose, form]);
+  // Escape closes the drawer only when it is the top layer — an inner form or a record opened over it closes first
+  useEscapeLayer(onClose);
   return (
     <div className="overlay" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal col-drawer" style={{ maxWidth: 900, width: '100%', maxHeight: '90vh', padding: 18, overflowY: 'auto' }}>
         {busy && !d ? <Busy /> : err ? <ErrorBox err={err} onRetry={reload} /> : (<>
           <div className="col-head" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
-            <div>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', minWidth: 0 }}>
+              <Ini name={d.dealer.name} size={44} />
+              <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--t3)' }}>Dealer 360</div>
               <div style={{ fontSize: 20, fontWeight: 800 }}>{d.dealer.name} {d.dealer.code && <span className="chip">{d.dealer.code}</span>}</div>
               <div style={{ fontSize: 12, color: 'var(--t2)' }}>{[d.dealer.city, d.dealer.state, d.dealer.zone].filter(Boolean).join(' · ')} · Salesman {d.dealer.salesmanName || '—'} · <ContactInline dealer={dealer} onSaved={reload} />{d.dealer.creditDays ? ` · credit ${d.dealer.creditDays} days` : ''}{d.dealer.creditLimit ? ` · limit ${money(d.dealer.creditLimit)}` : ''}</div>
+              </div>
             </div>
             <div className="row" style={{ gap: 6 }}>
               <CallButton dealer={dealer} label="Call" size={12} onDialed={() => setForm('followup')} />
@@ -70,14 +73,17 @@ function Overview({ d }) {
   const series = [...d.snapshots].reverse().map(s => ({ asOn: s.asOn, total: s.total }));
   return (
     <div className="col-2" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 12 }}>
-      <Card title="Current statement buckets">
+      <Card title={<div className="sec-title" style={{ marginBottom: 0 }}><span className="sec-ico" style={{ '--tone': 'var(--red)' }}><Layers size={15} /></span> Current statement buckets</div>}>
         {b?.buckets && Object.keys(b.buckets).length ? <Table dense cols={[{ k: 'p', h: 'Month', r: r => r.oldest ? <OldestPill>{periodLabel(r.p)} · chasing</OldestPill> : periodLabel(r.p) }, { k: 'v', h: 'Amount', align: 'right', r: r => r.oldest ? <OldestPill>{money(r.v)}</OldestPill> : money(r.v) }]} rows={Object.entries(b.buckets).sort().map(([p, v], i) => ({ p, v, oldest: i === 0 }))} keyOf={r => r.p} /> : <div style={{ color: 'var(--t3)', fontSize: 12.5 }}>No statement yet.</div>}
         {b && <div style={{ fontSize: 11.5, color: 'var(--t2)', marginTop: 8 }}>Mode: {b.balanceMode} · total is {b.balanceMode === 'buckets' ? 'the sum of the months' : 'the latest month'}.</div>}
       </Card>
-      <Card title="Outstanding over statements">
-        {series.length > 1 ? <ResponsiveContainer width="100%" height={180}><LineChart data={series}><CartesianGrid stroke="var(--b1)" strokeDasharray="3 3" /><XAxis dataKey="asOn" tick={{ fontSize: 10 }} /><YAxis tick={{ fontSize: 10 }} width={44} tickFormatter={v => (v / 1000).toFixed(0) + 'k'} /><Tooltip formatter={v => money(v)} /><Line type="monotone" dataKey="total" stroke="var(--acc)" strokeWidth={2} /></LineChart></ResponsiveContainer> : <div style={{ color: 'var(--t3)', fontSize: 12.5 }}>Needs at least two statements.</div>}
+      <Card title={<div className="sec-title" style={{ marginBottom: 0 }}><span className="sec-ico" style={{ '--tone': 'var(--red)' }}><TrendingUp size={15} /></span> Outstanding over statements</div>}>
+        {series.length > 1 ? <ResponsiveContainer width="100%" height={190}><AreaChart data={series} margin={{ top: 10, right: 8, left: 0, bottom: 0 }}>
+          <defs><linearGradient id="col360Trend" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3b82f6" stopOpacity={0.35} /><stop offset="70%" stopColor="#3b82f6" stopOpacity={0.06} /><stop offset="100%" stopColor="#3b82f6" stopOpacity={0} /></linearGradient></defs>
+          <CartesianGrid vertical={false} /><XAxis dataKey="asOn" tickLine={false} axisLine={false} /><YAxis tickLine={false} axisLine={false} width={44} tickFormatter={v => (v / 1000).toFixed(0) + 'k'} /><Tooltip formatter={v => money(v)} />
+          <Area type="monotone" dataKey="total" stroke="#3b82f6" strokeWidth={2.5} fill="url(#col360Trend)" dot={{ r: 3, fill: '#3b82f6', strokeWidth: 0 }} activeDot={{ r: 6 }} /></AreaChart></ResponsiveContainer> : <div style={{ color: 'var(--t3)', fontSize: 12.5 }}>Needs at least two statements.</div>}
       </Card>
-      <Card title="Cycles" style={{ gridColumn: '1 / -1' }}>
+      <Card title={<div className="sec-title" style={{ marginBottom: 0 }}><span className="sec-ico" style={{ '--tone': 'var(--acc)' }}><Repeat size={15} /></span> Cycles</div>} style={{ gridColumn: '1 / -1' }}>
         <Table dense cols={[{ k: 'cycleNo', h: '#' }, { k: 'status', h: 'Status', r: r => <Badge v={r.status} /> }, { k: 'openedAt', h: 'Opened', r: r => fmtDate(r.openedAt) }, { k: 'closedAt', h: 'Closed', r: r => fmtDate(r.closedAt) }, { k: 'daysOpen', h: 'Days', align: 'right' }, { k: 'openingTotal', h: 'Opened at', align: 'right', r: r => money(r.openingTotal) }, { k: 'peakTotal', h: 'Peak', align: 'right', r: r => money(r.peakTotal) }, { k: 'paidTotal', h: 'Confirmed payments', align: 'right', r: r => money(r.paidTotal) }, { k: 'observedDecreaseTotal', h: 'Observed decrease', align: 'right', r: r => money(r.observedDecreaseTotal) }]} rows={d.cycles} empty="No cycle has opened." />
       </Card>
     </div>);
@@ -104,7 +110,7 @@ export function Timeline({ items, users }) {
     <div style={{ position: 'absolute', left: 5, top: 4, bottom: 4, width: 2, background: 'var(--b1)' }} />
     {items.map(e => <div key={e._id} onClick={() => openRecord('event', e)} style={{ position: 'relative', padding: '6px 0 10px', cursor: 'pointer' }}>
       <div style={{ position: 'absolute', left: -17, top: 10, width: 10, height: 10, borderRadius: 5, background: EVENT_TONE[e.type] || 'var(--t3)' }} />
-      <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}><b style={{ fontSize: 12.5 }}>{title(e.type)}</b>{e.amount ? <span style={{ fontSize: 12.5 }}>{money(e.amount)}</span> : null}{e.before != null && e.after != null ? <span style={{ fontSize: 11.5, color: 'var(--t2)' }}>{money(e.before)} → {money(e.after)}</span> : null}{e.cause ? <span className="chip">{e.cause}</span> : null}</div>
+      <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}><b style={{ fontSize: 12.5 }}>{title(e.type)}</b>{e.amount ? <span style={{ fontSize: 12.5 }}>{money(e.amount)}</span> : null}{e.before != null && e.after != null ? <><span style={{ fontSize: 11.5, color: 'var(--t2)' }}>{money(e.before)} → {money(e.after)}</span><Trend before={e.before} after={e.after} lowerIsBetter /></> : null}{e.cause ? <span className="chip">{e.cause}</span> : null}</div>
       <div style={{ fontSize: 11.5, color: 'var(--t2)' }}>{fmtWhen(e.at)} · {e.by === 'import' || e.by === 'automation' || e.by === 'migration' ? e.by : userName(users, e.by)}{e.note ? ' · ' + e.note : ''}</div>
     </div>)}
   </div>;

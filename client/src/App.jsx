@@ -15382,15 +15382,15 @@ import { createPortal } from 'react-dom';
 // }
 
 import React, { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
-import { LayoutDashboard, Users, TrendingUp, Settings, LogOut, Bell, GitCompare, Menu, RefreshCw, Map, AlertTriangle, Upload, Edit3, Calendar, LogIn, ChevronDown, ShieldCheck, Shield, Palette, Check, Briefcase, Camera, ClipboardList, UserCheck, Plane, FileSpreadsheet, LifeBuoy, CheckSquare, BarChart3, Table, Package, IndianRupee, Trophy, UploadCloud, Landmark, Wallet, Scale, CalendarCheck, PhoneCall, ClipboardCheck, FileBarChart2, Gauge, BadgeIndianRupee, HandCoins, SlidersHorizontal } from 'lucide-react';
+import { Sun, Moon, LayoutDashboard, Users, TrendingUp, Settings, LogOut, Bell, GitCompare, Menu, RefreshCw, Map, AlertTriangle, Upload, Edit3, Calendar, LogIn, ChevronDown, ShieldCheck, Shield, Palette, Check, Briefcase, Camera, ClipboardList, UserCheck, Plane, FileSpreadsheet, LifeBuoy, CheckSquare, BarChart3, Table, Package, IndianRupee, Trophy, UploadCloud, Landmark, Wallet, Scale, CalendarCheck, PhoneCall, ClipboardCheck, FileBarChart2, Gauge, BadgeIndianRupee, HandCoins, SlidersHorizontal } from 'lucide-react';
 import { DEFAULT_USERS, MO as MO_DEFAULT, CURRENT_MONTH_IDX as CURRENT_MONTH_IDX_DEFAULT, CURRENT_MONTH_LABEL as CURRENT_MONTH_LABEL_DEFAULT, CURRENT_MONTH_SHORT as CURRENT_MONTH_SHORT_DEFAULT } from './constants';
 import { pct, spct, pclr, uid, isoNow, storage, parseCSV, fetchCSV, parseOutstandingCSV } from './utils';
-import { api, dbDealerToApp, dbOutstandingToApp, saveToken, getToken } from './api';
+import { api, dbDealerToApp, dbOutstandingToApp, saveToken, getToken, getApiBase } from './api';
 import { MonthContext } from './context';
 import Styles            from './components/Styles';
 import { MonthSelectorBar, Avatar, SkeletonLoader, LoadingScreen, LogoMark } from './components/UI';
 import NotificationCenter, { notify, confirmDialog } from './components/Toast';
-import { THEMES, applyTheme, loadSavedTheme, saveTheme } from './themes';
+import { THEMES, applyTheme, loadSavedTheme, saveTheme, themeById } from './themes';
 import CRM, { AttendancePage, VisitsPage, LeadsPage, LeavesPage } from './components/CRM';
 import Reports             from './components/Reports';
 // Sheets is lazy-loaded — it pulls in the heavy Univer spreadsheet engine, so
@@ -15405,12 +15405,17 @@ import DealerModal       from './components/DealerModal';
 import MonthlyTrend      from './components/MonthlyTrend';
 import Compare           from './components/Compare';
 import FollowupsHub      from './components/FollowupsHub';
-import AdminPanel        from './components/AdminPanel';
+import AdminPanel, { buildAdminRail } from './components/AdminPanel';
+import ProfilePage from './components/ProfilePage';
+import StockSearch from './components/StockSearch';
+import { LangContext, translate, loadLang, saveLang } from './i18n';
 import UserManagement    from './components/UserManagement';
 import Incentive        from './components/Incentive';
 import SalesIncentive   from './components/SalesIncentive';
 import SalesIncentiveRule from './components/SalesIncentiveRule';
 import VisitCalendar from './components/VisitCalendar';
+import ErrorBoundary from './components/ErrorBoundary';
+import { BottomNav, QuickFab, QuickSheet, HomeHero, DailyQuote, LangPicker, quickActions } from './components/AppShell';
 import Collections, { COL_SCREENS } from './collections';
 import AddDealerModal    from './components/AddDealerModal';
 import BulkActionModal   from './components/BulkActionModal';
@@ -15442,10 +15447,13 @@ const getCookie = () => {
 const clearCookie = () => { document.cookie = `${COOKIE_KEY}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`; };
 
 // ── Slug routing helpers ──────────────────────────────────
-const VALID_SCREENS = ['overview','dealers','monthly','compare','map','outstanding','upload','entry','followups','months','admin','crm','attendance','visits','leads','leaves','reports','tasks','tickets'];
+const VALID_SCREENS = ['overview','dealers','monthly','compare','map','outstanding','upload','entry','followups','months','admin','crm','attendance','visits','leads','leaves','reports','tasks','tickets',
+  // every other page the menu opens, so Back and refresh return to it instead of Overview
+  'calendar','profile','sheets','producttx','salesCat','salesUpload','incentiveHome','incentive','incentiveHistory','incentiveRule','incentiveUpload','salesIncentive','salesIncentiveRule'];
+const isValidScreen = s => VALID_SCREENS.includes(s) || COL_SCREENS.has(s);
 const getScreenFromUrl = () => {
   const hash = window.location.hash.replace('#/','').split('?')[0];
-  return VALID_SCREENS.includes(hash) ? hash : 'overview';
+  return isValidScreen(hash) ? hash : 'overview';
 };
 const pushScreen = (screen, filterPatch=null) => {
   let url = `#/${screen}`;
@@ -15457,7 +15465,7 @@ const pushScreen = (screen, filterPatch=null) => {
 };
 
 export default function App(){
-  const [theme,setTheme]=useState('dark');
+  const [theme,setTheme]=useState(()=>themeById(loadSavedTheme()).tone);   // no dark flash for Light users
   const [users,setUsers]=useState(DEFAULT_USERS);
   const [currentUser,setCurrentUser]=useState(null);
   // Impersonation: when a superadmin uses "Login as" on another user, we store
@@ -15518,8 +15526,40 @@ export default function App(){
   const [syncErrs,setSyncErrs]=useState([]);
   const [selectedMonthIdx,setSelectedMonthIdx]=useState(()=>{ try{ const s=JSON.parse(localStorage.getItem('stp_month_config')||'null'); return s?.currentIdx??CURRENT_MONTH_IDX_DEFAULT; }catch{ return CURRENT_MONTH_IDX_DEFAULT; } });
   const [pendingFilters,setPendingFilters]=useState(null);
+  // View cycle: which 12 months every month list and chart shows. The data is
+  // never cut — this only picks the window, so Jul-25 and Jul-26 never sit side
+  // by side as two "Jul" bars. 'latest' = the 12 months ending at the current
+  // month, 'all' = every configured month, otherwise the label it starts at.
+  const [cycle,setCycleState]=useState(()=>{ try{ return localStorage.getItem('stp_cycle')||'latest'; }catch{ return 'latest'; } });
+  const setCycle=v=>{ setCycleState(v); try{ localStorage.setItem('stp_cycle',v); }catch{} };
+  const viewIdx=useMemo(()=>{
+    const n=(activeMO||[]).length, all=[...Array(n).keys()];
+    if(cycle==='all'||n<=12) return all;
+    let st=cycle==='latest' ? Math.max(0,Math.min(activeMonthIdx??n-1,n-1)-11) : activeMO.indexOf(cycle);
+    if(st<0) st=Math.max(0,Math.min(activeMonthIdx??n-1,n-1)-11);
+    st=Math.min(st,n-12);
+    return all.slice(st,st+12);
+  },[activeMO,activeMonthIdx,cycle]);
+  const cycles=useMemo(()=>{
+    const n=(activeMO||[]).length; const out=[];
+    for(let st=0;st+12<=n;st++) out.push({v:activeMO[st],label:`${activeMO[st]} → ${activeMO[st+11]}`});
+    return out;
+  },[activeMO]);
+  // a month outside the chosen cycle cannot stay selected — move to the cycle's last month
+  useEffect(()=>{ if(viewIdx.length&&!viewIdx.includes(selectedMonthIdx)) setSelectedMonthIdx(viewIdx[viewIdx.length-1]); },[viewIdx]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Sidebar group expand state (e.g., CRM contains Visits + Leads) ───────
+  // which Admin Panel section is open — picked from the left menu's Admin Panel dropdown
+  const [stockOpen,setStockOpen]=useState(false);   // top-bar live stock search
+  // app language (menus, tabs, quick actions, headings) — data is never translated
+  const [lang,setLangState]=useState(loadLang);
+  const setLang=v=>{ setLangState(v); saveLang(v); };
+  const tr=useCallback(s=>translate(lang,s),[lang]);
+  useEffect(()=>{ try{ document.documentElement.lang=lang; }catch{} },[lang]);
+  const langCtx=useMemo(()=>({lang,setLang,t:tr}),[lang,tr]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [stockMode,setStockMode]=useState('');      // '' | 'discontinued'
+  const [adminKey,setAdminKeyState]=useState(()=>{ try{ return sessionStorage.getItem('stp_admin_sec')||'summary'; }catch{ return 'summary'; } });
+  const setAdminKey=k=>{ setAdminKeyState(k); try{ sessionStorage.setItem('stp_admin_sec',k); }catch{} };
   const [navGroupsOpen, setNavGroupsOpen] = useState(()=>{
     try{ return JSON.parse(localStorage.getItem('stp_nav_groups')||'{"crm":true}'); }
     catch{ return { crm: true }; }
@@ -15538,11 +15578,12 @@ export default function App(){
   // dark/light toggle and Styles.jsx are NOT touched.
   const [paletteId, setPaletteId] = useState(() => loadSavedTheme());
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(false);   // the + quick-action sheet
   const [palettePos, setPalettePos] = useState({ top: 60, right: 12 });
   const paletteRef    = useRef(null);
   const paletteBtnRef = useRef(null);
   // Apply on mount AND whenever the user picks a different palette
-  useEffect(()=>{ applyTheme(paletteId); saveTheme(paletteId); },[paletteId]);
+  useEffect(()=>{ applyTheme(paletteId); saveTheme(paletteId); setTheme(themeById(paletteId).tone); },[paletteId]);
   // Close on outside click
   useEffect(()=>{
     if(!paletteOpen) return;
@@ -15574,7 +15615,7 @@ export default function App(){
         storage.get('users'),storage.get('dealers'),
         storage.get('notes',[]),storage.get('activityLog',[]),storage.get('theme','dark')
       ]);
-      if(u)setUsers(u); if(d)setDealers(d); if(n)setNotes(n); if(l)setActivityLog(l); if(t)setTheme(t);
+      if(u)setUsers(u); if(d)setDealers(d); if(n)setNotes(n); if(l)setActivityLog(l);   // the theme comes from the palette now
 
       // Fire-and-forget: get the live user list from the server. /api/auth/users
       // is public so this works even before login. If it succeeds it overwrites
@@ -15587,7 +15628,7 @@ export default function App(){
       // the impersonation JWT with a fresh JWT for the ORIGINAL superadmin.
       // Instead, use the impersonation JWT we already have and call /me to
       // fetch the impersonated user's profile.
-      const BASE = import.meta.env?.VITE_API_URL || 'http://localhost:5000/api';
+      const BASE = getApiBase();   // the same server every other call uses (APK, override, dev)
       const impMarker = (()=>{ try{ return JSON.parse(localStorage.getItem('stp_impersonating')||'null'); }catch{ return null; } })();
       const existingToken = localStorage.getItem('stp_jwt');
 
@@ -15611,35 +15652,43 @@ export default function App(){
         } catch{}
       }
 
-      // Restore session — try server JWT login first, fallback to cookie
+      // Restore the session from the saved sign-in token. The cookie now holds
+      // only the user id — never the password. An older cookie that still
+      // carries one is used once to get a fresh token, then rewritten without it.
       const session = getCookie();
+      const restoreLocal = () => { const allUsers = u || DEFAULT_USERS; const user = session?.userId && allUsers[session.userId]; if(user) setCurrentUser(user); };
+      if(existingToken){
+        try {
+          const r = await fetch(`${BASE}/auth/me`,{ headers:{ Authorization:`Bearer ${existingToken}` }, signal: AbortSignal.timeout(10000) });
+          if(r.ok){
+            const me = await r.json();
+            if(me?.id){ setCurrentUser(me); setUseDB(true); setDbChecked(true); if(session?.passHash) setCookie({ userId: me.id }); return; }
+          } else if(r.status === 401 && !session?.passHash){
+            // token expired or account disabled — back to the sign-in screen
+            localStorage.removeItem('stp_jwt'); clearCookie(); return;
+          } else if(r.status !== 401 && !session?.passHash){
+            // server restarting (502/503) or briefly unwell: keep the token, show the cached account
+            restoreLocal(); return;
+          }
+        } catch(e){ if(!session?.passHash){ restoreLocal(); return; } }   // offline: show the cached account
+      }
       if(session?.userId && session?.passHash){
-        // Try to get fresh JWT from server
+        // one-time migration of an old cookie
         try {
           const res  = await fetch(`${BASE}/auth/login`,{
             method:'POST',
             headers:{'Content-Type':'application/json'},
             body: JSON.stringify({ id:session.userId, pass:session.passHash }),
-            signal: AbortSignal.timeout(8000),
+            signal: AbortSignal.timeout(10000),
           }).then(r=>r.json()).catch(()=>null);
-
           if(res?.token && res?.user){
             localStorage.setItem('stp_jwt', res.token);
+            setCookie({ userId: res.user.id });
             setCurrentUser(res.user);
             setUseDB(true);
-            setDbChecked(true); // trigger loadData with valid token
-          } else {
-            // Server unavailable — restore from local users
-            const allUsers = u || DEFAULT_USERS;
-            const user = allUsers[session.userId];
-            if(user) setCurrentUser(user);
-          }
-        } catch(e){
-          // Fallback to local
-          const allUsers = u || DEFAULT_USERS;
-          const user = allUsers[session.userId];
-          if(user) setCurrentUser(user);
-        }
+            setDbChecked(true);
+          } else restoreLocal();
+        } catch(e){ restoreLocal(); }
       }
     })();
   },[]);
@@ -15673,7 +15722,7 @@ export default function App(){
   useEffect(()=>{
     const onPop = (e) => {
       const s = e.state?.screen || getScreenFromUrl();
-      if(VALID_SCREENS.includes(s)) setScreen(s);
+      if(isValidScreen(s)) setScreen(s);
       if(e.state?.filterPatch) setPendingFilters({...e.state.filterPatch, _ts: Date.now()});
     };
     window.addEventListener('popstate', onPop);
@@ -15684,8 +15733,8 @@ export default function App(){
   const handleLogin = useCallback((user, token, rawPass) => {
     if(token){ saveToken(token); setUseDB(true); }
     setCurrentUser(user);
-    // Store userId + password for auto-relogin on refresh
-    setCookie({ userId:user.id, passHash:rawPass||user.pass||'' });
+    // remember who signed in (the token in localStorage keeps the session; no password is stored)
+    setCookie({ userId:user.id });
     // push current screen to history
     pushScreen(screen);
   },[screen]);
@@ -15822,7 +15871,8 @@ export default function App(){
     }
   };
 
-  const toggleTheme=()=>setTheme(t=>t==='dark'?'light':'dark');
+  // header switch: Light ↔ Dark (Sunlight counts as light)
+  const toggleTheme=()=>setPaletteId(p=>themeById(p).tone==='dark'?'material':'dark');
 
   const navigate=useCallback((target, filterPatch=null)=>{
     setScreen(target);
@@ -15945,8 +15995,8 @@ export default function App(){
     try{
       const token = localStorage.getItem('stp_jwt');
       if(token) {
-        const dbOut = await api.getOutstanding().catch(()=>[]);
-        if(dbFollowups?.length>0) setOutFollowups(dbFollowups);
+        const [dbOut, dbFollowups] = await Promise.all([api.getOutstanding().catch(()=>[]), api.getFollowups().catch(()=>[])]);
+        if(Array.isArray(dbFollowups) && dbFollowups.length>0) setOutFollowups(dbFollowups);
       if(dbOut?.length > 0) {
           setOutstandingData(dbOutstandingToApp(dbOut));
         } else {
@@ -16022,7 +16072,7 @@ export default function App(){
       const safe = (p, fallback) => p.then(d => d, e => { console.warn('[loadFromDB partial fail]', e?.message); return fallback; });
       const [dbMonthCfg, dbDealers, dbNotes, dbOut, dbFollowups] = await Promise.all([
         safe(api.getMonthConfig(), null),
-        safe(api.getDealers(currentMO), []),
+        safe(api.getDealers(currentMO), null),   // null = the fetch failed: keep what is on screen
         safe(api.getNotes(), []),
         safe(api.getOutstanding(), []),
         safe(api.getFollowups(), []),
@@ -16067,7 +16117,9 @@ export default function App(){
       // made the Reload DB button look broken when the user expected a
       // change. If DB really has no dealers, that's what we should show.
       const appDealers = _dbDealers.map(d => dbDealerToApp(d, finalMO));
-      setDealers(appDealers);
+      // a failed fetch must not wipe the list (or the offline copy) on a weak connection
+      if (Array.isArray(dbDealers)) setDealers(appDealers);
+      else notify.error("Couldn't refresh dealers — showing the last saved list. Pull to reload when the connection is back.");
       setDbLoaded(true);
 
       // Set notes (only if endpoint responded)
@@ -16171,16 +16223,18 @@ export default function App(){
       confirmText: 'Delete',
       danger: true,
     });
-    if(!ok) return;
+    if(!ok) return false;   // cancelled: the dealer popup stays open
     const d=dealers.find(x=>x.id===id);
+    // delete on the server first, so a failure leaves the dealer where it was
+    const token=localStorage.getItem('stp_jwt');
+    if(token&&id&&!id.startsWith('local_')){
+      try{ await api.deleteDealer(id); }
+      catch(e){ notify.error(`Couldn't delete ${d?.name || 'the dealer'}: ${e.message}`); return false; }
+    }
     setDealers(ds=>ds.filter(x=>x.id!==id));
     setNotes(ns=>ns.filter(n=>n.dealerId!==id));
     addLog('delete',`Deleted: ${d?.name}`);
-    // Delete from DB
-    const token=localStorage.getItem('stp_jwt');
-    if(token&&id&&!id.startsWith('local_')){
-      try{ await api.deleteDealer(id); }catch(e){ console.warn('DB delete failed:',e.message); }
-    }
+    return true;
   };
   const addDealer = (d) => { setDealers(ds=>[...ds,d]); addLog('add',`Added: ${d.name}`); };
   const addNote = async (n) => {
@@ -16192,23 +16246,25 @@ export default function App(){
           type:n.type, text:n.content, dueDate:n.dueDate||null, completed:n.completed||false });
         // Update local note with DB id
         setNotes(ns=>ns.map(x=>x.id===n.id?{...x,id:saved._id||saved.id,_id:saved._id}:x));
-      }catch(e){ console.warn('Note save failed:',e.message); }
+      }catch(e){ setNotes(ns=>ns.filter(x=>x.id!==n.id)); notify.error("Couldn't save the note: "+e.message); }
     }
   };
   const updateNote = async (id,patch) => {
+    const before = notes.find(n=>n.id===id);
     setNotes(ns=>ns.map(n=>n.id===id?{...n,...patch}:n)); // optimistic
     const token = localStorage.getItem('stp_jwt');
     if(token){
       try{ await api.updateNote(id, { completed:patch.completed, text:patch.content, dueDate:patch.dueDate }); }
-      catch(e){ console.warn('Note update failed:',e.message); }
+      catch(e){ if(before) setNotes(ns=>ns.map(n=>n.id===id?before:n)); notify.error("Couldn't update the note: "+e.message); }
     }
   };
   const deleteNote = async (id) => {
+    const before = notes.find(n=>n.id===id);
     setNotes(ns=>ns.filter(n=>n.id!==id)); // optimistic
     const token = localStorage.getItem('stp_jwt');
     if(token){
       try{ await api.deleteNote(id); }
-      catch(e){ console.warn('Note delete failed:',e.message); }
+      catch(e){ if(before) setNotes(ns=>[...ns,before]); notify.error("Couldn't delete the note: "+e.message); }
     }
   };
 
@@ -16309,7 +16365,7 @@ export default function App(){
     const refresh = async () => {
       try {
         const t = localStorage.getItem('stp_jwt'); if (!t) return;
-        const BASE = import.meta.env?.VITE_API_URL || 'http://localhost:5000/api';
+        const BASE = getApiBase();
         const me = await fetch(`${BASE}/auth/me`, { headers: { Authorization: `Bearer ${t}` }, signal: AbortSignal.timeout(8000) }).then(r => r.ok ? r.json() : null).catch(() => null);
         if (dead || !me || !me.id || me.id !== currentUser.id) return;
         const same = JSON.stringify(me.permissions || {}) === JSON.stringify(currentUser.permissions || {}) && me.role === currentUser.role && (me.active !== false) === (currentUser.active !== false);
@@ -16414,8 +16470,9 @@ export default function App(){
     {id:'attendance',label:'Attendance',icon:Camera},
     // CRM is a collapsible group with Visits + Leads + Tasks as children.
     { group:'crm', label:'CRM', icon:Briefcase, children:[
-        {id:'visits', label:'Visits', icon:ClipboardList},
-        {id:'calendar', label:'Visit calendar', icon:Calendar},
+        // Visits is where a check-in outside the calendar happens — hence "Unplanned visit"
+        {id:'visits', label:'Unplanned visit', icon:ClipboardList},
+        {id:'calendar', label:'My visit calendar', icon:Calendar},
         {id:'leads',  label:'Leads',  icon:UserCheck},
         {id:'tasks',  label:'Tasks',  icon:CheckSquare},
     ]},
@@ -16465,12 +16522,89 @@ export default function App(){
     {id:'producttx', label:'Product Transactions', icon:Package},
     {id:'admin',   label:'Admin Panel', icon:Settings, feature:'manageCategories', staff:true},
   ];
+  // one colour per menu section — the icon sits in a tile tinted with it, pages share their section's colour
+  const NAV_TONE = { overview:'#3b82f6', dealers:'#3b82f6', monthly:'#14b8a6', compare:'#8b5cf6', map:'#0ea5e9', outstanding:'#ef4444',
+    upload:'#64748b', salesCat:'#f59e0b', entry:'#10b981', months:'#64748b', followups:'#f97316', attendance:'#ec4899',
+    crm:'#8b5cf6', incentiveBilling:'#10b981', incentiveSales:'#f59e0b', collections:'#0ea5e9',
+    leaves:'#06b6d4', tickets:'#64748b', reports:'#3b82f6', sheets:'#22c55e', producttx:'#a855f7', admin:'#475569' };
+  const navTone = key => NAV_TONE[key] || '#3b82f6';
   const navItems = navItemsRaw
     .map(item => item.group ? { ...item, children:(item.children||[]).filter(pageVisible) } : item)
     .filter(item => item.group ? item.children.length > 0 : pageVisible(item));
+  // the bottom bar and the quick actions offer only pages this person can open — same rule as the menu
+  const allPages = navItemsRaw.flatMap(item => item.group ? item.children.map(c => ({ ...c, flag: c.flag || item.flag, groupLabel: item.label })) : [item]);
+  // the phone header names the section when a page's own label is generic ("Dashboard", "Rule & setup")
+  const pageTitle = id => { if (id==='overview') return 'Home'; if (id==='profile') return 'My profile'; const p = allPages.find(x=>x.id===id); if (!p) return 'Sales Tracker Pro'; return /^(dashboard|my dashboard|this month|history|rule & setup|upload sheet|settings|reports|my incentive|follow-ups|outstanding)$/i.test(p.label) && p.groupLabel ? `${p.groupLabel}${/^(dashboard|my dashboard)$/i.test(p.label) ? '' : ' · ' + p.label}` : p.label; };
+  const canOpen = id => { const it = allPages.find(x => x.id === id); return !!it && pageVisible(it); };
+  const actions = quickActions({ can: canOpen, navigate, onAddDealer: () => setShowAdd(true), onStock: (mode) => { setStockMode(mode||''); setStockOpen(true); }, role: currentUser?.role, t: tr });
+
+  // CRM, incentives, collections and data pages keep their own menus — the admin dropdown holds only admin sections
+  const adminModules = [];
+  // after a profile save: the new photo / colour shows beside the name everywhere at once
+  const onProfileUpdated = u => {
+    if(!u?.id) return;
+    const patch = { avatar:u.avatar||'', color:u.color };
+    setCurrentUser(prev => prev && prev.id===u.id ? { ...prev, ...patch } : prev);
+    setUsers(prev => prev && prev[u.id] ? { ...prev, [u.id]:{ ...prev[u.id], ...patch } } : prev);
+  };
+  const adminRail = buildAdminRail({ can:k=>!!hasFeature(k), isStaff:isAdminRole, modules:adminModules,
+    userCount:Object.keys(users||{}).length, monthCount:(monthConfig?.MO||activeMO||[]).length });
+  // Every screen by id — the main area renders the current one, and the admin
+  // console renders the same pages inside its own section rail.
+  const pageEl = (screen) => (
+                <>
+                  {screen==='overview'  && <HomeHero user={currentUser} dealers={myDealers} monthLabel={activeMO?.[selectedMonthIdx]} monthIdx={selectedMonthIdx} actions={actions} onPlus={()=>setQuickOpen(true)}/>}
+                  {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate} onUpdateDealer={updateDealerFields}/>}
+                  {screen==='dealers'   &&<DealersList dealers={myDealers} currentUser={currentUser} users={users} onEdit={setEditingId} onDelete={deleteDealer} onAdd={()=>setShowAdd(true)} selected={selected} setSelected={setSelected} onBulkAction={setBulkAction} notes={myNotes} pendingFilters={pendingFilters} clearPending={()=>setPendingFilters(null)} onUpdateDealer={updateDealerFields}/>}
+                  {screen==='monthly'   &&<MonthlyTrend dealers={myDealersCatAllMonths} currentUser={currentUser} users={users} onOpenDealer={setEditingId}/>}
+                  {screen==='compare'   &&<Compare dealers={myDealers} onOpenDealer={setEditingId}/>}
+                  {screen==='map'       &&<IndiaMap dealers={myDealers} users={users} onOpenDealer={setEditingId}/>}
+                  {screen==='outstanding'&&<Outstanding dealers={myDealers} users={users} onOpenDealer={setEditingId} currentUser={currentUser} outstandingData={outstandingData} setOutstandingData={setOutstandingData}/>}
+                  {screen==='upload'&&<UploadMonth users={users} currentUser={currentUser} onSuccess={()=>loadFromDB(activeMO)}/>}
+                  {screen==='salesUpload' && isStaff && <SalesUpload currentUser={currentUser} onUploaded={()=>{}}/>}
+                  {screen==='salesCat'    && <SalesByCategory currentUser={currentUser} users={users} dealers={dealers} outstandingData={outstandingData} onOpenDealer={setEditingId}/>}
+                  {screen==='entry'&&<MonthlyEntry dealers={myDealers} users={users} currentUser={currentUser} onUpdateDealer={updateDealerFields} onSaved={()=>loadFromDB(activeMO)}/>}
+                  {screen==='months'&&isStaff&&<ManageMonths dealers={dealers} users={users} currentUser={currentUser} monthConfig={monthConfig} saveMonthConfig={saveMonthConfig} loadFromDB={loadFromDB} onSync={syncSheets} syncing={syncing} lastSync={lastSync}/>}
+                  {screen==='followups'&&<FollowupsHub notes={myNotes} dealers={myDealers} users={users} onUpdateNote={updateNote} onDeleteNote={deleteNote} onOpenDealer={setEditingId}/>}
+                  {screen==='crm'        && <CRM            dealers={myDealers} users={users} currentUser={currentUser}/>}
+                  {screen==='attendance' && <AttendancePage users={users} currentUser={currentUser}/>}
+                  {screen==='visits'     && <VisitsPage     dealers={myDealers} users={users} currentUser={currentUser}/>}
+                  {screen==='profile'    && <ProfilePage currentUser={currentUser} onUpdated={onProfileUpdated}/>}
+                  {screen==='calendar'   && <VisitCalendar  dealers={(currentUser?.role==='admin'||currentUser?.role==='superadmin'||currentUser?.role==='employee')?dealers:myDealers} users={users} currentUser={currentUser}/>}
+                  {screen==='leads'      && <LeadsPage      users={users} currentUser={currentUser}/>}
+                  {screen==='leaves'     && <LeavesPage     users={users} currentUser={currentUser}/>}
+                  {screen==='reports' && isStaff && <Reports dealers={dealers} users={users} currentUser={currentUser} monthConfig={monthConfig} outstandingData={outstandingData}/>}
+                  {screen==='sheets' && <Suspense fallback={<div style={{padding:40,textAlign:'center',color:'var(--t3)'}}>Loading spreadsheet…</div>}><Sheets currentUser={currentUser} users={users}/></Suspense>}
+                  {screen==='producttx' && <ProductTxn currentUser={currentUser}/>}
+                  {screen==='incentiveHome'    && <Incentive view="dashboard" currentUser={currentUser}/>}
+                  {screen==='incentive'        && <Incentive view="month"/>}
+                  {screen==='incentiveHistory' && <Incentive view="history"/>}
+                  {screen==='incentiveRule'    && <Incentive view="rule"/>}
+                  {screen==='salesIncentive'     && <SalesIncentive/>}
+                  {screen==='salesIncentiveRule' && <SalesIncentiveRule/>}
+                  {COL_SCREENS.has(screen) && <Collections view={screen} currentUser={currentUser} users={users} hasFeature={hasFeature} navigate={navigate}/>}
+                  {screen==='incentiveUpload'  && <Incentive view="upload"/>}
+                  {screen==='tasks'   && <TasksPage   users={users} currentUser={currentUser}/>}
+                  {screen==='tickets' && <TicketsPage users={users} currentUser={currentUser}/>}
+                  {screen==='admin'&&isStaff&&<AdminPanel section={adminKey} onSection={setAdminKey} hideRail modules={adminModules} renderPage={id=><ErrorBoundary key={id} name={id}>{pageEl(id)}</ErrorBoundary>} dealers={dealersGloballyFiltered} users={users} setUsers={setUsers} setShowUM={setShowUM} onSync={syncSheets} syncing={syncing} lastSync={lastSync} syncErrs={syncErrs} onNavigate={navigate} onOpenDealer={setEditingId} monthConfig={monthConfig} saveMonthConfig={saveMonthConfig} currentUser={currentUser} hasFeature={hasFeature} canLoginAs={canLoginAs} onLoginAs={(token, user, impersonatedBy)=>{
+                    saveToken(token);
+                    localStorage.setItem('stp_jwt', token);
+                    if(impersonatedBy){
+                      localStorage.setItem('stp_impersonating', JSON.stringify(impersonatedBy));
+                      setImpersonatingFrom(impersonatedBy);
+                    } else {
+                      localStorage.removeItem('stp_impersonating');
+                      setImpersonatingFrom(null);
+                    }
+                    setCurrentUser(user);
+                    setTimeout(()=>window.location.reload(), 200);
+                  }}/>}
+                </>
+  );
 
   return(
-    <MonthContext.Provider value={{selectedMonthIdx,setSelectedMonthIdx,MO:activeMO,currentMonthIdx:activeMonthIdx,currentMonthLabel:activeMonthLabel}}>
+    <MonthContext.Provider value={{selectedMonthIdx,setSelectedMonthIdx,MO:activeMO,currentMonthIdx:activeMonthIdx,currentMonthLabel:activeMonthLabel,viewIdx,cycle,setCycle,cycles}}>
+    <LangContext.Provider value={langCtx}>
       <>
         <Styles theme={theme}/>
         <div id="app" style={{display:'flex',flexDirection:'column',height:'100vh'}}>
@@ -16482,30 +16616,29 @@ export default function App(){
             <div style={{
               display:'flex',alignItems:'center',gap:10,
               padding:'8px 14px',
-              background:'linear-gradient(90deg, rgba(251,191,36,0.18), rgba(251,191,36,0.08))',
-              borderBottom:'1px solid rgba(251,191,36,0.40)',
-              color:'var(--yel)',fontSize:12,fontWeight:600,
-              flexShrink:0,
+              background:'var(--yel)',
+              borderBottom:'1px solid #d97706',
+              color:'#1f1300',fontSize:12.5,fontWeight:600,
+              flexShrink:0,flexWrap:'nowrap',overflow:'hidden',
             }}>
               <span style={{
-                background:'#fbbf24',color:'#1f1300',
-                padding:'2px 7px',borderRadius:4,fontSize:10,fontWeight:800,letterSpacing:'.06em',
+                background:'#1f1300',color:'var(--yel)',
+                padding:'2px 8px',borderRadius:4,fontSize:10,fontWeight:800,letterSpacing:'.06em',whiteSpace:'nowrap',flexShrink:0,
               }}>VIEWING AS</span>
               <Avatar user={currentUser} size={20}/>
-              <span style={{color:'#fde68a'}}>{currentUser?.name}</span>
-              <span style={{color:'rgba(251,191,36,0.55)'}}>·</span>
-              <span style={{color:'rgba(251,191,36,0.85)',fontWeight:500}}>
-                You see exactly what they see
+              <span style={{color:'#1f1300',fontWeight:800,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{currentUser?.name}</span>
+              <span className="imp-hint" style={{color:'#78350f',fontWeight:500,whiteSpace:'nowrap'}}>
+                · you see exactly what they see
               </span>
               <div style={{flex:1}}/>
               <button onClick={handleReturnToSelf}
                 style={{
                   display:'flex',alignItems:'center',gap:6,
                   padding:'5px 12px',borderRadius:5,
-                  background:'#fbbf24',color:'#1f1300',
+                  background:'#1f1300',color:'var(--yel)',
                   border:'none',cursor:'pointer',
-                  fontSize:11,fontWeight:700,letterSpacing:'.03em',
-                  whiteSpace:'nowrap',
+                  fontSize:11.5,fontWeight:700,letterSpacing:'.03em',
+                  whiteSpace:'nowrap',flexShrink:0,
                 }}
                 title={'Return to ' + (impersonatingFrom?.name || 'your account')}>
                 <LogOut size={12}/> Return to {impersonatingFrom?.name || 'my account'}
@@ -16526,6 +16659,8 @@ export default function App(){
               <LogoMark size={17}/>
               <span style={{fontFamily:'"JetBrains Mono",monospace',fontSize:11,letterSpacing:3,fontWeight:500}}>STP</span>
             </div>
+            {/* phones: the page you are on, like a real app's header */}
+            <div className={"tb-title"+(screen==='overview'?' has-quote':'')}>{screen==='overview'?<DailyQuote/>:tr(pageTitle(screen))}</div>
 
             {/* ── Territory bar — hidden on mobile via CSS ── */}
             <div className="territory-bar" style={{display:'flex',alignItems:'center',gap:10,padding:'4px 12px',background:'var(--bg2)',borderRadius:8,border:'1px solid var(--b2)',fontSize:11,flexShrink:0}}>
@@ -16548,8 +16683,22 @@ export default function App(){
               </div>
             )}
 
+            {/* ── Live stock search (Tally) ── */}
+            <button className="tb-stock tb-phone-hide" onClick={()=>{ setStockMode(''); setStockOpen(true); }} title="Search live stock in Tally">
+              <Package size={15}/><span className="hide-sm">Stock</span>
+            </button>
+
+            {/* ── App language ── */}
+            <LangPicker/>
+
+            {/* ── Phones: one tap between dark and light ── */}
+            <button className={'tb-mode'+(themeById(paletteId).tone==='dark'?' dark':'')} onClick={toggleTheme}
+              title={themeById(paletteId).tone==='dark'?'Switch to light mode':'Switch to dark mode'} aria-label="Dark or light mode">
+              {themeById(paletteId).tone==='dark' ? <Sun key="sun" size={16}/> : <Moon key="moon" size={16}/>}
+            </button>
+
             {/* ── Backend URL settings (gear) — important for mobile/APK ── */}
-            <button onClick={() => setShowApiSettings(true)} className="btn"
+            <button onClick={() => setShowApiSettings(true)} className={'btn' + (isNativeApp() ? '' : ' tb-phone-hide')}
               title="Set the backend server URL (needed when using the APK or remote server)"
               style={{fontSize:11,display:'flex',alignItems:'center',gap:4,padding:'6px 8px',flexShrink:0,color:'var(--t3)'}}>
               <Settings size={13}/>
@@ -16557,7 +16706,7 @@ export default function App(){
 
             {/* ── Login as ▼ — superadmin, or anyone granted the loginAs action ── */}
             {canLoginAs && (
-              <div ref={loginAsRef} style={{flexShrink:0}}>
+              <div ref={loginAsRef} className="tb-phone-hide" style={{flexShrink:0}}>
                 <button ref={loginAsBtnRef} className="btn"
                   onClick={()=>{
                     // Compute absolute position (viewport coordinates) for the
@@ -16575,8 +16724,8 @@ export default function App(){
                   title="Sign in as another user without their password"
                   style={{
                     fontSize:11, display:'flex', alignItems:'center', gap:4, padding:'6px 8px',
-                    background:'rgba(251,191,36,0.10)',
-                    border:'1px solid rgba(251,191,36,0.35)',
+                    background:'color-mix(in srgb, var(--yel) 10%, transparent)',
+                    border:'1px solid color-mix(in srgb, var(--yel) 35%, transparent)',
                     color:'var(--yel)', fontWeight:700,
                   }}>
                   <LogIn size={13}/>
@@ -16675,7 +16824,7 @@ export default function App(){
                 }}>
                 <Palette size={13}/>
                 <span className="hide-sm">Theme</span>
-                <ChevronDown size={11} style={{transform:paletteOpen?'rotate(180deg)':'rotate(0)', transition:'transform .15s'}}/>
+                <ChevronDown size={11} className="hide-sm" style={{transform:paletteOpen?'rotate(180deg)':'rotate(0)', transition:'transform .15s'}}/>
               </button>
               {paletteOpen && (
                 <div style={{
@@ -16691,8 +16840,8 @@ export default function App(){
                   maxHeight:'min(420px, calc(100vh - 96px))',
                   overflowY:'auto', overscrollBehavior:'contain',
                 }}>
-                  <div style={{fontSize:9, color:'var(--t3)', letterSpacing:'.12em', textTransform:'uppercase', padding:'6px 10px 4px'}}>
-                    Theme — {THEMES.length} palettes
+                  <div style={{fontSize:9.5, color:'var(--t3)', fontWeight:700, letterSpacing:'.12em', textTransform:'uppercase', padding:'6px 10px 4px'}}>
+                    Theme
                   </div>
                   {THEMES.map(t => {
                     const selected = t.id === paletteId;
@@ -16716,8 +16865,9 @@ export default function App(){
                             }}/>
                           ))}
                         </div>
-                        <div style={{flex:1, minWidth:0, fontSize:12, fontWeight: selected?700:500, color:'var(--t1)'}}>
-                          {t.name}
+                        <div style={{flex:1, minWidth:0}}>
+                          <div style={{fontSize:12.5, fontWeight: selected?700:600, color:'var(--t1)'}}>{t.name}</div>
+                          {t.hint && <div style={{fontSize:10.5, color:'var(--t3)'}}>{t.hint}</div>}
                         </div>
                         {selected && <Check size={12} style={{color:'var(--acc)', flexShrink:0}}/>}
                       </div>
@@ -16733,7 +16883,7 @@ export default function App(){
                 maintenance actions that belong on a real screen anyway. ── */}
             {!isNativeApp() && (<>
               {/* ── Reload from DB button — safe refresh, doesn't touch Sheets ── */}
-              <button onClick={handleReloadDB} disabled={syncing || reloadingDB} className="btn"
+              <button onClick={handleReloadDB} disabled={syncing || reloadingDB} className="btn tb-phone-hide"
                 title="Reload all dealer data from MongoDB. Safe — never touches Google Sheets."
                 style={{fontSize:11,display:'flex',alignItems:'center',gap:4,padding:'6px 8px',flexShrink:0,color:'var(--grn)'}}>
                 <RefreshCw size={13} className={reloadingDB?'spin':''}/>
@@ -16741,7 +16891,7 @@ export default function App(){
               </button>
 
               {/* ── Sync from Sheets button — icon only on mobile ── */}
-              {SHEET_SYNC_ENABLED && <button onClick={syncSheets} disabled={syncing} className="btn"
+              {SHEET_SYNC_ENABLED && <button onClick={syncSheets} disabled={syncing} className="btn tb-phone-hide"
                 title="Pull latest from Google Sheets. Months not in the sheet are preserved."
                 style={{fontSize:11,display:'flex',alignItems:'center',gap:4,padding:'6px 8px',flexShrink:0}}>
                 <RefreshCw size={13} className={syncing?'spin':''}/>
@@ -16751,26 +16901,28 @@ export default function App(){
             {/* APK update check — only meaningful inside the Android shell,
                 where an APK can actually be installed. */}
             {isNativeApp() && <UpdateButton compact/>}
-            {useDB&&<span style={{fontSize:10,background:'rgba(52,211,153,0.15)',color:'var(--grn)',padding:'2px 7px',borderRadius:4,fontWeight:600,flexShrink:0}}>🗄 DB</span>}
+            {useDB&&<span className="tb-phone-hide" style={{fontSize:10,background:'color-mix(in srgb, var(--grn) 15%, transparent)',color:'var(--grn)',padding:'2px 7px',borderRadius:4,fontWeight:600,flexShrink:0}}>🗄 DB</span>}
 
             {/* ── Divider ── */}
             <div className="hide-sm" style={{width:1,height:18,background:'var(--b1)',flexShrink:0}}/>
 
             {/* ── Theme toggle ── */}
-            <div className="theme-toggle" onClick={toggleTheme} title="Toggle theme" style={{flexShrink:0}}/>
+            <div className="theme-toggle tb-phone-hide" onClick={toggleTheme} title="Toggle theme" style={{flexShrink:0}}/>
 
             {/* ── Divider ── */}
             <div className="hide-sm" style={{width:1,height:18,background:'var(--b1)',flexShrink:0}}/>
 
             {/* ── Avatar + name ── */}
+            <div className="tb-me" onClick={()=>navigate('profile')} title="My profile — photo and details" role="button">
             <Avatar user={currentUser} size={26}/>
             <div className="hide-sm" style={{display:'flex',flexDirection:'column'}}>
               <div style={{fontSize:12,fontWeight:600,color:'var(--t1)',lineHeight:1.1,whiteSpace:'nowrap'}}>{currentUser.name}</div>
               <div style={{fontSize:10,color:'var(--t3)'}}>{currentUser.role==='superadmin'?'Superadmin':currentUser.role==='admin'?'Admin':currentUser.role==='employee'?'Employee':'Sales'}</div>
             </div>
+            </div>
 
-            {/* ── Sign out — always visible, icon + text on desktop ── */}
-            <button onClick={handleLogout} className="btn"
+            {/* ── Sign out — computers; on a phone it lives at the foot of the menu ── */}
+            <button onClick={handleLogout} className="btn tb-phone-hide"
               style={{padding:'6px 8px',fontSize:11,color:'var(--t3)',display:'flex',alignItems:'center',gap:4,flexShrink:0}}>
               <LogOut size={13}/>
               <span className="hide-sm">Sign out</span>
@@ -16833,7 +16985,7 @@ export default function App(){
                 onDoubleClick={()=>setSbWidth(240)} />
             )}
             <div id="sidebar" className={sidebarOpen?'open':'closed'} style={window.innerWidth>768 ? {'--sbw': sbWidth+'px'} : undefined}>
-              <div className="nav-sec">Navigation</div>
+              <div className="nav-sec">{tr('Menu')}</div>
               {navItems.filter(n=>!n.adminOnly||isStaff).map((n, idx)=>{
                 // Render a collapsible group (parent header + children)
                 if(n.group){
@@ -16846,8 +16998,8 @@ export default function App(){
                           one of its pages is, so the page (child) reads as the selection */}
                       <div className={`nav-item nav-group ${anyChildActive?'has-active':''} ${isOpen?'open':''}`}
                         onClick={()=>toggleNavGroup(n.group)}>
-                        <GIcon size={15} strokeWidth={2.2} style={{flexShrink:0}}/>
-                        <span style={{flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis'}}>{n.label}</span>
+                        <span className="nav-ico" style={{'--tone':navTone(n.group)}}><GIcon size={15} strokeWidth={2.2}/></span>
+                        <span style={{flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis'}}>{tr(n.label)}</span>
                         <ChevronDown size={14} strokeWidth={2.4}
                           style={{flexShrink:0, transform: isOpen?'rotate(180deg)':'rotate(0)', transition:'transform .15s', opacity:.75}}/>
                       </div>
@@ -16861,10 +17013,45 @@ export default function App(){
                                 className={`nav-item nav-child ${screen===c.id?'active':''}`}
                                 onClick={()=>navigate(c.id)}>
                                 {/* the icon must never shrink — a long label used to squeeze it to nothing */}
-                                <CIcon size={15} style={{flexShrink:0}}/><span style={{flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis'}}>{c.label}</span>
+                                <span className="nav-ico sm" style={{'--tone':navTone(n.group)}}><CIcon size={13}/></span><span style={{flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis'}}>{tr(c.label)}</span>
                               </div>
                             );
                           })}
+                        </div>
+                      )}
+                    </React.Fragment>
+                  );
+                }
+                // Admin Panel: a dropdown holding every admin section, grouped
+                if(n.id==='admin'){
+                  const isOpen = !!navGroupsOpen.admin;
+                  const here = screen==='admin';
+                  return (
+                    <React.Fragment key="g-admin">
+                      <div className={`nav-item nav-group ${here?'has-active':''} ${isOpen?'open':''}`} onClick={()=>toggleNavGroup('admin')}>
+                        <span className="nav-ico" style={{'--tone':navTone('admin')}}><n.icon size={15} strokeWidth={2.2}/></span>
+                        <span style={{flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis'}}>{tr(n.label)}</span>
+                        <ChevronDown size={14} strokeWidth={2.4} style={{flexShrink:0, transform: isOpen?'rotate(180deg)':'rotate(0)', transition:'transform .15s', opacity:.75}}/>
+                      </div>
+                      {isOpen && (
+                        <div className="nav-children">
+                          {adminRail.map(g=>(
+                            <React.Fragment key={g.group}>
+                              <div className="nav-subhead">{g.group}</div>
+                              {g.items.map(it=>{
+                                const CIcon = it.icon;
+                                return (
+                                  <div key={it.key} title={it.desc}
+                                    className={`nav-item nav-child ${here&&adminKey===it.key?'active':''}`}
+                                    onClick={()=>{ setAdminKey(it.key); navigate('admin'); }}>
+                                    <span className="nav-ico sm" style={{'--tone':it.tone&&!String(it.tone).startsWith('var(')?it.tone:navTone('admin')}}><CIcon size={13}/></span>
+                                    <span style={{flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis'}}>{it.label}</span>
+                                    {it.n!==undefined&&<span className="nav-subn">{it.n}</span>}
+                                  </div>
+                                );
+                              })}
+                            </React.Fragment>
+                          ))}
                         </div>
                       )}
                     </React.Fragment>
@@ -16874,15 +17061,15 @@ export default function App(){
                 const Icon = n.icon;
                 return (
                   <div key={n.id} className={`nav-item ${screen===n.id?'active':''}`} onClick={()=>navigate(n.id)}>
-                    <Icon size={14}/><span style={{flex:1}}>{n.label}</span>
+                    <span className="nav-ico" style={{'--tone':navTone(n.id)}}><Icon size={15}/></span><span style={{flex:1}}>{tr(n.label)}</span>
                     {n.badge>0&&<span style={{background:'var(--red)',color:'#fff',borderRadius:10,padding:'1px 7px',fontSize:10,fontWeight:700}}>{n.badge}</span>}
                   </div>
                 );
               })}
               <div style={{flex:1}}/>
               {/* Sidebar snapshot */}
-              <div style={{padding:'14px 16px',borderTop:'1px solid var(--b1)'}}>
-                <div style={{fontSize:9,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'.12em',marginBottom:4}}>{activeMO[selectedMonthIdx]} Snapshot</div>
+              <div className="sb-snap">
+                <div style={{fontSize:9.5,color:'var(--t3)',fontWeight:700,textTransform:'uppercase',letterSpacing:'.12em',marginBottom:4}}>{activeMO[selectedMonthIdx]} Snapshot</div>
                 {selectedMonthIdx!==activeMonthIdx&&<div style={{fontSize:9,color:'var(--yel)',marginBottom:4}}>HISTORICAL</div>}
                 <div style={{fontSize:22,fontWeight:700,color:pclr(sbP)}}>{taSnap} units</div>
                 <div style={{fontSize:10,color:'var(--t3)',marginBottom:6}}>{taSnap} / {ttSnap} · {spct(ttSnap,taSnap)}</div>
@@ -16901,7 +17088,7 @@ export default function App(){
                     if(ra !== rb) return ra - rb;
                     return b[1] - a[1]; // tie-break by larger count
                   }).map(([s,c])=>{
-                    const statusColors={'TOP PERFORMER':'#16a34a','PRIORITY ACCOUNT':'#65a30d','RISING STAR':'#ca8a04','ACTIVE':'#0891b2','RECENTLY INACTIVE':'#f97316','INACTIVE':'#dc2626','DEAD':'#7f1d1d','STAR':'#db2777','KEY ACCOUNT':'#4f46e5','ACHIEVER':'#0d9488','REACTIVE':'#0284c7','NONE':'#8a93a8'};
+                    const statusColors={'TOP PERFORMER':'#16a34a','PRIORITY ACCOUNT':'#65a30d','RISING STAR':'#ca8a04','ACTIVE':'#0891b2','RECENTLY INACTIVE':'#f97316','INACTIVE':'#dc2626','DEAD':'#7f1d1d','STAR':'#db2777','KEY ACCOUNT':'#2563eb','ACHIEVER':'#0d9488','REACTIVE':'#0284c7','NONE':'#8a93a8'};
                     const cl=statusColors[s.toUpperCase()]||'#55546a';
                     return(<div key={s} style={{display:'flex',justifyContent:'space-between',fontSize:10}}>
                       <span style={{color:cl,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:110}}>{s}</span>
@@ -16915,17 +17102,19 @@ export default function App(){
                 padding:'10px 12px', borderTop:'1px solid var(--b1)',
                 display:'flex', alignItems:'center', gap:10,
               }}>
+                <div className="sb-me" onClick={()=>navigate('profile')} title="My profile — photo and details" role="button">
                 <Avatar user={currentUser} size={30}/>
                 <div style={{flex:1, minWidth:0}}>
                   <div style={{fontSize:12, fontWeight:600, color:'var(--t1)', lineHeight:1.1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>{currentUser.name}</div>
-                  <div style={{fontSize:10, color:'var(--t3)'}}>{currentUser.role==='superadmin'?'Superadmin':currentUser.role==='admin'?'Admin':currentUser.role==='employee'?'Employee':'Sales'}</div>
+                  <div style={{fontSize:10, color:'var(--t3)'}}>{currentUser.role==='superadmin'?'Superadmin':currentUser.role==='admin'?'Admin':currentUser.role==='employee'?'Employee':'Sales'} · <span style={{color:'var(--acc)',fontWeight:700}}>{tr('My profile')}</span></div>
+                </div>
                 </div>
                 <button onClick={handleLogout} className="btn"
                   title="Sign out"
                   style={{
                     padding:'6px 10px', fontSize:11, color:'#fca5a5',
-                    border:'1px solid rgba(248,113,113,0.35)',
-                    background:'rgba(248,113,113,0.08)',
+                    border:'1px solid color-mix(in srgb, var(--red) 35%, transparent)',
+                    background:'color-mix(in srgb, var(--red) 8%, transparent)',
                     display:'inline-flex', alignItems:'center', gap:4,
                   }}>
                   <LogOut size={12}/> Sign out
@@ -16934,59 +17123,18 @@ export default function App(){
             </div>
 
             <div id="main">
-              {(!dbLoaded || (dealers.length===0 && syncing))?<SkeletonLoader screen={screen}/>:(
-                <>
-                  {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate} onUpdateDealer={updateDealerFields}/>}
-                  {screen==='dealers'   &&<DealersList dealers={myDealers} currentUser={currentUser} users={users} onEdit={setEditingId} onDelete={deleteDealer} onAdd={()=>setShowAdd(true)} selected={selected} setSelected={setSelected} onBulkAction={setBulkAction} notes={myNotes} pendingFilters={pendingFilters} clearPending={()=>setPendingFilters(null)} onUpdateDealer={updateDealerFields}/>}
-                  {screen==='monthly'   &&<MonthlyTrend dealers={myDealersCatAllMonths} currentUser={currentUser} users={users} onOpenDealer={setEditingId}/>}
-                  {screen==='compare'   &&<Compare dealers={myDealers} onOpenDealer={setEditingId}/>}
-                  {screen==='map'       &&<IndiaMap dealers={myDealers} users={users} onOpenDealer={setEditingId}/>}
-                  {screen==='outstanding'&&<Outstanding dealers={myDealers} users={users} onOpenDealer={setEditingId} currentUser={currentUser} outstandingData={outstandingData} setOutstandingData={setOutstandingData}/>}
-                  {screen==='upload'&&<UploadMonth users={users} currentUser={currentUser} onSuccess={()=>loadFromDB(activeMO)}/>}
-                  {screen==='salesUpload' && isStaff && <SalesUpload currentUser={currentUser} onUploaded={()=>{}}/>}
-                  {screen==='salesCat'    && <SalesByCategory currentUser={currentUser} users={users} dealers={dealers} outstandingData={outstandingData} onOpenDealer={setEditingId}/>}
-                  {screen==='entry'&&<MonthlyEntry dealers={myDealers} users={users} currentUser={currentUser} onUpdateDealer={updateDealerFields} onSaved={()=>loadFromDB(activeMO)}/>}
-                  {screen==='months'&&isStaff&&<ManageMonths dealers={dealers} users={users} currentUser={currentUser} monthConfig={monthConfig} saveMonthConfig={saveMonthConfig} loadFromDB={loadFromDB} onSync={syncSheets} syncing={syncing} lastSync={lastSync}/>}
-                  {screen==='followups'&&<FollowupsHub notes={myNotes} dealers={myDealers} users={users} onUpdateNote={updateNote} onDeleteNote={deleteNote} onOpenDealer={setEditingId}/>}
-                  {screen==='crm'        && <CRM            dealers={myDealers} users={users} currentUser={currentUser}/>}
-                  {screen==='attendance' && <AttendancePage users={users} currentUser={currentUser}/>}
-                  {screen==='visits'     && <VisitsPage     dealers={myDealers} users={users} currentUser={currentUser}/>}
-                  {screen==='calendar'   && <VisitCalendar  dealers={(currentUser?.role==='admin'||currentUser?.role==='superadmin'||currentUser?.role==='employee')?dealers:myDealers} users={users} currentUser={currentUser}/>}
-                  {screen==='leads'      && <LeadsPage      users={users} currentUser={currentUser}/>}
-                  {screen==='leaves'     && <LeavesPage     users={users} currentUser={currentUser}/>}
-                  {screen==='reports' && isStaff && <Reports dealers={dealers} users={users} currentUser={currentUser} monthConfig={monthConfig} outstandingData={outstandingData}/>}
-                  {screen==='sheets' && <Suspense fallback={<div style={{padding:40,textAlign:'center',color:'var(--t3)'}}>Loading spreadsheet…</div>}><Sheets currentUser={currentUser} users={users}/></Suspense>}
-                  {screen==='producttx' && <ProductTxn currentUser={currentUser}/>}
-                  {screen==='incentiveHome'    && <Incentive view="dashboard" currentUser={currentUser}/>}
-                  {screen==='incentive'        && <Incentive view="month"/>}
-                  {screen==='incentiveHistory' && <Incentive view="history"/>}
-                  {screen==='incentiveRule'    && <Incentive view="rule"/>}
-                  {screen==='salesIncentive'     && <SalesIncentive/>}
-                  {screen==='salesIncentiveRule' && <SalesIncentiveRule/>}
-                  {COL_SCREENS.has(screen) && <Collections view={screen} currentUser={currentUser} users={users} hasFeature={hasFeature} navigate={navigate}/>}
-                  {screen==='incentiveUpload'  && <Incentive view="upload"/>}
-                  {screen==='tasks'   && <TasksPage   users={users} currentUser={currentUser}/>}
-                  {screen==='tickets' && <TicketsPage users={users} currentUser={currentUser}/>}
-                  {screen==='admin'&&isStaff&&<AdminPanel dealers={dealersGloballyFiltered} users={users} setUsers={setUsers} setShowUM={setShowUM} onSync={syncSheets} syncing={syncing} lastSync={lastSync} syncErrs={syncErrs} onNavigate={navigate} onOpenDealer={setEditingId} monthConfig={monthConfig} saveMonthConfig={saveMonthConfig} currentUser={currentUser} hasFeature={hasFeature} canLoginAs={canLoginAs} onLoginAs={(token, user, impersonatedBy)=>{
-                    saveToken(token);
-                    localStorage.setItem('stp_jwt', token);
-                    if(impersonatedBy){
-                      localStorage.setItem('stp_impersonating', JSON.stringify(impersonatedBy));
-                      setImpersonatingFrom(impersonatedBy);
-                    } else {
-                      localStorage.removeItem('stp_impersonating');
-                      setImpersonatingFrom(null);
-                    }
-                    setCurrentUser(user);
-                    setTimeout(()=>window.location.reload(), 200);
-                  }}/>}
-                </>
-              )}
+              <ErrorBoundary key={screen} name={screen}>{(!dbLoaded || (dealers.length===0 && syncing))?<SkeletonLoader screen={screen}/>:(
+                pageEl(screen)
+              )}</ErrorBoundary>
             </div>
+            <BottomNav screen={screen} can={canOpen} navigate={navigate} onPlus={()=>setQuickOpen(true)} onMore={()=>setSidebarOpen(true)}/>
+            {actions.length > 0 && <QuickFab onClick={()=>setQuickOpen(true)}/>}
+            <QuickSheet open={quickOpen} onClose={()=>setQuickOpen(false)} actions={actions}/>
           </div>
         </div>
 
         {editing&&<DealerModal dealer={editing} users={users} currentUser={currentUser} onSave={saveDealer} onDelete={deleteDealer} onClose={()=>setEditingId(null)} notes={notes} onAddNote={addNote} onUpdateNote={updateNote} onDeleteNote={deleteNote} onLog={addLog} outstandingData={outstandingData} outFollowups={outFollowups} onFollowupSaved={()=>api.getFollowups().then(d=>setOutFollowups(d)).catch(()=>{})}/>}
+        <StockSearch open={stockOpen} mode={stockMode} onClose={()=>setStockOpen(false)}/>
         {showAdd&&<AddDealerModal users={users} currentUser={currentUser} onAdd={addDealer} onClose={()=>setShowAdd(false)}/>}
         {showUM&&<UserManagement
           users={users}
@@ -17018,6 +17166,7 @@ export default function App(){
         {/* Global toasts + confirm dialog — replaces window.alert / confirm */}
         <NotificationCenter/>
       </>
+    </LangContext.Provider>
     </MonthContext.Provider>
   );
 }

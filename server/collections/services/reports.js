@@ -13,8 +13,15 @@ const users = async () => new Map((await User().find({}, 'id name').lean()).map(
 
 /** Each report is a {columns, rows} builder over the scope. Rows are plain arrays so export is one code path. */
 export const REPORTS = {
-  'current-outstanding': { label: 'Current Outstanding', async build(sf) {
-    const rows = await ColBalance.find({ ...sf, total: { $gt: 0 } }).sort({ total: -1 }).lean(); const u = await users();
+  'current-outstanding': { label: 'Current Outstanding', async build(sf, p = {}) {
+    // the same filters as the Outstanding screen, so the download is the list you were looking at
+    const f = { ...sf, total: { $gt: 0 } };
+    if (p.status) f.status = { $in: String(p.status).split(',') };
+    if (p.priority) f.priority = { $in: String(p.priority).split(',') };
+    if (p.salesmanId) f.salesmanId = String(p.salesmanId);
+    if (p.overdue === '1' || p.overdue === 'true' || p.overdue === true) f.overdue = true;
+    if (p.q) { const rx = new RegExp(String(p.q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'); f.$or = [{ dealerName: rx }, { dealerCode: rx }]; }
+    const rows = await ColBalance.find(f).sort({ total: -1 }).lean(); const u = await users();
     return { columns: ['Dealer', 'Code', 'Salesman', 'Total', 'Oldest', 'Age days', 'Status', 'Priority', 'Next follow-up', 'Promise', 'Promise date', 'Last payment'],
       rows: rows.map(b => [b.dealerName, b.dealerCode, u.get(b.salesmanId) || b.salesmanId, b.total, b.oldestPeriod, b.ageDays, b.status, b.priority, b.nextFollowupAt, b.promise?.amount || '', b.promise?.date || '', b.lastPaymentAt ? b.lastPaymentAt.toISOString().slice(0, 10) : '']) }; } },
   'aging': { label: 'Ageing', async build(sf) {

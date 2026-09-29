@@ -889,9 +889,12 @@ async function monthFilter(req) {
     const dealerFilt = {};
     const escape = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const ciMatch = v => new RegExp('^\\s*' + escape(v) + '\\s*$', 'i');
-    if (hasStates)   dealerFilt.state    = { $in: p.states.map(ciMatch) };
-    if (hasCities)   dealerFilt.city     = { $in: p.cities.map(ciMatch) };
-    if (hasZones)    dealerFilt.zone     = { $in: p.zones.map(ciMatch) };
+    // same rule as the dealer list (dealers.js dealerScope): territories OR together, salesmen narrow
+    const geo = [];
+    if (hasStates) geo.push({ state: { $in: p.states.map(ciMatch) } });
+    if (hasCities) geo.push({ city:  { $in: p.cities.map(ciMatch) } });
+    if (hasZones)  geo.push({ zone:  { $in: p.zones.map(ciMatch) } });
+    if (geo.length) dealerFilt.$or = geo;
     if (hasSalesmen) dealerFilt.salesman = { $in: p.salesmen };
     const permitted = await Dealer.find(dealerFilt, 'name').lean();
     const names = permitted.map(d => d.name);
@@ -1279,7 +1282,13 @@ router.get('/raw', protect, async (req, res) => {
 // GET /api/sales/dealer/:name  → full category-wise history for one dealer
 // Returns: { dealer, months:[{ month, byCategory:{cat:{sub:qty}}, total }], grandTotal }
 router.get('/dealer/:name', protect, async (req, res) => {
+  try {
   const dealerName = decodeURIComponent(req.params.name);
+  // a salesman sees the history of his own dealers only
+  if (req.user?.role === 'salesman') {
+    const rx = new RegExp('^\\s*' + dealerName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*$', 'i');
+    if (!(await Dealer.exists({ name: rx, salesman: req.user.id }))) return res.status(403).json({ error: 'Not your dealer' });
+  }
   const rows = await Sale.aggregate([
     { $match: { dealerName } },
     { $group: {
@@ -1300,6 +1309,7 @@ router.get('/dealer/:name', protect, async (req, res) => {
     grandTotal += r.qty;
   }
   res.json({ dealer: dealerName, months: [...byMonth.values()], grandTotal });
+  } catch (e) { console.error('[SALES dealer history]', e.message); res.status(500).json({ error: e.message }); }
 });
 
 /* ----------------------------------------------------------------- *

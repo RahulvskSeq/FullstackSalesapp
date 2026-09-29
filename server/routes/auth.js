@@ -1,9 +1,11 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
-import { protect, adminOnly, superAdminOnly, requireFeature } from '../middleware/auth.js';
+import { protect, adminOnly, superAdminOnly, requireFeature, forgetAccount } from '../middleware/auth.js';
 
 const router = express.Router();
+// any change to an account (role, active, deleted) takes effect at once, not after the 30 s account cache
+router.use((req, res, next) => { if (req.method !== 'GET') res.on('finish', () => forgetAccount()); next(); });
 
 // ── Helper: build a login response (token + user) ─────────────────────────
 const buildLoginResponse = (user, extraTokenClaims = {}) => {
@@ -16,7 +18,7 @@ const buildLoginResponse = (user, extraTokenClaims = {}) => {
     token,
     user: {
       id: user.id, name: user.name, role: user.role,
-      color: user.color, ini: user.ini,
+      color: user.color, ini: user.ini, avatar: user.avatar || '',
       url: user.url, url2: user.url2, url_outstanding: user.url_outstanding,
       // Include the data-scope permissions so the client knows a salesman is
       // permission-scoped (and shouldn't be re-filtered to own dealers only).
@@ -58,7 +60,7 @@ router.get('/users', async (req, res) => {
   }
   const includeInactive = authed && String(req.query.includeInactive || '') === '1';
   const filter = includeInactive ? {} : { active: { $ne: false } };
-  const users = await User.find(filter, authed ? '-pass -__v' : 'id name color ini active');
+  const users = await User.find(filter, authed ? '-pass -__v -photo -profile' : 'id name color ini active');
   const map = {};
   users.forEach(u => { const o=u.toObject(); delete o._id; map[o.id]=o; });
   res.json(map);
@@ -66,8 +68,65 @@ router.get('/users', async (req, res) => {
 
 // GET /api/auth/me
 router.get('/me', protect, async (req, res) => {
-  const user = await User.findOne({ id:req.user.id }, '-pass');
+  const user = await User.findOne({ id:req.user.id }, '-pass -photo');
   res.json(user);
+});
+
+// ── Profile: each person edits their own details ───────────────────────────
+// Only the fields below can change here. Name, id, role, empCode, email and
+// permissions are deliberately not accepted — dealers, sales and access are
+// tied to them, so they stay with the admin.
+const PROFILE_FIELDS = {
+  phone:30, whatsapp:30, altPhone:30, personalEmail:120, dob:10, bloodGroup:5,
+  address:300, city:60, state:60, pincode:10, emergencyName:80, emergencyRel:40,
+  emergencyPhone:30, languages:120, bio:500,
+};
+const PHOTO_MAX  = 400 * 1024;   // ~512px JPEG as a data URL
+const AVATAR_MAX = 40 * 1024;    // ~96px thumbnail
+const isImg = v => typeof v === 'string' && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(v);
+const PROFILE_VIEW = 'id name role empCode email color ini photo avatar profile createdAt';
+
+// GET /api/auth/me/profile — the full profile including the photo
+router.get('/me/profile', protect, async (req, res) => {
+  const u = await User.findOne({ id:req.user.id }, PROFILE_VIEW).lean();
+  if(!u) return res.status(404).json({ error:'User not found' });
+  delete u._id;
+  res.json(u);
+});
+
+// PUT /api/auth/me/profile — Body: { profile?:{…}, color?, photo?, avatar?, removePhoto? }
+router.put('/me/profile', protect, async (req, res) => {
+  // edits land on whoever is signed in — never on an account opened with Login as
+  if(req.user.impersonatedBy) return res.status(403).json({ error:'Return to your own account to edit a profile.' });
+  const b = req.body || {};
+  const set = {};
+  if(b.profile && typeof b.profile === 'object'){
+    for(const [k, max] of Object.entries(PROFILE_FIELDS)){
+      if(b.profile[k] === undefined) continue;
+      const v = String(b.profile[k] ?? '').trim();
+      if(v.length > max) return res.status(400).json({ error:`${k} is too long` });
+      if(k === 'dob' && v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return res.status(400).json({ error:'Date of birth must be YYYY-MM-DD' });
+      if(k === 'personalEmail' && v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return res.status(400).json({ error:'Personal email looks wrong' });
+      if(/phone|whatsapp/i.test(k) && v && !/^[+\d][\d\s-]{5,}$/.test(v)) return res.status(400).json({ error:'Phone numbers may use digits, spaces, - and a leading +' });
+      if(k === 'pincode' && v && !/^\d{6}$/.test(v)) return res.status(400).json({ error:'PIN code must be 6 digits' });
+      set['profile.' + k] = v;
+    }
+  }
+  if(b.color !== undefined){
+    if(!/^#[0-9a-fA-F]{6}$/.test(String(b.color))) return res.status(400).json({ error:'Colour must look like #3b82f6' });
+    set.color = b.color;
+  }
+  if(b.removePhoto){ set.photo = ''; set.avatar = ''; }
+  else if(b.photo !== undefined || b.avatar !== undefined){
+    if(!isImg(b.photo) || !isImg(b.avatar)) return res.status(400).json({ error:'Photo must be a JPEG, PNG or WebP image' });
+    if(b.photo.length > PHOTO_MAX || b.avatar.length > AVATAR_MAX) return res.status(413).json({ error:'Photo too large — pick a smaller picture' });
+    set.photo = b.photo; set.avatar = b.avatar;
+  }
+  if(!Object.keys(set).length) return res.status(400).json({ error:'Nothing to update' });
+  const u = await User.findOneAndUpdate({ id:req.user.id }, { $set:set }, { new:true, projection:PROFILE_VIEW }).lean();
+  if(!u) return res.status(404).json({ error:'User not found' });
+  delete u._id;
+  res.json(u);
 });
 
 // GET /api/auth/users/:id/debug-scope — diagnostic: shows the target
@@ -239,7 +298,7 @@ router.put('/users/:id', protect, async (req, res) => {
   const user = await User.findOneAndUpdate(
     { id: targetId },
     { $set: update },
-    { new:true, select:'-pass' }
+    { new:true, select:'-pass -photo' }
   );
   if (permsToWrite) {
     console.log('[USER PUT] permissions after-save —', JSON.stringify(user?.permissions));

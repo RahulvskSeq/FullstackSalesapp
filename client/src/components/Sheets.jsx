@@ -10,7 +10,8 @@ import { createUniver, LocaleType, merge } from '@univerjs/presets';
 import { UniverSheetsCorePreset } from '@univerjs/presets/preset-sheets-core';
 import sheetsCoreEnUS from '@univerjs/presets/preset-sheets-core/locales/en-US';
 import '@univerjs/presets/lib/styles/preset-sheets-core.css';
-import { Plus, Trash2, FileSpreadsheet, Pencil, Check, Cloud, CloudOff, Loader2 } from 'lucide-react';
+import { Plus, Trash2, FileSpreadsheet, Pencil, Check, Cloud, CloudOff, Loader2, Table } from 'lucide-react';
+import { PageHead } from '../collections/ui';
 import { api } from '../api';
 
 const fmtWhen = (iso) => {
@@ -275,13 +276,16 @@ export default function Sheets({ currentUser, users = {} }) {
 
   // ── Render ──────────────────────────────────────────────────────────
   return (
-    <div className="fade" style={{ display:'flex', gap:14, height:'calc(100vh - 130px)', minHeight:480 }}>
+    <div className="fade" style={{ display:'flex', flexDirection:'column', height:'calc(100vh - 130px)', minHeight:480 }}>
+    <PageHead icon={Table} tone="var(--acc)" eyebrow="Workspace" title="Sheets" />
+    <div style={{ display:'flex', gap:14, flex:1, minHeight:0 }}>
       {/* ── Sidebar: sheet list ─────────────────────────────────────── */}
-      <div style={{ width:240, flexShrink:0, display:'flex', flexDirection:'column',
-        background:'var(--bg1)', border:'1px solid var(--b1)', borderRadius:12, overflow:'hidden' }}>
+      <div className="card" style={{ width:240, flexShrink:0, display:'flex', flexDirection:'column',
+        padding:0, overflow:'hidden' }}>
         <div style={{ padding:'12px 14px', borderBottom:'1px solid var(--b1)', display:'flex', alignItems:'center', gap:8 }}>
-          <FileSpreadsheet size={16} color="var(--acc)"/>
-          <div style={{ fontWeight:700, fontSize:14, flex:1 }}>My Sheets</div>
+          <div className="sec-title" style={{ marginBottom:0, flex:1 }}>
+            <span className="sec-ico" style={{'--tone':'var(--acc)'}}><FileSpreadsheet size={15}/></span> My Sheets
+          </div>
           <button onClick={createSheet} title="New sheet"
             style={{ display:'inline-flex', alignItems:'center', gap:4, background:'var(--acc)', color:'#fff',
               border:'none', borderRadius:8, padding:'6px 9px', fontSize:12, fontWeight:700, cursor:'pointer' }}>
@@ -319,8 +323,8 @@ export default function Sheets({ currentUser, users = {} }) {
       </div>
 
       {/* ── Main: header + Univer editor ────────────────────────────── */}
-      <div style={{ flex:1, minWidth:0, display:'flex', flexDirection:'column',
-        background:'var(--bg1)', border:'1px solid var(--b1)', borderRadius:12, overflow:'hidden' }}>
+      <div className="card" style={{ flex:1, minWidth:0, display:'flex', flexDirection:'column',
+        padding:0, overflow:'hidden' }}>
         {/* Header bar: name + save status */}
         <div style={{ padding:'10px 14px', borderBottom:'1px solid var(--b1)', display:'flex', alignItems:'center', gap:10, flexShrink:0 }}>
           {activeId ? (
@@ -344,7 +348,7 @@ export default function Sheets({ currentUser, users = {} }) {
           <div style={{ flex:1 }}/>
           {activeId && (
             <div style={{ display:'inline-flex', alignItems:'center', gap:6, fontSize:12, fontWeight:600,
-              color: saveState==='error' ? '#f87171' : saveState==='saving' ? 'var(--t3)' : '#34d399' }}>
+              color: saveState==='error' ? 'var(--red)' : saveState==='saving' ? 'var(--t3)' : 'var(--grn)' }}>
               {saveState==='saving' && <><Loader2 size={13} className="spin"/> Saving…</>}
               {saveState==='saved'  && <><Cloud size={13}/> Saved</>}
               {saveState==='idle'   && <><Cloud size={13}/> All changes saved</>}
@@ -354,7 +358,7 @@ export default function Sheets({ currentUser, users = {} }) {
         </div>
 
         {err && (
-          <div style={{ padding:'8px 14px', background:'rgba(248,113,113,0.12)', color:'var(--red)', fontSize:12, borderBottom:'1px solid rgba(248,113,113,0.3)', flexShrink:0 }}>
+          <div style={{ padding:'8px 14px', background:'color-mix(in srgb, var(--red) 12%, transparent)', color:'var(--red)', fontSize:12, borderBottom:'1px solid color-mix(in srgb, var(--red) 30%, transparent)', flexShrink:0 }}>
             {err} <span onClick={()=>setErr('')} style={{ cursor:'pointer', marginLeft:8, textDecoration:'underline' }}>dismiss</span>
           </div>
         )}
@@ -377,6 +381,7 @@ export default function Sheets({ currentUser, users = {} }) {
           <div ref={containerRef} style={{ position:'absolute', inset:0 }}/>
         </div>
       </div>
+    </div>
 
       <style>{`
         .spin { animation: stp-spin 0.9s linear infinite; }

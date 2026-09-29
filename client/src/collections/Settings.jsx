@@ -1,4 +1,4 @@
-import { SlidersHorizontal } from 'lucide-react';
+import { SlidersHorizontal, Zap, FileText, MessageSquare, Phone, UserPlus } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
 import { col } from './api';
 import { WhatsAppForm } from './forms';
@@ -61,7 +61,7 @@ const TRIGGERS = ['tick', 'event:CLEARED', 'event:REOPENED', 'event:NEW_OUTSTAND
 function Automation({ rules, onChange, onSave, dirty, canEdit, saving }) {
   const upd = (i, patch) => onChange(rules.map((r, j) => j === i ? { ...r, ...patch } : r));
   const updJson = (i, k, text) => { try { upd(i, { [k]: JSON.parse(text || '{}') }); } catch { /* keep typing */ } };
-  return <Card title="Automation rules" right={canEdit && <button className="btnp" data-tip="Save all rule changes" style={{ padding: '5px 12px', fontSize: 12 }} disabled={!dirty || saving} onClick={onSave}>{saving ? 'Saving…' : 'Save rules'}</button>}>
+  return <Card title={<div className="sec-title" style={{ marginBottom: 0 }}><span className="sec-ico" style={{ '--tone': 'var(--acc)' }}><Zap size={15} /></span> Automation rules</div>} right={canEdit && <button className="btnp" data-tip="Save all rule changes" style={{ padding: '5px 12px', fontSize: 12 }} disabled={!dirty || saving} onClick={onSave}>{saving ? 'Saving…' : 'Save rules'}</button>}>
     <div style={{ fontSize: 11.5, color: 'var(--t3)', marginBottom: 10 }}>Tick rules run every hour; event rules run when the statement or a payment changes a dealer. Conditions: minTotal, minAgeDays, noFollowupDays, noPaymentDays. Params: type, priority, assignTo ("approver" or a user id), templateKey.</div>
     {rules.map((r, i) => <div key={r.id} className="col-rule" style={{ display: 'grid', gridTemplateColumns: '24px 1.2fr 1fr 1fr 1.4fr 1.4fr auto', gap: 8, alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--b1)', fontSize: 12 }}>
       <input type="checkbox" checked={r.enabled !== false} onChange={e => upd(i, { enabled: e.target.checked })} disabled={!canEdit} />
@@ -89,10 +89,10 @@ function WhatsApp({ canEdit }) {
     </Card>
     <PhoneManual canEdit={canEdit} />
     <PhoneUpload canEdit={canEdit} />
-    <Card title="Templates" style={{ marginBottom: 12 }}>
+    <Card title={<div className="sec-title" style={{ marginBottom: 0 }}><span className="sec-ico" style={{ '--tone': 'var(--acc)' }}><FileText size={15} /></span> Templates</div>} style={{ marginBottom: 12 }}>
       {tpl.busy && !tpl.data ? <Busy kind="table" rows={3} /> : <Table dense cols={[{ k: 'key', h: 'Key' }, { k: 'metaName', h: 'Meta template' }, { k: 'language', h: 'Lang' }, { k: 'category', h: 'Category' }, { k: 'body', h: 'Body', wrap: true, max: 460 }, { k: 'active', h: '', r: r => r.active === false ? <Badge v="CANCELLED" label="off" /> : <Badge v="CONFIRMED" label="on" /> }, { k: 'act', h: '', r: r => canEdit ? <button className="btn" data-tip="Edit the message text" style={{ fontSize: 11 }} onClick={() => setEdit({ ...r })}>Edit</button> : null }]} rows={tpl.data} keyOf={r => r.key} />}
     </Card>
-    <Card title="Recent messages" pad={false}>
+    <Card title={<div className="sec-title" style={{ marginBottom: 0 }}><span className="sec-ico" style={{ '--tone': '#0891b2' }}><MessageSquare size={15} /></span> Recent messages</div>} pad={false}>
       {msgs.busy && !msgs.data ? <Busy kind="table" rows={3} /> : <Table dense cols={[{ k: 'createdAt', h: 'When', r: r => fmtWhen(r.createdAt) }, { k: 'templateKey', h: 'Template' }, { k: 'to', h: 'To' }, { k: 'status', h: 'Status', r: r => <Badge v={r.status} /> }, { k: 'error', h: 'Error', wrap: true }]} rows={msgs.data?.items} empty="No messages yet." />}
     </Card>
     {edit && <div className="overlay" onMouseDown={e => { if (e.target === e.currentTarget) setEdit(null); }}><div className="modal" style={{ maxWidth: 560 }}>
@@ -110,7 +110,7 @@ function PhoneUpload({ canEdit }) {
   const [file, setFile] = useState(null); const [res, setRes] = useState(null); const [busy, setBusy] = useState(false); const [err, setErr] = useState('');
   const run = async commit => { if (!file) return; setBusy(true); setErr(''); try { setRes(await col.uploadPhones(file, commit)); } catch (e) { setErr(e.message); } finally { setBusy(false); } };
   const sm = res?.summary || {};
-  return <Card title="Dealer phone numbers" style={{ marginBottom: 12 }}>
+  return <Card title={<div className="sec-title" style={{ marginBottom: 0 }}><span className="sec-ico" style={{ '--tone': '#0891b2' }}><Phone size={15} /></span> Dealer phone numbers</div>} style={{ marginBottom: 12 }}>
     <div style={{ fontSize: 12, color: 'var(--t2)', marginBottom: 8 }}>Excel with <b>Party Name</b> (or <b>Code</b>) and <b>Phone</b>. Matched by code, else by exact name. 10-digit numbers get 91 in front. Nothing is written until you apply.</div>
     <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
       <input type="file" className="inp" style={{ maxWidth: 360 }} accept=".xlsx,.xls,.csv" onChange={e => { setFile(e.target.files?.[0] || null); setRes(null); }} disabled={!canEdit} />
@@ -137,7 +137,7 @@ function PhoneManual({ canEdit }) {
   useEffect(() => { if (!dealer) { setCurrent(null); setPhone(''); return; } col.dealer360(dealer.id).then(d => { setCurrent({ phone: d.dealer.phone || '', optOut: !!d.dealer.whatsappOptOut }); setPhone(d.dealer.phone || ''); }).catch(() => setCurrent(null)); }, [dealer]);
   const digits = phone.replace(/\D/g, ''); const ok = digits.length === 10 || (digits.length === 12 && digits.startsWith('91'));
   const save = async () => { setBusy(true); setErr(''); try { const r = await col.setContact(dealer.id, { phone: digits }); setDone(x => [{ name: dealer.name, code: dealer.code, phone: r.phone, before: current?.phone || '' }, ...x].slice(0, 20)); setCurrent(c => ({ ...c, phone: r.phone })); setDealer(null); } catch (e) { setErr(e.message); } finally { setBusy(false); } };
-  return <Card title="Add a dealer's number" style={{ marginBottom: 12 }}>
+  return <Card title={<div className="sec-title" style={{ marginBottom: 0 }}><span className="sec-ico" style={{ '--tone': '#0891b2' }}><UserPlus size={15} /></span> Add a dealer's number</div>} style={{ marginBottom: 12 }}>
     <div className="col-phone" style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 1fr) 200px auto', gap: 8, alignItems: 'start' }}>
       <DealerPicker value={dealer} onChange={setDealer} placeholder="Search dealer by name or code…" />
       <input className="inp" value={phone} onChange={e => setPhone(e.target.value)} placeholder="10-digit mobile" disabled={!dealer || !canEdit} onKeyDown={e => { if (e.key === 'Enter' && ok) save(); }} />

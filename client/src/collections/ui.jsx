@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, createContext, useContext } from 'react';
-import { X, Search, ChevronLeft, ChevronRight, RefreshCw, AlertTriangle, PhoneCall } from 'lucide-react';
+import { X, Search, ChevronLeft, ChevronRight, RefreshCw, AlertTriangle, PhoneCall, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { col } from './api';
 
 /* ── formatting ─────────────────────────────────────────────────────── */
@@ -53,11 +53,11 @@ export function PageHead({ eyebrow = 'Collections', title: t, sub, right, icon: 
   return (
     <div className="page-head" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
       <div className="row" style={{ gap: 12, alignItems: 'center', flexWrap: 'nowrap', minWidth: 0 }}>
-        {Icon && <div style={{ width: 42, height: 42, borderRadius: 12, display: 'grid', placeItems: 'center', flexShrink: 0, color: tone, background: 'color-mix(in srgb, ' + tone + ' 14%, transparent)', border: '1px solid color-mix(in srgb, ' + tone + ' 30%, transparent)' }}><Icon size={22} /></div>}
+        {Icon && <div className="page-icon" style={{ width: 46, height: 46, borderRadius: 14, display: 'grid', placeItems: 'center', flexShrink: 0, color: tone, background: 'color-mix(in srgb, ' + tone + ' 13%, transparent)' }}><Icon size={22} /></div>}
         <div style={{ minWidth: 0 }}>
-          <div className="page-eyebrow" style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--t3)' }}>{eyebrow}</div>
-          <div className="page-title" style={{ fontSize: 22, fontWeight: 800, lineHeight: 1.15 }}>{t}</div>
-          {sub && <div style={{ fontSize: 12.5, color: 'var(--t2)', marginTop: 3 }}>{sub}</div>}
+          {eyebrow && <div className="page-eyebrow" style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: tone }}>{eyebrow}</div>}
+          <div className="page-title" style={{ fontSize: 22, fontWeight: 800, lineHeight: 1.15, color: 'var(--t1)' }}>{t}</div>
+          {sub && <div className="page-sub" style={{ fontSize: 12.5, color: 'var(--t2)', marginTop: 3 }}>{sub}</div>}
         </div>
       </div>
       {right && <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>{right}</div>}
@@ -74,14 +74,52 @@ export function Card({ title: t, right, children, style, pad = true }) {
     </div>
   );
 }
-export function Tile({ label, value, sub, tone, onClick }) {
+/** KPI tile. With an `icon` it wears the app's stat-card look: the icon in a 36px tile tinted with `tone`; without one, a tone stripe on the left. */
+export function Tile({ label, value, sub, tone, onClick, icon: Icon, tip }) {
+  const t = tone || 'var(--acc)';
   return (
-    <div className="stat-card" onClick={onClick} style={{ cursor: onClick ? 'pointer' : 'default', borderLeft: tone ? `3px solid ${tone}` : undefined }}>
-      <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--t3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
-      <div style={{ fontSize: 19, fontWeight: 800, margin: '3px 0 1px', fontVariantNumeric: 'tabular-nums', lineHeight: 1.2, overflowWrap: 'anywhere' }}>{value}</div>
-      {sub && <div style={{ fontSize: 11, color: 'var(--t2)' }}>{sub}</div>}
+    <div className="stat-card" onClick={onClick} data-tip={tip} style={{ cursor: onClick ? 'pointer' : 'default', borderLeft: tone && !Icon ? `3px solid ${tone}` : undefined }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: Icon ? 6 : 0 }}>
+        <div style={{ minWidth: 0, fontSize: 10.5, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--t3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', paddingTop: Icon ? 2 : 0 }}>{label}</div>
+        {Icon && <span className="stat-ico" style={{ color: t, background: 'color-mix(in srgb, ' + t + ' 14%, transparent)' }}><Icon size={17} /></span>}
+      </div>
+      <div style={{ fontSize: Icon ? 21 : 19, fontWeight: 850, margin: '3px 0 1px', fontVariantNumeric: 'tabular-nums', lineHeight: 1.15, letterSpacing: '-.01em', overflowWrap: 'anywhere' }}>{value}</div>
+      {sub && <div style={{ fontSize: 11, color: 'var(--t2)', marginTop: 2 }}>{sub}</div>}
     </div>
   );
+}
+
+/* ── list furniture: initials avatar, thin progress bar, trend pill ─── */
+/** Initials avatar, hue picked from the name so a dealer keeps one colour everywhere. */
+export function Ini({ name, size }) {
+  const n = String(name || '?');
+  const box = size ? { width: size, height: size, borderRadius: Math.round(size / 3), fontSize: Math.max(9, Math.round(size * 0.37)) } : null;
+  return <span className="ini" style={{ '--h': n.charCodeAt(0) * 37 % 360, ...box }}>{(n.replace(/[^A-Za-z0-9]/g, '').slice(0, 2) || '?').toUpperCase()}</span>;
+}
+/** A name (or any node, e.g. a DealerLink) with its avatar in front and an optional quiet second line. */
+export function NameCell({ name, sub, children, size }) {
+  return <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+    <Ini name={name} size={size} />
+    <div style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{children ?? <span style={{ fontWeight: 700, color: 'var(--t1)' }}>{name}</span>}{sub ? <div style={{ fontSize: 10.5, color: 'var(--t3)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sub}</div> : null}</div>
+  </div>;
+}
+/** Thin progress bar under a figure (pct 0–100, clamped). */
+export const Pbar = ({ pct, color = 'var(--acc)', style }) => <div className="pbar" style={style}><div style={{ width: Math.max(0, Math.min(Number(pct) || 0, 100)) + '%', background: color }} /></div>;
+/** Colour for an age in days: fresh green → amber → red. */
+export const ageTone = d => d == null ? 'var(--t3)' : d <= 30 ? '#10b981' : d <= 60 ? '#f59e0b' : d <= 90 ? '#f97316' : '#ef4444';
+/** Age bar: full at 180 days. */
+export const AGE_FULL = 180;
+/**
+ * Trend pill for an amount that moved from `before` to `after` (or a signed `delta`).
+ * Shows the % change when there is a base, else the amount. `lowerIsBetter`
+ * (outstanding balances) turns a rise red and a fall green.
+ */
+export function Trend({ before, after, delta, lowerIsBetter, amount }) {
+  const d = delta != null ? Number(delta) : Number(after || 0) - Number(before || 0);
+  const good = lowerIsBetter ? d < 0 : d > 0;
+  const cls = 'trend ' + (d === 0 ? '' : good ? 'up' : 'down');
+  const pct = !amount && before ? Math.round(Math.abs(d) / Math.abs(before) * 100) : null;
+  return <span className={cls} style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{d > 0 ? <ArrowUpRight size={11} /> : d < 0 ? <ArrowDownRight size={11} /> : '—'}{d === 0 ? '' : pct != null ? pct + '%' : money(Math.abs(d))}</span>;
 }
 export function Empty({ children = 'Nothing here.' }) { return <div style={{ padding: '28px 12px', textAlign: 'center', color: 'var(--t3)', fontSize: 13 }}>{children}</div>; }
 export function ErrorBox({ err, onRetry }) {
@@ -136,7 +174,8 @@ export function useIsMobile(bp = 768) {
   return m;
 }
 
-/* One table for every list. `cols` = [{ k, h, r?: row => node, w?, align? }].
+/* One table for every list. `cols` = [{ k, h, r?: row => node, w?, align?, avatar?: row => name, sub?: row => node }].
+ * A column with `avatar` draws the cell behind an initials avatar (dealer / person names).
  * On a phone, a list that supplies `card` (row => node) is drawn as cards
  * instead — a wide table squeezed into 375px is not readable. */
 export const PENDING_BG = 'rgba(245,158,11,.13)';
@@ -153,7 +192,7 @@ export function Table({ cols, rows, keyOf = r => r._id, onRow, empty = 'Nothing 
         <tbody>{rows.map(r => (
           <tr key={keyOf(r)} onClick={onRow ? () => onRow(r) : undefined} data-tip={pendingTip(r)} style={{ cursor: onRow ? 'pointer' : 'default', background: isPending(r) ? PENDING_BG : undefined, boxShadow: isPending(r) ? 'inset 3px 0 0 #f59e0b' : undefined }}
               onMouseEnter={e => { if (onRow && !isPending(r)) e.currentTarget.style.background = 'var(--bg2)'; }} onMouseLeave={e => { e.currentTarget.style.background = isPending(r) ? PENDING_BG : ''; }}>
-            {cols.map(c => <td key={c.k || c.h} style={{ padding: dense ? '6px 8px' : '9px 10px', borderBottom: '1px solid var(--b1)', textAlign: c.align || 'left', fontVariantNumeric: 'tabular-nums', whiteSpace: c.wrap ? 'normal' : 'nowrap', maxWidth: c.max, overflow: 'hidden', textOverflow: 'ellipsis', ...(c.style || {}) }}>{c.r ? c.r(r) : r[c.k]}</td>)}
+            {cols.map(c => { const v = c.r ? c.r(r) : r[c.k]; return <td key={c.k || c.h} style={{ padding: dense ? '6px 8px' : '9px 10px', borderBottom: '1px solid var(--b1)', textAlign: c.align || 'left', fontVariantNumeric: 'tabular-nums', whiteSpace: c.wrap ? 'normal' : 'nowrap', maxWidth: c.max, overflow: 'hidden', textOverflow: 'ellipsis', ...(c.style || {}) }}>{c.avatar ? <NameCell name={c.avatar(r)} sub={c.sub ? c.sub(r) : null} size={dense ? 26 : 30}>{v}</NameCell> : v}</td>; })}
           </tr>))}</tbody>
       </table>
     </div>
@@ -168,8 +207,22 @@ export function Pager({ page, limit, total, onPage }) {
     <button className="btn" disabled={page >= pages} onClick={() => onPage(page + 1)}><ChevronRight size={12} /></button>
   </div>;
 }
+/* Escape closes only the topmost open layer (modal or drawer). Every layer
+   has its own window listener, so each checks it is the top of this stack
+   before acting — otherwise one Escape closes a modal and everything under it. */
+const escStack = [];
+let escSeq = 0;
+export function useEscapeLayer(onEscape) {
+  const cb = useRef(onEscape); cb.current = onEscape;
+  useEffect(() => {
+    const me = ++escSeq; escStack.push(me);
+    const k = e => { if (e.key !== 'Escape' || escStack[escStack.length - 1] !== me) return; e.stopImmediatePropagation(); cb.current?.(); };
+    window.addEventListener('keydown', k);
+    return () => { window.removeEventListener('keydown', k); const i = escStack.indexOf(me); if (i >= 0) escStack.splice(i, 1); };
+  }, []);
+}
 export function Modal({ title: t, onClose, children, width = 560 }) {
-  useEffect(() => { const k = e => { if (e.key === 'Escape') onClose(); }; window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k); }, [onClose]);
+  useEscapeLayer(onClose);
   return (
     <div className="overlay" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal" style={{ maxWidth: width }}>

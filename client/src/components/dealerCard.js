@@ -275,7 +275,11 @@
 // export { downloadDealerCard, shareDealerCard };
 
 
-import { MO, CURRENT_MONTH_IDX } from '../constants';
+import { MO as MO_STATIC, CURRENT_MONTH_IDX } from '../constants';
+// The app's month list is dynamic (new months are added over time). The card
+// uses the list the caller passes; the old static list is only a fallback.
+let MO = MO_STATIC;
+const useMonths = mo => { MO = Array.isArray(mo) && mo.length ? mo : MO_STATIC; };
 import { trendPct, forecast, pct, monthTarget } from '../utils';
 
 // ── Shared canvas builder — used by both download and share ─────────────────
@@ -358,16 +362,16 @@ function buildCanvas(dealer, users, selectedMonthIdx) {
   // ── Background ──────────────────────────────────────
   ctx.fillStyle = '#080810'; ctx.fillRect(0,0,W,H);
   const grad = ctx.createLinearGradient(0,0,W,0);
-  grad.addColorStop(0,'#6366f1'); grad.addColorStop(1,'#a78bfa');
+  grad.addColorStop(0,'#3b82f6'); grad.addColorStop(1,'#8b5cf6');
   ctx.fillStyle = grad; ctx.fillRect(0,0,W,4);
 
   // ── Header ───────────────────────────────────────────
-  ctx.fillStyle = '#6366f1'; ctx.font = '600 11px monospace';
+  ctx.fillStyle = '#3b82f6'; ctx.font = '600 11px monospace';
   ctx.fillText('▸ SALES TRACKER PRO', 36, 36);
   ctx.fillStyle = '#e2e0f0'; ctx.font = 'bold 26px system-ui';
   ctx.fillText(dealer.name.slice(0,55), 36, 70);
 
-  const statusColors = { 'ACTIVE':'#34d399','ACHIVERS':'#34d399','ACHIEVERS':'#34d399','KEY ACCOUNT':'#a78bfa','INACTIVE':'#fbbf24','DEAD':'#f87171' };
+  const statusColors = { 'ACTIVE':'#10b981','ACHIVERS':'#10b981','ACHIEVERS':'#10b981','KEY ACCOUNT':'#8b5cf6','INACTIVE':'#f59e0b','DEAD':'#ef4444' };
   const sc = statusColors[(dealer.status||'').toUpperCase()] || '#9492a8';
   ctx.fillStyle = sc+'22';
   ctx.beginPath(); ctx.roundRect(36, 82, (dealer.status||'').length*8+20, 22, 4); ctx.fill();
@@ -377,24 +381,24 @@ function buildCanvas(dealer, users, selectedMonthIdx) {
   let xOff = 36 + (dealer.status||'').length*8 + 30;
   if(dealer.zone)       { ctx.fillStyle='#55546a'; ctx.font='12px system-ui'; ctx.fillText(dealer.zone, xOff, 97); xOff+=dealer.zone.length*8+12; }
   if(dealer.city||dealer.state) { ctx.fillStyle='#55546a'; ctx.fillText([dealer.city,dealer.state].filter(Boolean).join(', '), xOff, 97); xOff+=120; }
-  if(dealer.category)   { ctx.fillStyle='#818cf8'; ctx.fillText(dealer.category+(dealer.categoryType?' / '+dealer.categoryType:''), xOff, 97); }
+  if(dealer.category)   { ctx.fillStyle='#6366f1'; ctx.fillText(dealer.category+(dealer.categoryType?' / '+dealer.categoryType:''), xOff, 97); }
 
   ctx.fillStyle = '#1e1e30'; ctx.fillRect(36,110,W-72,1);
 
   // ── KPI grid (3 rows × 4 cols) ───────────────────────
   const kpis = [
     { label: MO[selectedMonthIdx]+' Target',  value: String(viewTarget||'—'),             color: '#e2e0f0' },
-    { label: MO[selectedMonthIdx]+' Achieved',value: String(viewAchieved),                color: '#34d399' },
-    { label: 'Achievement',                   value: p!==null?p+'%':'N/T',               color: p===null?'#6b7280':p>=100?'#34d399':p>=60?'#fbbf24':'#f87171' },
+    { label: MO[selectedMonthIdx]+' Achieved',value: String(viewAchieved),                color: '#10b981' },
+    { label: 'Achievement',                   value: p!==null?p+'%':'N/T',               color: p===null?'#6b7280':p>=100?'#10b981':p>=60?'#f59e0b':'#ef4444' },
     { label: '6-mo Avg',                      value: String(dealer.avg6m||0),            color: '#e2e0f0' },
-    { label: 'Forecast',                      value: String(fc),                         color: '#6366f1' },
-    { label: 'Trend (3m)',                    value: (tp>0?'+':'')+tp+'%',              color: tp>0?'#34d399':tp<0?'#f87171':'#9492a8' },
+    { label: 'Forecast',                      value: String(fc),                         color: '#3b82f6' },
+    { label: 'Trend (3m)',                    value: (tp>0?'+':'')+tp+'%',              color: tp>0?'#10b981':tp<0?'#ef4444':'#9492a8' },
     { label: '11mo Total',                    value: String(total),                      color: '#e2e0f0' },
     { label: 'Credit Days',                   value: dealer.creditDays?dealer.creditDays+'d':'—', color:'#e2e0f0' },
     { label: 'Credit Limit',                  value: dealer.creditLimit?'₹'+dealer.creditLimit.toLocaleString('en-IN'):'—', color:'#e2e0f0' },
-    { label: 'Category',                      value: (dealer.category||'—').slice(0,20), color: '#818cf8' },
-    { label: 'Cat Type',                      value: (dealer.categoryType||'—').slice(0,20), color:'#818cf8' },
-    { label: 'Salesman',                      value: String(sm?.name||dealer.salesman||'—').slice(0,20), color:'#fbbf24' },
+    { label: 'Category',                      value: (dealer.category||'—').slice(0,20), color: '#6366f1' },
+    { label: 'Cat Type',                      value: (dealer.categoryType||'—').slice(0,20), color:'#6366f1' },
+    { label: 'Salesman',                      value: String(sm?.name||dealer.salesman||'—').slice(0,20), color:'#f59e0b' },
   ];
   kpis.forEach((k,i) => {
     const col=i%4, row=Math.floor(i/4);
@@ -424,7 +428,7 @@ function buildCanvas(dealer, users, selectedMonthIdx) {
     const isSel = i===selectedMonthIdx;
 
     // Bar
-    ctx.fillStyle = isSel?'#6366f1':'#252538';
+    ctx.fillStyle = isSel?'#3b82f6':'#252538';
     ctx.beginPath(); ctx.roundRect(bx,by,barW,bh,2); ctx.fill();
 
     // Per-month target dashed line
@@ -438,7 +442,7 @@ function buildCanvas(dealer, users, selectedMonthIdx) {
     }
 
     // Month label — safe if MO[i] is undefined (e.g. dealer has more months than MO)
-    ctx.fillStyle = isSel?'#6366f1':'#55546a';
+    ctx.fillStyle = isSel?'#3b82f6':'#55546a';
     ctx.font = isSel?'bold 9px system-ui':'9px system-ui';
     ctx.fillText(String(MO[i] || '').slice(0,3), bx, chartY+chartH+13);
 
@@ -500,7 +504,7 @@ function buildCanvas(dealer, users, selectedMonthIdx) {
     let rx=40;
 
     // Month
-    ctx.fillStyle = isSel?'#6366f1':isCur?'#34d399':'#9492a8';
+    ctx.fillStyle = isSel?'#3b82f6':isCur?'#10b981':'#9492a8';
     ctx.font = isSel?'bold 9px system-ui':isCur?'600 9px system-ui':'9px system-ui';
     ctx.fillText(MO[i]+(isCur?' ★':'')+(isSel?' ◀':''), rx, rowY+12);
     rx+=72;
@@ -525,21 +529,21 @@ function buildCanvas(dealer, users, selectedMonthIdx) {
 
     // vs Target %
     const vsStr=vsPct!==null?vsPct+'%':'—';
-    ctx.fillStyle=vsPct===null?'#55546a':vsPct>=100?'#34d399':vsPct>=60?'#fbbf24':'#f87171';
+    ctx.fillStyle=vsPct===null?'#55546a':vsPct>=100?'#10b981':vsPct>=60?'#f59e0b':'#ef4444';
     ctx.font='600 9px system-ui';
     ctx.fillText(vsStr, rx+65-ctx.measureText(vsStr).width-2, rowY+12);
     rx+=65;
 
     // Δ MoM
     const diffStr=diff!=null?(diff>0?'+':'')+diff:'—';
-    ctx.fillStyle=diff==null?'#55546a':diff>0?'#34d399':diff<0?'#f87171':'#9492a8';
+    ctx.fillStyle=diff==null?'#55546a':diff>0?'#10b981':diff<0?'#ef4444':'#9492a8';
     ctx.font='9px system-ui';
     ctx.fillText(diffStr, rx+70-ctx.measureText(diffStr).width-2, rowY+12);
     rx+=70;
 
     // Δ MoM %
     const diffPStr=diffP!=null?(diffP>0?'+':'')+diffP+'%':'—';
-    ctx.fillStyle=diffP==null?'#55546a':diffP>0?'#34d399':diffP<0?'#f87171':'#9492a8';
+    ctx.fillStyle=diffP==null?'#55546a':diffP>0?'#10b981':diffP<0?'#ef4444':'#9492a8';
     ctx.fillText(diffPStr, rx+65-ctx.measureText(diffPStr).width-2, rowY+12);
     rx+=65;
 
@@ -549,13 +553,13 @@ function buildCanvas(dealer, users, selectedMonthIdx) {
     ctx.fillStyle='#1e1e30';
     ctx.fillRect(rx, rowY+6, barMaxW, 6);
     if(achBarW>0){
-      ctx.fillStyle=isSel?'#6366f1':vsPct>=100?'#34d399':vsPct>=60?'#fbbf24':'#f87171';
+      ctx.fillStyle=isSel?'#3b82f6':vsPct>=100?'#10b981':vsPct>=60?'#f59e0b':'#ef4444';
       ctx.beginPath(); ctx.roundRect(rx, rowY+6, achBarW, 6, 2); ctx.fill();
     }
     // Target tick
     if(mt>0){
       const tgtX=rx+Math.min(Math.round((mt/Math.max(...dealer.months,1))*barMaxW),barMaxW-1);
-      ctx.strokeStyle='#34d399'; ctx.lineWidth=1.5;
+      ctx.strokeStyle='#10b981'; ctx.lineWidth=1.5;
       ctx.beginPath(); ctx.moveTo(tgtX,rowY+4); ctx.lineTo(tgtX,rowY+14); ctx.stroke();
     }
   });
@@ -577,7 +581,8 @@ const isAndroidWebView = () => {
 const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent);
 
 // ── Download ─────────────────────────────────────────────────────────────────
-const downloadDealerCard = async (dealer, users, selectedMonthIdx) => {
+const downloadDealerCard = async (dealer, users, selectedMonthIdx, mo) => {
+  useMonths(mo);
   try {
     const canvas   = buildCanvas(dealer, users, selectedMonthIdx);
     const safeName = (dealer?.name || 'dealer').replace(/[^a-z0-9]/gi,'_');
@@ -604,7 +609,7 @@ const downloadDealerCard = async (dealer, users, selectedMonthIdx) => {
         showImageOverlay(dataUrl, filename);
         setTimeout(() => {
           const s = document.getElementById('overlay-status');
-          if(s){ s.textContent = 'Auto-save failed: ' + (e?.message || e) + '. Try Save button.'; s.style.color = '#fbbf24'; }
+          if(s){ s.textContent = 'Auto-save failed: ' + (e?.message || e) + '. Try Save button.'; s.style.color = '#f59e0b'; }
         }, 50);
       }
       return;
@@ -631,7 +636,8 @@ const downloadDealerCard = async (dealer, users, selectedMonthIdx) => {
 };
 
 // ── Share ─────────────────────────────────────────────────────────────────────
-const shareDealerCard = async (dealer, users, selectedMonthIdx) => {
+const shareDealerCard = async (dealer, users, selectedMonthIdx, mo) => {
+  useMonths(mo);
   try {
     const canvas       = buildCanvas(dealer, users, selectedMonthIdx);
     const safeName     = (dealer?.name || 'dealer').replace(/[^a-z0-9]/gi,'_');
@@ -782,11 +788,11 @@ function showImageOverlay(dataUrl, filename, errorMsg) {
 
   if(errorMsg) {
     overlay.innerHTML =
-      '<div style="color:#f87171;font-size:14px;text-align:center;padding:20px;max-width:90%">' + errorMsg + '</div>' +
+      '<div style="color:#ef4444;font-size:14px;text-align:center;padding:20px;max-width:90%">' + errorMsg + '</div>' +
       '<button id="close-overlay-btn" style="background:#252538;color:#9492a8;border:none;padding:10px 24px;border-radius:8px;font-size:13px;margin-top:12px">Close</button>';
   } else {
     overlay.innerHTML =
-      '<div style="color:#6366f1;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin-bottom:10px">📊 Dealer Report Card</div>' +
+      '<div style="color:#3b82f6;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin-bottom:10px">📊 Dealer Report Card</div>' +
 
       // Image preview
       '<div style="width:100%;max-width:560px;border-radius:10px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.8);margin-bottom:14px">' +
@@ -796,7 +802,7 @@ function showImageOverlay(dataUrl, filename, errorMsg) {
       // BIG action buttons — direct save and share, no long-press needed
       '<div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;width:100%;max-width:560px">' +
         '<button id="overlay-save-btn" style="flex:1 1 160px;background:#22c55e;color:#0c0c1e;border:none;padding:14px 20px;border-radius:9px;font-size:15px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">⬇ Save to Phone</button>' +
-        '<button id="overlay-share-btn" style="flex:1 1 160px;background:#6366f1;color:#fff;border:none;padding:14px 20px;border-radius:9px;font-size:15px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">⬆ Share</button>' +
+        '<button id="overlay-share-btn" style="flex:1 1 160px;background:#3b82f6;color:#fff;border:none;padding:14px 20px;border-radius:9px;font-size:15px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">⬆ Share</button>' +
       '</div>' +
       '<button id="close-overlay-btn" style="background:transparent;color:#9492a8;border:1px solid #252548;padding:10px 24px;border-radius:9px;font-size:13px;cursor:pointer;margin-top:10px">✕ Close</button>' +
 
@@ -857,7 +863,7 @@ function showImageOverlay(dataUrl, filename, errorMsg) {
         } else if(res.cancelled){
           shareBtn.textContent = originalText;
         } else {
-          setStatus(res.message || 'Share not supported here. Use Save and share the file manually.', '#fbbf24');
+          setStatus(res.message || 'Share not supported here. Use Save and share the file manually.', '#f59e0b');
           shareBtn.textContent = originalText;
         }
       } catch(e) {

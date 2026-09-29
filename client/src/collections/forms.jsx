@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { col } from './api';
 import { Modal, Field, DealerPicker, ErrorBox, money, today, useDealerCtx, MonthKVs, StatusBadge, fmtDate } from './ui';
+import { fileToCompressedDataURL } from '../components/visitCapture';
 
 /**
  * The three write forms — follow-up, payment, task — shared by the Today
@@ -35,6 +36,9 @@ export function DealerSummary({ dealer }) {
   </div>;
 }
 
+// module scope so it is not a new component type (and remounted) on every render
+const Chips = ({ items, value, onPick }) => <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>{items.map(([v, l]) => <button key={v} type="button" onClick={() => onPick(v)} className={value === v ? 'btnp' : 'btn'} style={{ padding: '6px 12px', fontSize: 12.5 }}>{l}</button>)}</div>;
+
 function useSubmit(onDone) {
   const [busy, setBusy] = useState(false); const [err, setErr] = useState('');
   const run = async fn => { setBusy(true); setErr(''); try { const r = await fn(); onDone?.(r); } catch (e) { setErr(e.message || String(e)); } finally { setBusy(false); } };
@@ -53,7 +57,6 @@ export function FollowupForm({ dealer: preset, onClose, onDone, focusDate = fals
   const promising = f.outcome === 'PROMISED';
   const CH = [['CALL', 'Call'], ['VISIT', 'Visit'], ['WHATSAPP', 'WhatsApp']];
   const OC = [['CALLBACK', 'Call back later'], ['PROMISED', 'Promised to pay'], ['PAID', 'Paid'], ['NO_ANSWER', 'No answer'], ['DISPUTED', 'Dispute']];
-  const Chips = ({ items, value, onPick }) => <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>{items.map(([v, l]) => <button key={v} type="button" onClick={() => onPick(v)} className={value === v ? 'btnp' : 'btn'} style={{ padding: '6px 12px', fontSize: 12.5 }}>{l}</button>)}</div>;
   return (
     <Modal title="Record follow-up" onClose={onClose}>
       <Field label="Dealer"><DealerPicker value={dealer} onChange={setDealer} /></Field>
@@ -85,24 +88,49 @@ export function PaymentForm({ dealer: preset, onClose, onDone }) {
   const [alloc, setAlloc] = useState({});
   const [f, setF] = useState({ date: today(), amount: '', mode: 'NEFT', reference: '', bankReference: '', collectedBy: currentUser?.id || '', remarks: '' });
   const [proof, setProof] = useState(null);
+  const [reading, setReading] = useState(false);
+  const [proofErr, setProofErr] = useState('');
+  const proofSeq = useRef(0);
   const set = (k, v) => setF(x => ({ ...x, [k]: v }));
   const { busy, err, run } = useSubmit(r => { onDone?.(r); onClose(); });
-  useEffect(() => { if (!dealer) { setInvoices([]); return; } col.dealer360(dealer.id).then(d => setInvoices((d.invoices || []).filter(i => i.status === 'OPEN'))).catch(() => setInvoices([])); }, [dealer]);
+  useEffect(() => {
+    setAlloc({}); setInvoices([]);   // a new dealer never inherits the last one's allocations
+    if (!dealer?.id) return;
+    let dead = false;   // ignore a slow reply for a dealer no longer selected
+    col.dealer360(dealer.id).then(d => { if (!dead) setInvoices((d.invoices || []).filter(i => i.status === 'OPEN')); }).catch(() => { if (!dead) setInvoices([]); });
+    return () => { dead = true; };
+  }, [dealer?.id]);   // eslint-disable-line react-hooks/exhaustive-deps
   const allocated = Object.values(alloc).reduce((s, v) => s + (Number(v) || 0), 0);
-  const onProof = e => { const file = e.target.files?.[0]; if (!file) return setProof(null); const rd = new FileReader(); rd.onload = () => setProof({ mime: file.type, data: rd.result, name: file.name }); rd.readAsDataURL(file); };
+  // images are shrunk to a JPEG before upload; PDFs go as-is but are capped at 5 MB
+  const onProof = async e => {
+    const file = e.target.files?.[0]; const seq = ++proofSeq.current;
+    setProofErr(''); setProof(null);
+    if (!file) { setReading(false); return; }
+    const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+    if (isPdf && file.size > 5 * 1024 * 1024) { setReading(false); setProofErr(`That PDF is ${(file.size / 1048576).toFixed(1)} MB — the limit is 5 MB. Attach a smaller file or a photo of the receipt.`); e.target.value = ''; return; }
+    setReading(true);
+    try {
+      const data = isPdf
+        ? await new Promise((res, rej) => { const rd = new FileReader(); rd.onload = () => res(rd.result); rd.onerror = () => rej(new Error('Cannot read file')); rd.readAsDataURL(file); })
+        : await fileToCompressedDataURL(file, 1400, 0.8);
+      if (seq !== proofSeq.current) return;
+      setProof({ mime: isPdf ? 'application/pdf' : 'image/jpeg', data, name: file.name });
+    } catch (x) {
+      if (seq !== proofSeq.current) return;
+      setProofErr(`Could not read the proof file: ${x.message || x}`); e.target.value = '';
+    } finally { if (seq === proofSeq.current) setReading(false); }
+  };
   return (
     <Modal title="Record payment" onClose={onClose}>
       <Field label="Dealer"><DealerPicker value={dealer} onChange={setDealer} /></Field>
       <DealerSummary dealer={dealer} />
+      {/* four fields only: date, amount, proof, remarks — mode and collector are defaulted, the statement settles the rest */}
       <div className="g2">
         <Field label="Date"><input type="date" className="inp" value={f.date} onChange={e => set('date', e.target.value)} max={today()} /></Field>
-        <Field label="Amount (₹)"><input type="number" className="inp" value={f.amount} onChange={e => set('amount', e.target.value)} min={1} /></Field>
-        <Field label="Mode"><select className="sel" style={{ width: '100%' }} value={f.mode} onChange={e => set('mode', e.target.value)}>{MODES.map(m => <option key={m} value={m}>{t(m)}</option>)}</select></Field>
-        <Field label="Collected by"><select className="sel" style={{ width: '100%' }} value={f.collectedBy} onChange={e => set('collectedBy', e.target.value)}><option value="">—</option>{(users || []).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></Field>
-        <Field label="Reference (cheque / UTR)"><input className="inp" value={f.reference} onChange={e => set('reference', e.target.value)} /></Field>
-        <Field label="Bank reference"><input className="inp" value={f.bankReference} onChange={e => set('bankReference', e.target.value)} /></Field>
+        <Field label="Amount (₹)"><input type="number" className="inp" value={f.amount} onChange={e => set('amount', e.target.value)} min={1} autoFocus /></Field>
       </div>
-      <Field label="Proof (image / PDF, up to 5 MB)" hint={proof ? proof.name : ''}><input type="file" className="inp" accept="image/*,application/pdf" onChange={onProof} /></Field>
+      <Field label="Proof (photo of the receipt / screenshot / PDF)" hint={reading ? 'Reading file…' : proof ? proof.name : 'optional, PDF up to 5 MB'}><input type="file" className="inp" accept="image/*,application/pdf" onChange={onProof} /></Field>
+      <ErrorBox err={proofErr} />
       {invoices.length > 0 && <Field label="Allocate to invoices (optional)" hint={allocated ? `Allocated ${money(allocated)} of ${money(f.amount)}` : 'Leave blank to keep the payment unallocated'}>
         <div style={{ maxHeight: 160, overflowY: 'auto', border: '1px solid var(--b1)', borderRadius: 7 }}>
           {invoices.map(i => <div key={i._id} className="row" style={{ padding: '6px 10px', gap: 8, borderBottom: '1px solid var(--b1)', fontSize: 12 }}>
@@ -110,11 +138,11 @@ export function PaymentForm({ dealer: preset, onClose, onDone }) {
             <input type="number" className="inp" style={{ width: 110 }} value={alloc[i._id] || ''} onChange={e => setAlloc(a => ({ ...a, [i._id]: e.target.value }))} placeholder="0" />
           </div>)}
         </div></Field>}
-      <Field label="Remarks"><input className="inp" value={f.remarks} onChange={e => set('remarks', e.target.value)} /></Field>
+      <Field label="Remarks"><input className="inp" value={f.remarks} onChange={e => set('remarks', e.target.value)} placeholder="cheque no, UTR, or anything worth noting (optional)" /></Field>
       <ErrorBox err={err} />
       <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
         <button className="btn" onClick={onClose}>Cancel</button>
-        <button className="btnp" disabled={busy || !dealer || !(Number(f.amount) > 0)} onClick={() => run(() => col.recordPayment({
+        <button className="btnp" disabled={busy || reading || !dealer || !(Number(f.amount) > 0)} onClick={() => run(() => col.recordPayment({
           dealerId: dealer.id, ...f, amount: Number(f.amount), proof: proof ? { mime: proof.mime, data: proof.data } : undefined,
           allocations: Object.entries(alloc).filter(([, v]) => Number(v) > 0).map(([invoiceId, amount]) => ({ invoiceId, amount: Number(amount) })) }))}>{busy ? 'Saving…' : 'Record payment'}</button>
       </div>

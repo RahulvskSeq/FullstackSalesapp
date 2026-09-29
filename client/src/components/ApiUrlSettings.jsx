@@ -81,7 +81,7 @@ export default function ApiUrlSettings({ onClose }) {
           {test && (
             <div style={{
               padding:'8px 12px', borderRadius:7, marginBottom:10, fontSize:12,
-              background: test.ok ? 'rgba(34,197,94,0.10)' : 'rgba(248,113,113,0.10)',
+              background: test.ok ? 'rgba(34,197,94,0.10)' : 'color-mix(in srgb, var(--red) 10%, transparent)',
               border: '1px solid ' + (test.ok ? '#15803d' : '#7f1d1d'),
               color: test.ok ? '#86efac' : '#fca5a5',
               display:'flex', alignItems:'center', gap:6,
@@ -96,7 +96,7 @@ export default function ApiUrlSettings({ onClose }) {
               style={{
                 flex:'1 1 100px', display:'flex', alignItems:'center', justifyContent:'center', gap:6,
                 background:'transparent', color:'#a5b4fc',
-                border:'1px solid #6366f1', borderRadius:6,
+                border:'1px solid var(--acc)', borderRadius:6,
                 padding:'8px 12px', fontSize:12, fontWeight:700,
                 cursor: busy ? 'not-allowed' : 'pointer',
               }}>

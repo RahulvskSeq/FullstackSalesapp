@@ -51,25 +51,44 @@ async function loadDealerFor(req, res) {
   return d;
 }
 
-/** The pre-visit summary. Exported so it can be checked without HTTP. */
-export async function visitSummary(dealerId) {
-  const d = await Dealer.findById(dealerId).lean();
+/** Small lists that change rarely and are read on every open: kept for a minute so an open costs fewer round trips. */
+const memo = new Map();
+const cached = async (key, ttlMs, fn) => { const hit = memo.get(key); if (hit && hit.until > Date.now()) return hit.value; const value = await fn(); memo.set(key, { value, until: Date.now() + ttlMs }); return value; };
+export const forgetVisitCaches = () => memo.clear();
+
+/** One User read answers every feature question for this request (requireFeature's rule, as a function). */
+async function featureChecker(req) {
+  const role = req.user?.role;
+  if (role === 'superadmin') return () => true;
+  const u = await User.findOne({ id: req.user.id }, 'permissions role').lean();
+  const features = Array.isArray(u?.permissions?.features) ? u.permissions.features : [];
+  if (features.length) return key => features.includes(key);
+  const { loadRolePermissions } = await import('../lib/rolePermissions.js');
+  const roleFeatures = (await loadRolePermissions())[role]?.features || [];
+  if (roleFeatures.length) return key => roleFeatures.includes(key);
+  return () => role === 'admin';
+}
+
+/** The pre-visit summary. Exported so it can be checked without HTTP. Pass the dealer when it is already loaded. */
+export async function visitSummary(dealerId, { dealer = null } = {}) {
+  const d = dealer || await Dealer.findById(dealerId).lean();
   if (!d) return null;
   const id = String(d._id);
   const Sample = mongoose.models.Sample, SampleGiven = mongoose.models.SampleGiven;
-  const ym3 = [0, 1, 2].map(i => { const t = new Date(); t.setMonth(t.getMonth() - i); return t.toISOString().slice(0, 7); });
+  const nowIst = new Date(Date.now() + 5.5 * 3600e3);
+  const ym3 = [0, 1, 2].map(i => new Date(Date.UTC(nowIst.getUTCFullYear(), nowIst.getUTCMonth() - i, 1)).toISOString().slice(0, 7));
   // one round trip for everything: Atlas is ~150 ms away, so sequential reads add up fast
   const t0 = todayYmd(); const back7 = new Date(Date.now() - 7 * 86400000 + 5.5 * 3600e3).toISOString().slice(0, 10);
   const [users, bal, promises, pendingRec, allocs, moms, visits, cm, master, given, bought, plans] = await Promise.all([
-    User.find({}, 'id name role active').lean(),
+    cached('users', 60e3, () => User.find({}, 'id name role active').lean()),
     ColBalance.findOne({ dealerId: d._id }).lean(),
     ColPromise.find({ dealerId: d._id, status: { $in: ['PENDING', 'PARTIALLY_FULFILLED', 'BROKEN'] } }).sort({ promiseDate: 1 }).lean(),
     ColPayment.find({ dealerId: d._id, status: 'RECORDED' }, 'date amount mode').lean(),
     SampleAllocation.find({ dealerId: id, status: { $in: ['REQUESTED', 'ALLOCATED', 'GIVEN'] } }).sort({ createdAt: -1 }).lean(),
     DealerMom.find({ dealerId: id }).sort({ date: -1, createdAt: -1 }).limit(5).lean(),
     Visit.find({ dealerId: id }).sort({ checkInTime: -1 }).limit(5).lean(),
-    collectionMonthOf(),
-    Sample.find({ active: true }).sort({ createdAt: -1, name: 1 }).lean(),   // newest sample first
+    cached('cm', 60e3, () => collectionMonthOf()),
+    cached('master', 60e3, () => Sample.find({ active: true }).sort({ createdAt: -1, name: 1 }).lean()),   // newest sample first
     SampleGiven.find({ $or: [{ dealerId: id }, { dealerName: new RegExp(`^${d.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }] }).sort({ givenDate: -1 }).lean(),
     Sale.aggregate([{ $match: { dealerId: d._id, month: { $in: ym3 } } }, { $group: { _id: '$brand', qty: { $sum: '$qty' } } }]),
     VisitPlan.find({ dealerId: id, date: { $gte: back7 } }).sort({ date: 1 }).lean(),
@@ -192,7 +211,17 @@ export async function visitSummary(dealerId) {
 }
 
 router.get('/:dealerId/summary', protect, async (req, res) => {
-  try { const d = await loadDealerFor(req, res); if (!d) return; const s = await visitSummary(d._id); res.json({ ...s, canPlan: isStaff(req), canEdit: await hasFeature(req, 'visitMom') }); }
+  try {
+    const d = await loadDealerFor(req, res); if (!d) return;
+    // everything else in one go: the summary, the caller's permissions, and his open check-in (wherever it is)
+    const [s, can, open] = await Promise.all([
+      visitSummary(d._id, { dealer: d }),
+      featureChecker(req),
+      Visit.findOne({ userId: req.user.id, status: 'in-progress' }, 'dealerId dealerName checkInTime').lean(),
+    ]);
+    res.json({ ...s, canPlan: can('visitPlan'), canEdit: can('visitMom'),
+      activeVisit: open ? { id: String(open._id), dealerId: String(open.dealerId || ''), dealerName: open.dealerName, since: open.checkInTime, here: String(open.dealerId || '') === String(d._id) } : null });
+  }
   catch (e) { console.error('[DEALER VISIT]', e.message); res.status(500).json({ error: e.message }); }
 });
 
@@ -207,10 +236,12 @@ router.post('/:dealerId/mom', protect, requireFeature('visitMom'), async (req, r
     const b = req.body || {};
     const me = await User.findOne({ id: req.user.id }, 'name').lean();
     const s = await visitSummary(d._id);
+    // a visit id from the client counts only if it is a real check-in at this dealer (and his own, for a salesman)
+    const claimed = mongoose.isValidObjectId(b.visitId) ? await Visit.findOne({ _id: b.visitId, dealerId: String(d._id), ...(isStaff(req) ? {} : { userId: req.user.id }) }, '_id').lean() : null;
     const num = v => (v === '' || v === null || v === undefined) ? null : Number(v);
     const mom = await DealerMom.create({
       dealerId: String(d._id), dealerName: d.name, userId: req.user.id, userName: me?.name || req.user.id,
-      date: /^\d{4}-\d{2}-\d{2}$/.test(b.date || '') ? b.date : todayYmd(), visitId: b.visitId || '',
+      date: /^\d{4}-\d{2}-\d{2}$/.test(b.date || '') ? b.date : todayYmd(), visitId: claimed ? String(claimed._id) : '',
       zone: d.zone || '',
       volume: s?.volume?.latest ? { month: s.volume.latest.label, target: s.volume.latest.target, achieved: s.volume.latest.achieved } : null,
       outstanding: s?.collections ? { total: s.collections.total, due: s.collections.dueAmount, dueMonth: s.collections.collectionMonth } : null,
@@ -252,18 +283,24 @@ router.post('/:dealerId/mom', protect, requireFeature('visitMom'), async (req, r
     // samples handed over / taken back on this visit
     const SampleGiven = mongoose.models.SampleGiven;
     for (const aid of Array.isArray(b.givenAllocationIds) ? b.givenAllocationIds : []) {
+      if (!mongoose.isValidObjectId(aid)) continue;
       const a = await SampleAllocation.findById(aid); if (!a || a.status !== 'ALLOCATED' || a.dealerId !== String(d._id)) continue;
       const g = await SampleGiven.create({ dealerName: d.name, dealerId: String(d._id), sampleId: a.sampleId, sampleName: a.sampleName, zone: a.zone, salesman: d.salesman || req.user.id, givenBy: req.user.id, givenDate: mom.date, notes: 'given on visit · MOM' });
       a.status = 'GIVEN'; a.givenId = String(g._id); a.givenDate = mom.date; await a.save();
     }
     for (const gid of Array.isArray(b.returnedGivenIds) ? b.returnedGivenIds : []) {
-      const g = await SampleGiven.findById(gid); if (!g || (g.dealerId && g.dealerId !== String(d._id) && g.dealerName.toUpperCase() !== d.name.toUpperCase())) continue;
+      if (!mongoose.isValidObjectId(gid)) continue;
+      const g = await SampleGiven.findById(gid); if (!g) continue;
+      // the piece must be this dealer's: by id when the record has one, else by name
+      const same = g.dealerId ? g.dealerId === String(d._id) : String(g.dealerName || '').trim().toUpperCase() === String(d.name || '').trim().toUpperCase();
+      if (!same) continue;
       const a = await SampleAllocation.findOne({ givenId: String(g._id) });
       if (a) { a.status = 'RETURNED'; a.returnedDate = mom.date; a.takeBack = false; await a.save(); }
       else await SampleAllocation.create({ sampleId: g.sampleId, sampleName: g.sampleName, zone: g.zone, dealerId: String(d._id), dealerName: d.name, dealerZone: d.zone || '', salesman: d.salesman || req.user.id, status: 'RETURNED', source: 'manual', reason: 'taken back on visit · MOM', returnedDate: mom.date, createdBy: req.user.id });
       await SampleGiven.deleteOne({ _id: g._id });
     }
     for (const aid of Array.isArray(b.returnedAllocationIds) ? b.returnedAllocationIds : []) {
+      if (!mongoose.isValidObjectId(aid)) continue;
       const a = await SampleAllocation.findById(aid); if (!a || a.status !== 'GIVEN' || a.dealerId !== String(d._id)) continue;
       if (a.givenId) await SampleGiven.deleteOne({ _id: a.givenId });
       a.status = 'RETURNED'; a.returnedDate = mom.date; a.takeBack = false; await a.save();

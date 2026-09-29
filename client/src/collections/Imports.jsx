@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { UploadCloud, CheckCircle2, AlertTriangle, RefreshCw } from 'lucide-react';
+import { UploadCloud, CheckCircle2, AlertTriangle, RefreshCw, History, Link2, CircleAlert, Copy, GitCompareArrows } from 'lucide-react';
 import { col } from './api';
-import { useLoad, PageHead, Card, Table, Pager, Badge, Modal, Field, DealerPicker, Busy, ErrorBox, money, num, fmtDate, fmtWhen, periodLabel, userName, useDealerCtx, CardRow } from './ui';
+import { useLoad, PageHead, Card, Table, Pager, Badge, Modal, Field, DealerPicker, Busy, ErrorBox, money, num, fmtDate, fmtWhen, periodLabel, userName, useDealerCtx, CardRow, Trend } from './ui';
 
 /**
  * Import manager — upload, preview, resolve unmapped parties, apply, and the
@@ -33,7 +33,7 @@ export default function Imports() {
   return (
     <div>
       <PageHead icon={UploadCloud} tone="var(--acc)" title="Upload statement" sub="Party-wise outstanding from the ERP. Excel is the input, never the record — every upload is kept, nothing is overwritten." />
-      <Card title="Upload" style={{ marginBottom: 12 }}>
+      <Card title={<div className="sec-title" style={{ marginBottom: 0 }}><span className="sec-ico" style={{ '--tone': 'var(--acc)' }}><UploadCloud size={15} /></span> Upload</div>} style={{ marginBottom: 12 }}>
         <div className="row" style={{ gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <div className="field" style={{ marginBottom: 0, flex: '1 1 260px' }}><label>File (.xlsx / .xls / .csv)</label><input ref={fileRef} type="file" className="inp" accept=".xlsx,.xls,.csv" onChange={e => setFile(e.target.files?.[0] || null)} /></div>
           <div className="field" style={{ marginBottom: 0 }}><label>Statement date</label><input type="date" className="inp" value={asOn} onChange={e => setAsOn(e.target.value)} /><div style={{ fontSize: 10.5, color: 'var(--t3)', marginTop: 2 }}>Blank = read from the file name, else today</div></div>
@@ -42,7 +42,7 @@ export default function Imports() {
         </div>
         <ErrorBox err={err} />
       </Card>
-      <Card title="History" pad={false}>
+      <Card title={<div className="sec-title" style={{ marginBottom: 0 }}><span className="sec-ico" style={{ '--tone': 'var(--acc)' }}><History size={15} /></span> History</div>} pad={false}>
         {list.err ? <ErrorBox err={list.err} onRetry={list.reload} /> : list.busy && !list.data ? <Busy kind="table" /> : <Table cols={[
           { k: 'createdAt', h: 'Uploaded', r: r => fmtWhen(r.createdAt) },
           { k: 'fileName', h: 'File', max: 260 },
@@ -69,7 +69,8 @@ function Preview({ id, onClose }) {
   const [applying, setApplying] = useState(false);
   const [aerr, setAerr] = useState('');
   const [mapRow, setMapRow] = useState(null);
-  useEffect(() => { if (!job || ['DONE', 'FAILED'].includes(job.status)) return; const t = setTimeout(() => col.job(job._id).then(setJob).catch(() => {}), 1500); return () => clearTimeout(t); }, [job]);
+  // a failed poll bumps _retry (a new object), which re-runs this effect after a longer pause instead of stopping for good
+  useEffect(() => { if (!job || ['DONE', 'FAILED'].includes(job.status)) return; const t = setTimeout(() => col.job(job._id).then(setJob).catch(() => setJob(j => j && j._id === job._id ? { ...j, _retry: (j._retry || 0) + 1 } : j)), job._retry ? 4000 : 1500); return () => clearTimeout(t); }, [job]);
   useEffect(() => { if (job && ['DONE', 'FAILED'].includes(job.status)) reload(); }, [job?.status]);   // eslint-disable-line
   const [clearAbsent, setClearAbsent] = useState(null);   // null = follow the app's guard
   const apply = async () => {
@@ -84,7 +85,7 @@ function Preview({ id, onClose }) {
   if (busy && !data) return <Modal title="Import" onClose={onClose}><Busy kind="inline" /></Modal>;
   if (err) return <Modal title="Import" onClose={onClose}><ErrorBox err={err} onRetry={reload} /></Modal>;
   const imp = data.import, st = imp.stats || {};
-  const canApply = ['VALIDATED', 'PREVIEWED', 'FAILED'].includes(imp.status) && st.matched > 0 && !job;
+  const canApply = ['VALIDATED', 'PREVIEWED', 'FAILED'].includes(imp.status) && st.matched > 0 && (!job || job.status === 'FAILED');
   return (
     <Modal title={imp.fileName} onClose={onClose} width={1000}>
       <div className="row" style={{ gap: 8, flexWrap: 'wrap', marginBottom: 10, fontSize: 12.5 }}>
@@ -114,13 +115,13 @@ function Preview({ id, onClose }) {
       {job && <div style={{ fontSize: 12.5, padding: 10, borderRadius: 8, background: 'var(--accL)', marginBottom: 8 }}><RefreshCw size={12} className={job.status === 'RUNNING' ? 'spin' : ''} /> Applying in the background — {job.status}{job.progress?.message ? ' · ' + job.progress.message : ''}{job.error ? <span style={{ color: 'var(--red)' }}> · {job.error}</span> : ''}</div>}
       {imp.status === 'FAILED' && imp.errorReport?.length > 0 && <ErrorBox err={'Last attempt failed: ' + imp.errorReport[imp.errorReport.length - 1].message + '. Apply again to resume — completed chunks are kept.'} />}
       <ErrorBox err={aerr} />
-      {data.unmapped?.length > 0 && <Card title={`Unmapped parties (${num(data.unmapped.length)}) — map or add before applying, or they are skipped`} style={{ marginBottom: 10 }}>
+      {data.unmapped?.length > 0 && <Card title={<div className="sec-title" style={{ marginBottom: 0 }}><span className="sec-ico" style={{ '--tone': 'var(--yel)' }}><Link2 size={15} /></span> Unmapped parties ({num(data.unmapped.length)}) <span className="sec-note">— map or add before applying, or they are skipped</span></div>} style={{ marginBottom: 10 }}>
         <Table dense cols={[{ k: 'rowNo', h: 'Row' }, { k: 'rawParty', h: 'Party in file', max: 320 }, { k: 'code', h: 'Code' }, { k: 'total', h: 'Total', align: 'right', r: r => money(r.total) }, { k: 'act', h: '', r: r => <div className="row" style={{ gap: 4 }}><button className="btn" data-tip="Pick the dealer this party is" style={{ fontSize: 11 }} onClick={() => setMapRow(r)}>Map to dealer</button><button className="btne" data-tip="Create this party as a new dealer" onClick={async () => { if (!window.confirm(`Add "${r.partyName}" as a new dealer?`)) return; try { await col.createDealerFromRow(id, r.rowNo, 'none'); reload(); } catch (e) { alert(e.message); } }}>Add as new</button></div> }]} rows={data.unmapped} keyOf={r => r.rowNo} />
       </Card>}
-      {data.errors?.length > 0 && <Card title={`Rows with errors (${num(data.errors.length)})`} style={{ marginBottom: 10 }}><Table dense cols={[{ k: 'rowNo', h: 'Row' }, { k: 'rawParty', h: 'Party' }, { k: 'message', h: 'Problem', wrap: true }]} rows={data.errors} keyOf={r => r.rowNo} /></Card>}
-      {data.duplicatesInFile?.length > 0 && <Card title={`Repeated in the file (${num(data.duplicatesInFile.length)}) — only the first occurrence counts`} style={{ marginBottom: 10 }}><Table dense cols={[{ k: 'rowNo', h: 'Row' }, { k: 'rawParty', h: 'Party' }, { k: 'total', h: 'Total', align: 'right', r: r => money(r.total) }]} rows={data.duplicatesInFile} keyOf={r => r.rowNo} /></Card>}
-      <Card title={`Biggest changes (${num(data.changedRows)} rows change)`} style={{ marginBottom: 10 }}>
-        <Table dense cols={[{ k: 'dealer', h: 'Dealer' }, { k: 'code', h: 'Code' }, { k: 'classification', h: 'Change', r: r => <Badge v={r.classification} /> }, { k: 'before', h: 'Before', align: 'right', r: r => r.before == null ? '—' : money(r.before) }, { k: 'after', h: 'After', align: 'right', r: r => money(r.after) }, { k: 'delta', h: 'Δ', align: 'right', r: r => <span style={{ color: r.delta > 0 ? 'var(--red)' : 'var(--grn)' }}>{r.delta > 0 ? '+' : ''}{money(r.delta)}</span> }, { k: 'matchMethod', h: 'Matched by' }]} rows={data.topChanges} keyOf={r => r.rowNo} empty="Nothing changes." />
+      {data.errors?.length > 0 && <Card title={<div className="sec-title" style={{ marginBottom: 0 }}><span className="sec-ico" style={{ '--tone': 'var(--red)' }}><CircleAlert size={15} /></span> Rows with errors ({num(data.errors.length)})</div>} style={{ marginBottom: 10 }}><Table dense cols={[{ k: 'rowNo', h: 'Row' }, { k: 'rawParty', h: 'Party' }, { k: 'message', h: 'Problem', wrap: true }]} rows={data.errors} keyOf={r => r.rowNo} /></Card>}
+      {data.duplicatesInFile?.length > 0 && <Card title={<div className="sec-title" style={{ marginBottom: 0 }}><span className="sec-ico" style={{ '--tone': 'var(--yel)' }}><Copy size={15} /></span> Repeated in the file ({num(data.duplicatesInFile.length)}) <span className="sec-note">— only the first occurrence counts</span></div>} style={{ marginBottom: 10 }}><Table dense cols={[{ k: 'rowNo', h: 'Row' }, { k: 'rawParty', h: 'Party' }, { k: 'total', h: 'Total', align: 'right', r: r => money(r.total) }]} rows={data.duplicatesInFile} keyOf={r => r.rowNo} /></Card>}
+      <Card title={<div className="sec-title" style={{ marginBottom: 0 }}><span className="sec-ico" style={{ '--tone': 'var(--pur)' }}><GitCompareArrows size={15} /></span> Biggest changes ({num(data.changedRows)} rows change)</div>} style={{ marginBottom: 10 }}>
+        <Table dense cols={[{ k: 'dealer', h: 'Dealer', avatar: r => r.dealer, r: r => <b style={{ color: 'var(--t1)' }}>{r.dealer}</b> }, { k: 'code', h: 'Code' }, { k: 'classification', h: 'Change', r: r => <Badge v={r.classification} /> }, { k: 'before', h: 'Before', align: 'right', r: r => r.before == null ? '—' : money(r.before) }, { k: 'after', h: 'After', align: 'right', r: r => money(r.after) }, { k: 'delta', h: 'Δ', align: 'right', r: r => <Trend delta={r.delta} lowerIsBetter amount /> }, { k: 'matchMethod', h: 'Matched by' }]} rows={data.topChanges} keyOf={r => r.rowNo} empty="Nothing changes." />
       </Card>
       <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
         <button className="btn" onClick={onClose}>Close</button>

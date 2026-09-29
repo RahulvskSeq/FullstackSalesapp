@@ -626,14 +626,15 @@
 
 
 import React, { useState, useMemo, useRef } from 'react';
-import { Save, Search, ChevronDown, CheckCircle, Edit3, Filter, AlertCircle, Download, Upload, FileSpreadsheet, Trash2 } from 'lucide-react';
+import { Save, Search, ChevronDown, CheckCircle, Edit3, Filter, AlertCircle, Download, Upload, FileSpreadsheet, Trash2, Store, Hourglass, Target, ArrowLeftRight, X, Wrench, GitMerge, MapPin, RefreshCw } from 'lucide-react';
 import { useMonth } from '../context';
 import { MO as MO_DEFAULT } from '../constants';
 import { num, pct, spct, pclr, monthTarget } from '../utils';
 import { api } from '../api';
 import { Avatar, StatusBadge } from './UI';
 import { confirmDialog, notify } from './Toast';
-import ErpDailyUpload from './ErpDailyUpload';
+import ErpDailyUpload, { IMPORT_CSS, ImportStepper, DropZone, ResultCard } from './ErpDailyUpload';
+import { PageHead, Tile } from '../collections/ui';
 
 // Potential Status only — the performance tier is calculated, not entered.
 const STATUSES = ['NONE','STAR','KEY ACCOUNT','ACHIEVER','REACTIVE'];
@@ -744,6 +745,19 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
       const r3 = await api.dedupeDealers(false).catch(e => ({ duplicatesRemoved: 0, _err: e.message }));
       // 4b. Dedupe suffix-dupes ("X pranav" when "X" exists for salesman Pranav)
       const r4 = await api.cleanupSuffixDupes(false).catch(e => ({ deleted: 0, _err: e.message }));
+
+      // Each step swallows its own error into `_err`; a failed step must not
+      // be reported as "Reset complete".
+      const failedSteps = [
+        ['Remove bad-upload dealers', r0], ['Delete category sale rows', r1],
+        ['Clear dealer-month records', r2], ['Remove exact duplicates', r3],
+        ['Remove salesman-suffix duplicates', r4],
+      ].filter(([, r]) => r?._err).map(([label, r]) => `${label}: ${r._err}`);
+      if (failedSteps.length) {
+        setCatMsg({ type:'error', text: `Reset for ${month} did not fully complete — ${failedSteps.length} step${failedSteps.length === 1 ? '' : 's'} failed. ${failedSteps.join('; ')}.` });
+        if (onSaved) onSaved();   // some steps may still have changed data
+        return;
+      }
 
       const parts = [
         `Reset complete for ${month}.`,
@@ -953,6 +967,7 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
     setSaving(true); setErrors([]); setSaved(false);
 
     const errs = [];
+    const failedIds = [];
     let ok = 0;
     const total = Object.keys(changes).length;
     let done = 0;
@@ -981,15 +996,7 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
 
       const newStatus = vals.status || dealer.status;
 
-      // Update local state immediately
-      onUpdateDealer(dealerId, {
-        months: newMonths,
-        monthTargets: newTargets,
-        status: newStatus,
-        achieved: moIdx >= 0 ? newMonths[moIdx] : dealer.achieved,
-      });
-
-      // Save to DB
+      // Save to DB — local state is updated only once the server has it
       try {
         const updatePayload = {};
 
@@ -1009,8 +1016,15 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
         if(Object.keys(updatePayload).length > 0) {
           await api.updateDealer(dealerId, updatePayload);
         }
+        onUpdateDealer(dealerId, {
+          months: newMonths,
+          monthTargets: newTargets,
+          status: newStatus,
+          achieved: moIdx >= 0 ? newMonths[moIdx] : dealer.achieved,
+        });
         ok++;
       } catch(e) {
+        failedIds.push(dealerId);
         errs.push(`${dealer.name}: ${e.message}`);
       }
       // Count attempts, not successes — the bar tracks how far through the
@@ -1021,9 +1035,15 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
       await new Promise(r => setTimeout(r, 0));
     }
 
+    // Keep the failed edits pending so they can be retried; clear the rest.
+    if(failedIds.length) errs.unshift(`${failedIds.length} of ${total} dealer${total === 1 ? '' : 's'} not saved — their edits are kept, press Save to retry.`);
     setErrors(errs);
     setSaved(true);
-    setChanges({});
+    setChanges(prev => {
+      const keep = {};
+      for(const id of failedIds) if(prev[id]) keep[id] = prev[id];
+      return keep;
+    });
     setSaving(false);
     setSaveProg(null);
     if(ok > 0 && onSaved) onSaved();   // refresh dashboard data after successful save
@@ -1082,10 +1102,7 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
     const csv = [headers.map(csvEscape).join(','), ...rows].join('\n');
     const smName = includeSalesman ? 'All_Salesmen' : (users[salesman]?.name || salesman || 'Unknown').replace(/\s+/g,'_');
     const filename = `MonthlyEntry_${month}_${smName}.csv`;
-    const a = document.createElement('a');
-    a.href = 'data:text/csv;charset=utf-8,﻿' + encodeURIComponent(csv); // BOM so Excel opens UTF-8 cleanly
-    a.download = filename;
-    a.click();
+    import('../lib/saveFile').then(m => m.saveText('\ufeff' + csv, filename, 'text/csv;charset=utf-8'));   // BOM so Excel opens UTF-8 cleanly
     setBulkMsg({
       type:'success',
       text: `Downloaded ${rows.length} dealer rows for ${smName.replace(/_/g,' ')} — ${month}. Edit Target/Achieved in Excel, save as .csv or .xlsx, then click "Upload Filled".`,
@@ -1132,113 +1149,184 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
     } finally { setBulkBusy(false); setUpProg(null); }
   };
 
+  // ── Purely client-side view helpers (filter / sort / counts) ─────────────
+  // These never touch `filtered` (which the template export uses) — they only
+  // narrow and order what the grid shows. Sorting and the entered/pending
+  // filter read the STORED values, so a row does not jump while it is edited.
+  const [zoneF, setZoneF]   = useState('all');
+  const [potF, setPotF]     = useState('all');
+  const [entryF, setEntryF] = useState('all');   // all | entered | pending | unsaved
+  const [sortBy, setSortBy] = useState('name');
+
+  const storedAch = d => moIdx >= 0 ? (Number(d.months?.[moIdx]) || 0) : 0;
+  const storedTgt = d => moIdx >= 0 ? (Number(d.monthTargets?.[moIdx]) || 0) : 0;
+  const storedPot = d => { const v = String(d.status || '').trim().toUpperCase(); return STATUSES.includes(v) ? v : 'NONE'; };
+
+  const zones = useMemo(
+    () => [...new Set(filtered.map(d => d.zone).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b))),
+    [filtered]
+  );
+
+  let view = filtered;
+  if(zoneF !== 'all')        view = view.filter(d => (d.zone || '') === zoneF);
+  if(potF !== 'all')         view = view.filter(d => storedPot(d) === potF);
+  if(entryF === 'entered')   view = view.filter(d => storedAch(d) > 0);
+  if(entryF === 'pending')   view = view.filter(d => !(storedAch(d) > 0));
+  if(entryF === 'unsaved')   view = view.filter(d => !!changes[d.id]);
+  if(sortBy !== 'name'){
+    const pv = d => { const p = pct(storedTgt(d), storedAch(d)); return p === null ? -1 : p; };
+    const cmp = {
+      'ach-desc': (a, b) => storedAch(b) - storedAch(a),
+      'tgt-desc': (a, b) => storedTgt(b) - storedTgt(a),
+      'pct-desc': (a, b) => pv(b) - pv(a),
+      'pct-asc':  (a, b) => pv(a) - pv(b),
+      'city':     (a, b) => String(a.city || '~').localeCompare(String(b.city || '~')),
+    }[sortBy];
+    if(cmp) view = [...view].sort((a, b) => cmp(a, b) || a.name.localeCompare(b.name));
+  }
+
+  // Summary tiles — live values (include unsaved edits), over the salesman/search scope.
+  const liveAch = d => num(getVal(d.id, 'achieved'));
+  const liveTgt = d => num(getVal(d.id, 'target'));
+  const enteredCount = filtered.filter(d => liveAch(d) > 0).length;
+  const pendingCount = filtered.length - enteredCount;
+  const sumAch = filtered.reduce((s, d) => s + liveAch(d), 0);
+  const sumTgt = filtered.reduce((s, d) => s + liveTgt(d), 0);
+  const storedEntered = filtered.filter(d => storedAch(d) > 0).length;
+  const viewTgt = view.reduce((s, d) => s + liveTgt(d), 0);
+  const viewAch = view.reduce((s, d) => s + liveAch(d), 0);
+  const filtersOn = zoneF !== 'all' || potF !== 'all' || entryF !== 'all' || sortBy !== 'name';
+
+  // Bulk Excel stepper — derived from the existing busy/progress/message state.
+  const catStep = upProg ? 2
+    : (catMsg?.type === 'success' && /category-sale rows inserted/.test(catMsg.text)) ? 4
+    : (catMsg?.type === 'success' && /^Template downloaded/.test(catMsg.text)) ? 2
+    : moIdx < 0 ? 0 : 1;
+
+  const lbl = { fontSize:10.5, fontWeight:800, color:'var(--t3)', display:'block', marginBottom:6, textTransform:'uppercase', letterSpacing:'.08em' };
+  const colCount = isAdmin ? 8 : 7;
+  const savePct = saveProg ? Math.round(saveProg.done / Math.max(1, saveProg.total) * 100) : 0;
+  const toolBtn = { display:'inline-flex', alignItems:'center', gap:6, fontSize:12, fontWeight:700 };
+
   return (
-    <div className="fade">
-      <div style={{marginBottom:16}}>
-        <div style={{fontSize:11,color:'var(--acc)',textTransform:'uppercase',letterSpacing:'.15em',marginBottom:4}}>Data Entry</div>
-        <div style={{fontSize:22,fontWeight:700}}>Monthly Entry</div>
-        <div style={{fontSize:13,color:'var(--t3)',marginTop:4}}>Enter or update target, achieved & status for any month inline.</div>
+    <div className="fade me-page">
+      <style>{IMPORT_CSS + ME_CSS}</style>
+      <PageHead icon={Edit3} tone="var(--acc)" eyebrow="Data Entry" title="Monthly Entry"
+        sub="Enter or update target, achieved & status for any month inline."
+        right={<span className="kpi-pill">Month <b style={{color:'var(--acc)'}}>{month}</b></span>}/>
+
+      {/* Summary tiles */}
+      <div className="me-tiles">
+        <Tile icon={Store}        label="Dealers"        value={filtered.length.toLocaleString('en-IN')} tone="var(--acc)"
+          sub={salesman !== 'all' ? (users[salesman]?.name || salesman) : 'All salesmen'}/>
+        <Tile icon={CheckCircle}  label="Entered"        value={enteredCount.toLocaleString('en-IN')} tone="var(--grn)"
+          sub={filtered.length ? Math.round(enteredCount / filtered.length * 100) + '% have achieved > 0' : '—'}/>
+        <Tile icon={Hourglass}    label="Pending"        value={pendingCount.toLocaleString('en-IN')} tone="var(--yel)" sub="no achieved yet"/>
+        <Tile icon={Target}       label="Total achieved" value={sumAch.toLocaleString('en-IN')} tone="var(--pur)"
+          sub={`of ${sumTgt.toLocaleString('en-IN')} target${sumTgt > 0 ? ' · ' + spct(sumTgt, sumAch) : ''}`}/>
       </div>
 
-      {/* Controls */}
+      {/* Controls / filter bar */}
       <div className="card" style={{marginBottom:14}}>
-        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:12,marginBottom:changedCount>0||saved?14:0}}>
+        <div className="me-filters">
           <div>
-            <label style={{fontSize:11,color:'var(--t3)',display:'block',marginBottom:5,textTransform:'uppercase',letterSpacing:'.07em'}}>Month</label>
-            <div style={{position:'relative'}}>
-              <select className="inp" value={month} onChange={e=>{setMonth(e.target.value);setChanges({});setSaved(false);}} style={{width:'100%',paddingRight:28,appearance:'none'}}>
-                {[...MO].reverse().map(m=>(
-                  <option key={m} value={m}>{m}{m===MO[currentMonthIdx]?' ← current':''}</option>
-                ))}
-              </select>
-              <ChevronDown size={13} style={{position:'absolute',right:8,top:'50%',transform:'translateY(-50%)',color:'var(--t3)',pointerEvents:'none'}}/>
-            </div>
+            <label style={lbl}>Month</label>
+            <select className="sel" value={month} onChange={e=>{setMonth(e.target.value);setChanges({});setSaved(false);}} style={{width:'100%',fontWeight:700}}>
+              {[...MO].reverse().map(m=>(
+                <option key={m} value={m}>{m}{m===MO[currentMonthIdx]?' ← current':''}</option>
+              ))}
+            </select>
           </div>
 
           {isAdmin&&(
             <div>
-              <label style={{fontSize:11,color:'var(--t3)',display:'block',marginBottom:5,textTransform:'uppercase',letterSpacing:'.07em'}}>Salesman</label>
-              <div style={{position:'relative'}}>
-                <select className="inp" value={salesman} onChange={e=>setSalesman(e.target.value)} style={{width:'100%',paddingRight:28,appearance:'none'}}>
-                  <option value="all">All Salesmen</option>
-                  {salesmen.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
-                <ChevronDown size={13} style={{position:'absolute',right:8,top:'50%',transform:'translateY(-50%)',color:'var(--t3)',pointerEvents:'none'}}/>
-              </div>
+              <label style={lbl}>Salesman</label>
+              <select className="sel" value={salesman} onChange={e=>setSalesman(e.target.value)} style={{width:'100%'}}>
+                <option value="all">All Salesmen</option>
+                {salesmen.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
               {salesman !== 'all' && (
                 <button type="button" onClick={replaceSalesman}
                   title="Hand this salesman's dealers to another user, effective from the month selected above — earlier months' sales stay credited to them"
-                  style={{marginTop:6, display:'inline-flex', alignItems:'center', gap:5, fontSize:11, fontWeight:700,
-                    color:'var(--yel)', background:'rgba(251,191,36,0.10)', border:'1px solid rgba(251,191,36,0.35)',
-                    borderRadius:7, padding:'6px 10px', cursor:'pointer'}}>
-                  ⇄ Replace salesman
+                  className="thr" style={{'--tone':'var(--yel)',marginTop:6,color:'var(--yel)',borderColor:'color-mix(in srgb, var(--yel) 40%, transparent)',background:'color-mix(in srgb, var(--yel) 9%, transparent)',display:'inline-flex',alignItems:'center',gap:5}}>
+                  <ArrowLeftRight size={12}/> Replace salesman
                 </button>
               )}
             </div>
           )}
 
-          <div>
-            <label style={{fontSize:11,color:'var(--t3)',display:'block',marginBottom:5,textTransform:'uppercase',letterSpacing:'.07em'}}>Search</label>
+          <div className="me-search">
+            <label style={lbl}>Search</label>
             <div style={{position:'relative'}}>
-              <Search size={13} style={{position:'absolute',left:9,top:'50%',transform:'translateY(-50%)',color:'var(--t3)'}}/>
-              <input className="inp" style={{paddingLeft:28,width:'100%'}} placeholder="Name or city..." value={search} onChange={e=>setSearch(e.target.value)}/>
+              <Search size={14} style={{position:'absolute',left:10,top:'50%',transform:'translateY(-50%)',color:'var(--t3)'}}/>
+              <input className="inp" style={{paddingLeft:32,width:'100%'}} placeholder="Dealer name or city…" value={search} onChange={e=>setSearch(e.target.value)}/>
+              {search && <button type="button" onClick={()=>setSearch('')} title="Clear search"
+                style={{position:'absolute',right:6,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',color:'var(--t3)',cursor:'pointer',padding:4}}><X size={13}/></button>}
             </div>
+          </div>
+
+          <div>
+            <label style={lbl}>Zone</label>
+            <select className="sel" value={zoneF} onChange={e=>setZoneF(e.target.value)} style={{width:'100%'}}>
+              <option value="all">All zones</option>
+              {zones.map(z=><option key={z} value={z}>{z}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label style={lbl}>Selected user</label>
+            <select className="sel" value={potF} onChange={e=>setPotF(e.target.value)} style={{width:'100%'}}>
+              <option value="all">Any</option>
+              {STATUSES.map(s=><option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label style={lbl}>Sort</label>
+            <select className="sel" value={sortBy} onChange={e=>setSortBy(e.target.value)} style={{width:'100%'}}>
+              <option value="name">Name A–Z</option>
+              <option value="ach-desc">Achieved ↓</option>
+              <option value="tgt-desc">Target ↓</option>
+              <option value="pct-desc">Ach % ↓</option>
+              <option value="pct-asc">Ach % ↑</option>
+              <option value="city">City A–Z</option>
+            </select>
           </div>
         </div>
 
-        {moIdx < 0 && month && (
-          <div style={{padding:'8px 12px',background:'rgba(251,191,36,0.08)',border:'1px solid rgba(251,191,36,0.2)',borderRadius:8,fontSize:12,color:'var(--yel)',marginBottom:12}}>
-            ⚠ "{month}" not in month list. Go to Admin Panel → Month Settings → Add Month first.
-          </div>
-        )}
-
-        {changedCount > 0 && (
-          <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',background:'rgba(99,102,241,0.08)',borderRadius:8,border:'1px solid rgba(99,102,241,0.2)',flexWrap:'wrap'}}>
-            <Edit3 size={14} color="var(--acc)"/>
-            <span style={{fontSize:13,fontWeight:600,color:'var(--acc)'}}>{changedCount} dealer{changedCount>1?'s':''} modified</span>
-            <div style={{flex:1}}/>
-            <button onClick={()=>{setChanges({});setSaved(false);}} className="btn" style={{fontSize:12}}>Discard</button>
-            <button onClick={saveAll} disabled={saving} className="btnp" style={{display:'flex',alignItems:'center',gap:6,fontSize:12}}>
-              {saving
-                ? <><div style={{width:11,height:11,border:'2px solid #fff',borderTopColor:'transparent',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>
-                    Saving{saveProg ? ` ${Math.round(saveProg.done / Math.max(1, saveProg.total) * 100)}%` : '…'}</>
-                : <><Save size={12}/> Save {changedCount} Changes</>}
+        <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center',marginTop:12}}>
+          {[
+            ['all',     'All',     filtered.length,                     'var(--acc)'],
+            ['entered', 'Entered', storedEntered,                       'var(--grn)'],
+            ['pending', 'Pending', filtered.length - storedEntered,     'var(--yel)'],
+            ['unsaved', 'Unsaved', changedCount,                        'var(--pur)'],
+          ].map(([k, l, c, t]) => (
+            <button key={k} type="button" className={'thr'+(entryF===k?' on':'')} style={{'--tone':t}} onClick={()=>setEntryF(k)}>
+              {l} <span style={{opacity:.8,marginLeft:3}}>{c}</span>
             </button>
+          ))}
+          <div style={{flex:1}}/>
+          {filtersOn && (
+            <button type="button" className="btn" style={{fontSize:11.5}} onClick={()=>{setZoneF('all');setPotF('all');setEntryF('all');setSortBy('name');}}>
+              Reset view
+            </button>
+          )}
+        </div>
 
-            {/* Real progress — the save loop sends one request per dealer, so
-                this counts actual completed dealers rather than animating. */}
-            {saving && saveProg && (
-              <div style={{flexBasis:'100%', marginTop:2}}>
-                <div style={{
-                  height:6, borderRadius:99, overflow:'hidden',
-                  background:'var(--bg2)', border:'1px solid var(--b1)',
-                }}>
-                  <div style={{
-                    width: `${Math.round(saveProg.done / Math.max(1, saveProg.total) * 100)}%`,
-                    height:'100%', background:'var(--acc)',
-                    transition:'width .15s linear',
-                  }}/>
-                </div>
-                <div style={{fontSize:11, color:'var(--t3)', marginTop:4}}>
-                  {saveProg.done} of {saveProg.total} dealers saved
-                </div>
-              </div>
-            )}
-          </div>
+        {moIdx < 0 && month && (
+          <ResultCard kind="warn" style={{marginTop:12}} title={`"${month}" not in month list.`}>
+            Go to Admin Panel → Month Settings → Add Month first.
+          </ResultCard>
         )}
 
         {saved && !changedCount && (
-          <div style={{display:'flex',alignItems:'center',gap:8,padding:'8px 12px',background:'rgba(52,211,153,0.08)',borderRadius:8,border:'1px solid rgba(52,211,153,0.2)'}}>
-            <CheckCircle size={14} color="#34d399"/>
-            <span style={{fontSize:12,color:'var(--grn)',fontWeight:600}}>Saved to database ✓</span>
-          </div>
+          <ResultCard kind="ok" style={{marginTop:12,padding:'9px 12px'}} title="Saved to database"/>
         )}
 
         {errors.length > 0 && (
-          <div style={{padding:'8px 12px',background:'rgba(248,113,113,0.08)',border:'1px solid rgba(248,113,113,0.2)',borderRadius:8,marginTop:8}}>
-            <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}><AlertCircle size={13} color="#f87171"/><span style={{fontSize:12,fontWeight:600,color:'var(--red)'}}>Some errors:</span></div>
-            {errors.map((e,i)=><div key={i} style={{fontSize:11,color:'var(--red)'}}>· {e}</div>)}
-          </div>
+          <ResultCard kind="err" style={{marginTop:12}} title="Some errors:">
+            {errors.map((e,i)=><div key={i}>· {e}</div>)}
+          </ResultCard>
         )}
       </div>
 
@@ -1247,273 +1335,248 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
 
       {/* ── ONE Bulk Excel: download pre-filled, edit, upload back ────────── */}
       {isAdmin && (
-        <div className="card" style={{marginBottom:14, padding:14, background:'rgba(34,197,94,0.04)', border:'1px solid rgba(34,197,94,0.20)'}}>
+        <div className="card" style={{marginBottom:14, padding:16}}>
           {/* hidden file input for the category upload */}
           <input ref={catFileRef} type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={handleCatFileChosen}/>
 
-          <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:6, flexWrap:'wrap'}}>
-            <FileSpreadsheet size={15} color="#34d399"/>
-            <span style={{fontSize:13, fontWeight:700, color:'var(--t1)'}}>Bulk Excel — Download &amp; Upload</span>
-            <span style={{fontSize:10, color:'var(--t3)', background:'rgba(34,197,94,0.14)', padding:'2px 7px', borderRadius:4, fontWeight:700, letterSpacing:'.04em'}}>
+          <div className="sec-title" style={{marginBottom:4}}>
+            <span className="sec-ico" style={{'--tone':'var(--grn)'}}><FileSpreadsheet size={15}/></span>
+            <span>Bulk Excel — Download &amp; Upload</span>
+            <span className="kpi-pill">
               {month}{salesman !== 'all' ? ' · ' + (users[salesman]?.name || salesman) : ' · All salesmen'}
             </span>
-            <span style={{fontSize:10, color:'var(--t3)'}}>· {filtered.length} dealers</span>
+            <span className="count-pill">{filtered.length} dealers</span>
           </div>
-          <div style={{fontSize:11, color:'var(--t3)', marginBottom:10, lineHeight:1.5}}>
+          <div style={{fontSize:11.5, color:'var(--t3)', marginBottom:14, lineHeight:1.55}}>
             ONE Excel does everything — pre-filled with current dealer info (City, State, Zone, Status, Target, Credit) plus a column for every Product Type from your taxonomy.
             Every dealer column round-trips — edit Dealer Name, Salesman, Dealer Type, City, State, Zone, Status, Address, Pincode, Target, Credit and the quantity cells, then upload. The four "(auto)" columns at the far right are for reference only; the app recalculates those itself.
             View results under <b>Sales by Category</b>. Manage product types under <b>Admin Panel → Categories</b>.
           </div>
-          <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
-            <button onClick={handleCatTemplate} disabled={catBusy}
-              style={{
-                display:'flex', alignItems:'center', gap:6,
-                background:'#0ea5e9', color:'#fff', border:'none',
-                padding:'8px 14px', borderRadius:6, fontSize:12, fontWeight:700,
-                cursor: catBusy ? 'not-allowed' : 'pointer', opacity: catBusy ? 0.6 : 1,
-              }}>
-              <Download size={13}/> {catTplBusy ? 'Building…' : `Download Template (${filtered.length} dealers)`}
-            </button>
-            {/* Restored once the prefill was fixed. The template used to fill
-                City/State/Zone from monthlyData.<month>, which is a snapshot
-                and drifts from the dealer record, so re-uploading an unedited
-                sheet wrote stale values back over a correction. The master
-                record is now the source for those columns and a no-edit
-                round-trip changes nothing. */}
-            <button onClick={handleCatUploadClick} disabled={catBusy}
-              style={{
-                display:'flex', alignItems:'center', gap:6,
-                background:'#16a34a', color:'#fff', border:'none',
-                padding:'8px 14px', borderRadius:6, fontSize:12, fontWeight:700,
-                cursor: catBusy ? 'not-allowed' : 'pointer', opacity: catBusy ? 0.6 : 1,
-              }}>
-              {catBusy
-                ? <><div style={{width:11,height:11,border:'2px solid currentColor',borderTopColor:'transparent',borderRadius:'50%',animation:'spin .7s linear infinite'}}/> Uploading…</>
-                : <><Upload size={13}/> Upload Filled Excel</>}
-            </button>
 
-            {/* Byte-level upload progress. Once the file is fully sent the bar
-                holds at 100% and the label switches to "processing", because
-                the server is still parsing the sheet — pretending that part is
-                instant is what makes a stuck upload look like a crash. */}
-            {catBusy && upProg && (
-              <div style={{flexBasis:'100%', marginTop:2}}>
-                <div style={{
-                  height:6, borderRadius:99, overflow:'hidden',
-                  background:'var(--bg2)', border:'1px solid var(--b1)',
-                }}>
-                  <div style={{
-                    width: `${upProg.pct}%`, height:'100%',
-                    background: upProg.phase === 'processing' ? 'var(--yel)' : 'var(--grn)',
-                    transition:'width .15s linear',
-                  }}/>
-                </div>
-                <div style={{fontSize:11, color:'var(--t3)', marginTop:4}}>
-                  {upProg.phase === 'processing'
-                    ? 'File sent — server is reading the sheet and writing rows…'
-                    : `Uploading file… ${upProg.pct}%`}
-                </div>
+          <ImportStepper steps={['Month & salesman','Download template','Upload filled Excel','Done']} current={catStep} error={catMsg?.type === 'error' || moIdx < 0}/>
+
+          <div className="me-bulk">
+            {/* Step 2 — template */}
+            <div className="me-bulk-step">
+              <div className="me-step-h"><span className="me-step-n">2</span> Get the pre-filled template</div>
+              <div style={{fontSize:11.5,color:'var(--t3)',lineHeight:1.5,marginBottom:12}}>
+                Pre-filled with the {filtered.length} dealers currently in scope for <b style={{color:'var(--t2)'}}>{month}</b>.
               </div>
-            )}
-            <button
-              onClick={async ()=>{
-                try {
-                  const r = await api.recomputeStatus();
-                  const c = r?.counts || {};
-                  notify.success(
-                    `Performance status recalculated for ${r.dealers} dealers from ${r.month} — ` +
-                    `${c['TOP PERFORMER']||0} top, ${c['PRIORITY ACCOUNT']||0} priority, ` +
-                    `${c['RISING STAR']||0} rising, ${c['ACTIVE']||0} active, ` +
-                    `${c['RECENTLY INACTIVE']||0} recently inactive, ${c['INACTIVE']||0} inactive, ${c['DEAD']||0} dead.`
-                  );
-                  if(onSaved) onSaved();
-                } catch(e){ notify.error(e.message || 'Recalculate failed'); }
-              }}
-              disabled={catBusy}
-              title="Recalculate the auto Performance status (Top Performer / Priority / Rising Star / Active / Inactive / Dead) from sales in LAMINATE, LOUVRES, POLYMER SHEET, ROLLS and DECORATIVE. Runs automatically after an upload — this is the manual nudge."
-              style={{
-                display:'flex', alignItems:'center', gap:6,
-                color:'#93c5fd',
-                background:'rgba(59,130,246,0.10)',
-                border:'1px solid rgba(59,130,246,0.45)',
-                padding:'8px 12px', borderRadius:6, fontSize:11, fontWeight:700,
-                cursor: catBusy ? 'not-allowed' : 'pointer', opacity: catBusy ? 0.6 : 1,
-              }}>
-              Recalculate performance status
-            </button>
-            <button onClick={handleMergeNameVariants} disabled={catBusy}
-              title="Merge dealers whose names differ only by spaces or punctuation (e.g. '76 EAST' and '76EAST') — sale rows are preserved. Use this AFTER an upload that created duplicates."
-              style={{
-                display:'flex', alignItems:'center', gap:6,
-                color:'#fde68a',
-                background:'rgba(251,191,36,0.10)',
-                border:'1px solid rgba(251,191,36,0.45)',
-                padding:'8px 12px', borderRadius:6, fontSize:11, fontWeight:700,
-                cursor: catBusy ? 'not-allowed' : 'pointer', opacity: catBusy ? 0.6 : 1,
-              }}>
-              Merge name-variant dupes
-            </button>
-            <button
-              onClick={async ()=>{
-                const ok = await confirmDialog({
-                  title:'Normalize city & state?',
-                  message:'Standardizes the spelling & casing of city and state on ALL dealers — e.g. "BANGALORE", "bengaluru ", "Banglore" all become "Bangalore". Safe and recommended so filters/permissions match.',
-                  confirmText:'Normalize', danger:false,
-                });
-                if(!ok) return;
-                try {
-                  const r = await api.normalizeGeo();
-                  notify.success('Normalized city/state on ' + (r?.changed||0) + ' of ' + (r?.scanned||0) + ' dealers. Reload to see.');
-                  if(onSaved) onSaved();
-                } catch(e){ notify.error(e.message || 'Normalize failed'); }
-              }}
-              title="Standardize city & state spelling/casing across all dealers"
-              style={{
-                display:'flex', alignItems:'center', gap:6,
-                color:'#93c5fd', background:'rgba(99,102,241,0.10)',
-                border:'1px solid rgba(99,102,241,0.45)',
-                padding:'8px 12px', borderRadius:6, fontSize:11, fontWeight:700, cursor:'pointer',
-              }}>
-              Normalize City / State
-            </button>
-            <button onClick={handleCatDeleteMonth} disabled={catBusy}
-              title={`Wipe ${month}: category sales + per-dealer target/achieved/status + duplicate dealers (so you can re-upload cleanly)`}
-              style={{
-                display:'flex', alignItems:'center', gap:6,
-                color:'#fca5a5',
-                background:'rgba(248,113,113,0.08)',
-                border:'1px solid rgba(248,113,113,0.4)',
-                padding:'8px 12px', borderRadius:6, fontSize:11, fontWeight:600,
-                cursor: catBusy ? 'not-allowed' : 'pointer', opacity: catBusy ? 0.6 : 1,
-              }}>
-              <Trash2 size={12}/> Reset {month} (clean slate)
-            </button>
-            <label style={{display:'flex',alignItems:'center',gap:6,fontSize:11,color:'var(--t3)',marginLeft:6}}>
-              <input type="checkbox" checked={catReplace} onChange={e=>setCatReplace(e.target.checked)} />
-              Replace existing data for {month}
-            </label>
+              <button onClick={handleCatTemplate} disabled={catBusy} className="btne" style={{...toolBtn,padding:'8px 14px'}}>
+                <Download size={14}/> {catTplBusy ? 'Building…' : `Download Template (${filtered.length} dealers)`}
+              </button>
+              <label style={{display:'flex',alignItems:'center',gap:7,fontSize:11.5,color:'var(--t2)',marginTop:14,cursor:'pointer'}}>
+                <input type="checkbox" checked={catReplace} onChange={e=>setCatReplace(e.target.checked)} />
+                Replace existing data for {month}
+              </label>
+            </div>
+
+            {/* Step 3 — upload. Restored once the prefill was fixed. The
+                template used to fill City/State/Zone from monthlyData.<month>,
+                which is a snapshot and drifts from the dealer record, so
+                re-uploading an unedited sheet wrote stale values back over a
+                correction. The master record is now the source for those
+                columns and a no-edit round-trip changes nothing. */}
+            <div style={{minWidth:0}}>
+              {/* Byte-level upload progress. Once the file is fully sent the
+                  bar holds at 100% and the label switches to "processing",
+                  because the server is still parsing the sheet — pretending
+                  that part is instant is what makes a stuck upload look like
+                  a crash. */}
+              <DropZone
+                onBrowse={handleCatUploadClick}
+                onDropFiles={files => handleCatFileChosen({ target: { files, value: '' } })}
+                disabled={catBusy}
+                busy={catBusy && !!upProg}
+                pct={upProg ? upProg.pct : null}
+                busyText={upProg?.phase === 'processing'
+                  ? 'File sent — server is reading the sheet and writing rows…'
+                  : `Uploading file… ${upProg?.pct ?? 0}%`}
+                tone={upProg?.phase === 'processing' ? 'var(--yel)' : 'var(--grn)'}
+                title="Drop the filled Excel here"
+                formats={['.XLSX','.XLS']}
+              />
+            </div>
           </div>
 
           {catMsg && (
-            <div style={{
-              marginTop:10, padding:'8px 12px', borderRadius:7, fontSize:12, lineHeight:1.4,
-              background: catMsg.type === 'success' ? 'rgba(34,197,94,0.10)' : 'rgba(248,113,113,0.10)',
-              border: '1px solid ' + (catMsg.type === 'success' ? '#15803d55' : '#7f1d1d55'),
-              color:  catMsg.type === 'success' ? '#86efac' : '#fca5a5',
-              display:'flex', alignItems:'flex-start', gap:6,
-            }}>
-              {catMsg.type === 'success' ? <CheckCircle size={13} style={{flexShrink:0, marginTop:1}}/> : <AlertCircle size={13} style={{flexShrink:0, marginTop:1}}/>}
-              <span style={{flex:1}}>{catMsg.text}</span>
-              <button onClick={() => setCatMsg(null)} style={{background:'none', border:'none', color:'inherit', cursor:'pointer', padding:0}}>×</button>
-            </div>
+            <ResultCard kind={catMsg.type === 'success' ? 'ok' : 'err'} style={{marginTop:12}}
+              title={catMsg.type === 'success' ? 'Done' : 'Something went wrong'} onClose={() => setCatMsg(null)}>
+              {catMsg.text}
+            </ResultCard>
           )}
+
+          {/* Data tools */}
+          <div style={{marginTop:16,paddingTop:14,borderTop:'1px solid var(--b1)'}}>
+            <div style={{...lbl,marginBottom:8,display:'flex',alignItems:'center',gap:6}}><Wrench size={12}/> Data tools</div>
+            <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
+              <button
+                onClick={async ()=>{
+                  try {
+                    const r = await api.recomputeStatus();
+                    const c = r?.counts || {};
+                    notify.success(
+                      `Performance status recalculated for ${r.dealers} dealers from ${r.month} — ` +
+                      `${c['TOP PERFORMER']||0} top, ${c['PRIORITY ACCOUNT']||0} priority, ` +
+                      `${c['RISING STAR']||0} rising, ${c['ACTIVE']||0} active, ` +
+                      `${c['RECENTLY INACTIVE']||0} recently inactive, ${c['INACTIVE']||0} inactive, ${c['DEAD']||0} dead.`
+                    );
+                    if(onSaved) onSaved();
+                  } catch(e){ notify.error(e.message || 'Recalculate failed'); }
+                }}
+                disabled={catBusy}
+                title="Recalculate the auto Performance status (Top Performer / Priority / Rising Star / Active / Inactive / Dead) from sales in LAMINATE, LOUVRES, POLYMER SHEET, ROLLS and DECORATIVE. Runs automatically after an upload — this is the manual nudge."
+                className="btne" style={{...toolBtn,padding:'7px 12px'}}>
+                <RefreshCw size={13}/> Recalculate performance status
+              </button>
+              <button onClick={handleMergeNameVariants} disabled={catBusy}
+                title="Merge dealers whose names differ only by spaces or punctuation (e.g. '76 EAST' and '76EAST') — sale rows are preserved. Use this AFTER an upload that created duplicates."
+                className="btn" style={{...toolBtn,color:'var(--yel)',borderColor:'color-mix(in srgb, var(--yel) 40%, transparent)'}}>
+                <GitMerge size={13}/> Merge name-variant dupes
+              </button>
+              <button
+                onClick={async ()=>{
+                  const ok = await confirmDialog({
+                    title:'Normalize city & state?',
+                    message:'Standardizes the spelling & casing of city and state on ALL dealers — e.g. "BANGALORE", "bengaluru ", "Banglore" all become "Bangalore". Safe and recommended so filters/permissions match.',
+                    confirmText:'Normalize', danger:false,
+                  });
+                  if(!ok) return;
+                  try {
+                    const r = await api.normalizeGeo();
+                    notify.success('Normalized city/state on ' + (r?.changed||0) + ' of ' + (r?.scanned||0) + ' dealers. Reload to see.');
+                    if(onSaved) onSaved();
+                  } catch(e){ notify.error(e.message || 'Normalize failed'); }
+                }}
+                title="Standardize city & state spelling/casing across all dealers"
+                className="btn" style={toolBtn}>
+                <MapPin size={13}/> Normalize City / State
+              </button>
+              <button onClick={handleCatDeleteMonth} disabled={catBusy}
+                title={`Wipe ${month}: category sales + per-dealer target/achieved/status + duplicate dealers (so you can re-upload cleanly)`}
+                className="btnd" style={toolBtn}>
+                <Trash2 size={13}/> Reset {month} (clean slate)
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
       {/* Table */}
       <div className="card" style={{padding:0,overflow:'hidden'}}>
-        <div style={{padding:'10px 14px',borderBottom:'1px solid var(--b1)',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-          <Filter size={13} color="var(--t3)"/>
-          <span style={{fontSize:12,fontWeight:600,color:'var(--t2)'}}>{filtered.length} dealers — {month}</span>
-          <span style={{fontSize:11,color:'var(--t3)'}}>Click any cell to edit</span>
+        <div className="sec-title" style={{padding:'12px 14px',borderBottom:'1px solid var(--b1)',marginBottom:0}}>
+          <span className="sec-ico" style={{'--tone':'var(--acc)'}}><Filter size={15}/></span>
+          <span>Dealers — {month}</span>
+          <span className="count-pill">{view.length}{view.length !== filtered.length ? ' / ' + filtered.length : ''}</span>
+          <span className="sec-note">Click any cell to edit</span>
         </div>
         <div style={{overflowX:'auto',maxHeight:'65vh',overflowY:'auto'}}>
-          <table>
+          <table className="me-grid">
             <thead>
               <tr>
                 <th>Dealer</th>
                 {isAdmin&&<th>Salesman</th>}
                 <th>City</th>
-                <th style={{textAlign:'right',color:'var(--acc)',background:'rgba(99,102,241,.06)'}}>Target</th>
-                <th style={{textAlign:'right',color:'var(--grn)',background:'rgba(52,211,153,.06)'}}>Achieved</th>
+                <th style={{textAlign:'right',color:'var(--acc)',background:'color-mix(in srgb, var(--acc) 8%, var(--thBg, var(--bg1)))'}}>Target</th>
+                <th style={{textAlign:'right',color:'var(--grn)',background:'color-mix(in srgb, var(--grn) 8%, var(--thBg, var(--bg1)))'}}>Achieved</th>
                 <th style={{textAlign:'right'}}>Ach%</th>
                 <th>Performance</th>
                 <th>Selected User</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map(dealer => {
+              {view.map(dealer => {
                 const changed  = !!changes[dealer.id];
                 const achieved = num(getVal(dealer.id, 'achieved'));
                 const target   = num(getVal(dealer.id, 'target'));
                 const status   = getVal(dealer.id, 'status');
                 const achPct   = pct(target, achieved);
                 const sm       = users[dealer.salesman];
+                const entered  = storedAch(dealer) > 0;
                 return (
-                  <tr key={dealer.id} style={{
-                    background: changed ? 'rgba(99,102,241,0.04)' : 'transparent',
-                    borderLeft: `3px solid ${changed ? 'var(--acc)' : 'transparent'}`,
+                  <tr key={dealer.id} className={changed ? 'me-dirty' : undefined} style={{
+                    background: changed ? 'color-mix(in srgb, var(--acc) 5%, transparent)' : undefined,
+                    boxShadow: changed ? 'inset 3px 0 0 var(--acc)' : undefined,
                   }}>
-                    <td style={{maxWidth:180}}>
-                      <div style={{fontWeight:600,color:'var(--t1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{dealer.name}</div>
-                      {(dealer.category||dealer.categoryType)&&(
-                        <div style={{fontSize:9,color:'#818cf8'}}>{dealer.category}{dealer.categoryType?` · ${dealer.categoryType}`:''}</div>
-                      )}
+                    <td style={{maxWidth:240}}>
+                      <div style={{display:'flex',alignItems:'center',gap:9,minWidth:0}}>
+                        <span style={{position:'relative',flexShrink:0}}>
+                          <span className="ini" style={{'--h':(dealer.name||'?').charCodeAt(0)*37%360}}>{((dealer.name||'?').replace(/[^A-Za-z0-9]/g,'').slice(0,2)||'?').toUpperCase()}</span>
+                          <span className="me-dot" title={changed ? 'Unsaved change' : entered ? 'Entered for ' + month : 'Pending — no achieved yet'}
+                            style={{background: changed ? 'var(--acc)' : entered ? 'var(--grn)' : 'var(--yel)'}}/>
+                        </span>
+                        <div style={{minWidth:0}}>
+                          <div style={{fontWeight:700,color:'var(--t1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{dealer.name}</div>
+                          <div style={{fontSize:10.5,color:'var(--t3)',display:'flex',gap:6,alignItems:'center',minWidth:0}}>
+                            {changed
+                              ? <span className="me-unsaved">Unsaved</span>
+                              : (dealer.category||dealer.categoryType)
+                                ? <span style={{color:'var(--acc)',overflow:'hidden',textOverflow:'ellipsis'}}>{dealer.category}{dealer.categoryType?` · ${dealer.categoryType}`:''}</span>
+                                : (dealer.zone ? <span>{dealer.zone}</span> : null)}
+                          </div>
+                        </div>
+                      </div>
                     </td>
-                    {isAdmin&&<td>{sm&&<div style={{display:'flex',alignItems:'center',gap:4}}><Avatar user={sm} size={15}/><span style={{fontSize:11}}>{sm.name}</span></div>}</td>}
-                    <td style={{fontSize:11,color:'var(--t3)'}}>{dealer.city||'—'}</td>
+                    {isAdmin&&<td>{sm&&<div style={{display:'flex',alignItems:'center',gap:6}}><Avatar user={sm} size={18}/><span style={{fontSize:11.5}}>{sm.name}</span></div>}</td>}
+                    <td style={{fontSize:11.5,color:'var(--t3)'}}>{dealer.city||'—'}</td>
 
                     {/* Target - editable */}
-                    <td style={{background:'rgba(99,102,241,.04)',padding:'4px 8px'}}>
+                    <td style={{background:'color-mix(in srgb, var(--acc) 4%, transparent)',padding:'5px 8px'}}>
                       <input type="number" min="0" value={getVal(dealer.id,'target')}
                         onChange={e=>setVal(dealer.id,'target',e.target.value)}
-                        style={{width:'100%',minWidth:70,textAlign:'right',background:'transparent',border:'none',
-                          borderBottom:`1px solid ${changes[dealer.id]?.target!==undefined?'var(--acc)':'var(--b2)'}`,
-                          color:'var(--t1)',fontSize:13,fontWeight:600,padding:'2px 0',outline:'none'}}/>
+                        className={'me-in'+(changes[dealer.id]?.target!==undefined?' dirty':'')}
+                        style={{'--tone':'var(--acc)',color:'var(--t1)',fontWeight:600}}/>
                     </td>
 
                     {/* Achieved - editable */}
-                    <td style={{background:'rgba(52,211,153,.04)',padding:'4px 8px'}}>
+                    <td style={{background:'color-mix(in srgb, var(--grn) 4%, transparent)',padding:'5px 8px'}}>
                       <input type="number" min="0" value={getVal(dealer.id,'achieved')}
                         onChange={e=>setVal(dealer.id,'achieved',e.target.value)}
-                        style={{width:'100%',minWidth:70,textAlign:'right',background:'transparent',border:'none',
-                          borderBottom:`1px solid ${changes[dealer.id]?.achieved!==undefined?'#34d399':'var(--b2)'}`,
-                          color:'var(--grn)',fontSize:13,fontWeight:700,padding:'2px 0',outline:'none'}}/>
+                        className={'me-in'+(changes[dealer.id]?.achieved!==undefined?' dirty':'')}
+                        style={{'--tone':'var(--grn)',color:'var(--grn)',fontWeight:700}}/>
                     </td>
 
-                    <td style={{textAlign:'right',fontWeight:700,color:pclr(achPct),fontSize:12,whiteSpace:'nowrap'}}>
-                      {target>0 ? spct(target,achieved) : '—'}
+                    <td style={{textAlign:'right',whiteSpace:'nowrap',minWidth:74}}>
+                      <div style={{fontWeight:800,color:pclr(achPct),fontSize:12}}>{target>0 ? spct(target,achieved) : '—'}</div>
+                      {target>0 && achPct !== null && <div className="pbar" style={{marginTop:4}}><div style={{width:Math.min(achPct,100)+'%',background:pclr(achPct)}}/></div>}
                     </td>
 
                     {/* Performance — calculated, read-only */}
-                    <td style={{padding:'4px 8px'}}>
+                    <td style={{padding:'5px 8px'}}>
                       <StatusBadge status={dealer.perfStatus} emptyLabel="NEW DEALER"/>
                     </td>
 
                     {/* Potential Status — editable */}
-                    <td style={{padding:'4px 8px'}}>
+                    <td style={{padding:'5px 8px'}}>
                       <select value={status} onChange={e=>setVal(dealer.id,'status',e.target.value)}
-                        style={{background:'transparent',border:'none',
-                          borderBottom:`1px solid ${changes[dealer.id]?.status!==undefined?'var(--acc)':'var(--b2)'}`,
-                          color:'var(--t2)',fontSize:11,padding:'2px 0',outline:'none',cursor:'pointer',width:'100%'}}>
+                        className={'sel me-sel'+(changes[dealer.id]?.status!==undefined?' dirty':'')}>
                         {STATUSES.map(s=><option key={s} value={s}>{s}</option>)}
                       </select>
                     </td>
                   </tr>
                 );
               })}
-              {filtered.length===0&&(
-                <tr><td colSpan={isAdmin?7:6} style={{textAlign:'center',padding:40,color:'var(--t3)'}}>No dealers found</td></tr>
+              {view.length===0&&(
+                <tr><td colSpan={colCount} style={{textAlign:'center',padding:40,color:'var(--t3)',whiteSpace:'normal'}}>
+                  <Search size={22} style={{display:'block',margin:'0 auto 8px',opacity:.6}}/>
+                  {filtered.length ? 'No dealers match these filters' : 'No dealers found'}
+                </td></tr>
               )}
             </tbody>
-            {filtered.length>0&&(
+            {view.length>0&&(
               <tfoot>
                 <tr>
-                  <td colSpan={isAdmin?3:2} style={{fontWeight:700}}>TOTAL ({filtered.length})</td>
-                  <td style={{textAlign:'right',fontWeight:700,color:'var(--acc)',background:'rgba(99,102,241,.04)'}}>
-                    {filtered.reduce((s,d)=>s+num(getVal(d.id,'target')),0).toLocaleString('en-IN')}
+                  <td colSpan={isAdmin?3:2} style={{fontWeight:800,color:'var(--t1)'}}>TOTAL ({view.length})</td>
+                  <td style={{textAlign:'right',fontWeight:800,color:'var(--acc)',background:'color-mix(in srgb, var(--acc) 4%, transparent)'}}>
+                    {viewTgt.toLocaleString('en-IN')}
                   </td>
-                  <td style={{textAlign:'right',fontWeight:700,color:'var(--grn)',background:'rgba(52,211,153,.04)'}}>
-                    {filtered.reduce((s,d)=>s+num(getVal(d.id,'achieved')),0).toLocaleString('en-IN')}
+                  <td style={{textAlign:'right',fontWeight:800,color:'var(--grn)',background:'color-mix(in srgb, var(--grn) 4%, transparent)'}}>
+                    {viewAch.toLocaleString('en-IN')}
                   </td>
-                  <td style={{textAlign:'right',fontWeight:700,color:'var(--t2)'}}>
-                    {(()=>{
-                      const t=filtered.reduce((s,d)=>s+num(getVal(d.id,'target')),0);
-                      const a=filtered.reduce((s,d)=>s+num(getVal(d.id,'achieved')),0);
-                      return t>0?spct(t,a):'—';
-                    })()}
+                  <td style={{textAlign:'right',fontWeight:800,color:'var(--t2)'}}>
+                    {viewTgt>0?spct(viewTgt,viewAch):'—'}
                   </td>
-                  <td/>
+                  <td colSpan={2}/>
                 </tr>
               </tfoot>
             )}
@@ -1521,10 +1584,65 @@ export default function MonthlyEntry({ dealers, users, currentUser, onUpdateDeal
         </div>
       </div>
 
-      <div style={{marginTop:10,fontSize:11,color:'var(--t3)'}}>
-        💡 Click any Target, Achieved or Status cell → edit → <strong>Save Changes</strong> saves all to MongoDB.
-        Purple highlight = unsaved change.
+      <div style={{marginTop:10,fontSize:11.5,color:'var(--t3)',display:'flex',gap:12,flexWrap:'wrap',alignItems:'center'}}>
+        <span>Edit any Target, Achieved or Selected User cell, then <strong>Save</strong> writes all changes to MongoDB.</span>
+        <span style={{display:'inline-flex',alignItems:'center',gap:5}}><span className="me-dot" style={{position:'static',background:'var(--acc)'}}/> unsaved</span>
+        <span style={{display:'inline-flex',alignItems:'center',gap:5}}><span className="me-dot" style={{position:'static',background:'var(--grn)'}}/> entered</span>
+        <span style={{display:'inline-flex',alignItems:'center',gap:5}}><span className="me-dot" style={{position:'static',background:'var(--yel)'}}/> pending</span>
       </div>
+
+      {/* Sticky save bar — appears while there are unsaved edits */}
+      {(changedCount > 0 || saving) && (
+        <div className="me-savebar" role="region" aria-label="Unsaved changes">
+          <span className="sec-ico" style={{'--tone':'var(--acc)'}}><Edit3 size={15}/></span>
+          <div style={{minWidth:0,flex:'1 1 160px'}}>
+            <div style={{fontSize:13,fontWeight:800,color:'var(--t1)'}}>
+              {changedCount} unsaved change{changedCount===1?'':'s'}
+            </div>
+            <div style={{fontSize:11,color:'var(--t3)'}}>
+              {saving && saveProg ? `${saveProg.done} of ${saveProg.total} dealers saved` : `${changedCount} dealer${changedCount>1?'s':''} modified · ${month}`}
+            </div>
+            {/* Real progress — the save loop sends one request per dealer, so
+                this counts actual completed dealers rather than animating. */}
+            {saving && saveProg && (
+              <div className="pbar" style={{marginTop:5,height:5}}><div style={{width:`${savePct}%`,background:'var(--acc)',transition:'width .15s linear'}}/></div>
+            )}
+          </div>
+          <button onClick={()=>{setChanges({});setSaved(false);}} disabled={saving} className="btn" style={{fontSize:12}}>Discard</button>
+          <button onClick={saveAll} disabled={saving} className="btnp" style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:12}}>
+            {saving
+              ? <><div style={{width:11,height:11,border:'2px solid currentColor',borderTopColor:'transparent',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>
+                  Saving{saveProg ? ` ${savePct}%` : '…'}</>
+              : <><Save size={13}/> Save {changedCount} Changes</>}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
+
+const ME_CSS = `
+.me-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px}
+.me-filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.me-search{grid-column:span 2}
+.me-bulk{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:14px;align-items:stretch}
+.me-bulk-step{padding:14px;border-radius:14px;background:var(--bg2);border:1px solid var(--b1)}
+.me-step-h{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:800;color:var(--t1);margin-bottom:6px}
+.me-step-n{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:800;color:var(--acc);background:color-mix(in srgb,var(--acc) 14%,transparent)}
+.me-grid td{vertical-align:middle}
+.me-grid tbody tr:hover td{background:color-mix(in srgb,var(--acc) 4%,transparent)}
+.me-grid tfoot td{position:sticky;bottom:0;background:var(--bg1);border-top:1px solid var(--b1);z-index:1}
+.me-in{width:100%;min-width:78px;text-align:right;background:var(--bg1);border:1px solid var(--b1);border-radius:8px;padding:5px 8px;font-size:13px;outline:none;font-variant-numeric:tabular-nums;transition:border-color .15s,box-shadow .15s}
+.me-in:hover{border-color:var(--b2)}
+.me-in:focus{border-color:var(--tone,var(--acc));box-shadow:0 0 0 3px color-mix(in srgb,var(--tone,var(--acc)) 18%,transparent)}
+.me-in.dirty{border-color:var(--tone,var(--acc));background:color-mix(in srgb,var(--tone,var(--acc)) 7%,var(--bg1))}
+.me-sel{width:100%;min-width:118px;font-size:11.5px;padding:5px 8px;color:var(--t2)}
+.me-sel.dirty{border-color:var(--acc);background:color-mix(in srgb,var(--acc) 7%,var(--bg1));color:var(--t1)}
+.me-dot{position:absolute;right:-2px;bottom:-2px;width:10px;height:10px;border-radius:50%;border:2px solid var(--bg1);display:inline-block}
+.me-unsaved{font-size:9.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--acc);background:color-mix(in srgb,var(--acc) 12%,transparent);padding:1px 7px;border-radius:20px}
+.me-savebar{position:sticky;bottom:12px;z-index:30;margin-top:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;border-radius:16px;
+  background:var(--bg1);border:1px solid color-mix(in srgb,var(--acc) 35%,var(--b1));box-shadow:0 10px 30px rgba(16,24,40,.18),0 0 0 4px color-mix(in srgb,var(--acc) 8%,transparent)}
+@media(max-width:900px){.me-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.me-bulk{grid-template-columns:1fr}}
+@media(max-width:768px){.me-savebar{bottom:calc(76px + env(safe-area-inset-bottom))}}
+@media(max-width:560px){.me-search{grid-column:1/-1}.me-filters{grid-template-columns:repeat(2,minmax(0,1fr))}}
+`;

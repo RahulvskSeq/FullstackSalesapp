@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Check, X, Paperclip, NotebookPen, CalendarClock } from 'lucide-react';
 import { col } from './api';
-import { Modal, Badge, StatusBadge, DealerLink, KV, ErrorBox, money, fmtDate, fmtWhen, title, userName, useDealerCtx, periodsOf, periodLabel, OldestPill, CallButton, WhatsAppIcon } from './ui';
+import { Modal, Badge, StatusBadge, DealerLink, KV, ErrorBox, money, fmtDate, fmtWhen, title, userName, useDealerCtx, periodsOf, periodLabel, OldestPill, CallButton, WhatsAppIcon, NameCell } from './ui';
 import { CompleteTask } from './Today';
 import { FollowupForm, WhatsAppForm } from './forms';
 
@@ -14,6 +14,11 @@ const Months = ({ r }) => { const ps = periodsOf([r]); if (!ps.length) return nu
 const dueWords = d => { if (!d) return ''; const t = new Date(typeof d === 'string' && d.length === 10 ? d + 'T00:00:00' : d); const n = Math.round((t - new Date().setHours(0, 0, 0, 0)) / 864e5); return n === 0 ? 'due today' : n > 0 ? `in ${n} day${n > 1 ? 's' : ''}` : `${-n} day${n < -1 ? 's' : ''} overdue`; };
 const TONES = { PENDING: ['rgba(245,158,11,.12)', 'rgba(245,158,11,.45)', '#b45309'], PARTIALLY_FULFILLED: ['rgba(245,158,11,.12)', 'rgba(245,158,11,.45)', '#b45309'], FULFILLED: ['rgba(22,163,74,.10)', 'rgba(22,163,74,.4)', 'var(--grn)'], CONFIRMED: ['rgba(22,163,74,.10)', 'rgba(22,163,74,.4)', 'var(--grn)'], RECORDED: ['rgba(245,158,11,.12)', 'rgba(245,158,11,.45)', '#b45309'], BROKEN: ['rgba(220,38,38,.09)', 'rgba(220,38,38,.35)', 'var(--red)'], BOUNCED: ['rgba(220,38,38,.09)', 'rgba(220,38,38,.35)', 'var(--red)'], CANCELLED: ['var(--bg2)', 'var(--b1)', 'var(--t3)'] };
 const tone = st => TONES[st] || ['var(--bg2)', 'var(--b1)', 'var(--t1)'];
+/* tinted panel with the big number (module scope so it is not remounted on every render) */
+const Hero = ({ st, amount, sub, chip, children }) => { const [bg, bd, c] = tone(st); return <div style={{ padding: '10px 12px', borderRadius: 10, background: bg, border: '1px solid ' + bd, marginBottom: 10 }}>
+  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}><span style={{ fontSize: 26, fontWeight: 800, color: c, fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>{money(amount)}</span>{sub && <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--t2)' }}>{sub}</span>}{chip && <span className="chip" style={{ color: c, fontWeight: 700 }}>{chip}</span>}</div>
+  {children}
+</div>; };
 
 /**
  * One modal for any record — click a task, payment, follow-up or promise
@@ -30,7 +35,7 @@ export default function RecordModal({ kind, record: r, onClose, onChanged }) {
   const [form, setForm] = useState(null);
   const head = <div style={{ marginBottom: 10, padding: '8px 10px', borderRadius: 9, background: 'var(--bg2)', border: '1px solid var(--b1)' }}>
     {/* opening the dealer from here closes this modal first, so the drawer is not hidden under it */}
-    <div style={{ fontSize: 15, fontWeight: 700 }} onClickCapture={() => setTimeout(onClose, 0)}><DealerLink id={r.dealerId} name={dealerName} code={dealerCode} /></div>
+    <div style={{ fontSize: 15, fontWeight: 700 }} onClickCapture={() => setTimeout(onClose, 0)}><NameCell name={dealerName}><DealerLink id={r.dealerId} name={dealerName} code={dealerCode} /></NameCell></div>
     <Months r={r} />
   </div>;
   /* quick actions on the dealer, shared by every record kind */
@@ -43,11 +48,6 @@ export default function RecordModal({ kind, record: r, onClose, onChanged }) {
     {form === 'followup' && <FollowupForm dealer={dealer} onClose={() => setForm(null)} onDone={() => { setForm(null); onChanged?.(); }} />}
     {form === 'wa' && <WhatsAppForm dealer={dealer} onClose={() => setForm(null)} onDone={() => setForm(null)} />}
   </>;
-  /* tinted panel with the big number */
-  const Hero = ({ st, amount, sub, chip, children }) => { const [bg, bd, c] = tone(st); return <div style={{ padding: '10px 12px', borderRadius: 10, background: bg, border: '1px solid ' + bd, marginBottom: 10 }}>
-    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}><span style={{ fontSize: 26, fontWeight: 800, color: c, fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>{money(amount)}</span>{sub && <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--t2)' }}>{sub}</span>}{chip && <span className="chip" style={{ color: c, fontWeight: 700 }}>{chip}</span>}</div>
-    {children}
-  </div>; };
   const meta = pairs => <div style={{ display: 'flex', gap: '2px 14px', flexWrap: 'wrap', fontSize: 11.5, color: 'var(--t2)', margin: '2px 0 10px' }}>{pairs.filter(p => p[1]).map(([k, v]) => <span key={k}><span style={{ color: 'var(--t3)', fontWeight: 700, fontSize: 10, letterSpacing: '.05em', textTransform: 'uppercase' }}>{k}</span> {v}</span>)}</div>;
   const grid = pairs => <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10, margin: '6px 0 12px' }}>{pairs.filter(p => p[1] !== undefined && p[1] !== null && p[1] !== '').map(([k, v]) => <KV key={k} k={k} v={v} />)}</div>;
   const note = (label, text) => text ? <div style={{ marginBottom: 10 }}><div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--t3)' }}>{label}</div><div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{text}</div></div> : null;
@@ -77,7 +77,7 @@ export default function RecordModal({ kind, record: r, onClose, onChanged }) {
     </Hero>
     {meta([['Bank ref', r.bankReference], ['Collected by', userName(users, r.collectedBy)], ['Entered by', userName(users, r.enteredBy)], ['Entered', fmtWhen(r.createdAt)], ['Confirmed', r.confirmedAt ? fmtWhen(r.confirmedAt) + (r.source === 'statement' ? ' · statement' : ' · ' + userName(users, r.confirmedBy)) : ''], ['Cancelled / bounced', r.cancelReason ? r.cancelReason + ' · ' + userName(users, r.cancelledBy) : '']])}
     {note('Remarks', r.remarks)}
-    {r.proofId && <a className="btn" href={col.proofUrl(r.proofId)} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', gap: 5, alignItems: 'center', marginBottom: 10 }}><Paperclip size={12} /> Open proof</a>}
+    {r.proofId && <button className="btn" onClick={() => col.openProof(r.proofId).catch(err => alert(err.message))} style={{ display: 'inline-flex', gap: 5, alignItems: 'center', marginBottom: 10 }}><Paperclip size={12} /> Open proof</button>}
     <ErrorBox err={err} />
     <div className="row" style={{ justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
       {quick}
@@ -103,7 +103,7 @@ export default function RecordModal({ kind, record: r, onClose, onChanged }) {
     {head}
     <Hero st={r.status} amount={r.amount} sub={<><CalendarClock size={12} style={{ verticalAlign: -2 }} /> promised by <b style={{ color: 'var(--t1)' }}>{fmtDate(r.promiseDate)}</b></>} chip={open ? dueWords(r.promiseDate) : r.status === 'FULFILLED' ? 'kept' : r.status === 'BROKEN' ? 'broken' : 'cancelled'}>
       {/* how much of it has come, as a bar */}
-      <div style={{ height: 6, borderRadius: 4, background: 'rgba(0,0,0,.08)', margin: '10px 0 8px', overflow: 'hidden' }}><div style={{ width: pct + '%', height: '100%', background: 'var(--grn)', borderRadius: 4 }} /></div>
+      <div className="att-bar" style={{ '--tone': 'var(--grn)', height: 6, margin: '10px 0 8px' }}><div style={{ width: pct + '%' }} /></div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
         <div><div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--t3)' }}>Received</div><div style={{ fontSize: 16, fontWeight: 800, color: (r.received || 0) > 0 ? 'var(--grn)' : 'var(--t3)' }}>{money(r.received || 0)}</div></div>
         <div><div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--t3)' }}>Still due</div><div style={{ fontSize: 16, fontWeight: 800, color: left > 0 ? 'var(--red)' : 'var(--grn)' }}>{money(left)}</div></div>

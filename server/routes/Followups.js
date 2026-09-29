@@ -10,6 +10,8 @@ import OutstandingFollowup from '../models/Outstandingfollowup.js';
 const router = express.Router();
 
 // Staff = admin OR superadmin (both see all follow-ups)
+// a dealer name matched the way the old in-memory filter did: case- and edge-space-insensitive
+const nameRx = n => new RegExp('^\\s*' + String(n || '').trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*$', 'i');
 const isStaff = (req) => req.user?.role === 'admin' || req.user?.role === 'superadmin' || req.user?.role === 'employee';
 
 router.get('/', protect, async (req,res) => {
@@ -32,10 +34,8 @@ router.get('/', protect, async (req,res) => {
     // permission branches so no territory grant can alter it. See dealers.js.
     if (req.user?.role === 'salesman') {
       const own = await Dealer.find({ salesman: req.user.id }, 'name').lean();
-      const names = new Set(own.map(d => (d.name || '').toLowerCase().trim()));
-      const mine = (await OutstandingFollowup.find({}).sort({createdAt:-1}).lean())
-        .filter(f => names.has((f.dealerName||'').toLowerCase().trim()));
-      return res.json(mine);
+      // filtered in the database, not after loading every follow-up in the company
+      return res.json(await OutstandingFollowup.find({ dealerName: { $in: own.map(d => nameRx(d.name)) } }).sort({createdAt:-1}).lean());
     }
     if (hasStates || hasCities || hasZones || hasSalesmen) {
       const escape = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -58,11 +58,7 @@ router.get('/', protect, async (req,res) => {
       allowedNames = new Set(myDealers.map(d => (d.name || '').toLowerCase().trim()));
     }
 
-    const all = await OutstandingFollowup.find({}).sort({createdAt:-1});
-    const filtered = all.filter(f =>
-      allowedNames.has((f.dealerName || '').toLowerCase().trim())
-    );
-    res.json(filtered);
+    res.json(await OutstandingFollowup.find({ dealerName: { $in: [...allowedNames].map(nameRx) } }).sort({createdAt:-1}).lean());
   }catch(e){console.error('[FOLLOWUPS]',e.message); res.status(500).json({error:e.message});}
 });
 
@@ -102,7 +98,12 @@ router.put('/:id', protect, async (req,res) => {
     // patch (and the 'done' flip that implies payment) rather than failing,
     // so their comment/date edits still go through.
     if(!isStaff(req)){
-      ['collectedAmount','creditedManual','creditedFromUpload','credits','settledAt','collectedAt'].forEach(k=>delete patch[k]);
+      // a salesman changes only his own follow-ups, and never an accounts receipt
+      const own = await OutstandingFollowup.findById(req.params.id, 'createdBy salesman type').lean();
+      if(!own) return res.status(404).json({ error:'Not found' });
+      if(own.type === 'collection' || (own.createdBy !== req.user.id && own.salesman !== req.user.id))
+        return res.status(403).json({ error:'You can change only your own follow-ups' });
+      ['collectedAmount','creditedManual','creditedFromUpload','credits','settledAt','collectedAt','dealerName','salesman','type','createdBy'].forEach(k=>delete patch[k]);
       if(patch.status === 'done') delete patch.status;
     }
     // Stamp collectedAt when status flips to 'done'
@@ -191,7 +192,15 @@ router.get('/commitments', protect, async (req,res) => {
 });
 
 router.delete('/:id', protect, async (req,res) => {
-  try { await OutstandingFollowup.findByIdAndDelete(req.params.id); res.json({ok:true}); }
+  try {
+    if(!isStaff(req)){
+      const own = await OutstandingFollowup.findById(req.params.id, 'createdBy salesman type').lean();
+      if(!own) return res.json({ ok:true });
+      if(own.type === 'collection' || (own.createdBy !== req.user.id && own.salesman !== req.user.id))
+        return res.status(403).json({ error:'You can delete only your own follow-ups' });
+    }
+    await OutstandingFollowup.findByIdAndDelete(req.params.id); res.json({ok:true});
+  }
   catch(e){res.status(500).json({error:e.message});}
 });
 

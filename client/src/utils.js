@@ -1104,7 +1104,7 @@ import { MO, CURRENT_MONTH_IDX } from './constants';
 
 export const pct   = (t,a) => (!t?(a>0?null:0):Math.round((a/t)*100));
 export const spct  = (t,a) => { const p=pct(t,a); return p===null?'N/T':p+'%'; };
-export const pclr  = (p)   => (p===null||p===undefined)?'#6b7280':p>=100?'#34d399':p>=60?'#fbbf24':'#f87171';
+export const pclr  = (p)   => (p===null||p===undefined)?'#6b7280':p>=100?'#10b981':p>=60?'#f59e0b':'#ef4444';
 export const fcash = (v)   => v?'₹'+Number(v).toLocaleString('en-IN'):'—';
 
 // ── Per-month target resolver ──────────────────────────────────────────────

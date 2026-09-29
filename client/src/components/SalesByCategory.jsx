@@ -1,9 +1,12 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Calendar, BarChart3, Users, User, Download, TrendingUp, RefreshCw, Trash2 } from 'lucide-react';
+
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Calendar, BarChart3, Users, User, Download, TrendingUp, RefreshCw, Trash2, ChevronRight } from 'lucide-react';
 import { api } from '../api';
 import { notify, confirmDialog } from './Toast';
 import CategoryFilter from './CategoryFilter';
+import { PageHead } from '../collections/ui';
 import { useGlobalCategoryFilter } from '../hooks/useGlobalCategoryFilter';
+import { useT } from '../i18n';
 
 /**
  * SalesByCategory — three views over uploaded category-wise sales:
@@ -21,6 +24,10 @@ const fmt = n => (n == null ? '—' : Number(n).toLocaleString('en-IN'));
 // scoped server-side, so a salesman opening Overview sees only their own row.
 const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[], onOpenDealer, onlyMtd=false } = {}) => {
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
+  const { t: tr } = useT();
+  // MTD summary on Home opens as salesman cards; the table (where targets are typed) is one tap away
+  const [mtdView, setMtdView] = useState(onlyMtd ? 'summary' : 'table');
+  const mtdOpenState = useState(null);   // which salesman's category split is open
 
   // Build a name → dealerId index so clicking a dealer row in the pivot opens
   // their modal at the Categories tab.
@@ -31,6 +38,17 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
     }
     return m;
   }, [dealers]);
+  // Display-only: name → "zone · city" for the secondary line under dealer names.
+  const dealerPlaceByName = useMemo(() => {
+    const m = new Map();
+    for (const d of (dealers || [])) {
+      if (d?.name) m.set(String(d.name).toLowerCase().trim(), [d.zone, d.city].filter(Boolean).join(' · '));
+    }
+    return m;
+  }, [dealers]);
+  const ini = (name) => (
+    <span className="ini" style={{'--h':(String(name||'?')).charCodeAt(0)*37%360}}>{String(name||'?').replace(/[^A-Za-z0-9]/g,'').slice(0,2).toUpperCase()}</span>
+  );
   const openDealerByName = (name) => {
     if (!onOpenDealer) return;
     const id = dealerIdByName.get(String(name).toLowerCase().trim());
@@ -59,8 +77,11 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
   }, []);
 
   // Reload all three aggregates whenever month changes
+  // Sequence number so an older month's reply cannot overwrite a newer one.
+  const loadSeq = useRef(0);
   const load = async () => {
     if (!month) return;
+    const seq = ++loadSeq.current;
     setLoading(true);
     try {
       const [a, b, c] = await Promise.all([
@@ -68,9 +89,10 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
         api.salesByDealer({ month }),
         api.salesBySalesman({ month }),
       ]);
+      if (seq !== loadSeq.current) return;
       setByCat(a); setByDealer(b); setBySalesman(c);
-    } catch(e) { notify.error(e.message); }
-    setLoading(false);
+    } catch(e) { if (seq === loadSeq.current) notify.error(e.message); }
+    if (seq === loadSeq.current) setLoading(false);
   };
   useEffect(() => { load(); }, [month]);
 
@@ -110,9 +132,18 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
       const r0 = await api.deleteDealersBySource('cat-upload', false).catch(e => ({ deleted:0, migrated:0, _err:e.message }));
       const r3 = await api.dedupeDealers(false).catch(e => ({ duplicatesRemoved:0, _err:e.message }));
       const r4 = await api.cleanupSuffixDupes(false).catch(e => ({ deleted:0, migrated:0, _err:e.message }));
-      notify.success(
-        `Reset ${month}: ${r0.deleted||0} bad-upload dealers · ${r1.deleted||0} sale rows · ${r2.dealersTouched||0} dealer-months · ${(r3.duplicatesRemoved ?? r3.removed) || 0} exact dupes · ${r4.deleted || 0} suffix dupes.`
-      );
+      // Each step swallows its error into `_err`; report failures instead of success.
+      const failedSteps = [
+        ['sale rows', r1], ['dealer-months', r2], ['bad-upload dealers', r0],
+        ['exact dupes', r3], ['suffix dupes', r4],
+      ].filter(([, r]) => r?._err).map(([label, r]) => `${label}: ${r._err}`);
+      if (failedSteps.length) {
+        notify.error(`Reset ${month} incomplete — ${failedSteps.length} step${failedSteps.length === 1 ? '' : 's'} failed: ${failedSteps.join('; ')}`);
+      } else {
+        notify.success(
+          `Reset ${month}: ${r0.deleted||0} bad-upload dealers · ${r1.deleted||0} sale rows · ${r2.dealersTouched||0} dealer-months · ${(r3.duplicatesRemoved ?? r3.removed) || 0} exact dupes · ${r4.deleted || 0} suffix dupes.`
+        );
+      }
       const ms = await api.salesMonths().catch(()=>[]);
       setMonths(ms);
       if (!ms.includes(month)) {
@@ -472,17 +503,14 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
 
   const fmtL = n => !n ? '—' : Number(n).toLocaleString('en-IN');
   const fmtL2 = n => !n ? '—' : (n / 100000).toFixed(2) + ' L';      // ₹ in Lakhs
-  const pctColor = p => p == null ? 'var(--t3)' : (p >= 80 ? '#34d399' : p >= 50 ? '#fbbf24' : '#f87171');
+  const pctColor = p => p == null ? 'var(--t3)' : (p >= 80 ? '#10b981' : p >= 50 ? '#f59e0b' : '#ef4444');
 
   // CSV export helpers
   const downloadCSV = (filename, headers, rows) => {
     const esc = v => `"${String(v ?? '').replace(/"/g,'""')}"`;
     const csv = '﻿' + [headers, ...rows].map(r => r.map(esc).join(',')).join('\n');
-    const blob = new Blob([csv], { type:'text/csv;charset=utf-8' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(()=>URL.revokeObjectURL(url), 4000);
+    // works in the browser and inside the Android app
+    import('../lib/saveFile').then(m => m.saveText(csv, filename, 'text/csv;charset=utf-8'));
   };
 
   const exportOverall = () => {
@@ -522,15 +550,11 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
   // ── MTD Sales Summary — Region × Salesman × Category ─────────────────
   const mtdCard = (
         <div className="card mtd-card" style={{padding:0, marginTop:14, overflow:'hidden'}}>
-          <div style={{padding:'12px 16px', borderBottom:'1px solid var(--b2)',
-            background:'var(--bg2)',
-            display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
-            <BarChart3 size={14} color="var(--acc)"/>
-            <div style={{fontSize:13, fontWeight:700}}>MTD Sales Summary — {month || '—'}</div>
-            <div style={{fontSize:11, color:'var(--t3)'}}>
-              · Region / Salesman × Category · Outstanding from Outstanding section
-              {isAdmin && <span style={{color:'var(--acc)'}}> · type a LAMINATE target and the rest fill in: Liner 100%, Louvres 30%, Polymer 10%, Rolls 20</span>}
-            </div>
+          <div className="sec-title" style={{padding:'12px 16px', borderBottom:'1px solid var(--b2)',
+            background:'var(--bg2)', marginBottom:0}}>
+            <span className="sec-ico" style={{'--tone':'var(--grn)'}}><BarChart3 size={15}/></span>
+            <div>MTD Sales Summary — {month || '—'}</div>
+            <div className="sec-note">Region / Salesman × Category</div>
           </div>
           <div style={{overflowX:'auto', maxHeight:'70vh'}}>
             <table className="mtd-table">
@@ -582,7 +606,12 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                             {region}
                           </td>
                         )}
-                        <td style={{fontWeight:600}}>{r.smName}</td>
+                        <td style={{fontWeight:600}}>
+                          <div style={{display:'flex',alignItems:'center',gap:9,minWidth:0}}>
+                            {ini(r.smName)}
+                            <div style={{minWidth:0}}><div style={{fontWeight:700,color:'var(--t1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.smName}</div><div style={{fontSize:10.5,color:'var(--t3)',fontWeight:500}}>{region}</div></div>
+                          </div>
+                        </td>
                         {/* Per-category cells: Target | Ach SIDE-BY-SIDE.
                             Target is editable inline for admins; saved to /api/sales/targets on blur. */}
                         {mtdCategories.map((c, ci) => {
@@ -639,6 +668,7 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                               </span>
                             )}
                           </div>
+                          {r.target > 0 && <div className="pbar"><div style={{width:Math.min(Math.round((r.totalAch / r.target) * 100),100)+'%',background:achTone(r.totalAch, r.target).color}}/></div>}
                         </td>
                       </tr>
                     ))}
@@ -653,12 +683,12 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                         return (
                           <React.Fragment key={'srt-'+region+c}>
                             <td style={{textAlign:'right', fontWeight:700, color: t?'var(--acc)':'var(--t3)', borderLeft:'1px solid var(--b1)'}}>{t?fmtL(t):'—'}</td>
-                            <td style={{textAlign:'right', fontWeight:700, color: a?'#34d399':'var(--t3)'}}>{a?fmtL(a):'—'}</td>
+                            <td style={{textAlign:'right', fontWeight:700, color: a?'var(--grn)':'var(--t3)'}}>{a?fmtL(a):'—'}</td>
                           </React.Fragment>
                         );
                       })}
-                      <td style={{textAlign:'right', fontWeight:800, color:'var(--acc)', borderLeft:'1px solid var(--b1)', background:'rgba(99,102,241,.06)'}}>{fmtL(subtotal.target)}</td>
-                      <td style={{textAlign:'right', fontWeight:800, color:'var(--grn)', background:'rgba(52,211,153,.06)'}}>{fmtL(subtotal.totalAch)}</td>
+                      <td style={{textAlign:'right', fontWeight:800, color:'var(--acc)', borderLeft:'1px solid var(--b1)', background:'color-mix(in srgb, var(--acc) 6%, transparent)'}}>{fmtL(subtotal.target)}</td>
+                      <td style={{textAlign:'right', fontWeight:800, color:'var(--grn)', background:'color-mix(in srgb, var(--grn) 6%, transparent)'}}>{fmtL(subtotal.totalAch)}</td>
                     </tr>
                   </React.Fragment>
                 ))}
@@ -675,12 +705,12 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                       return (
                         <React.Fragment key={'gt-'+c}>
                           <td style={{textAlign:'right', fontWeight:800, color: t?'var(--acc)':'var(--t3)', borderLeft:'1px solid var(--b1)'}}>{t?fmtL(t):'—'}</td>
-                          <td style={{textAlign:'right', fontWeight:800, color: a?'#34d399':'var(--t3)'}}>{a?fmtL(a):'—'}</td>
+                          <td style={{textAlign:'right', fontWeight:800, color: a?'var(--grn)':'var(--t3)'}}>{a?fmtL(a):'—'}</td>
                         </React.Fragment>
                       );
                     })}
-                    <td style={{textAlign:'right', fontWeight:800, color:'var(--acc)', borderLeft:'1px solid var(--b1)', background:'rgba(99,102,241,.12)'}}>{fmtL(mtdGrand.target)}</td>
-                    <td style={{textAlign:'right', fontWeight:800, color:'var(--grn)', background:'rgba(52,211,153,.12)'}}>{fmtL(mtdGrand.totalAch)}</td>
+                    <td style={{textAlign:'right', fontWeight:800, color:'var(--acc)', borderLeft:'1px solid var(--b1)', background:'color-mix(in srgb, var(--acc) 12%, transparent)'}}>{fmtL(mtdGrand.target)}</td>
+                    <td style={{textAlign:'right', fontWeight:800, color:'var(--grn)', background:'color-mix(in srgb, var(--grn) 12%, transparent)'}}>{fmtL(mtdGrand.totalAch)}</td>
                   </tr>
                 </tfoot>
               )}
@@ -691,27 +721,176 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
               </div>
             )}
           </div>
+          {isAdmin && <div className="mtd-tip">Tip: type a LAMINATE target and the rest fill in — Liner 100%, Louvres 30%, Polymer 10%, Rolls 20.</div>}
         </div>
+  );
+
+  // ── Card view of the same numbers: one card per salesman, grouped by region ──
+  const MTD_CLR = ['#3b82f6','#10b981','#f59e0b','#8b5cf6','#06b6d4','#ec4899','#ef4444','#64748b','#14b8a6','#f97316'];
+  const pctOf = (a, t) => t > 0 ? Math.round(a / t * 100) : null;
+  const mtdRowsAll = mtdByRegion.flatMap(g => g.rows);
+  const mtdHit  = mtdRowsAll.filter(r => r.target > 0 && r.totalAch >= r.target).length;
+  const mtdLow  = mtdRowsAll.filter(r => r.target > 0 && r.totalAch < r.target * 0.5).length;
+  const mtdBest = [...mtdRowsAll].filter(r => r.target > 0).sort((a, b) => b.totalAch / b.target - a.totalAch / a.target)[0];
+  const grandTone = achTone(mtdGrand.totalAch, mtdGrand.target).color;
+  const mtdStrip = (
+    <div className="mtd-kpis">
+      <div className="mtd-kpi" style={{'--tone':'#3b82f6'}}><span>Target</span><b>{fmtL(mtdGrand.target)}</b></div>
+      <div className="mtd-kpi" style={{'--tone':'#10b981'}}><span>Achieved</span><b>{fmtL(mtdGrand.totalAch)}</b></div>
+      <div className="mtd-kpi" style={{'--tone':grandTone}}><span>Achievement</span><b>{mtdGrand.achievementPct ?? '—'}{mtdGrand.achievementPct != null ? '%' : ''}</b>
+        {mtdGrand.target > 0 && <div className="pbar"><div style={{width:Math.min(mtdGrand.achievementPct||0,100)+'%',background:grandTone}}/></div>}</div>
+      <div className="mtd-kpi" style={{'--tone':'#16a34a'}}><span>Hit target</span><b>{mtdHit}<small> / {mtdRowsAll.length}</small></b></div>
+      <div className="mtd-kpi" style={{'--tone':'#dc2626'}}><span>Below 50%</span><b>{mtdLow}</b></div>
+      {mtdBest && <div className="mtd-kpi" style={{'--tone':'#f59e0b'}}><span>Leading</span><b className="nm">{mtdBest.smName}</b><small>{pctOf(mtdBest.totalAch, mtdBest.target)}% of target</small></div>}
+    </div>
+  );
+  // Summary table: kept deliberately plain — target, achieved and one % per
+  // salesman, grouped by region. Tap a salesman to see the category split.
+  const [openSm, setOpenSm] = mtdOpenState;
+  const pctPill = (a, t) => {
+    const p = pctOf(a, t);
+    if (p === null) return <span className="mt3-pct none">—</span>;
+    return <span className="mt3-pct" style={{'--tone':achTone(a, t).color}}>{p}%</span>;
+  };
+  const bar = (a, t) => t > 0 ? <div className="mt3-bar"><div style={{width:Math.min(pctOf(a, t), 100) + '%', background:achTone(a, t).color}}/></div> : null;
+  const mtdTable = (
+    <div className="mt3-wrap">
+      <table className="mt3">
+        <thead>
+          <tr><th className="l">Salesman</th><th>Target</th><th>Achieved</th><th className="w">Achievement</th></tr>
+        </thead>
+        <tbody>
+          {mtdByRegion.map(({ region, rows, subtotal }) => {
+            const ordered = [...rows].sort((a, b) => (pctOf(b.totalAch, b.target) ?? -1) - (pctOf(a.totalAch, a.target) ?? -1) || b.totalAch - a.totalAch);
+            return (
+              <React.Fragment key={region}>
+                <tr className="mt3-region">
+                  <td className="l">{region} <span>· {rows.length}</span></td>
+                  <td>{fmtL(subtotal.target)}</td>
+                  <td>{fmtL(subtotal.totalAch)}</td>
+                  <td className="w"><div className="mt3-ach">{pctPill(subtotal.totalAch, subtotal.target)}{bar(subtotal.totalAch, subtotal.target)}</div></td>
+                </tr>
+                {ordered.map(r => {
+                  const open = openSm === r.smId;
+                  const cats = mtdCategories.map(c => ({ c, t: r.perCatTarget?.[c] || 0, a: r.perCategory[c] || 0 })).filter(x => x.t || x.a);
+                  return (
+                    <React.Fragment key={r.smId}>
+                      <tr className={'mt3-row' + (open ? ' open' : '')} onClick={() => setOpenSm(open ? null : r.smId)} title="Tap to see the category split">
+                        <td className="l">
+                          <div className="mt3-who">{ini(r.smName)}<span className="mt3-name">{r.smName}</span><ChevronRight size={14} className="mt3-chev"/></div>
+                        </td>
+                        <td>{r.target ? fmtL(r.target) : <span className="mt3-muted">—</span>}</td>
+                        <td className="b">{fmtL(r.totalAch)}</td>
+                        <td className="w"><div className="mt3-ach">{pctPill(r.totalAch, r.target)}{bar(r.totalAch, r.target)}</div></td>
+                      </tr>
+                      {open && (
+                        <tr className="mt3-detail"><td colSpan={4}>
+                          {cats.length === 0 ? <span className="mt3-muted">No category sales or targets yet.</span> : (
+                            <div className="mt3-cats">
+                              {cats.map(x => (
+                                <div key={x.c} className="mt3-cat">
+                                  <span className="mt3-cat-n">{x.c}</span>
+                                  <span className="mt3-cat-v"><b>{x.a.toLocaleString('en-IN')}</b>{x.t ? <> / {x.t.toLocaleString('en-IN')}</> : ''}</span>
+                                  {x.t ? pctPill(x.a, x.t) : <span className="mt3-pct none">no target</span>}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </td></tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </React.Fragment>
+            );
+          })}
+        </tbody>
+        {mtdRowsAll.length > 0 && (
+          <tfoot>
+            <tr className="mt3-grand">
+              <td className="l">Total</td>
+              <td>{fmtL(mtdGrand.target)}</td>
+              <td>{fmtL(mtdGrand.totalAch)}</td>
+              <td className="w"><div className="mt3-ach">{pctPill(mtdGrand.totalAch, mtdGrand.target)}{bar(mtdGrand.totalAch, mtdGrand.target)}</div></td>
+            </tr>
+          </tfoot>
+        )}
+      </table>
+      {mtdRowsAll.length === 0 && <div className="mtd-none" style={{padding:24,textAlign:'center'}}>No salesman data yet for {month}.</div>}
+    </div>
+  );
+  const mtdCards = (
+    <div className="mtd-groups">
+      {mtdByRegion.map(({ region, rows, subtotal }) => {
+        const sp = pctOf(subtotal.totalAch, subtotal.target);
+        return (
+          <div key={region} className="mtd-group">
+            <div className="mtd-ghead">
+              <b>{region}</b><span className="count-pill">{rows.length}</span>
+              <span style={{flex:1}}/>
+              <span className="mtd-gfig"><b>{fmtL(subtotal.totalAch)}</b> / {fmtL(subtotal.target)}</span>
+              {sp !== null && <span className="mtd-gpct" style={{'--tone':achTone(subtotal.totalAch, subtotal.target).color}}>{sp}%</span>}
+            </div>
+            <div className="mtd-cards">
+              {rows.map(r => {
+                const p = pctOf(r.totalAch, r.target);
+                const tone = achTone(r.totalAch, r.target).color;
+                const cats = mtdCategories.map((c, i) => ({ c, i, t: r.perCatTarget?.[c] || 0, a: r.perCategory[c] || 0 })).filter(x => x.t || x.a);
+                return (
+                  <div key={r.smId} className="mtd-sm" style={{'--tone':tone}}>
+                    <div className="mtd-sm-top">
+                      {ini(r.smName)}
+                      <div className="mtd-sm-nm"><b>{r.smName}</b><small>{region}</small></div>
+                      <div className="mtd-sm-pct"><b>{p === null ? '—' : p + '%'}</b><small>{p === null ? 'no target' : 'achieved'}</small></div>
+                    </div>
+                    <div className="mtd-sm-fig"><b>{fmtL(r.totalAch)}</b><span>{r.target ? `of ${fmtL(r.target)} target` : 'no target set'}</span></div>
+                    {r.target > 0 && <div className="pbar"><div style={{width:Math.min(p,100)+'%',background:tone}}/></div>}
+                    <div className="mtd-sm-cats">
+                      {cats.length === 0 ? <div className="mtd-none">No sales or targets yet</div> : cats.map(x => {
+                        const cp = pctOf(x.a, x.t), ct = x.t ? achTone(x.a, x.t).color : MTD_CLR[x.i % MTD_CLR.length];
+                        return (
+                          <div key={x.c} className="mtd-cat" title={`${x.c}: ${x.a.toLocaleString('en-IN')} sold${x.t ? ` of ${x.t.toLocaleString('en-IN')} target (${cp}%)` : ' · no target'}`}>
+                            <span className="mtd-cat-dot" style={{background:MTD_CLR[x.i % MTD_CLR.length]}}/>
+                            <span className="mtd-cat-nm">{x.c}</span>
+                            <span className="mtd-cat-v"><b style={{color:x.t ? ct : 'var(--t1)'}}>{x.a ? x.a.toLocaleString('en-IN') : '0'}</b>{x.t ? <small>/{x.t.toLocaleString('en-IN')}</small> : null}</span>
+                            <div className="mtd-cat-bar"><div style={{width:(x.t ? Math.min(cp, 100) : 100) + '%', background:ct, opacity:x.t ? 1 : .3}}/></div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+      {mtdRowsAll.length === 0 && <div className="mtd-none" style={{padding:24,textAlign:'center'}}>No salesman data yet for {month}.</div>}
+    </div>
   );
 
   // Embedded: month picker + the summary table, nothing else.
   if (onlyMtd) {
     return (
-      <div className="fade" style={{display:'grid', gap:10}}>
-        <div style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
-          <BarChart3 size={15} color="var(--acc)"/>
-          <div style={{fontSize:14, fontWeight:700}}>MTD Sales Summary</div>
-          <div className="spacer"/>
-          <Calendar size={13} color="var(--t3)"/>
-          <select value={month} onChange={e=>setMonth(e.target.value)} className="inp" style={{minWidth:130, fontSize:12}}>
+      <div className="card mtd-wrap fade">
+        <div className="mtd-head">
+          <span className="sec-ico" style={{'--tone':'var(--grn)'}}><BarChart3 size={15}/></span>
+          <div className="mtd-title"><b>{tr('MTD Sales Summary')}</b><small>target vs achieved, salesman by salesman</small></div>
+          <span style={{flex:1}}/>
+          <div className="seg">
+            <button className={'seg-b'+(mtdView==='summary'?' on':'')} style={{'--tone':'var(--acc)'}} onClick={()=>setMtdView('summary')}>Summary</button>
+            {isAdmin && <button className={'seg-b'+(mtdView==='table'?' on':'')} style={{'--tone':'var(--acc)'}} onClick={()=>setMtdView('table')}>Edit targets</button>}
+          </div>
+          <select value={month} onChange={e=>setMonth(e.target.value)} className="inp mtd-month">
             {months.length === 0 && <option value="">(no data yet)</option>}
             {months.map(m => <option key={m} value={m}>{m}</option>)}
           </select>
-          <button className="btn" onClick={load} disabled={loading} style={{padding:'6px 9px'}}>
+          <button className="btn" onClick={load} disabled={loading} style={{padding:'6px 9px'}} title="Reload">
             <RefreshCw size={13} className={loading?'spin':''}/>
           </button>
         </div>
-        {mtdCard}
+        {mtdStrip}
+        {mtdView === 'table' && isAdmin ? mtdCard : mtdTable}
       </div>
     );
   }
@@ -720,15 +899,7 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
     <div className="fade" style={{display:'grid',gap:14}}>
 
       {/* ── Header bar ─────────────────────────────────────────── */}
-      <div className="row">
-        <div style={{display:'flex',alignItems:'center',gap:8}}>
-          <BarChart3 size={18} color="var(--acc)"/>
-          <div>
-            <div style={{fontSize:18,fontWeight:700}}>Category-wise Sales</div>
-            <div style={{fontSize:12,color:'var(--t3)'}}>Overall · Dealer-wise · Salesman-wise</div>
-          </div>
-        </div>
-        <div className="spacer"/>
+      <PageHead icon={BarChart3} tone="var(--acc)" eyebrow={null} title="Category-wise Sales" sub="Overall · Dealer-wise · Salesman-wise" right={<>
         <div style={{display:'flex',alignItems:'center',gap:6}}>
           <Calendar size={14} color="var(--t3)"/>
           <select value={month} onChange={e=>setMonth(e.target.value)} className="inp" style={{minWidth:140}}>
@@ -764,15 +935,15 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
             onClick={handleDeleteMonth}
             title={`Delete all category sales for ${month} from DB`}
             style={{
-              color:'#fca5a5',
-              border:'1px solid rgba(248,113,113,0.4)',
-              background:'rgba(248,113,113,0.08)',
+              color:'var(--red)',
+              border:'1px solid color-mix(in srgb, var(--red) 40%, transparent)',
+              background:'color-mix(in srgb, var(--red) 8%, transparent)',
               display:'inline-flex', alignItems:'center', gap:5,
             }}>
             <Trash2 size={12}/> Delete {month}
           </button>
         )}
-      </div>
+      </>}/>
 
       {/* ── Total Sale KPI bar ─────────────────────────────────── */}
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:10}}>
@@ -829,13 +1000,13 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
               {overallByCategory.map(g => {
                 const pct = filteredGrandTotal ? (g.total / filteredGrandTotal * 100) : 0;
                 return (
-                  <div key={g.category} className="card" style={{padding:14}}>
-                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
-                      <div style={{fontSize:13,fontWeight:700,flex:1}}>{g.category}</div>
-                      <div style={{fontSize:18,fontWeight:800,color:'var(--grn)'}}>{fmt(g.total)}</div>
+                  <div key={g.category} className="att-card" style={{'--tone':'var(--grn)',padding:'14px 16px 14px 18px',cursor:'default'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                      <div style={{fontSize:13,fontWeight:700,flex:1,color:'var(--t1)'}}>{g.category}</div>
+                      <div style={{fontSize:20,fontWeight:850,color:'var(--grn)',letterSpacing:'-.02em'}}>{fmt(g.total)}</div>
                     </div>
-                    <div style={{height:6,background:'var(--bg1)',borderRadius:3,overflow:'hidden',marginBottom:8}}>
-                      <div style={{width:`${pct.toFixed(1)}%`,height:'100%',background:'linear-gradient(90deg,#6366f1,#34d399)'}}/>
+                    <div className="att-bar" style={{height:6,marginBottom:8}}>
+                      <div style={{width:`${pct.toFixed(1)}%`,background:'linear-gradient(90deg,var(--acc),var(--grn))'}}/>
                     </div>
                     <div style={{fontSize:11,color:'var(--t3)',marginBottom:6}}>
                       {pct.toFixed(1)}% of total
@@ -843,8 +1014,8 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                     <div style={{display:'flex',flexWrap:'wrap',gap:4}}>
                       {g.subs.sort((a,b)=>b.qty-a.qty).map(s => (
                         <span key={s.subCategory} style={{
-                          fontSize:11,padding:'2px 8px',borderRadius:6,
-                          background:'var(--bg1)',border:'1px solid var(--b1)',
+                          fontSize:11,padding:'2px 9px',borderRadius:20,
+                          background:'var(--bg2)',border:'1px solid var(--b1)',color:'var(--t2)',
                         }}>
                           {s.subCategory}: <b>{fmt(s.qty)}</b>
                         </span>
@@ -878,7 +1049,7 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                 <tr>
                   <th style={{position:'sticky',left:0,background:'var(--bg2)',zIndex:2}}>Dealer</th>
                   {categories.map(c => <th key={c} style={{textAlign:'right'}}>{c}</th>)}
-                  <th style={{textAlign:'right',background:'rgba(52,211,153,.08)'}}>Total</th>
+                  <th style={{textAlign:'right',background:'color-mix(in srgb, var(--grn) 8%, transparent)'}}>Total</th>
                 </tr>
               </thead>
               <tbody>
@@ -888,7 +1059,15 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                   <tr key={r.dealer} onClick={()=>clickable && openDealerByName(r.dealer)}
                       style={clickable ? { cursor:'pointer' } : undefined}
                       title={clickable ? 'Click to see this dealer\'s full category breakdown' : ''}>
-                    <td style={{position:'sticky',left:0,background:'var(--bg2)',fontWeight:600,color:clickable?'var(--acc)':undefined,textDecoration:clickable?'underline dotted':'none'}}>{r.dealer}</td>
+                    <td style={{position:'sticky',left:0,background:'var(--bg2)',fontWeight:600,maxWidth:260}}>
+                      <div style={{display:'flex',alignItems:'center',gap:9,minWidth:0}}>
+                        {ini(r.dealer)}
+                        <div style={{minWidth:0}}>
+                          <div style={{fontWeight:700,color:clickable?'var(--acc)':'var(--t1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.dealer}</div>
+                          {dealerPlaceByName.get(String(r.dealer).toLowerCase().trim()) && <div style={{fontSize:10.5,color:'var(--t3)',fontWeight:500}}>{dealerPlaceByName.get(String(r.dealer).toLowerCase().trim())}</div>}
+                        </div>
+                      </div>
+                    </td>
                     {categories.map(c => {
                       const v = Object.values(r.byCategory?.[c]||{}).reduce((s,v)=>s+v,0);
                       return <td key={c} style={{textAlign:'right',color:v?'var(--t2)':'var(--t3)'}}>{v? fmt(v) : '—'}</td>;
@@ -909,7 +1088,7 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                       const sum = filteredDealerRows.reduce((s,r) => s + Object.values(r.byCategory?.[c]||{}).reduce((a,v)=>a+v,0), 0);
                       return <td key={c} style={{textAlign:'right',fontWeight:700,background:'var(--bg1)'}}>{sum?fmt(sum):'—'}</td>;
                     })}
-                    <td style={{textAlign:'right',fontWeight:800,background:'rgba(52,211,153,.12)',color:'var(--grn)'}}>
+                    <td style={{textAlign:'right',fontWeight:800,background:'color-mix(in srgb, var(--grn) 12%, transparent)',color:'var(--grn)'}}>
                       {fmt(filteredDealerRows.reduce((s,r)=>s+r.total,0))}
                     </td>
                   </tr>
@@ -940,13 +1119,21 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                 <tr>
                   <th style={{position:'sticky',left:0,background:'var(--bg2)',zIndex:2}}>Salesman</th>
                   {categories.map(c => <th key={c} style={{textAlign:'right'}}>{c}</th>)}
-                  <th style={{textAlign:'right',background:'rgba(52,211,153,.08)'}}>Total</th>
+                  <th style={{textAlign:'right',background:'color-mix(in srgb, var(--grn) 8%, transparent)'}}>Total</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredSalesmanRows.map(r => (
                   <tr key={r.salesman}>
-                    <td style={{position:'sticky',left:0,background:'var(--bg2)',fontWeight:600}}>{r._displayName}</td>
+                    <td style={{position:'sticky',left:0,background:'var(--bg2)',fontWeight:600}}>
+                      <div style={{display:'flex',alignItems:'center',gap:9,minWidth:0}}>
+                        {ini(r._displayName)}
+                        <div style={{minWidth:0}}>
+                          <div style={{fontWeight:700,color:'var(--t1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r._displayName}</div>
+                          <div style={{fontSize:10.5,color:'var(--t3)',fontWeight:500}}>{Object.keys(r.byCategory||{}).length} categories</div>
+                        </div>
+                      </div>
+                    </td>
                     {categories.map(c => {
                       const v = Object.values(r.byCategory?.[c]||{}).reduce((s,v)=>s+v,0);
                       return <td key={c} style={{textAlign:'right',color:v?'var(--t2)':'var(--t3)'}}>{v? fmt(v) : '—'}</td>;
@@ -966,7 +1153,7 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
                       const sum = filteredSalesmanRows.reduce((s,r) => s + Object.values(r.byCategory?.[c]||{}).reduce((a,v)=>a+v,0), 0);
                       return <td key={c} style={{textAlign:'right',fontWeight:700,background:'var(--bg1)'}}>{sum?fmt(sum):'—'}</td>;
                     })}
-                    <td style={{textAlign:'right',fontWeight:800,background:'rgba(52,211,153,.12)',color:'var(--grn)'}}>
+                    <td style={{textAlign:'right',fontWeight:800,background:'color-mix(in srgb, var(--grn) 12%, transparent)',color:'var(--grn)'}}>
                       {fmt(filteredSalesmanRows.reduce((s,r)=>s+r.total,0))}
                     </td>
                   </tr>

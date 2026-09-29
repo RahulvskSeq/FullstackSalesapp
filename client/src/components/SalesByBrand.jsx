@@ -67,21 +67,26 @@ export default function SalesByBrand({ monthLabel, salesman }) {
     const p = { month };
     if (salesman) p.salesman = salesman;
     if (cats.length) p.category = cats.join(',');
+    // An older reply (previous month/salesman/category) must not overwrite a newer one.
+    let dead = false;
     api.salesByBrand(p)
-      .then(setData)
-      .catch(() => setData(null))
-      .finally(() => setLoading(false));
+      .then(r => { if (!dead) setData(r); })
+      .catch(() => { if (!dead) setData(null); })
+      .finally(() => { if (!dead) setLoading(false); });
+    return () => { dead = true; };
   }, [month, salesman, cats, reloadKey]);
 
   useEffect(() => {
-    if (!expanded || !month) { setDetail(null); return; }
+    if (!expanded || !month) { setDetail(null); setDetailLoading(false); return; }
     setDetailLoading(true);
     const p = { month, brand: expanded };
     if (salesman) p.salesman = salesman;
+    let dead = false;
     api.salesBrandDetail(p)
-      .then(setDetail)
-      .catch(() => setDetail(null))
-      .finally(() => setDetailLoading(false));
+      .then(r => { if (!dead) setDetail(r); })
+      .catch(() => { if (!dead) setDetail(null); })
+      .finally(() => { if (!dead) setDetailLoading(false); });
+    return () => { dead = true; };
   }, [expanded, month, salesman]);
 
   useEffect(() => {
@@ -226,10 +231,11 @@ export default function SalesByBrand({ monthLabel, salesman }) {
         }
       `}</style>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-        <Tag size={15} style={{ color: 'var(--acc)' }} />
-        <b style={{ fontSize: 14 }}>Sales by Catalogue{monthLabel ? ` — ${monthLabel}` : ''}</b>
-        <span style={{ fontSize: 11.5, color: 'var(--t3)' }}>
+      <div className="sec-title">
+        <span className="sec-ico" style={{ '--tone': 'var(--pur)' }}><Tag size={15} /></span>
+        <span>Sales by Catalogue{monthLabel ? ` — ${monthLabel}` : ''}</span>
+        {allRows.length > 0 && <span className="count-pill">{allRows.length}</span>}
+        <span className="sec-note">
           the catalogue sold, straight from the ERP
         </span>
         {/* The header total is always the MONTH, never the subset on screen —
@@ -241,11 +247,11 @@ export default function SalesByBrand({ monthLabel, salesman }) {
               {selected.length} selected · {n(shownTotal)}
             </span>
           )}
-          <CatalogueFilter />
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-            <span style={{ fontSize: 11, color: 'var(--t3)' }}>Total</span>
-            <b style={{ fontSize: 15, fontVariantNumeric: 'tabular-nums' }}>{n(grandTotal)}</b>
-          </div>
+          {/* Called, not mounted as <CatalogueFilter/>: a component declared in
+              render is a new type each time, so the input remounted and lost
+              focus on every keystroke. */}
+          {CatalogueFilter()}
+          <span className="kpi-pill">Total <b style={{ fontVariantNumeric: 'tabular-nums' }}>{n(grandTotal)}</b></span>
         </div>
       </div>
 
@@ -289,11 +295,10 @@ export default function SalesByBrand({ monthLabel, salesman }) {
               {/* What is picked stays visible with the list closed, so a
                   filtered view always says what it is filtered to. */}
               {selected.map(b => (
-                <button key={b} onClick={() => toggle(b)} title="Remove"
+                <button key={b} onClick={() => toggle(b)} title="Remove" className="thr on"
                   style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer',
-                    background: 'var(--acc)', border: '1px solid var(--acc)', color: '#fff',
-                    borderRadius: 6, padding: '3px 8px', fontSize: 11, fontWeight: 600, maxWidth: 200,
+                    '--tone': 'var(--acc)',
+                    display: 'inline-flex', alignItems: 'center', gap: 5, maxWidth: 200,
                   }}>
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b}</span>
                   <X size={11} style={{ opacity: .85, flexShrink: 0 }} />
@@ -315,24 +320,15 @@ export default function SalesByBrand({ monthLabel, salesman }) {
                   Category
                 </span>
                 <button onClick={() => { setCats([]); setSelected([]); }}
-                  style={{
-                    cursor:'pointer', borderRadius:5, padding:'3px 9px', fontSize:11,
-                    fontWeight: cats.length ? 400 : 600,
-                    border:'1px solid ' + (cats.length ? 'var(--b2)' : 'var(--acc)'),
-                    background: cats.length ? 'var(--bg1)' : 'var(--acc)',
-                    color: cats.length ? 'var(--t2)' : '#fff',
-                  }}>All</button>
+                  className={'thr' + (cats.length ? '' : ' on')} style={{ '--tone': 'var(--acc)' }}>All</button>
                 {catList.map(c => {
                   const on = cats.includes(c.category);
                   return (
                     <button key={c.category} onClick={() => toggleCat(c.category)}
                       title={`${c.category} — ${n(c.qty)} units this month`}
+                      className={'thr' + (on ? ' on' : '')}
                       style={{
-                        cursor:'pointer', borderRadius:5, padding:'3px 9px', fontSize:11,
-                        fontWeight: on ? 600 : 400,
-                        border:'1px solid ' + (on ? 'var(--acc)' : 'var(--b2)'),
-                        background: on ? 'var(--acc)' : 'var(--bg1)',
-                        color: on ? '#fff' : 'var(--t2)',
+                        '--tone': 'var(--acc)',
                         display:'inline-flex', alignItems:'center', gap:6,
                       }}>
                       {c.category}
@@ -360,39 +356,32 @@ export default function SalesByBrand({ monthLabel, salesman }) {
               </div>
             )}
 
-            <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fill, minmax(215px, 1fr))' }}>
-              {shown.map(r => {
+            <div className="cl-grid">
+              {shown.map((r, idx) => {
                 const share = grandTotal ? (r.qty / grandTotal) * 100 : 0;
                 const open = expanded === r.brand;
                 return (
                   <div key={r.brand}
                     onClick={() => setModalBrand(r.brand)}
                     title="Open full details — products, dealers, salesmen, days"
+                    className={'cl-row' + (open ? ' open' : '')}
                     style={{
-                      padding: '9px 11px', borderRadius: 9, cursor: 'pointer',
-                      background: 'var(--bg2)',
-                      border: '1px solid ' + (open ? 'var(--acc)' : 'var(--b1)'),
-                      alignSelf: 'start',
+                      '--tone': r.kind === 'label' ? '#f59e0b' : r.kind === 'parent' ? '#64748b' : '#8b5cf6',
+                      '--share': `${Math.max(share, 1.5)}%`,
                     }}>
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                      {open ? <ChevronDown size={12} style={{ color: 'var(--acc)', flexShrink: 0 }} />
-                            : <ChevronRight size={12} style={{ color: 'var(--t3)', flexShrink: 0 }} />}
-                      <span style={{
-                        fontSize: 12.5, fontWeight: 600, flex: 1, minWidth: 0,
-                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                      }}>{r.brand}</span>
-                      {r.kind === 'parent' && <span className="chip" title="Parent family — no child listing in the master, so it is shown as itself" style={{ fontSize: 9, padding: '0 5px', color: 'var(--t3)' }}>family</span>}
-                      {r.kind === 'label' && <span className="chip" title="Dealer private label that could not be placed — use Map private labels" style={{ fontSize: 9, padding: '0 5px', color: '#b45309' }}>label</span>}
-                      <b style={{ fontSize: 14, fontVariantNumeric: 'tabular-nums' }}>{n(r.qty)}</b>
-                    </div>
-
-                    <div style={{ height: 3, background: 'var(--b1)', borderRadius: 2, margin: '7px 0 5px', overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${Math.max(share, 1.5)}%`, background: 'var(--acc)', borderRadius: 2 }} />
-                    </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: 'var(--t3)' }}>
-                      <span>{r.dealers} dealer{r.dealers === 1 ? '' : 's'}{r.fromLabels > 0 && <span title={`${n(r.fromLabels)} units came in under dealer private labels mapped to this catalogue`}> · {n(r.fromLabels)} via labels</span>}</span>
-                      <span>{share.toFixed(1)}% of total</span>
+                    <div className="cl-main">
+                      <span className={'rank rank-' + (idx + 1)}>{idx + 1}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
+                          <span className="cl-name">{r.brand}</span>
+                          {r.kind === 'parent' && <span className="chip" title="Parent family — no child listing in the master, so it is shown as itself" style={{ fontSize: 9, padding: '0 5px', color: 'var(--t3)' }}>family</span>}
+                          {r.kind === 'label' && <span className="chip" title="Dealer private label that could not be placed — use Map private labels" style={{ fontSize: 9, padding: '0 5px', color: '#b45309' }}>label</span>}
+                        </div>
+                        <div className="cl-sub">
+                          {r.dealers} dealer{r.dealers === 1 ? '' : 's'}{r.fromLabels > 0 && <span title={`${n(r.fromLabels)} units came in under dealer private labels mapped to this catalogue`}> · {n(r.fromLabels)} via labels</span>} · {share.toFixed(1)}%
+                        </div>
+                      </div>
+                      <b className="cl-qty">{n(r.qty)}</b>
                     </div>
 
                     {open && (
@@ -443,7 +432,8 @@ export default function SalesByBrand({ monthLabel, salesman }) {
                                       display: 'flex', alignItems: 'baseline', gap: 6, fontSize: 11.5,
                                       padding: '3px 0', borderBottom: '1px solid var(--b1)',
                                     }}>
-                                      <span style={{ flex: 1, minWidth: 0, color: 'var(--t1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                      <span className="ini" style={{ '--h': (dd.dealer || '?').charCodeAt(0) * 37 % 360, width: 22, height: 22, fontSize: 9.5, borderRadius: 7, alignSelf: 'center' }}>{(dd.dealer || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase()}</span>
+                                      <span style={{ flex: 1, minWidth: 0, color: 'var(--t1)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                                         title={dd.dealer}>{dd.dealer}</span>
                                       <span style={{ color: 'var(--t3)', fontSize: 10.5, whiteSpace: 'nowrap' }}>{dd.salesmanName}</span>
                                       <b style={{ fontVariantNumeric: 'tabular-nums', minWidth: 34, textAlign: 'right' }}>{n(dd.qty)}</b>

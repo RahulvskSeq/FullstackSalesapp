@@ -52,23 +52,26 @@ export default function MapView({dealers,selectedMonthIdx}){
 
   return(
     <div className="card" style={{marginBottom:16}}>
-      <div style={{fontSize:13,fontWeight:600,color:'var(--t2)',marginBottom:14,display:'flex',alignItems:'center',gap:6}}>
-        <MapPin size={14} color="#34d399"/> Sales Geography — {MO[selectedMonthIdx]}
+      <div className="sec-title">
+        <span className="sec-ico" style={{'--tone':'#0891b2'}}><MapPin size={15}/></span> Sales Geography — {MO[selectedMonthIdx]} {states.length>0&&<span className="count-pill">{states.length} states</span>}
       </div>
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(300px,1fr))',gap:14}}>
         {states.length>0&&(
           <div>
             <div style={{fontSize:11,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'.07em',marginBottom:10}}>By State</div>
-            {states.map(([name,v])=>{
+            {states.map(([name,v],i)=>{
               const pct2=Math.round((v.units/maxUnits)*100);
               const clr=`hsl(${240-(pct2*1.4)},70%,60%)`;
               return(
-                <div key={name} style={{marginBottom:8}}>
-                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}>
-                    <span style={{fontSize:12,color:'var(--t1)',fontWeight:500}}>{name}</span>
-                    <div style={{display:'flex',gap:10,fontSize:11,color:'var(--t3)'}}><span>{v.dealers} dealers</span><strong style={{color:'var(--t1)'}}>{v.units} units</strong></div>
+                <div key={name} style={{display:'flex',alignItems:'center',gap:10,marginBottom:9}}>
+                  <span className={'rank rank-'+(i+1)}>{i+1}</span>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}>
+                      <span style={{fontSize:12,color:'var(--t1)',fontWeight:600}}>{name}</span>
+                      <div style={{display:'flex',gap:10,fontSize:11,color:'var(--t3)'}}><span>{v.dealers} dealers</span><strong style={{color:'var(--t1)'}}>{v.units} units</strong></div>
+                    </div>
+                    <div style={{height:6,background:'var(--bg3)',borderRadius:4,overflow:'hidden'}}><div style={{height:'100%',width:pct2+'%',background:`linear-gradient(90deg, color-mix(in srgb, ${clr} 55%, transparent), ${clr})`,borderRadius:4,transition:'width .8s ease'}}/></div>
                   </div>
-                  <div style={{height:8,background:'var(--b1)',borderRadius:4,overflow:'hidden'}}><div style={{height:'100%',width:pct2+'%',background:clr,borderRadius:4,transition:'width .8s ease'}}/></div>
                 </div>
               );
             })}
@@ -79,11 +82,17 @@ export default function MapView({dealers,selectedMonthIdx}){
             <div style={{fontSize:11,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'.07em',marginBottom:10}}>By City (Top {Math.min(cityData.length,15)})</div>
             <ResponsiveContainer width="100%" height={Math.min(cityData.length*26+40,400)}>
               <BarChart data={cityData.slice(0,15)} layout="vertical" margin={{left:8,right:40,top:4,bottom:4}}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--b1)" horizontal={false}/>
-                <XAxis type="number" tick={{fill:'var(--t3)',fontSize:10}} stroke="var(--b2)"/>
-                <YAxis type="category" dataKey="name" tick={{fill:'var(--t2)',fontSize:11}} stroke="var(--b2)" width={100}/>
-                <Tooltip contentStyle={{background:'var(--bg2)',border:'1px solid var(--b2)',borderRadius:8}} formatter={(v,n,p)=>[`${v} units · ${p.payload.dealers} dealers`,n]}/>
-                <Bar dataKey="units" radius={[0,4,4,0]} fill="#34d399" label={{position:'right',fill:'var(--t2)',fontSize:11,fontWeight:600}}/>
+                <defs>
+                  <linearGradient id="mvCity" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stopColor="#10b981" stopOpacity={0.55}/>
+                    <stop offset="100%" stopColor="#10b981" stopOpacity={1}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid horizontal={false}/>
+                <XAxis type="number" tickLine={false} axisLine={false}/>
+                <YAxis type="category" dataKey="name" tickLine={false} axisLine={false} width={100}/>
+                <Tooltip formatter={(v,n,p)=>[`${v} units · ${p.payload.dealers} dealers`,n]}/>
+                <Bar dataKey="units" radius={[0,8,8,0]} maxBarSize={20} fill="url(#mvCity)" label={{position:'right',fill:'var(--t1)',fontSize:11,fontWeight:800}}/>
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -96,7 +105,7 @@ export default function MapView({dealers,selectedMonthIdx}){
             {states.map(([name,v])=>{
               const intensity=v.units/maxUnits;
               return(
-                <div key={name} style={{background:`rgba(99,102,241,${0.1+intensity*0.7})`,border:'1px solid rgba(99,102,241,0.3)',borderRadius:8,padding:'8px 12px',minWidth:100,textAlign:'center',cursor:'pointer'}} onClick={()=>{}}>
+                <div key={name} style={{background:`rgba(99,102,241,${0.1+intensity*0.7})`,border:'1px solid rgba(99,102,241,0.3)',borderRadius:12,padding:'9px 13px',minWidth:100,textAlign:'center',cursor:'pointer'}} onClick={()=>{}}>
                   <div style={{fontSize:11,color:'var(--t1)',fontWeight:600}}>{name}</div>
                   <div style={{fontSize:18,fontWeight:700,color:'var(--acc)'}}>{v.units}</div>
                   <div style={{fontSize:10,color:'var(--t3)'}}>{v.dealers} dealers</div>
@@ -111,7 +120,7 @@ export default function MapView({dealers,selectedMonthIdx}){
       {/* areaData.length > 0 && (
         <div style={{marginTop:16, borderTop:'1px solid var(--b1)', paddingTop:14}}>
           <div style={{fontSize:11, color:'var(--t3)', textTransform:'uppercase', letterSpacing:'.07em', marginBottom:10, display:'flex', alignItems:'center', gap:8}}>
-            <MapPin size={12} color="#818cf8"/> By Area (Pincode) — {areaData.length} PIN{areaData.length===1?'':'s'} with data
+            <MapPin size={12} color="#6366f1"/> By Area (Pincode) — {areaData.length} PIN{areaData.length===1?'':'s'} with data
             <span style={{color:'var(--t3)', textTransform:'none', fontWeight:400}}>· sorted by sales</span>
           </div>
           <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(220px, 1fr))', gap:8}}>
@@ -131,7 +140,7 @@ export default function MapView({dealers,selectedMonthIdx}){
                     <div style={{fontSize:10, color:'var(--t3)'}}>{a.dealers} dealer{a.dealers===1?'':'s'}</div>
                   </div>
                   <div style={{height:4, background:'var(--bg2)', borderRadius:2, overflow:'hidden'}}>
-                    <div style={{height:'100%', width:pctBar+'%', background:'linear-gradient(90deg,#818cf8,#34d399)', borderRadius:2, transition:'width .8s ease'}}/>
+                    <div style={{height:'100%', width:pctBar+'%', background:'linear-gradient(90deg,var(--acc),var(--grn))', borderRadius:2, transition:'width .8s ease'}}/>
                   </div>
                 </div>
               );

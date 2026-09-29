@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { DealerCtx, Tooltips } from './ui';
 import Dashboard from './Dashboard';
 import Today from './Today';
@@ -14,6 +14,7 @@ import Settings from './Settings';
 import Dealer360 from './Dealer360';
 import RecordModal from './RecordModal';
 import ApprovalsModal from './Approvals';
+import { PaymentForm, FollowupForm } from './forms';
 
 /**
  * Collections — the Outstanding + Collection CRM.
@@ -31,6 +32,14 @@ export default function Collections({ view, currentUser, users, hasFeature, navi
   const [pendingFor, setPendingFor] = useState(null); // dealerId whose pending entries to show
   const [bump, setBump] = useState(0);             // screens re-fetch after a modal action
   const [params, setParams] = useState({});
+  // a quick action from the + button: open that form here, over whichever screen is showing
+  const [quick, setQuick] = useState(null);
+  useEffect(() => {
+    const take = () => { try { const f = sessionStorage.getItem('stp_quick'); if (f) { sessionStorage.removeItem('stp_quick'); setQuick(f); } } catch {} };
+    take();
+    window.addEventListener('stp:quick', take);
+    return () => window.removeEventListener('stp:quick', take);
+  }, []);
   const go = useCallback((target, p) => { setParams(p || {}); navigate(target); }, [navigate]);
   const list = useMemo(() => Array.isArray(users) ? users : Object.values(users || {}), [users]);
   const ctx = useMemo(() => ({
@@ -39,10 +48,10 @@ export default function Collections({ view, currentUser, users, hasFeature, navi
     openPending: dealerId => setPendingFor(String(dealerId)),
     // an amber row is a pending entry: open that, otherwise the dealer
     openRow: r => (r?.pendingRecorded > 0 || r?.pendingApproval > 0) ? setPendingFor(String(r.dealerId)) : setDealerId(String(r.dealerId)),
-    users: list, currentUser,
+    users: list, currentUser, bump,
     isStaff: ['admin', 'superadmin', 'employee'].includes(currentUser?.role),
     features: { has: key => !!hasFeature?.(key) },
-  }), [list, currentUser, hasFeature]);
+  }), [list, currentUser, hasFeature, bump]);
   const p = params;
   return (
     <DealerCtx.Provider value={ctx}>
@@ -98,8 +107,10 @@ export default function Collections({ view, currentUser, users, hasFeature, navi
       {view === 'colReports' && <Reports />}
       {view === 'colEmployees' && <Employees />}
       {view === 'colSettings' && <Settings />}
-      {dealerId && <Dealer360 dealerId={dealerId} onClose={() => setDealerId(null)} />}
+      {dealerId && <Dealer360 dealerId={dealerId} onClose={() => { setDealerId(null); setBump(b => b + 1); }} />}
       {pendingFor && <ApprovalsModal dealerId={pendingFor} onClose={() => setPendingFor(null)} onChanged={() => setBump(b => b + 1)} />}
+      {quick === 'payment' && <PaymentForm onClose={() => setQuick(null)} onDone={() => setBump(b => b + 1)} />}
+      {quick === 'followup' && <FollowupForm onClose={() => setQuick(null)} onDone={() => setBump(b => b + 1)} />}
       {rec && <RecordModal kind={rec.kind} record={rec.record} onClose={() => setRec(null)} onChanged={() => { rec.onChanged?.(); setBump(b => b + 1); }} />}
     </DealerCtx.Provider>);
 }

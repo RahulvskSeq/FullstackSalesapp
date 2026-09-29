@@ -237,7 +237,7 @@ export default function LoginPage({users:propUsers,onLogin,theme,toggleTheme}){
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body: JSON.stringify({id:uid_, pass:pw}),
-        signal: AbortSignal.timeout(3000),
+        signal: AbortSignal.timeout(15000),
       }).then(r=>r.json());
 
       if(res?.token && res?.user){
@@ -247,7 +247,14 @@ export default function LoginPage({users:propUsers,onLogin,theme,toggleTheme}){
       }
       if(res?.error){ setErr(res.error); setLoading(false); return; }
     } catch(e) {
-      // Server not available — use local auth
+      // Server not available — use local auth, but only if a password is
+      // actually cached locally. The server never sends `pass`, so without
+      // one a correct password would be reported as wrong.
+      if(!users[uid_]?.pass){
+        setErr('Can\'t reach the server — check your connection and try again');
+        setLoading(false);
+        return;
+      }
     }
 
     // Local fallback (no server)
@@ -309,7 +316,7 @@ export default function LoginPage({users:propUsers,onLogin,theme,toggleTheme}){
         .lg-logo{
           width:38px; height:38px; border-radius:12px;
           display:flex; align-items:center; justify-content:center;
-          background:linear-gradient(135deg, #4f46e5, #6366f1 55%, #38bdf8);
+          background:linear-gradient(135deg, #2563eb, #3b82f6 55%, #38bdf8);
           box-shadow:0 9px 20px -10px rgba(79,70,229,.85);
           color:#fff;
         }
@@ -352,7 +359,7 @@ export default function LoginPage({users:propUsers,onLogin,theme,toggleTheme}){
         .lg-go{
           width:100%; margin-top:10px; padding:15px; border:none; border-radius:10px;
           cursor:pointer; font-size:14.5px; font-weight:700; color:#fff;
-          background:linear-gradient(135deg, #4f46e5, #4338ca);
+          background:linear-gradient(135deg, #2563eb, #4338ca);
           display:flex; align-items:center; justify-content:center; gap:9px;
           box-shadow:0 9px 20px -9px rgba(79,70,229,.8);
           transition:transform .1s, box-shadow .16s, opacity .16s;

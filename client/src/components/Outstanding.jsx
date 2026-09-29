@@ -5638,16 +5638,20 @@
 // }
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { RefreshCw, Search, X, Upload, Plus, Check, Trash2, Calendar, MessageSquare, Bell, Phone, PhoneMissed, Download, ChevronRight, ChevronDown } from 'lucide-react';
+import { RefreshCw, Search, X, Upload, Plus, Check, Trash2, Calendar, MessageSquare, Bell, Phone, PhoneMissed, Download, ChevronRight, ChevronDown, Wallet } from 'lucide-react';
+import { PageHead } from '../collections/ui';
 import { fetchCSV, parseOutstandingCSV } from '../utils';
 import { api, dbOutstandingToApp } from '../api';
 import { Avatar, MultiSelect } from './UI';
 import { notify, confirmDialog } from './Toast';
 import { VoiceTextarea } from './VoiceInput';
+import { useMonth } from '../context';
 
 const fmt      = v => v > 0 ? '₹' + Number(v).toLocaleString('en-IN') : '—';
-const todayStr = () => new Date().toISOString().slice(0,10);
-const daysUntil= d => Math.ceil((new Date(d) - new Date().setHours(0,0,0,0)) / 86400000);
+// Local calendar date (toISOString() is UTC — before 05:30 IST it gives yesterday).
+const todayStr = () => { const t=new Date(); return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`; };
+// Whole days from today to a 'YYYY-MM-DD' date, both read as LOCAL midnight.
+const daysUntil=d=>{const [y,m,dd]=String(d).slice(0,10).split('-').map(Number);const t=new Date();return Math.round((new Date(y,m-1,dd)-new Date(t.getFullYear(),t.getMonth(),t.getDate()))/864e5);};
 
 // ── Followup Modal ────────────────────────────────────────────────────────────
 // `prefillMonth` / `prefillAmount` are set when the popup was opened by
@@ -6058,7 +6062,7 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
               Save Follow-up
             </button>
             <button onClick={()=>handleAdd('no-pickup')} disabled={saving} className="btn"
-              style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:'var(--red)',border:'1px solid rgba(248,113,113,0.3)'}}>
+              style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:'var(--red)',border:'1px solid color-mix(in srgb, var(--red) 30%, transparent)'}}>
               <PhoneMissed size={11}/> Did Not Pick Call
             </button>
           </div>
@@ -6119,29 +6123,29 @@ function FollowupModal({ dealer, existingFollowups, onClose, onSaved, prefillMon
             return(
               <div key={f._id} style={{
                 padding:'10px 12px',borderRadius:8,marginBottom:8,
-                background:isNoPickup?'rgba(248,113,113,0.04)':isDone?'rgba(52,211,153,0.05)':isOver?'rgba(248,113,113,0.05)':'var(--bg2)',
-                border:`1px solid ${isNoPickup?'rgba(248,113,113,0.15)':isDone?'rgba(52,211,153,0.2)':isOver?'rgba(248,113,113,0.2)':'var(--b2)'}`,
+                background:isNoPickup?'color-mix(in srgb, var(--red) 4%, transparent)':isDone?'color-mix(in srgb, var(--grn) 5%, transparent)':isOver?'color-mix(in srgb, var(--red) 5%, transparent)':'var(--bg2)',
+                border:`1px solid ${isNoPickup?'color-mix(in srgb, var(--red) 15%, transparent)':isDone?'color-mix(in srgb, var(--grn) 20%, transparent)':isOver?'color-mix(in srgb, var(--red) 20%, transparent)':'var(--b2)'}`,
                 opacity:isDone?0.65:1,
               }}>
                 <div style={{display:'flex',gap:8,justifyContent:'space-between'}}>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',marginBottom:4}}>
                       {isNoPickup
-                        ? <PhoneMissed size={12} color="#f87171"/>
-                        : <Calendar size={12} color={isDone?'#34d399':isOver?'#f87171':'var(--acc)'}/>}
-                      <span style={{fontSize:12,fontWeight:600,color:isDone?'#34d399':isOver?'#f87171':'var(--t1)'}}>
+                        ? <PhoneMissed size={12} color="#ef4444"/>
+                        : <Calendar size={12} color={isDone?'#10b981':isOver?'#ef4444':'var(--acc)'}/>}
+                      <span style={{fontSize:12,fontWeight:600,color:isDone?'var(--grn)':isOver?'var(--red)':'var(--t1)'}}>
                         {f.followupDate}
                       </span>
                       <span style={{fontSize:10,padding:'1px 6px',borderRadius:4,fontWeight:600,
-                        background:isNoPickup?'rgba(248,113,113,0.12)':isDone?'rgba(52,211,153,0.12)':isOver?'rgba(248,113,113,0.12)':'rgba(99,102,241,0.1)',
-                        color:isNoPickup?'#f87171':isDone?'#34d399':isOver?'#f87171':'var(--acc)'}}>
+                        background:isNoPickup?'color-mix(in srgb, var(--red) 12%, transparent)':isDone?'color-mix(in srgb, var(--grn) 12%, transparent)':isOver?'color-mix(in srgb, var(--red) 12%, transparent)':'color-mix(in srgb, var(--acc) 10%, transparent)',
+                        color:isNoPickup?'var(--red)':isDone?'var(--grn)':isOver?'var(--red)':'var(--acc)'}}>
                         {isNoPickup?'📵 No Pickup':isDone?'✓ Done':isOver?`${Math.abs(days)}d overdue`:days===0?'Today':`${days}d left`}
                       </span>
                       {Array.isArray(f.months) && f.months.length > 0 && (
                         f.months.map(m => (
                           <span key={m} style={{
                             fontSize:10, padding:'1px 6px', borderRadius:4, fontWeight:700,
-                            background:'rgba(251,191,36,0.14)', color:'var(--yel)',
+                            background:'color-mix(in srgb, var(--yel) 14%, transparent)', color:'var(--yel)',
                           }}>{m}</span>
                         ))
                       )}
@@ -6331,10 +6335,10 @@ function CommitmentsPanel({ users, canCredit, onOpenDealer, dealers, refreshKey,
     <div className="fade">
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:10,marginBottom:12}}>
         {[
-          {l:'Broken promises', v:broken.length, c:'#f87171'},
-          {l:'Amount not received', v:fmt(sum(broken,'shortfall')), c:'#f87171'},
-          {l:'Open promises', v:open.length, c:'#34d399'},
-          {l:'Expected (open)', v:fmt(sum(open,'shortfall')), c:'#34d399'},
+          {l:'Broken promises', v:broken.length, c:'#ef4444'},
+          {l:'Amount not received', v:fmt(sum(broken,'shortfall')), c:'#ef4444'},
+          {l:'Open promises', v:open.length, c:'#10b981'},
+          {l:'Expected (open)', v:fmt(sum(open,'shortfall')), c:'#10b981'},
         ].map(k=>(
           <div key={k.l} className="card" style={{padding:'12px 14px',marginBottom:0}}>
             <div style={{fontSize:10,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'.08em',marginBottom:4}}>{k.l}</div>
@@ -6345,11 +6349,8 @@ function CommitmentsPanel({ users, canCredit, onOpenDealer, dealers, refreshKey,
 
       <div style={{display:'flex',gap:6,marginBottom:10,alignItems:'center',flexWrap:'wrap'}}>
         {[['BROKEN',`Not received (${broken.length})`],['OPEN',`Awaiting due date (${open.length})`],['ALL',`All (${rows.length})`]].map(([v,l])=>(
-          <button key={v} onClick={()=>setView(v)} className="btn"
-            style={{fontSize:11,fontWeight:700,
-              color:view===v?'#fff':'var(--t2)',
-              background:view===v?(v==='BROKEN'?'#f87171':v==='OPEN'?'#34d399':'var(--acc)'):'var(--bg2)',
-              borderColor:view===v?'transparent':'var(--b2)'}}>{l}</button>
+          <button key={v} onClick={()=>setView(v)} className={'thr'+(view===v?' on':'')}
+            style={{'--tone':v==='BROKEN'?'var(--red)':v==='OPEN'?'var(--grn)':'var(--acc)'}}>{l}</button>
         ))}
         <div style={{flex:1}}/>
         {!canCredit&&<span style={{fontSize:11,color:'var(--t3)'}}>Only admin / accounts can record payments</span>}
@@ -6376,27 +6377,32 @@ function CommitmentsPanel({ users, canCredit, onOpenDealer, dealers, refreshKey,
                 const isOpen = openRow===r._id;
                 return(
                   <React.Fragment key={r._id}>
-                  <tr style={{background:r.state==='BROKEN'?'rgba(248,113,113,0.05)':'transparent'}}>
-                    <td style={{maxWidth:220}}>
+                  <tr style={{background:r.state==='BROKEN'?'color-mix(in srgb, var(--red) 5%, transparent)':'transparent'}}>
+                    <td style={{maxWidth:240}}>
+                      <div style={{display:'flex',alignItems:'flex-start',gap:9,minWidth:0}}>
+                      <span className="ini" style={{'--h':(r.dealerName||'?').charCodeAt(0)*37%360}}>{(r.dealerName||'?').replace(/[^A-Za-z0-9]/g,'').slice(0,2).toUpperCase()}</span>
+                      <div style={{minWidth:0}}>
                       <div onClick={()=>{ const dl=dealers.find(x=>x.name.toUpperCase().trim()===r.dealerName.toUpperCase().trim()); if(dl)onOpenDealer(dl.id); }}
                         title="Open dealer details"
-                        style={{fontWeight:600,color:'var(--t1)',cursor:'pointer',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                        style={{fontWeight:700,color:'var(--t1)',cursor:'pointer',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
                         {r.dealerName}
                       </div>
                       <div style={{display:'flex',alignItems:'center',gap:6,marginTop:3,flexWrap:'wrap'}}>
-                        {partial&&<span style={{fontSize:9,background:'rgba(251,191,36,0.15)',color:'var(--yel)',padding:'1px 5px',borderRadius:3}}>PART PAID</span>}
+                        {partial&&<span style={{fontSize:9,background:'color-mix(in srgb, var(--yel) 15%, transparent)',color:'var(--yel)',padding:'1px 5px',borderRadius:3}}>PART PAID</span>}
                         {/* Expand caret — same control as the main table, so
                             every comment for this dealer is one click away. */}
                         {dFu.length>0&&(
                           <button onClick={(e)=>{ e.stopPropagation(); setOpenRow(isOpen?null:r._id); }}
                             title={isOpen?'Hide comments':`Show all ${dFu.length} comments`}
-                            style={{background:isOpen?'rgba(99,102,241,0.12)':'transparent',
+                            style={{background:isOpen?'color-mix(in srgb, var(--acc) 12%, transparent)':'transparent',
                               border:'1px solid var(--b2)',borderRadius:5,cursor:'pointer',
                               color:isOpen?'var(--acc)':'var(--t3)',display:'inline-flex',alignItems:'center',gap:2,
                               padding:'2px 5px',fontSize:9,fontWeight:600}}>
                             {isOpen?<ChevronDown size={11}/>:<ChevronRight size={11}/>}{dFu.length}
                           </button>
                         )}
+                      </div>
+                      </div>
                       </div>
                     </td>
                     <td style={{fontSize:11,color:'var(--t2)'}}>
@@ -6413,14 +6419,14 @@ function CommitmentsPanel({ users, canCredit, onOpenDealer, dealers, refreshKey,
                         ? <div style={{fontSize:10,color:'var(--red)',fontWeight:700}}>{late} day{late===1?'':'s'} late</div>
                         : <div style={{fontSize:10,color:'var(--grn)'}}>due in {-daysLate(r.followupDate)}d</div>}
                     </td>
-                    <td style={{textAlign:'right',color:r.received>0?'#34d399':'var(--t3)'}}>{r.received>0?fmt(r.received):'—'}</td>
+                    <td style={{textAlign:'right',color:r.received>0?'var(--grn)':'var(--t3)'}}>{r.received>0?fmt(r.received):'—'}</td>
                     <td style={{textAlign:'right',fontWeight:700,color:'var(--red)'}}>{fmt(r.shortfall)}</td>
                     <td style={{maxWidth:240,fontSize:11,color:'var(--t2)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}
                       title={r.comment||''}>{r.comment||'—'}</td>
                     {canCredit&&(
                       <td style={{textAlign:'center'}}>
                         <button className="btn" disabled={busyId===r._id} onClick={()=>credit(r)}
-                          style={{fontSize:11,fontWeight:700,color:'var(--grn)',borderColor:'rgba(52,211,153,0.4)'}}>
+                          style={{fontSize:11,fontWeight:700,color:'var(--grn)',borderColor:'color-mix(in srgb, var(--grn) 40%, transparent)'}}>
                           {busyId===r._id?'…':'Record payment'}
                         </button>
                       </td>
@@ -6435,7 +6441,7 @@ function CommitmentsPanel({ users, canCredit, onOpenDealer, dealers, refreshKey,
                         <div style={{display:'flex',flexDirection:'column',gap:7,maxHeight:200,overflowY:'auto'}}>
                           {dFu.map(f=>(
                             <div key={f._id} style={{display:'flex',gap:8,alignItems:'flex-start'}}>
-                              <Calendar size={11} color={f.status==='done'?'#34d399':'var(--acc)'} style={{marginTop:2,flexShrink:0}}/>
+                              <Calendar size={11} color={f.status==='done'?'#10b981':'var(--acc)'} style={{marginTop:2,flexShrink:0}}/>
                               <div style={{minWidth:0}}>
                                 <div style={{fontSize:11.5,color:'var(--t1)',fontWeight:600}}>{f.comment||f.reason||'—'}</div>
                                 <div style={{fontSize:10,color:'var(--t3)'}}>
@@ -6498,7 +6504,8 @@ function SalesmanPerformancePanel({ users }) {
     const d=cur-prev;
     if(!prev&&!cur) return <span style={{color:'var(--t3)'}}>—</span>;
     const pctTxt=prev>0?` (${(d/prev*100).toFixed(1)}%)`:'';
-    return <span style={{color:d<0?'#34d399':d>0?'#f87171':'var(--t3)',fontWeight:700}}>
+    // Less outstanding is good: a fall reads green, a rise red.
+    return <span className={'trend '+(d<0?'up':d>0?'down':'')}>
       {d===0?'=':(d<0?'▼ ':'▲ +')+fmt(Math.abs(d)).replace('—','0')}{pctTxt}
     </span>;
   };
@@ -6508,12 +6515,12 @@ function SalesmanPerformancePanel({ users }) {
       {/* KPI strip */}
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:10,marginBottom:14}}>
         {[
-          {l:`Current O/S${rep.currentMonth?` · ${rep.currentMonth}`:''}`, v:fmt(T.current), c:'#f87171'},
+          {l:`Current O/S${rep.currentMonth?` · ${rep.currentMonth}`:''}`, v:fmt(T.current), c:'#ef4444'},
           {l:`Previous O/S${rep.previousMonth?` · ${rep.previousMonth}`:''}`, v:fmt(T.previous), c:'var(--t2)'},
-          {l:'Net movement', v:(totalDiff>0?'+':'')+ (totalDiff===0?'0':fmt(Math.abs(totalDiff)).replace('—','0')), c:totalDiff<0?'#34d399':totalDiff>0?'#f87171':'var(--t3)'},
-          {l:'Collections logged', v:fmt(T.collection), c:'#34d399'},
+          {l:'Net movement', v:(totalDiff>0?'+':'')+ (totalDiff===0?'0':fmt(Math.abs(totalDiff)).replace('—','0')), c:totalDiff<0?'#10b981':totalDiff>0?'#ef4444':'var(--t3)'},
+          {l:'Collections logged', v:fmt(T.collection), c:'#10b981'},
           {l:'Follow-ups today', v:T.today, c:'var(--acc)'},
-          {l:'Overdue follow-ups', v:T.overdue, c:T.overdue>0?'#fbbf24':'var(--t3)'},
+          {l:'Overdue follow-ups', v:T.overdue, c:T.overdue>0?'#f59e0b':'var(--t3)'},
         ].map(k=>(
           <div key={k.l} className="card" style={{padding:'12px 14px',marginBottom:0}}>
             <div style={{fontSize:10,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'.08em',marginBottom:4}}>{k.l}</div>
@@ -6543,18 +6550,24 @@ function SalesmanPerformancePanel({ users }) {
                 const eff=r.previous>0?(r.collection/r.previous*100):null;
                 return(
                   <tr key={r.salesman}>
-                    <td><div style={{display:'flex',alignItems:'center',gap:8}}>
-                      {u&&<span style={{width:22,height:22,borderRadius:'50%',background:u.color||'var(--acc)',color:'#fff',fontSize:9,fontWeight:700,display:'inline-flex',alignItems:'center',justifyContent:'center'}}>{u.ini||u.name?.slice(0,2).toUpperCase()}</span>}
-                      <span style={{fontWeight:600}}>{u?.name||r.salesman}</span>
+                    <td><div style={{display:'flex',alignItems:'center',gap:9,minWidth:0}}>
+                      <span className="ini" style={{'--h':String(u?.name||r.salesman||'?').charCodeAt(0)*37%360}}>{u?.ini||String(u?.name||r.salesman||'?').replace(/[^A-Za-z0-9]/g,'').slice(0,2).toUpperCase()}</span>
+                      <div style={{minWidth:0}}>
+                        <div style={{fontWeight:700,color:'var(--t1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{u?.name||r.salesman}</div>
+                        <div style={{fontSize:10.5,color:'var(--t3)'}}>{r.dealers} dealer{r.dealers===1?'':'s'}{r.promises?` · ${r.promises} promise${r.promises===1?'':'s'}`:''}</div>
+                      </div>
                     </div></td>
                     <td style={{textAlign:'right'}}>{r.dealers}</td>
                     <td style={{textAlign:'right',color:'var(--t3)'}}>{fmt(r.previous)}</td>
                     <td style={{textAlign:'right',fontWeight:700}}>{fmt(r.current)}</td>
                     <td style={{textAlign:'right'}}><Delta cur={r.current} prev={r.previous}/></td>
                     <td style={{textAlign:'right',color:'var(--grn)',fontWeight:600}}>{fmt(r.collection)}</td>
-                    <td style={{textAlign:'right',color:eff===null?'var(--t3)':eff>=20?'#34d399':eff>=8?'#fbbf24':'#f87171',fontWeight:700}}>{eff===null?'—':eff.toFixed(1)+'%'}</td>
+                    <td style={{textAlign:'right',minWidth:84}}>
+                      <div style={{color:eff===null?'var(--t3)':eff>=20?'var(--grn)':eff>=8?'var(--yel)':'var(--red)',fontWeight:800}}>{eff===null?'—':eff.toFixed(1)+'%'}</div>
+                      {eff!==null&&<div className="pbar"><div style={{width:Math.min(eff,100)+'%',background:eff>=20?'var(--grn)':eff>=8?'var(--yel)':'var(--red)'}}/></div>}
+                    </td>
                     <td style={{textAlign:'right',color:r.followupsToday>0?'var(--acc)':'var(--t3)'}}>{r.followupsToday||'—'}</td>
-                    <td style={{textAlign:'right',color:r.overdue>0?'#fbbf24':'var(--t3)',fontWeight:r.overdue>0?700:400}}>{r.overdue||'—'}</td>
+                    <td style={{textAlign:'right',color:r.overdue>0?'var(--yel)':'var(--t3)',fontWeight:r.overdue>0?700:400}}>{r.overdue||'—'}</td>
                     <td style={{textAlign:'right',color:'var(--t3)'}}>{r.promises||'—'}</td>
                   </tr>
                 );
@@ -6570,7 +6583,7 @@ function SalesmanPerformancePanel({ users }) {
               <td style={{textAlign:'right',fontWeight:700,color:'var(--grn)'}}>{fmt(T.collection)}</td>
               <td style={{textAlign:'right',fontWeight:700}}>{T.previous>0?(T.collection/T.previous*100).toFixed(1)+'%':'—'}</td>
               <td style={{textAlign:'right',fontWeight:700}}>{T.today}</td>
-              <td style={{textAlign:'right',fontWeight:700,color:T.overdue>0?'#fbbf24':'inherit'}}>{T.overdue}</td>
+              <td style={{textAlign:'right',fontWeight:700,color:T.overdue>0?'var(--yel)':'inherit'}}>{T.overdue}</td>
               <td style={{textAlign:'right',fontWeight:700}}>{T.promises}</td>
             </tr></tfoot>
           </table>
@@ -6731,7 +6744,22 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
     const key=(l)=>{ const m=/^([A-Za-z]{3})-(\d{2})$/.exec(String(l).trim()); if(!m) return 99999; const mi=M3.indexOf(m[1].toLowerCase()); return (2000+ +m[2])*12+(mi<0?0:mi); };
     return [...cols].sort((a,b)=>key(a)-key(b));
   },[filteredOutstanding]);
+  // View cycle (month bar): only LIST the outstanding months whose label is
+  // one of the picked MO months. Falls back to every month when no cycle is
+  // set or none of the data's months fall inside it. Data is untouched.
+  const { MO:ctxMO, viewIdx } = useMonth();
+  const viewKey = (viewIdx && viewIdx.length && ctxMO) ? viewIdx.filter(i=>i<ctxMO.length).map(i=>String(ctxMO[i]).trim().toLowerCase()).join('|') : '';
+  const monthColsInView = useMemo(()=>{
+    if(!viewKey) return allMonthColsFull;
+    const inView=new Set(viewKey.split('|'));
+    const f=allMonthColsFull.filter(m=>inView.has(String(m).trim().toLowerCase()));
+    return f.length ? f : allMonthColsFull;
+  },[allMonthColsFull, viewKey]);
   const allMonthCols = useMemo(
+    ()=> showAllMonths ? monthColsInView : monthColsInView.slice(-3),
+    [monthColsInView, showAllMonths]);
+  // CSV export keeps its original column rule (independent of the view cycle).
+  const exportMonthCols = useMemo(
     ()=> showAllMonths ? allMonthColsFull : allMonthColsFull.slice(-3),
     [allMonthColsFull, showAllMonths]);
 
@@ -6762,9 +6790,9 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
 
     return filteredOutstanding.map(x=>{
       const nameKey = x.name.toLowerCase().trim();
-      // Try exact match first, then partial match for name variations
-      const dFu = followupMap[nameKey] ||
-        Object.entries(followupMap).find(([k])=>k.includes(nameKey)||nameKey.includes(k))?.[1] || [];
+      // Exact key match only — both sides are lowercased + trimmed names.
+      // A partial match let "sharma traders" pick up "sharma traders kota".
+      const dFu = followupMap[nameKey] || [];
 
       // ── Compute a sort bucket for this dealer ───────────────────────
       // Bucket 0 (TOP):    has any follow-up dated EXACTLY TODAY
@@ -6876,24 +6904,21 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
           border-top: 0 !important;
         }
       `}</style>
-      <div style={{marginBottom:16}}>
-        <div style={{fontSize:11,color:'var(--acc)',textTransform:'uppercase',letterSpacing:'.15em',marginBottom:4}}>Payments</div>
-        <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
-          <div style={{fontSize:22,fontWeight:700}}>Outstanding</div>
+      <PageHead icon={Wallet} tone="var(--red)" eyebrow="Payments"
+        title={<span style={{display:'inline-flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>Outstanding
           {overdueFu.length>0&&(
-            <div style={{display:'flex',alignItems:'center',gap:5,background:'rgba(248,113,113,0.12)',border:'1px solid rgba(248,113,113,0.3)',borderRadius:6,padding:'3px 10px'}}>
-              <Bell size={12} color="#f87171"/>
+            <div style={{display:'flex',alignItems:'center',gap:5,background:'color-mix(in srgb, var(--red) 12%, transparent)',border:'1px solid color-mix(in srgb, var(--red) 30%, transparent)',borderRadius:6,padding:'3px 10px'}}>
+              <Bell size={12} color="#ef4444"/>
               <span style={{fontSize:11,color:'var(--red)',fontWeight:600}}>{overdueFu.length} overdue</span>
             </div>
           )}
-        </div>
-      </div>
+        </span>}/>
 
       {/* Action bar */}
       <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',marginBottom:14}}>
-        {allMonthColsFull.length>3&&(
+        {monthColsInView.length>3&&(
           <button onClick={()=>setShowAllMonths(v=>!v)} className="btn" style={{fontSize:12}}>
-            {showAllMonths?'Latest 3 months':`All months (${allMonthColsFull.length})`}
+            {showAllMonths?'Latest 3 months':`All months (${monthColsInView.length})`}
           </button>
         )}
         {isAdmin&&<>
@@ -6929,8 +6954,8 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
               }
             }} style={{
               display:'flex', alignItems:'center', gap:6,
-              background:'transparent', color:'#fca5a5',
-              border:'1px solid rgba(248,113,113,0.4)',
+              background:'transparent', color:'var(--red)',
+              border:'1px solid color-mix(in srgb, var(--red) 40%, transparent)',
               padding:'8px 12px', borderRadius:6, fontSize:12, fontWeight:600,
               cursor:'pointer',
             }}>
@@ -6943,8 +6968,8 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
             // rest = month columns). This is a round-trip file: download → edit the
             // amounts → re-upload. Blank cells stay blank so a re-upload leaves
             // those months unchanged (upload treats blank as "no change").
-            const months = (allMonthCols && allMonthCols.length > 0)
-              ? allMonthCols
+            const months = (exportMonthCols && exportMonthCols.length > 0)
+              ? exportMonthCols
               : ['Jul-25','Aug-25','Sep-25','Oct-25','Nov-25','Dec-25','Jan-26','Feb-26','Mar-26','Apr-26','May-26'];
             const headers = ['Dealer Name', ...months];
             const dataRows = [...filteredOutstanding]
@@ -6960,22 +6985,21 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
             ];
             const escape = v => '"' + String(v ?? '').replace(/"/g,'""') + '"';
             const csv = [headers, ...rows].map(r => r.map(escape).join(',')).join('\n');
-            const a = document.createElement('a');
-            a.href = 'data:text/csv;charset=utf-8,﻿' + encodeURIComponent(csv);
-            a.download = dataRows.length > 0
+            const fname = dataRows.length > 0
               ? 'Outstanding_' + new Date().toISOString().slice(0,10) + '.csv'
               : 'Outstanding_Template.csv';
-            a.click();
+            import('../lib/saveFile').then(m => m.saveText('\ufeff' + csv, fname, 'text/csv;charset=utf-8'))
+              .catch(e => notify.error('Download failed: ' + (e?.message || e)));
           }}
             className="btn"
-            style={{display:'flex',alignItems:'center',gap:6,color:'#a5b4fc',border:'1px solid rgba(99,102,241,0.4)'}}>
+            style={{display:'flex',alignItems:'center',gap:6,color:'var(--acc)',border:'1px solid color-mix(in srgb, var(--acc) 40%, transparent)'}}>
             <Download size={13}/> Download (Edit &amp; Re-upload)
           </button>
         </>}
         <button onClick={()=>{loadFromDB();loadFollowups();}} disabled={loading} className="btn" style={{display:'flex',alignItems:'center',gap:6}}>
           <RefreshCw size={13} className={loading?'spin':''}/>{loading?'Loading...':'Refresh'}
         </button>
-        {filteredOutstanding.length>0&&<span style={{fontSize:12,color:'var(--t3)'}}>{filteredOutstanding.length} dealers</span>}
+        {filteredOutstanding.length>0&&<span className="count-pill">{filteredOutstanding.length} dealers</span>}
         {uploadMsg&&<span style={{fontSize:11,color:'var(--grn)',fontWeight:600}}>{uploadMsg}</span>}
         {error&&<span style={{fontSize:11,color:'var(--red)'}}>{error}</span>}
       </div>
@@ -6984,9 +7008,9 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
       {filteredOutstanding.length>0&&(
         <div className="stat-grid" style={{marginBottom:14}}>
           {[
-            {l:'Total Outstanding', v:fmt(totalOut),       c:'#f87171'},
-            {l:'Dealers with Due',  v:countOut,            c:'#fbbf24'},
-            {l:'Cleared',           v:countCleared,        c:'#34d399'},
+            {l:'Total Outstanding', v:fmt(totalOut),       c:'#ef4444'},
+            {l:'Dealers with Due',  v:countOut,            c:'#f59e0b'},
+            {l:'Cleared',           v:countCleared,        c:'#10b981'},
             {l:'Pending Follow-ups',v:pendingFu.length,    c:'var(--acc)'},
           ].map(k=>(
             <div key={k.l} className="stat-card">
@@ -7000,7 +7024,7 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
       {/* Month summary */}
       {allMonthCols.length>0&&(
         <div className="card" style={{marginBottom:14,padding:0,overflow:'hidden'}}>
-          <div style={{padding:'12px 14px',borderBottom:'1px solid var(--b1)',fontSize:12,fontWeight:600}}>Month-wise Summary</div>
+          <div className="sec-title" style={{padding:'12px 14px',borderBottom:'1px solid var(--b1)',marginBottom:0}}><span className="sec-ico" style={{'--tone':'var(--red)'}}><Calendar size={15}/></span> Month-wise Summary <span className="count-pill">{allMonthCols.length}</span></div>
           <div style={{overflowX:'auto'}}>
             <table>
               <thead><tr>
@@ -7016,10 +7040,12 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
                   const chg=mi>0?total-prev:0;
                   return(<tr key={month}>
                     <td style={{fontWeight:600}}>{month}</td>
-                    <td style={{textAlign:'right',fontWeight:700,color:total>0?'#f87171':'#34d399'}}>{fmt(total)}</td>
+                    <td style={{textAlign:'right',fontWeight:700,color:total>0?'var(--red)':'var(--grn)'}}>{fmt(total)}</td>
                     <td style={{textAlign:'right'}}>{due}</td>
-                    <td style={{textAlign:'right',color:chg>0?'#f87171':chg<0?'#34d399':'var(--t3)',fontWeight:600}}>
-                      {chg!==0?(chg>0?'▲':'▼')+'₹'+Number(Math.abs(chg)).toLocaleString('en-IN'):'—'}
+                    <td style={{textAlign:'right'}}>
+                      {chg!==0
+                        ? <span className={'trend '+(chg>0?'down':'up')}>{(chg>0?'▲':'▼')+'₹'+Number(Math.abs(chg)).toLocaleString('en-IN')}</span>
+                        : <span style={{color:'var(--t3)'}}>—</span>}
                     </td>
                   </tr>);
                 })}
@@ -7041,7 +7067,7 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
           ].map(t=>(
             <button key={t.id} className={`tab ${tab===t.id?'active':''}`} onClick={()=>setTab(t.id)} style={{position:'relative'}}>
               {t.label}
-              {t.badge>0&&<span style={{position:'absolute',top:-4,right:-4,width:14,height:14,background:'#f87171',borderRadius:'50%',fontSize:8,color:'#fff',display:'flex',alignItems:'center',justifyContent:'center'}}>{t.badge}</span>}
+              {t.badge>0&&<span style={{position:'absolute',top:-4,right:-4,width:14,height:14,background:'var(--red)',borderRadius:'50%',fontSize:8,color:'#fff',display:'flex',alignItems:'center',justifyContent:'center'}}>{t.badge}</span>}
             </button>
           ))}
         </div>
@@ -7071,12 +7097,9 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
             {tab==='followup'?(
               <>
                 <span style={{fontWeight:700,textTransform:'uppercase',letterSpacing:'.07em',fontSize:10,color:'var(--t2)'}}>Scheduled</span>
-                {[['today',`Today (${cToday})`,'#fbbf24'],['upcoming',`Upcoming (${cUpcoming})`,'#34d399'],['past',`Past due (${cPastDue})`,'#f87171'],['all',`All (${cScheduled})`,'var(--acc)']].map(([v,l,c])=>(
-                  <button key={v} onClick={()=>setFuView(v)} className="btn"
-                    style={{fontSize:11,fontWeight:700,padding:'3px 10px',
-                      color:fuView===v?'#fff':'var(--t2)',
-                      background:fuView===v?c:'var(--bg2)',
-                      borderColor:fuView===v?'transparent':'var(--b2)'}}>{l}</button>
+                {[['today',`Today (${cToday})`,'#f59e0b'],['upcoming',`Upcoming (${cUpcoming})`,'#10b981'],['past',`Past due (${cPastDue})`,'#ef4444'],['all',`All (${cScheduled})`,'var(--acc)']].map(([v,l,c])=>(
+                  <button key={v} onClick={()=>setFuView(v)} className={'thr'+(fuView===v?' on':'')}
+                    style={{'--tone':c,padding:'3px 10px'}}>{l}</button>
                 ))}
               </>
             ):(
@@ -7092,7 +7115,7 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
             )}
             {tab!=='commitments'&&brokenCount>0&&(
               <button onClick={()=>setTab('commitments')} className="btn"
-                style={{fontSize:10,padding:'3px 9px',color:'var(--red)',borderColor:'rgba(248,113,113,0.4)'}}>
+                style={{fontSize:10,padding:'3px 9px',color:'var(--red)',borderColor:'color-mix(in srgb, var(--red) 40%, transparent)'}}>
                 {brokenCount} promised but not received →
               </button>
             )}
@@ -7135,12 +7158,12 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
                   const latestNP = noPickups[noPickups.length-1];
 
                   // Priority stripe color — mirrors the legend above the table.
-                  const stripe=['#fbbf24','#f87171','#34d399','transparent'][d._bucket]||'transparent';
+                  const stripe=['#f59e0b','#ef4444','#10b981','transparent'][d._bucket]||'transparent';
                   return(
                     <React.Fragment key={d.id}>
                       <tr
                         style={{
-                          background: cleared ? 'rgba(52,211,153,0.03)' : 'transparent',
+                          background: cleared ? 'color-mix(in srgb, var(--grn) 3%, transparent)' : 'transparent',
                         }}
                         // Row click no longer toggles an empty expanded panel.
                         // All actions live on the row itself (dealer name +
@@ -7152,6 +7175,8 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
                           {/* Dealer name — click to open the dealer modal.
                               Stop propagation so the row's accordion toggle
                               doesn't also fire. */}
+                          <div style={{display:'flex',alignItems:'center',gap:8,minWidth:0}}>
+                          <span className="ini" style={{'--h':(d.name||'?').charCodeAt(0)*37%360,width:26,height:26,fontSize:10,borderRadius:8}}>{(d.name||'?').replace(/[^A-Za-z0-9]/g,'').slice(0,2).toUpperCase()}</span>
                           <div
                             onClick={(e)=>{
                               e.stopPropagation();
@@ -7160,17 +7185,18 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
                             }}
                             title="Open dealer details"
                             style={{
-                              fontWeight:600, color:'var(--t1)',
+                              fontWeight:700, color:'var(--t1)',
                               overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
-                              cursor:'pointer',
+                              cursor:'pointer', minWidth:0,
                             }}>
                             {d.name}
+                          </div>
                           </div>
                           {/* CLEARED badge only — salesman badge moved into
                               the latest-comment chip (right of the date). */}
                           {cleared && (
                             <div style={{display:'flex',gap:4,marginTop:2,alignItems:'center',flexWrap:'wrap'}}>
-                              <span style={{fontSize:9,background:'rgba(52,211,153,0.15)',color:'var(--grn)',padding:'1px 5px',borderRadius:3}}>CLEARED</span>
+                              <span style={{fontSize:9,background:'color-mix(in srgb, var(--grn) 15%, transparent)',color:'var(--grn)',padding:'1px 5px',borderRadius:3}}>CLEARED</span>
                             </div>
                           )}
                           {/* Latest comment / no-pickup — clearly visible */}
@@ -7192,16 +7218,16 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
                                 <div style={{
                                   padding:'3px 6px', borderRadius:5,
                                   display:'inline-flex', alignItems:'center', gap:6,
-                                  background:isNP?'rgba(248,113,113,0.1)':isComment?'rgba(99,102,241,0.08)':'rgba(52,211,153,0.07)',
-                                  border:`1px solid ${isNP?'rgba(248,113,113,0.25)':isComment?'rgba(99,102,241,0.2)':'rgba(52,211,153,0.2)'}`,
+                                  background:isNP?'color-mix(in srgb, var(--red) 10%, transparent)':isComment?'color-mix(in srgb, var(--acc) 8%, transparent)':'color-mix(in srgb, var(--grn) 7%, transparent)',
+                                  border:`1px solid ${isNP?'color-mix(in srgb, var(--red) 25%, transparent)':isComment?'color-mix(in srgb, var(--acc) 20%, transparent)':'color-mix(in srgb, var(--grn) 20%, transparent)'}`,
                                   minWidth:0,        // so flex child can shrink
                                   overflow:'hidden',
                                   flex:'0 1 auto',
                                 }}>
                                   {isNP
-                                    ? <><PhoneMissed size={10} color="#f87171" style={{flexShrink:0}}/><span style={{fontSize:10,color:'var(--red)',fontWeight:600,whiteSpace:'nowrap'}}>Did not pick call</span></>
+                                    ? <><PhoneMissed size={10} color="#ef4444" style={{flexShrink:0}}/><span style={{fontSize:10,color:'var(--red)',fontWeight:600,whiteSpace:'nowrap'}}>Did not pick call</span></>
                                     : isFollowup
-                                    ? <><Calendar size={10} color="#34d399" style={{flexShrink:0}}/><span style={{fontSize:10,color:'var(--grn)',fontWeight:600,whiteSpace:'nowrap'}}>Follow-up: {latest.followupDate}</span></>
+                                    ? <><Calendar size={10} color="#10b981" style={{flexShrink:0}}/><span style={{fontSize:10,color:'var(--grn)',fontWeight:600,whiteSpace:'nowrap'}}>Follow-up: {latest.followupDate}</span></>
                                     : <><MessageSquare size={10} color="var(--acc)" style={{flexShrink:0}}/><span style={{fontSize:10,color:'var(--acc)',fontWeight:600,whiteSpace:'nowrap'}}>Note</span></>}
                                   <span style={{fontSize:9,color:'var(--t3)',whiteSpace:'nowrap',flexShrink:0}}>
                                     {latest.createdAt ? new Date(latest.createdAt).toLocaleDateString('en-IN',{day:'2-digit',month:'short'}) : ''}
@@ -7223,7 +7249,7 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
                                     onClick={(e)=>{ e.stopPropagation(); toggle(d.id); }}
                                     title={isOpen ? 'Hide comments' : `Show all ${d.dealerFollowups.length} comments`}
                                     style={{
-                                      background: isOpen ? 'rgba(99,102,241,0.12)' : 'transparent',
+                                      background: isOpen ? 'color-mix(in srgb, var(--acc) 12%, transparent)' : 'transparent',
                                       border:'1px solid var(--b2)', borderRadius:5, cursor:'pointer',
                                       color: isOpen ? 'var(--acc)' : 'var(--t3)',
                                       display:'inline-flex', alignItems:'center', gap:2,
@@ -7274,11 +7300,11 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
                               title={v>0 ? `Open follow-up for ${m} (₹${v.toLocaleString('en-IN')})` : `Open follow-up for ${m}`}
                               style={{
                                 textAlign:'right',
-                                color:v===0?'#34d399':v>prev&&mi2>0?'#f87171':'#fbbf24',
+                                color:v===0?'var(--grn)':v>prev&&mi2>0?'var(--red)':'var(--yel)',
                                 fontWeight:v>0?600:400, fontSize:12,
                                 cursor:'pointer',
                               }}
-                              onMouseEnter={e=>{ e.currentTarget.style.background = 'rgba(99,102,241,0.08)'; }}
+                              onMouseEnter={e=>{ e.currentTarget.style.background = 'color-mix(in srgb, var(--acc) 8%, transparent)'; }}
                               onMouseLeave={e=>{ e.currentTarget.style.background = 'transparent'; }}>
                               {v>0?fmt(v):'—'}
                             </td>
@@ -7287,9 +7313,9 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
                         <td style={{textAlign:'center'}} onClick={e=>e.stopPropagation()}>
                           <button onClick={()=>setActiveDealer(d)} style={{
                             padding:'4px 8px',borderRadius:6,fontSize:10,cursor:'pointer',
-                            background:nextFu?(fuOver?'rgba(248,113,113,0.12)':'rgba(99,102,241,0.12)'):'transparent',
-                            border:nextFu?(fuOver?'1px solid #f87171':'1px solid var(--acc)'):'1px solid var(--b2)',
-                            color:nextFu?(fuOver?'#f87171':'var(--acc)'):'var(--t3)',
+                            background:nextFu?(fuOver?'color-mix(in srgb, var(--red) 12%, transparent)':'color-mix(in srgb, var(--acc) 12%, transparent)'):'transparent',
+                            border:nextFu?(fuOver?'1px solid var(--red)':'1px solid var(--acc)'):'1px solid var(--b2)',
+                            color:nextFu?(fuOver?'var(--red)':'var(--acc)'):'var(--t3)',
                             display:'flex',alignItems:'center',gap:4,margin:'0 auto',
                           }}>
                             <Calendar size={10}/>
@@ -7325,9 +7351,9 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
                                 return(
                                   <div key={f._id} style={{display:'flex',alignItems:'flex-start',gap:8,padding:'5px 0',borderTop:'1px solid var(--b1)'}}>
                                     <span style={{flexShrink:0,marginTop:1}}>
-                                      {isNP ? <PhoneMissed size={11} color="#f87171"/>
-                                        : isCol ? <Check size={11} color="#34d399"/>
-                                        : f.type==='followup' ? <Calendar size={11} color="#34d399"/>
+                                      {isNP ? <PhoneMissed size={11} color="#ef4444"/>
+                                        : isCol ? <Check size={11} color="#10b981"/>
+                                        : f.type==='followup' ? <Calendar size={11} color="#10b981"/>
                                         : <MessageSquare size={11} color="var(--acc)"/>}
                                     </span>
                                     <div style={{minWidth:0,flex:1}}>
@@ -7367,7 +7393,6 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
                   return<td key={m} style={{textAlign:'right',fontWeight:700,color:'var(--red)'}}>{t>0?fmt(t):'—'}</td>;
                 })}
                 <td style={{textAlign:'right',fontWeight:700,color:'var(--red)'}}>{fmt(filtered.reduce((s,d)=>s+d.latestOutstanding,0))}</td>
-                <td/><td/>
               </tr></tfoot>
             </table>
           </div>
@@ -7399,7 +7424,7 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
             <div style={{display:'flex',gap:14,flexWrap:'wrap',marginBottom:12,fontSize:13}}>
               <span>Rows: <b>{previewData.totalRecords}</b></span>
               <span style={{color:'var(--grn)'}}>Matched: <b>{previewData.matched}</b></span>
-              <span style={{color:previewData.unmappedCount>0?'#fbbf24':'var(--t3)'}}>Unmapped: <b>{previewData.unmappedCount}</b></span>
+              <span style={{color:previewData.unmappedCount>0?'var(--yel)':'var(--t3)'}}>Unmapped: <b>{previewData.unmappedCount}</b></span>
               <span>Changed values: <b>{previewData.changedRows}</b></span>
             </div>
             {/* Per-month previous vs new totals */}
@@ -7413,7 +7438,7 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
                     <td style={{fontWeight:600}}>{m}</td>
                     <td style={{textAlign:'right'}}>{fmt(pm.prevTotal)}</td>
                     <td style={{textAlign:'right',fontWeight:700}}>{fmt(pm.newTotal)}</td>
-                    <td style={{textAlign:'right',fontWeight:700,color:diff<0?'#34d399':diff>0?'#f87171':'var(--t3)'}}>
+                    <td style={{textAlign:'right',fontWeight:700,color:diff<0?'var(--grn)':diff>0?'var(--red)':'var(--t3)'}}>
                       {diff===0?'= no change':(diff>0?'↑ +':'↓ ')+fmt(Math.abs(diff))}
                       {pm.prevTotal>0&&diff!==0&&<span style={{fontWeight:400,color:'var(--t3)',marginLeft:4}}>({(diff/pm.prevTotal*100).toFixed(1)}%)</span>}
                     </td>
@@ -7422,7 +7447,7 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
               </tbody>
             </table>
             {previewData.unmappedCount>0&&(
-              <div style={{background:'rgba(251,191,36,0.08)',border:'1px solid rgba(251,191,36,0.3)',borderRadius:8,padding:'10px 12px',marginBottom:12}}>
+              <div style={{background:'color-mix(in srgb, var(--yel) 8%, transparent)',border:'1px solid color-mix(in srgb, var(--yel) 30%, transparent)',borderRadius:8,padding:'10px 12px',marginBottom:12}}>
                 <div style={{fontSize:12,fontWeight:700,color:'var(--yel)',marginBottom:6}}>
                   ⚠ {previewData.unmappedCount} part{previewData.unmappedCount===1?'y':'ies'} not found in the Dealer master — these will be SKIPPED (never guessed). You can map them from Upload History after confirming.
                 </div>
@@ -7442,7 +7467,7 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
                           <td>{c.month}</td>
                           <td style={{textAlign:'right',color:'var(--t3)'}}>{c.prev===null?'new':fmt(c.prev)}</td>
                           <td style={{textAlign:'right',fontWeight:600}}>{fmt(c.next)}</td>
-                          <td style={{textAlign:'right',fontWeight:700,color:c.diff<0?'#34d399':'#f87171'}}>{(c.diff>0?'+':'')+fmt(c.diff)}</td>
+                          <td style={{textAlign:'right',fontWeight:700,color:c.diff<0?'var(--grn)':'var(--red)'}}>{(c.diff>0?'+':'')+fmt(c.diff)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -7485,7 +7510,7 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
                       <td style={{fontSize:11,color:'var(--t3)'}}>{(b.months||[]).join(', ')}</td>
                       <td style={{textAlign:'right',fontWeight:600}}>{fmt(b.totalAmount||0)}</td>
                       <td style={{textAlign:'right',color:'var(--grn)'}}>{b.matchedRecords}</td>
-                      <td style={{textAlign:'right',color:b.unmappedRecords>0?'#fbbf24':'var(--t3)'}}>{b.unmappedRecords}</td>
+                      <td style={{textAlign:'right',color:b.unmappedRecords>0?'var(--yel)':'var(--t3)'}}>{b.unmappedRecords}</td>
                       <td>{b.status==='REVERTED'
                         ?<span style={{fontSize:10,fontWeight:700,color:'var(--red)'}}>REVERTED</span>
                         :<span style={{fontSize:10,fontWeight:700,color:'var(--grn)'}}>ACTIVE</span>}</td>
@@ -7519,7 +7544,7 @@ export default function Outstanding({ dealers, users, onOpenDealer, currentUser,
                   )}
                 </div>
                 {(batchDetail.unmapped||[]).length>0&&(
-                  <div style={{background:'rgba(251,191,36,0.08)',border:'1px solid rgba(251,191,36,0.3)',borderRadius:8,padding:'10px 12px',marginBottom:10}}>
+                  <div style={{background:'color-mix(in srgb, var(--yel) 8%, transparent)',border:'1px solid color-mix(in srgb, var(--yel) 30%, transparent)',borderRadius:8,padding:'10px 12px',marginBottom:10}}>
                     <div style={{fontSize:12,fontWeight:700,color:'var(--yel)',marginBottom:8}}>Unmapped parties — pick the matching dealer to apply their amounts</div>
                     {batchDetail.unmapped.map(u=>(
                       <div key={u.party} style={{display:'flex',gap:8,alignItems:'center',marginBottom:6,flexWrap:'wrap'}}>

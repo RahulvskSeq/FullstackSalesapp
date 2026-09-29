@@ -27,7 +27,9 @@ const givenSchema = new mongoose.Schema({
 const Sample      = mongoose.models.Sample      || mongoose.model('Sample', sampleSchema);
 const SampleGiven = mongoose.models.SampleGiven || mongoose.model('SampleGiven', givenSchema);
 
-const today = () => new Date().toISOString().slice(0,10);
+const today = () => new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0,10);   // IST — the business day
+const reEsc = v => String(v ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const staffRole = req => ['admin', 'superadmin', 'employee'].includes(req.user?.role);
 
 // GET /api/samples — get all samples (optionally filter by zone)
 router.get('/', protect, async (req, res) => {
@@ -67,7 +69,7 @@ router.post('/given', protect, async (req, res) => {
     const { dealerName, dealerId, sampleId, sampleName, zone, salesman, givenDate, notes } = req.body;
     if(!dealerName || !sampleId) return res.status(400).json({ error:'dealerName and sampleId required' });
     // Check if already given
-    const existing = await SampleGiven.findOne({ dealerName:new RegExp(`^${dealerName}$`,'i'), sampleId });
+    const existing = await SampleGiven.findOne({ dealerName:new RegExp(`^${reEsc(dealerName)}$`,'i'), sampleId });
     if(existing) return res.status(400).json({ error:'Sample already marked as given to this dealer' });
     const record = await SampleGiven.create({
       dealerName, dealerId:dealerId||'', sampleId, sampleName, zone:zone||'',
@@ -474,11 +476,16 @@ router.post('/upload', protect, adminOnly, requireFeature('manageSamples'), uplo
       const name     = find('sample','product','name');
       const zone     = find('zone','territory','area');
       const category = find('category','type','cat');
+      const stockCol = find('stock','qty','quantity','pieces','pcs');
+      const stock    = stockCol === '' ? null : Math.max(0, Math.round(Number(stockCol) || 0));
       if(!name || !zone) continue;
       try {
-        const ex = await Sample.findOne({ name:new RegExp(`^${name}$`,'i'), zone:new RegExp(`^${zone}$`,'i') });
-        if(ex) { await Sample.findByIdAndUpdate(ex._id, { category }); results.updated++; }
-        else { await Sample.create({ name, zone, category }); results.added++; }
+        const ex = await Sample.findOne({ name:new RegExp(`^${reEsc(name)}$`,'i'), zone:new RegExp(`^${reEsc(zone)}$`,'i') });
+        let doc;
+        if(ex) { doc = await Sample.findByIdAndUpdate(ex._id, { category, ...(stock !== null ? { stock, active: true } : {}) }, { new: true }); results.updated++; }
+        else { doc = await Sample.create({ name, zone, category, stock: stock || 0, active: true }); results.added++; }
+        // new stock goes to the zone's best dealers at once: STAR, KEY ACCOUNT, ACHIEVER, then by sales
+        if (doc && doc.stock > 0 && doc.active) results.allocated = (results.allocated || 0) + await autoAllocate(doc, req.user.id);
       } catch(e) { results.errors.push(`${name}: ${e.message}`); }
     }
     res.json(results);
@@ -488,14 +495,109 @@ router.post('/upload', protect, adminOnly, requireFeature('manageSamples'), uplo
 // POST /api/samples — add single sample (admin only)
 router.post('/', protect, adminOnly, requireFeature('manageSamples'), async (req, res) => {
   try {
-    const { name, zone, category } = req.body;
+    const { name, zone, category, stock } = req.body;
     if(!name || !zone) return res.status(400).json({ error:'name and zone required' });
     // Check duplicate
-    const ex = await Sample.findOne({ name:new RegExp(`^${name}$`,'i'), zone:new RegExp(`^${zone}$`,'i') });
+    const ex = await Sample.findOne({ name:new RegExp(`^${reEsc(name)}$`,'i'), zone:new RegExp(`^${reEsc(zone)}$`,'i') });
     if(ex) return res.status(400).json({ error:'Sample already exists for this zone' });
-    const s = await Sample.create({ name:name.trim(), zone:zone.trim(), category:category||'' });
-    res.json(s);
+    const s = await Sample.create({ name:name.trim(), zone:zone.trim(), category:category||'', stock: Math.max(0, Math.round(Number(stock) || 0)), active: true });
+    // a new sample with stock goes straight to the best dealers of its zone: STAR, KEY ACCOUNT, ACHIEVER, biggest buyers first
+    const allocated = s.stock > 0 ? await autoAllocate(s, req.user.id) : 0;
+    res.json({ ...s.toObject(), allocated });
   } catch(e){ res.status(500).json({ error:e.message }); }
+});
+
+// PUT /api/samples/:id — edit a master row (stock, category, zone). More stock is allotted at once.
+router.put('/:id', protect, adminOnly, requireFeature('manageSamples'), async (req, res) => {
+  try {
+    const s = await Sample.findById(req.params.id); if (!s) return res.status(404).json({ error: 'Not found' });
+    const b = req.body || {};
+    if (b.stock !== undefined) s.stock = Math.max(0, Math.round(Number(b.stock) || 0));
+    if (b.category !== undefined) s.category = String(b.category || '').trim();
+    if (b.zone) s.zone = String(b.zone).trim();
+    if (b.active !== undefined) s.active = !!b.active;
+    await s.save();
+    const allocated = s.active && s.stock > 0 ? await autoAllocate(s, req.user.id) : 0;
+    res.json({ ...s.toObject(), allocated });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/** Who got the pieces: allocations made since t0 for these samples, counted by tier. */
+async function allotBreakdown(sampleIds, t0) {
+  const rows = await SampleAllocation.find({ sampleId: { $in: sampleIds.map(String) }, source: 'auto', createdAt: { $gte: t0 } }, 'reason dealerName dealerZone').lean();
+  const by = { STAR: 0, 'KEY ACCOUNT': 0, ACHIEVER: 0, 'by sales': 0 };
+  for (const r of rows) { const k = Object.keys(by).find(k => String(r.reason || '').startsWith(k)); if (k) by[k]++; }
+  return { total: rows.length, by, first: rows.slice(0, 12).map(r => `${r.dealerName} (${r.dealerZone || '—'})`) };
+}
+
+// POST /api/samples/add — the Add button: one sample, its stock, the zones it is for; allotted at once.
+// Body: { name, stock, zones: ['ZONE 1','ZONE 2'] | ['All Zones'] | ['NEW DEALERS ONLY'], category }
+// Only the zones named are touched; the sample's other zone rows stay as they are.
+router.post('/add', protect, adminOnly, requireFeature('manageSamples'), async (req, res) => {
+  try {
+    const name = String(req.body?.name || '').trim();
+    const stock = Math.max(0, Math.round(Number(req.body?.stock) || 0));
+    const category = String(req.body?.category || '').trim();
+    const zones = [...new Set([].concat(req.body?.zones || []).flatMap(z => splitZones(String(z))))];
+    if (!name) return res.status(400).json({ error: 'sample name is required' });
+    if (!zones.length) return res.status(400).json({ error: 'pick at least one zone' });
+    const t0 = new Date();
+    const existing = (await Sample.find({}).lean()).filter(x => nameKey(x.name) === nameKey(name));
+    const ids = [];
+    for (const z of zones) {
+      let doc = existing.find(x => String(x.zone).toUpperCase() === z.toUpperCase());
+      if (doc) await Sample.updateOne({ _id: doc._id }, { $set: { stock, active: true, ...(category ? { category } : {}) } });
+      else doc = await Sample.create({ name, zone: z, category, stock, active: true });
+      ids.push(String(doc._id));
+    }
+    let allocated = 0;
+    for (const id of ids) { const doc = await Sample.findById(id); if (doc && doc.stock > 0) allocated += await autoAllocate(doc, req.user.id); }
+    const breakdown = await allotBreakdown(ids, t0);
+    const left = Math.max(0, stock * ids.length - allocated);
+    res.json({ name, zones, stock, rows: ids.length, allocated, left, breakdown, byHand: zones.some(z => zonesOf(z) === null) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/samples/add/preview — who would get it: the same ranking, nothing written
+router.post('/add/preview', protect, adminOnly, requireFeature('manageSamples'), async (req, res) => {
+  try {
+    const name = String(req.body?.name || '').trim();
+    const stock = Math.max(0, Math.round(Number(req.body?.stock) || 0));
+    const category = String(req.body?.category || '').trim();
+    const zones = [...new Set([].concat(req.body?.zones || []).flatMap(z => splitZones(String(z))))];
+    if (!name || !zones.length || !stock) return res.json({ zones: [], total: 0, by: {}, left: 0, byHand: false });
+    const existing = (await Sample.find({}).lean()).filter(x => nameKey(x.name) === nameKey(name));
+    const out = []; const by = {}; let total = 0;
+    for (const z of zones) {
+      const doc = existing.find(x => String(x.zone).toUpperCase() === z.toUpperCase());
+      // a fresh row would have all its stock free; an existing one keeps what it already allotted
+      const fake = doc ? { ...doc, stock } : { name, zone: z, category, stock };
+      const list = zonesOf(z) === null ? [] : await autoAllocate(fake, req.user.id, { dryRun: true });
+      for (const d of list) by[d.tier] = (by[d.tier] || 0) + 1;
+      total += list.length;
+      out.push({ zone: z, byHand: zonesOf(z) === null, dealers: list });
+    }
+    res.json({ zones: out, total, by, left: Math.max(0, stock * zones.filter(z => zonesOf(z) !== null).length - total), byHand: zones.some(z => zonesOf(z) === null) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/samples/:id/allot — allot this one sample's free stock now (after a stock edit or a sales upload)
+router.post('/:id/allot', protect, adminOnly, requireFeature('manageSamples'), async (req, res) => {
+  try {
+    const s = await Sample.findById(req.params.id); if (!s) return res.status(404).json({ error: 'Not found' });
+    const t0 = new Date();
+    const allocated = s.active && s.stock > 0 ? await autoAllocate(s, req.user.id) : 0;
+    res.json({ allocated, breakdown: await allotBreakdown([s._id], t0), left: await freeStock(s) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/samples/alloc/auto — allot every sample's free stock again (after a sales upload changed who the big buyers are)
+router.post('/alloc/auto', protect, adminOnly, requireFeature('manageSamples'), async (req, res) => {
+  try {
+    let n = 0; const detail = [];
+    for (const s of await Sample.find({ active: true, stock: { $gt: 0 } })) { const k = await autoAllocate(s, req.user.id); if (k) { n += k; detail.push({ name: s.name, zone: s.zone, allocated: k }); } }
+    res.json({ allocated: n, detail });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // DELETE /api/samples/all — wipe entire sample master AND every SampleGiven
@@ -649,25 +751,51 @@ export async function applyDealerWiseSheet(aoa, by) {
 }
 
 /** Allot free pieces of one sample to the priority dealers of its zone(s). */
-async function autoAllocate(sample, by) {
+/** dealerId → qty sold in the last six months, in the sample's category (LAMINATE when the sample has none that sales knows). */
+async function salesByDealer(category) {
+  const Sale = mongoose.models.Sale;
+  const months = []; const now = new Date();
+  for (let i = 0; i < 6; i++) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`); }
+  const known = Sale ? await Sale.distinct('category') : [];
+  const want = String(category || '').trim().toUpperCase();
+  const cat = known.find(c => String(c).toUpperCase() === want) || known.find(c => /LAMINATE/i.test(c)) || 'LAMINATE';
+  const m = new Map(); m.category = cat;
+  if (!Sale) return m;
+  for (const r of await Sale.aggregate([{ $match: { category: cat, month: { $in: months }, dealerId: { $ne: null } } }, { $group: { _id: '$dealerId', qty: { $sum: '$qty' } } }])) m.set(String(r._id), r.qty || 0);
+  return m;
+}
+
+async function autoAllocate(sample, by, opts = {}) {
   const Dealer = mongoose.models.Dealer;
-  let free = await freeStock(sample);
-  if (free <= 0) return 0;
+  let free = sample._id ? await freeStock(sample) : (sample.stock || 0);
+  if (free <= 0) return opts.dryRun ? [] : 0;
   const zones = zonesOf(sample.zone);
-  if (zones === null) return 0;                  // NEW DEALERS ONLY, Architects, … — by hand only
-  const f = { status: { $in: PRIORITY_STATUS }, ...(zones.length ? { zone: { $in: zones } } : {}) };
-  const dealers = await Dealer.find(f, 'name zone salesman status perfQty').lean();
-  // best first: STAR, then KEY ACCOUNT, then ACHIEVER; within a tier, bigger buyer first
-  const rank = d => PRIORITY_STATUS.indexOf(d.status);
-  dealers.sort((a, b) => rank(a) - rank(b) || (b.perfQty || 0) - (a.perfQty || 0) || a.name.localeCompare(b.name));
+  if (zones === null) return opts.dryRun ? [] : 0;   // NEW DEALERS ONLY, Architects, … — by hand only
+  const f = { ...(zones.length ? { zone: { $in: zones } } : {}), active: { $ne: false } };
+  const all = await Dealer.find(f, 'name zone salesman status perfQty').lean();
+  // best first: STAR, then KEY ACCOUNT, then ACHIEVER; within a tier, the bigger
+  // buyer of this kind of product first — laminate sales for a laminate sample
+  // (the sample's category when it matches a sales category, else LAMINATE),
+  // over the last six months. After the three tiers, every other dealer of the
+  // zone who bought this product in those months, biggest buyer first. A dealer
+  // with no tier and no sales does not get a sample by himself.
+  const sales = await salesByDealer(sample.category);
+  const rank = d => { const i = PRIORITY_STATUS.indexOf(d.status); return i >= 0 ? i : PRIORITY_STATUS.length; };
+  const vol = d => sales.get(String(d._id)) || 0;
+  const dealers = all.filter(d => rank(d) < PRIORITY_STATUS.length || vol(d) > 0);
+  dealers.sort((a, b) => rank(a) - rank(b) || vol(b) - vol(a) || (b.perfQty || 0) - (a.perfQty || 0) || a.name.localeCompare(b.name));
   const sameName = (await Sample.find({}, 'name').lean()).filter(x => nameKey(x.name) === nameKey(sample.name)).map(x => String(x._id));
   const have = new Set((await SampleAllocation.find({ sampleId: { $in: sameName }, status: { $in: ['REQUESTED', 'ALLOCATED', 'GIVEN'] } }, 'dealerId').lean()).map(a => a.dealerId));
   const given = new Set((await SampleGiven.find({ sampleId: { $in: sameName } }, 'dealerName').lean()).map(g => norm(g.dealerName)));
+  if (opts.dryRun) {   // who would get it, without writing anything
+    const pick = dealers.filter(d => !have.has(String(d._id)) && !given.has(norm(d.name))).slice(0, free);
+    return pick.map(d => ({ name: d.name, zone: d.zone || '', tier: rank(d) < PRIORITY_STATUS.length ? d.status : 'by sales', qty: vol(d) }));
+  }
   let n = 0;
   for (const d of dealers) {
     if (free <= 0) break;
     if (have.has(String(d._id)) || given.has(norm(d.name))) continue;   // already has it
-    await SampleAllocation.create({ sampleId: String(sample._id), sampleName: sample.name, zone: sample.zone, dealerId: String(d._id), dealerName: d.name, dealerZone: d.zone || '', salesman: d.salesman || '', status: 'ALLOCATED', source: 'auto', reason: `${d.status} · ${d.zone || 'no zone'}`, createdBy: by });
+    await SampleAllocation.create({ sampleId: String(sample._id), sampleName: sample.name, zone: sample.zone, dealerId: String(d._id), dealerName: d.name, dealerZone: d.zone || '', salesman: d.salesman || '', status: 'ALLOCATED', source: 'auto', reason: `${rank(d) < PRIORITY_STATUS.length ? d.status : 'by sales'} · ${d.zone || 'no zone'}${vol(d) ? ` · ${vol(d)} ${sales.category.toLowerCase()} in 6 months` : ''}`, createdBy: by });
     free--; n++;
   }
   return n;
@@ -730,6 +858,51 @@ router.get('/alloc', protect, async (req, res) => {
     const c = (id, st) => counts.find(x => x._id.s === String(id) && x._id.st === st)?.n || 0;
     const summary = samples.map(sm => ({ id: sm._id, name: sm.name, zone: sm.zone, stock: sm.stock || 0, allocated: c(sm._id, 'ALLOCATED'), given: c(sm._id, 'GIVEN'), left: Math.max(0, (sm.stock || 0) - c(sm._id, 'ALLOCATED') - c(sm._id, 'GIVEN')) }));
     res.json({ items, summary });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/samples/status/dealers — every dealer and where his samples stand: holds, to be given, requested, to take back
+router.get('/status/dealers', protect, async (req, res) => {
+  try {
+    const Dealer = mongoose.models.Dealer, User = mongoose.models.User;
+    const scope = isStaff(req) ? {} : { salesman: req.user.id };
+    const [dealers, users, master, given, allocs] = await Promise.all([
+      Dealer.find(scope, 'name zone salesman status perfStatus city').lean(),
+      User ? User.find({}, 'id name').lean() : [],
+      Sample.find({ active: true }, 'name zone').sort({ createdAt: -1, name: 1 }).lean(),
+      SampleGiven.find({}, 'dealerId dealerName sampleName qty givenDate').lean(),
+      SampleAllocation.find({ status: { $in: ['REQUESTED', 'ALLOCATED', 'GIVEN', 'RETURNED'] } }, 'dealerId dealerName sampleName status takeBack givenDate returnedDate createdAt reason source').lean(),
+    ]);
+    const nameOf = Object.fromEntries(users.map(u => [u.id, u.name]));
+    const byId = new Map(dealers.map(d => [String(d._id), d])), byName = new Map(dealers.map(d => [norm(d.name), d]));
+    const rows = new Map();
+    const rowFor = (dealerId, dealerName) => {
+      const d = byId.get(String(dealerId || '')) || byName.get(norm(dealerName));
+      if (!d && !isStaff(req)) return null;
+      const key = d ? String(d._id) : 'name:' + norm(dealerName);
+      if (!rows.has(key)) rows.set(key, { id: d ? String(d._id) : '', name: d?.name || dealerName, zone: d?.zone || '', city: d?.city || '', salesman: d?.salesman || '', salesmanName: nameOf[d?.salesman] || d?.salesman || '', tier: d?.status || 'NONE', perfStatus: d?.perfStatus || '', toShow: [], has: [], toGive: [], requested: [], takeBack: [], returned: [], lastGiven: '' });
+      return rows.get(key);
+    };
+    for (const g of given) { const r = rowFor(g.dealerId, g.dealerName); if (!r) continue; r.has.push({ name: g.sampleName, qty: g.qty || 1, date: g.givenDate || '' }); if ((g.givenDate || '') > r.lastGiven) r.lastGiven = g.givenDate || ''; }
+    for (const a of allocs) {
+      const r = rowFor(a.dealerId, a.dealerName); if (!r) continue;
+      if (a.status === 'ALLOCATED') r.toGive.push({ id: String(a._id), name: a.sampleName, why: a.reason || '', source: a.source || '' });   // source 'auto' = a suggestion to show
+      else if (a.status === 'REQUESTED') r.requested.push({ id: String(a._id), name: a.sampleName, why: a.reason || '' });
+      else if (a.status === 'RETURNED') r.returned.push({ name: a.sampleName, date: a.returnedDate || '' });
+      else if (a.status === 'GIVEN' && a.takeBack) r.takeBack.push({ id: String(a._id), name: a.sampleName });
+    }
+    // to be shown: the zone's master samples the dealer neither holds nor has waiting — the modal's first column
+    const inZoneOf = zone => { const zn = String(zone || '').match(/\d+/)?.[0]; return master.filter(sm => { const z = String(sm.zone || '').trim(); if (/^(all\s*zones?|general|all)$/i.test(z)) return true; const nums = [...z.matchAll(/\d+/g)].map(m => m[0]); return nums.length > 0 && zn && nums.includes(zn); }); };
+    for (const r of rows.values()) {
+      if (!r.id) continue;
+      const taken = new Set([...r.has, ...r.toGive, ...r.requested].map(x => nameKey(x.name)));
+      const seen = new Set();
+      r.toShow = inZoneOf(r.zone).filter(sm => { const k = nameKey(sm.name); if (taken.has(k) || seen.has(k)) return false; seen.add(k); return true; }).map(sm => ({ id: String(sm._id), name: sm.name }));
+    }
+    const out = [...rows.values()].map(r => ({ ...r, hasCount: r.has.reduce((s, x) => s + (x.qty || 1), 0) }))
+      .sort((a, b) => b.hasCount + b.toGive.length - (a.hasCount + a.toGive.length) || a.name.localeCompare(b.name));
+    const totals = { dealers: out.length, has: out.reduce((s, r) => s + r.hasCount, 0), toGive: out.reduce((s, r) => s + r.toGive.length, 0), requested: out.reduce((s, r) => s + r.requested.length, 0), takeBack: out.reduce((s, r) => s + r.takeBack.length, 0) };
+    res.json({ dealers: out, totals });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -805,7 +978,13 @@ router.post('/alloc/:id/returned', protect, async (req, res) => {
 // POST /api/samples/given/:id/take-back — the office flags a sample the dealer holds for collection on the next visit (or clears the flag)
 router.post('/given/:id/take-back', protect, requireFeature('visitMom'), async (req, res) => {
   try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'bad id' });
     const g = await SampleGiven.findById(req.params.id); if (!g) return res.status(404).json({ error: 'not found' });
+    if (!staffRole(req)) {
+      const Dl = mongoose.models.Dealer;
+      const owner = g.dealerId ? await Dl.findById(g.dealerId, 'salesman').lean() : await Dl.findOne({ name: new RegExp('^\\s*' + reEsc(g.dealerName) + '\\s*$', 'i') }, 'salesman').lean();
+      if (!owner || owner.salesman !== req.user.id) return res.status(403).json({ error: 'not your dealer' });
+    }
     const on = req.body?.takeBack !== false;
     let a = await SampleAllocation.findOne({ givenId: String(g._id) });
     if (!a) a = await SampleAllocation.findOne({ sampleId: g.sampleId, status: 'GIVEN', $or: [{ dealerId: g.dealerId || '__none__' }, { dealerName: g.dealerName }] });
@@ -827,7 +1006,9 @@ router.post('/move', protect, requireFeature('visitMom'), async (req, res) => {
   try {
     const Dealer = mongoose.models.Dealer;
     const { dealerId, kind, id, to } = req.body || {};
+    if (!mongoose.isValidObjectId(dealerId) || !mongoose.isValidObjectId(id)) return res.status(400).json({ error: 'bad id' });
     const d = await Dealer.findById(dealerId, 'name zone salesman').lean(); if (!d) return res.status(404).json({ error: 'dealer not found' });
+    if (!staffRole(req) && d.salesman !== req.user.id) return res.status(403).json({ error: 'not your dealer' });
     if (!['show', 'has', 'give', 'back'].includes(to)) return res.status(400).json({ error: 'bad target' });
     const by = req.user.id, day = today();
     const esc = t => String(t).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -863,11 +1044,14 @@ router.post('/move', protect, requireFeature('visitMom'), async (req, res) => {
     } else if (kind === 'alloc') {                           // from "To be given"
       const a = await SampleAllocation.findById(id); if (!a || a.dealerId !== String(d._id)) return res.status(404).json({ error: 'allotment not found' });
       const sm = await Sample.findById(a.sampleId);
-      if (to === 'show') { a.status = 'CANCELLED'; a.reason += ' · moved out by office'; await a.save(); }
+      // an automatic suggestion sits in "To be shown"; moving it to "To be given" confirms it
+      if (to === 'give') { if (a.source === 'auto') { a.source = 'manual'; a.reason = (a.reason ? a.reason + ' · ' : '') + 'confirmed to give'; await a.save(); } }
+      else if (to === 'show') { if (a.source === 'auto') { /* already shown as a suggestion */ } else { a.status = 'CANCELLED'; a.reason += ' · moved out by office'; await a.save(); } }
       else if (to === 'has' && sm) await hasIt(sm, a);
       else if (to === 'back' && sm) { const g = await hasIt(sm, a); await flag(g, true); }
     } else if (kind === 'given') {                           // from "Already has" or "To be taken back"
       const g = await SampleGiven.findById(id); if (!g) return res.status(404).json({ error: 'record not found' });
+      if (g.dealerId ? g.dealerId !== String(d._id) : norm(g.dealerName) !== norm(d.name)) return res.status(404).json({ error: 'record not found' });
       if (to === 'back') await flag(g, true);
       else if (to === 'has') await flag(g, false);
       else if (to === 'show') await removeGiven(g, 'RETURNED');

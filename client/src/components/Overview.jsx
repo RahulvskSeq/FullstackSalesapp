@@ -1280,12 +1280,14 @@
 
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import { useT } from '../i18n';
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { Users, Target, Award, Activity, TrendingUp, Clock, Bell, AlertTriangle, Search, MapPin, Star, ArrowUpRight, ArrowDownRight, X, GripVertical, Hash } from 'lucide-react';
+import { ChevronDown, Calendar, Users, Target, Award, Activity, TrendingUp, Clock, Bell, AlertTriangle, Search, MapPin, Star, ArrowUpRight, ArrowDownRight, X, GripVertical, Hash, Crown, Gem, LayoutDashboard, SlidersHorizontal } from 'lucide-react';
 import { MO as MO_CONST, CURRENT_MONTH_IDX, DEALER_TYPES } from '../constants';
 import { pct, spct, pclr, trendPct, forecast, monthTarget, readableOn } from '../utils';
 import { useMonth } from '../context';
-import { StatusBadge, Avatar, MiniBars, StatCard, MultiSelect } from './UI';
+import { StatusBadge, Avatar, MiniBars, StatCard, MultiSelect, CountUp } from './UI';
 import MapView from './MapView';
 import CategoryDrillChart from './CategoryDrillChart';
 import SalesByCategory from './SalesByCategory';
@@ -1295,6 +1297,7 @@ import CategoryFilter from './CategoryFilter';
 import { useGlobalCategoryFilter } from '../hooks/useGlobalCategoryFilter';
 import { api } from '../api';
 import { DealerVisitSearch } from './DealerVisitModal';
+import { notify } from './Toast';
 
 // MO label like "Jun-26" → YYYY-MM ("2026-06") used by the Sales collection.
 const _moMonths = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
@@ -1312,11 +1315,22 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
   // Potential Status is the salesman's own label, so it is editable wherever
   // it is shown rather than only on the pages that happened to have a picker.
   const onUpdateDealerType=async(dealerId,newType)=>{
+    const prev=(dealers||[]).find(d=>d.id===dealerId)?.dealerType;
     onUpdateDealer&&onUpdateDealer(dealerId,{dealerType:newType});
-    try{ await api.updateDealer(dealerId,{dealerType:newType}); }catch(e){ console.warn('[dealerType]',e?.message); }
+    try{ await api.updateDealer(dealerId,{dealerType:newType}); }
+    catch(e){
+      // Not saved — put the old value back rather than show a change that did not stick.
+      onUpdateDealer&&onUpdateDealer(dealerId,{dealerType:prev});
+      notify.error('Potential not saved: '+(e?.message||'server error'));
+    }
   };
-  const {selectedMonthIdx, MO:ctxMO}=useMonth();
+  const {selectedMonthIdx, MO:ctxMO, viewIdx, currentMonthIdx}=useMonth();
+  // the configured current month (Manage Months), not the build-time default
+  const CUR_IDX = currentMonthIdx ?? CURRENT_MONTH_IDX;
   const MO = ctxMO || MO_CONST;
+  // Months of the global view cycle — only changes which months are listed/charted.
+  const vIdx=(viewIdx&&viewIdx.length?viewIdx:MO.map((_,i)=>i)).filter(i=>i<MO.length);
+  const vRev=[...vIdx].reverse();
   const selMoLabel=MO[selectedMonthIdx].slice(0,3);
   const selMoFull=MO[selectedMonthIdx];
 
@@ -1403,7 +1417,29 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
   // the included-category qty (pre-category months pass through untouched).
   // So just read it straight.
   // When a range is active, sum achieved & target across every month in it.
-  const dealersForMonth=useMemo(()=>dealers.map(d=>({
+  // page-wide filters: everything below (KPIs, tiers, charts, tables) reads the filtered list
+  const [ovF,setOvF]=useState({sm:'',zone:'',state:'',city:'',status:'',perf:''});
+  const ovActive=Object.values(ovF).filter(Boolean).length;
+  const [ovFOpen,setOvFOpen]=useState(false);   // phones: the filter card folds to one line
+  const [periodOpen,setPeriodOpen]=useState(false); // phones: the period picker opens from a small button
+  // a salesman reads these sections about his own book
+  const mine = currentUser?.role==='salesman';
+  const { t: tr } = useT();
+  // On Home the upload stamp sits inside the greeting card (a slot HomeHero renders)
+  const [heroSlot,setHeroSlot]=useState(null);
+  useEffect(()=>{ setHeroSlot(document.getElementById('hh-stamp-slot')); },[]);
+  const ovOptions=useMemo(()=>{
+    const uniq=k=>[...new Set(dealers.map(x=>String(x[k]||'').trim()).filter(v=>v&&v!=='NONE'&&v!=='#N/A'))].sort();
+    return { zone:uniq('zone'), state:uniq('state'), city:uniq('city'), status:uniq('status'), perf:uniq('perfStatus'),
+      sm:[...new Set(dealers.map(x=>x.salesman).filter(Boolean))].sort((a,b)=>String(users?.[a]?.name||a).localeCompare(String(users?.[b]?.name||b))) };
+  },[dealers,users]);
+  const scopedDealers=useMemo(()=>{
+    if(!ovActive) return dealers;
+    const eq=(a,b)=>String(a||'').trim().toLowerCase()===String(b||'').trim().toLowerCase();
+    return dealers.filter(x=>(!ovF.sm||x.salesman===ovF.sm)&&(!ovF.zone||eq(x.zone,ovF.zone))&&(!ovF.state||eq(x.state,ovF.state))
+      &&(!ovF.city||eq(x.city,ovF.city))&&(!ovF.status||eq(x.status,ovF.status))&&(!ovF.perf||eq(x.perfStatus,ovF.perf)));
+  },[dealers,ovF,ovActive]);
+  const dealersForMonth=useMemo(()=>scopedDealers.map(d=>({
     ...d,
     achieved: rangeIdxs.reduce((s,i)=>s+(d.months[i]||0),0),
     target:   rangeIdxs.reduce((s,i)=>s+monthTarget(d,i),0),
@@ -1411,7 +1447,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
     // (stamped on reassignment). Ranges keep the current owner — a range can
     // span a handover, where no single name is correct.
     salesman: (!rangeActive && d.monthSalesman?.[rangeIdxs[0]]) || d.salesman,
-  })),[dealers,rangeIdxs,rangeActive]);
+  })),[scopedDealers,rangeIdxs,rangeActive]);
 
   const myD=dealersForMonth;
   const [overviewSearch,setOverviewSearch]=useState('');
@@ -1436,11 +1472,11 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
   const allStatesOv=useMemo(()=>[...new Set(dealers.map(x=>(x.state||'').trim()).filter(Boolean))].sort(),[dealers]);
 
   const geoFilteredDealers=useMemo(()=>{
-    let d=dealers;
+    let d=scopedDealers;
     if(geoFilter.city)d=d.filter(x=>(x.city||'').toLowerCase()===geoFilter.city.toLowerCase());
     if(geoFilter.state)d=d.filter(x=>(x.state||'').toLowerCase()===geoFilter.state.toLowerCase());
     return d;
-  },[dealers,geoFilter]);
+  },[scopedDealers,geoFilter]);
 
   const dealerMatches=dealerSearch.trim()?myD.filter(d=>d.name.toLowerCase().includes(dealerSearch.toLowerCase())).slice(0,8):[];
 
@@ -1531,14 +1567,16 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
   });
   const low=attentionExpanded?lowAll:lowAll.slice(0,8);
 
-  const trendData=MO.map((m,i)=>({
+  const trendDataAll=MO.map((m,i)=>({
     month:m.slice(0,3),
     units:geoFilteredDealers.reduce((s,d)=>s+(d.months[i]||0),0),
   }));
-  const projected=trendData.slice(-3).reduce((s,d)=>s+d.units,0)/3;
+  // Forecast stays on the full month history; only the chart follows the view cycle.
+  const projected=trendDataAll.slice(-3).reduce((s,d)=>s+d.units,0)/3;
+  const trendData=vIdx.map(i=>trendDataAll[i]);
 
-  const statusColorMap={'TOP PERFORMER':'#16a34a','PRIORITY ACCOUNT':'#65a30d','RISING STAR':'#ca8a04','ACTIVE':'#0891b2','RECENTLY INACTIVE':'#f97316','INACTIVE':'#dc2626','DEAD':'#7f1d1d','STAR':'#db2777','KEY ACCOUNT':'#4f46e5','ACHIEVER':'#0d9488','REACTIVE':'#0284c7','NONE':'#8a93a8'};
-  const fallbackPalette=['#6366f1','#34d399','#fbbf24','#f472b6','#22d3ee','#fb923c','#a78bfa','#f87171','#84cc16','#e879f9'];
+  const statusColorMap={'TOP PERFORMER':'#16a34a','PRIORITY ACCOUNT':'#65a30d','RISING STAR':'#ca8a04','ACTIVE':'#0891b2','RECENTLY INACTIVE':'#f97316','INACTIVE':'#dc2626','DEAD':'#7f1d1d','STAR':'#db2777','KEY ACCOUNT':'#2563eb','ACHIEVER':'#0d9488','REACTIVE':'#0284c7','NONE':'#8a93a8'};
+  const fallbackPalette=['#3b82f6','#10b981','#f59e0b','#ec4899','#06b6d4','#f97316','#8b5cf6','#ef4444','#84cc16','#e879f9'];
   const colorForStatus=(name,idx)=>statusColorMap[name.toUpperCase()]||fallbackPalette[idx%fallbackPalette.length];
   const statusCounts=(()=>{
     const map={};
@@ -1555,7 +1593,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
   const priorityAccount = byPerf('PRIORITY ACCOUNT');
   const risingStar      = byPerf('RISING STAR');
   const hasGeoFilter=geoFilter.city||geoFilter.state;
-  const viewingLabel=rangeActive?`${periodFull} (Range)`:(selectedMonthIdx===CURRENT_MONTH_IDX?`${selMoFull} (Current)`:selMoFull);
+  const viewingLabel=rangeActive?`${periodFull} (Range)`:(selectedMonthIdx===CUR_IDX?`${selMoFull} (Current)`:selMoFull);
 
   // ── Last-updated stamp ─────────────────────────────────────────────────
   // Ping the server every 60s for the DB's most-recent dealer write time.
@@ -1634,36 +1672,53 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
   // Only when there IS category data for a single selected month. A month
   // whose category-wise sheet was never uploaded has no Sale rows, and
   // falling back to dealer-level achieved beats showing zero.
-  const catSourced = catExcluded.size > 0 && !rangeActive && allCatTotals.length > 0;
+  // the company-wide category feed cannot be narrowed by the filter bar, so a filtered view adds up its own dealers
+  const catSourced = catExcluded.size > 0 && !rangeActive && allCatTotals.length > 0 && !ovActive;
   const taAdj = catSourced ? includedCatQty : ta;
   const apAdj = catSourced ? pct(tt, taAdj) : ap;
 
   return(
-    <div className="fade">
-      <div className="page-head" style={{marginBottom:22, display:'flex', alignItems:'flex-start', gap:16, flexWrap:'wrap'}}>
-        <div style={{flex:'1 1 auto', minWidth:240}}>
-          <div className="page-eyebrow" style={{fontSize:11,color:'var(--acc)',textTransform:'uppercase',letterSpacing:'0.15em',marginBottom:4}}>
+    <div className="fade ov-home">
+      {heroSlot && lastUpdatedFull && createPortal(
+        <div className="hh-stamp" title={erpUpload?.at
+            ? 'Last ERP sheet upload — ' + erpUpload.lines + ' invoice lines. Dealer edits (zone, credit, status) do not move this.'
+            : "No ERP upload yet — showing the most recent change to any dealer's Target / Achieved / Status / Zone."}>
+          <i/>
+          <span>{tr(erpUpload?.at ? 'Sales data uploaded' : 'Last updated')}</span>
+          <b>{lastUpdatedFull}</b>
+          <em>{lastUpdatedLabel}</em>
+        </div>, heroSlot)}
+      <div className={'page-head'+(periodOpen?' p-open':'')} style={{marginBottom:16, display:'flex', alignItems:'flex-end', gap:16, flexWrap:'wrap'}}>
+        {/* phones: the period is a small button; tap to pick From → To */}
+        <button type="button" className={'ov-period-btn'+(rangeActive?' on':'')} onClick={()=>setPeriodOpen(o=>!o)} title="Change the period">
+          <Calendar size={13}/>{rangeActive?`${MO[rangeStart]} – ${MO[rangeEnd]}`:MO[selectedMonthIdx]}<ChevronDown size={12}/>
+        </button>
+        <div style={{flex:'1 1 auto', minWidth:240, display:'flex', gap:12, alignItems:'flex-start'}}>
+          <div className="page-icon" style={{width:46,height:46,borderRadius:14,display:'grid',placeItems:'center',flexShrink:0,color:'var(--acc)',background:'var(--accL)'}}><LayoutDashboard size={22}/></div>
+          <div style={{minWidth:0}}>
+          <div className="page-eyebrow" style={{fontSize:10.5,fontWeight:800,color:'var(--acc)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:1}}>
             {viewingLabel}
-            {selectedMonthIdx!==CURRENT_MONTH_IDX&&<span style={{marginLeft:8,background:'rgba(251,191,36,0.15)',color:'var(--yel)',padding:'2px 8px',borderRadius:4,fontSize:10}}>HISTORICAL VIEW</span>}
+            {selectedMonthIdx!==CUR_IDX&&<span style={{marginLeft:8,background:'color-mix(in srgb, var(--yel) 15%, transparent)',color:'var(--yel)',padding:'2px 9px',borderRadius:20,fontSize:9.5}}>HISTORICAL VIEW</span>}
           </div>
-          <div className="page-title" style={{fontSize:24,fontWeight:700,letterSpacing:'-0.02em'}}>
-            {(currentUser.role==='admin'||currentUser.role==='superadmin')?'All Territories':'Your Territory'} — Overview
+          <div className="page-title" style={{fontSize:22,fontWeight:800,letterSpacing:'-0.01em',lineHeight:1.15}}>
+            <span className="pt-scope">{(currentUser.role==='admin'||currentUser.role==='superadmin')?'All Territories':'Your Territory'} — </span>{tr('Overview')}
           </div>
-          {lastUpdatedFull && (
+          <div className="pe-scope">{dealers.length.toLocaleString('en-IN')} dealers · {(currentUser.role==='admin'||currentUser.role==='superadmin')?'all territories':'your territory'}</div>
+          {lastUpdatedFull && !heroSlot && (
             <div className="page-stamp" style={{
               marginTop:8,
               display:'inline-flex', alignItems:'center', gap:8,
-              padding:'6px 12px', borderRadius:8,
-              background:'rgba(52,211,153,0.10)',
-              border:'1px solid rgba(52,211,153,0.30)',
+              padding:'5px 12px', borderRadius:20,
+              background:'color-mix(in srgb, var(--grn) 10%, transparent)',
+              border:'1px solid color-mix(in srgb, var(--grn) 22%, transparent)',
               fontSize:12, color:'var(--grn)', fontWeight:600,
             }}
               title={erpUpload?.at
                 ? 'Last ERP sheet upload — ' + erpUpload.lines + ' invoice lines. Dealer edits (zone, credit, status) do not move this.'
                 : "No ERP upload yet — showing the most recent change to any dealer's Target / Achieved / Status / Zone."}>
               <span style={{
-                width:8, height:8, borderRadius:'50%', background:'#34d399',
-                boxShadow:'0 0 8px rgba(52,211,153,0.7)',
+                width:8, height:8, borderRadius:'50%', background:'var(--grn)',
+                boxShadow:'0 0 8px color-mix(in srgb, var(--grn) 70%, transparent)',
               }}/>
               <span style={{color:'var(--t3)', fontWeight:500}}>
                 {erpUpload?.at ? 'Sales data uploaded' : 'Last updated on'}
@@ -1672,11 +1727,12 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
               <span style={{color:'var(--t3)', fontWeight:500, fontSize:11}}>({lastUpdatedLabel})</span>
             </div>
           )}
+          </div>
         </div>
 
         {/* ── Month-range selector — pick a period to aggregate ─────── */}
         <div style={{display:'flex',flexDirection:'column',gap:4}}>
-          <div style={{fontSize:10,color:'var(--t3)',fontWeight:700,textTransform:'uppercase',letterSpacing:'0.1em'}}>Period</div>
+          <div style={{fontSize:10,color:'var(--t3)',fontWeight:700,textTransform:'uppercase',letterSpacing:'0.1em'}}>{tr('Period')}</div>
           <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
             <select
               value={rangeStart}
@@ -1722,6 +1778,43 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
         )}
       </div>
 
+      {/* ── Filter bar: narrows everything on this page ─────────────────── */}
+      <div className={'ov-filters card'+(ovFOpen?' open':'')}>
+        <div className="ov-f-head" onClick={()=>setOvFOpen(o=>!o)}>
+          <span className="sec-ico" style={{'--tone':'var(--acc)'}}><SlidersHorizontal size={15}/></span>
+          <div style={{minWidth:0}}>
+            <div className="ov-f-title">{tr('Filter this view')}</div>
+            <div className="ov-f-note">{ovActive ? <>Showing <b style={{color:'var(--acc)'}}>{scopedDealers.length.toLocaleString('en-IN')}</b> of {dealers.length.toLocaleString('en-IN')} dealers · the category and catalogue panels stay company-wide</> : `All ${dealers.length.toLocaleString('en-IN')} dealers · narrows the figures, tiers, charts and lists below`}</div>
+          </div>
+          {ovActive>0 && <button className="btn" onClick={e=>{e.stopPropagation();setOvF({sm:'',zone:'',state:'',city:'',status:'',perf:''});}} style={{marginLeft:'auto',display:'inline-flex',alignItems:'center',gap:5,fontSize:12,color:'var(--red)'}}><X size={13}/> Clear {ovActive}</button>}
+          <span className="ov-f-chev" style={{marginLeft:ovActive?0:'auto'}}><ChevronDown size={16}/></span>
+        </div>
+        {/* computers: how many dealers the picks leave, beside the pills */}
+        <span className={'ov-f-count'+(ovActive?' on':'')} title={ovActive?'The category and catalogue panels stay company-wide':'Every dealer — pick a value to narrow the page'}>
+          <b>{scopedDealers.length.toLocaleString('en-IN')}</b>{ovActive?` of ${dealers.length.toLocaleString('en-IN')}`:''} dealers
+        </span>
+        {/* phones: what is picked, readable while the card is folded */}
+        {ovActive>0 && <div className="ov-f-sum">{Object.entries(ovF).filter(([,v])=>v).map(([k,v])=><span key={k} className="dl-chip">{k==='sm'?(users?.[v]?.name||v):v}<button onClick={()=>setOvF(f=>({...f,[k]:''}))}><X size={11}/></button></span>)}</div>}
+        <div className="ov-f-grid">
+          {[
+            ...((currentUser.role==='admin'||currentUser.role==='superadmin'||currentUser.role==='employee') && ovOptions.sm.length>1 ? [['sm','Salesman',ovOptions.sm,id=>users?.[id]?.name||id]] : []),
+            ['zone','Zone',ovOptions.zone,v=>v],
+            ['state','State',ovOptions.state,v=>v],
+            ['city','City',ovOptions.city,v=>v],
+            ['status','Potential',ovOptions.status,v=>v],
+            ['perf','Performance',ovOptions.perf,v=>v],
+          ].filter(([, , opts])=>opts.length>0).map(([k,label,opts,show])=>(
+            <label key={k} className={'ov-f'+(ovF[k]?' on':'')}>
+              <span>{label}</span>
+              <select value={ovF[k]} onChange={e=>setOvF(f=>({...f,[k]:e.target.value, ...(k==='state'?{city:''}:{})}))}>
+                <option value="">All</option>
+                {opts.filter(o=>k!=='city'||!ovF.state||dealers.some(x=>String(x.state||'').trim()===ovF.state&&String(x.city||'').trim()===o)).map(o=><option key={o} value={o}>{show(o)}</option>)}
+              </select>
+            </label>
+          ))}
+        </div>
+      </div>
+
       {/* Movement — the three things on this page that say something the rest
           of it doesn't. Small chips buried them among a dozen others; now that
           the duplicates are gone they get room: the number leads, the label
@@ -1730,56 +1823,36 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
       {(()=>{
         const CARDS = [
           { key:'up',   n:risingList.length,    label:'dealers trending up',
-            rule:'sales up >30% vs last month', color:'#34d399', Icon:TrendingUp,
+            rule:'sales up >30% vs last month', color:'#10b981', Icon:TrendingUp,
             popup:{label:'TRENDING UP', color:'var(--grn)', icon:'📈',
                    sub:'sales up >30% vs previous month', list:risingList} },
           { key:'down', n:decliningList.length, label:'declining sharply',
-            rule:'sales down >20% vs last month', color:'#f87171', Icon:ArrowDownRight,
+            rule:'sales down >20% vs last month', color:'#ef4444', Icon:ArrowDownRight,
             popup:{label:'DECLINING SHARPLY', color:'var(--red)', icon:'📉',
                    sub:'sales down >20% vs previous month', list:decliningList} },
           { key:'dorm', n:dormantList.length,   label:'dormant 3+ months',
-            rule:'no sales in 3 months, had history', color:'#fbbf24', Icon:Clock,
+            rule:'no sales in 3 months, had history', color:'#f59e0b', Icon:Clock,
             popup:{label:'DORMANT 3+ MONTHS', color:'var(--yel)', icon:'💤',
                    sub:'zero sales last 3 months but had history', list:dormantList} },
         ].filter(c=>c.n>0);
         if(!CARDS.length) return null;
         return (
-          <div style={{display:'flex',flexWrap:'wrap',gap:10,marginBottom:18}}>
+          <div className="ov-moves">
             {CARDS.map(c=>{
-              // Solid fill, so the text colour has to follow the background
-              // rather than the theme — readableOn picks black or white for
-              // whichever gives contrast on that swatch. All three fills are
-              // light, so all three get dark text in either mode.
-              const fg = readableOn(c.color);
-              // Border and icon tile are drawn in the TEXT colour at low alpha,
-              // not a fixed black or white. On a light fill that reads as a
-              // soft dark edge; were a fill ever dark, the same code gives a
-              // light one instead of disappearing into the background.
-              const ink   = fg === '#fff' ? '255,255,255' : '0,0,0';
-              const edge  = `rgba(${ink},0.22)`;
-              const tile  = `rgba(${ink},0.13)`;
+              const tone = c.key==='up' ? 'var(--grn)' : c.key==='down' ? 'var(--red)' : 'var(--yel)';
               return (
-                <div key={c.key} className="insight-card"
+                <div key={c.key} className="insight-card ov-move"
                   onClick={()=>setInsightPopup(c.popup)}
-                  style={{'--c':c.color,
-                    background:c.color, color:fg,
-                    border:`1.5px solid ${edge}`,
-                    borderRadius:12, padding:'10px 16px', cursor:'pointer',
-                    display:'inline-flex', alignItems:'center', gap:12, flex:'0 0 auto'}}>
-                  <div style={{width:36,height:36,borderRadius:10,flexShrink:0,
-                    background:tile, border:`1px solid ${edge}`,
-                    display:'flex',alignItems:'center',justifyContent:'center'}}>
-                    <c.Icon size={19}/>
-                  </div>
+                  style={{'--tone':tone}}>
+                  <div className="ov-move-ico"><c.Icon size={20}/></div>
                   <div style={{display:'flex', flexDirection:'column', gap:2, minWidth:0}}>
-                    <div style={{display:'flex', alignItems:'baseline', gap:7, whiteSpace:'nowrap'}}>
-                      <span style={{fontSize:22,fontWeight:800,lineHeight:1,letterSpacing:'-0.02em'}}>{c.n}</span>
-                      <span style={{fontSize:13,fontWeight:700}}>{c.label}</span>
+                    <div style={{display:'flex', alignItems:'baseline', gap:7, flexWrap:'wrap'}}>
+                      <span className="ov-move-n">{c.n}</span>
+                      <span className="ov-move-lbl">{c.label}</span>
+                      <span className="ov-move-short">{tr(c.key==='up'?'Trending up':c.key==='down'?'Declining':'Dormant')}</span>
                     </div>
-                    {/* The rule, kept on the card rather than hidden in a
-                        tooltip — "dormant" means nothing without it, and a
-                        tooltip is invisible on a phone. */}
-                    <span style={{fontSize:10.5,fontWeight:500,opacity:.7,whiteSpace:'nowrap'}}>{c.rule}</span>
+                    {/* the rule stays on the card — "dormant" means nothing without it */}
+                    <span className="ov-move-rule">{c.rule}</span>
                   </div>
                 </div>
               );
@@ -1788,7 +1861,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
         );
       })()}
 
-      <div className="stat-grid">
+      <div className={"stat-grid"+(!ovActive&&!rangeActive&&catExcluded.size===0?" ov-dup":"")}>
         <StatCard label="Total Dealers" value={myD.length} sub={`${active} active · ${inactive} inactive · ${dead} dead`} icon={Users}/>
         <StatCard label={`${periodLabel} Target`} value={tt} sub={rangeActive?`${rangeIdxs.length} months · total units`:"total units"} icon={Target}/>
         <StatCard
@@ -1797,7 +1870,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
           sub={catExcluded.size>0
             ? `excludes ${[...catExcluded].join(', ')} (−${Number(catSourced ? excludedQty : filteredDelta).toLocaleString('en-IN')})`
             : `${periodFull} total`}
-          valueColor="#34d399" icon={Award}/>
+          valueColor="#10b981" icon={Award}/>
         <StatCard
           label={`Achievement${catExcluded.size>0 ? ' (excl.)' : ''}`}
           value={spct(tt, taAdj)}
@@ -1873,34 +1946,33 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
       </div>
 
       {/* Performance Tiers */}
-      <div className="card" style={{marginBottom:12}}>
-        <div style={{fontSize:13,fontWeight:600,color:'var(--t2)',marginBottom:12,display:'flex',alignItems:'center',gap:6}}>
-          <Award size={14} color="#fbbf24"/> Performance Tiers
-          <span style={{fontSize:11,color:'var(--t3)',fontWeight:400,marginLeft:4}}>({periodLabel} units · click to view)</span>
+      <div className="card ov-tiers" style={{marginBottom:12}}>
+        <div className="sec-title">
+          <span className="sec-ico" style={{'--tone':'var(--yel)'}}><Award size={15}/></span> {tr(mine?'Your dealer performance':'Performance Tiers')}
+          <span className="sec-note">{periodLabel} units · tap to view</span>
         </div>
-        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:10}}>
+        <div className="tier-row" style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:10}}>
           {[
-            {label:'TOP PERFORMER',sub:'250+ units',count:topPerformers.length,color:'var(--yel)',icon:'⭐',list:topPerformers},
-            {label:'PRIORITY ACCOUNT',sub:'101 – 250 units',count:priorityAccount.length,color:'var(--pur)',icon:'◆',list:priorityAccount},
-            {label:'RISING STAR',sub:'50 – 100 units',count:risingStar.length,color:'#22d3ee',icon:'★',list:risingStar},
+            {label:'TOP PERFORMER',sub:'250+ units',count:topPerformers.length,color:'var(--yel)',g1:'#f59e0b',g2:'#ea580c',icon:'⭐',Icon:Crown,list:topPerformers},
+            {label:'PRIORITY ACCOUNT',sub:'101 – 250 units',count:priorityAccount.length,color:'var(--pur)',g1:'#8b5cf6',g2:'#6366f1',icon:'◆',Icon:Gem,list:priorityAccount},
+            {label:'RISING STAR',sub:'50 – 100 units',count:risingStar.length,color:'#0891b2',g1:'#06b6d4',g2:'#3b82f6',icon:'★',Icon:Star,list:risingStar},
           ].map(t=>(
             <div key={t.label} onClick={()=>{if(t.list.length>0)setTierPopup(t);}}
-              className="tier-card"
-              style={{'--c':t.color,'--fg':readableOn(t.color),background:`linear-gradient(135deg, ${t.color}1a, ${t.color}08)`,border:`1px solid ${t.color}44`,borderRadius:12,padding:'14px 16px',cursor:'pointer',transition:'transform .15s'}}
-              onMouseEnter={e=>{e.currentTarget.style.transform='translateY(-2px)';}}
-              onMouseLeave={e=>{e.currentTarget.style.transform='translateY(0)';}}>
-              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
-                <span style={{fontSize:18}}>{t.icon}</span>
-                <div><div style={{fontSize:11,color:t.color,fontWeight:700}}>{t.label}</div><div style={{fontSize:10,color:'var(--t3)'}}>{t.sub}</div></div>
+              className="tier-hero" style={{'--g1':t.g1,'--g2':t.g2}}>
+              <t.Icon size={96} className="th-wm"/>
+              <div style={{display:'flex',alignItems:'center',gap:10,position:'relative'}}>
+                <span className="th-ico"><t.Icon size={19}/></span>
+                <div><div className="th-lbl">{t.label}</div><div className="th-sub">{t.sub}</div></div>
               </div>
-              <div style={{fontSize:30,fontWeight:700,color:'var(--t1)',lineHeight:1,marginBottom:6}}>{t.count}<span style={{fontSize:11,color:'var(--t3)',fontWeight:400,marginLeft:6}}>dealers</span></div>
-              {t.list.slice(0,3).map(d=>(
-                <span key={d.id} onClick={e=>{e.stopPropagation();onOpenDealer(d.id);}}
-                  className="tier-pill" style={{display:'inline-block',fontSize:10,padding:'2px 8px',background:'var(--bg2)',border:'1px solid var(--b2)',borderRadius:4,color:'var(--t2)',cursor:'pointer',margin:'2px',maxWidth:140,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-                  {d.name} · {d.achieved}
-                </span>
-              ))}
-              {t.list.length>3&&<span style={{fontSize:10,color:'var(--t3)',marginLeft:4}}>+{t.list.length-3} more</span>}
+              <div className="th-n"><CountUp value={t.count}/><small>{tr('dealers')}</small></div>
+              <div style={{position:'relative'}}>
+                {t.list.slice(0,3).map(d=>(
+                  <span key={d.id} onClick={e=>{e.stopPropagation();onOpenDealer(d.id);}} className="th-pill" title={d.name}>
+                    {d.name} · {d.achieved}
+                  </span>
+                ))}
+                {t.list.length>3&&<span className="th-more">+{t.list.length-3} more</span>}
+              </div>
             </div>
           ))}
         </div>
@@ -1946,23 +2018,77 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
           return(
             <div onClick={()=>{ if(count) setTierPopup({label:s,sub:SUBS[s]||'',color:clr,icon:'●',list}); }}
               className="status-card"
-              style={{'--c':clr,'--fg':readableOn(clr),background:clr+'14',border:'1px solid '+clr+'33',borderRadius:10,padding:'12px 14px',cursor:'pointer',transition:'all .15s'}}>
+              style={{'--c':clr,'--tone':clr,padding:'12px 14px',cursor:'pointer',transition:'all .15s'}}>
               <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:6}}>
                 <span className="sc-dot" style={{width:8,height:8,borderRadius:'50%',background:clr,flexShrink:0}}/>
-                <span style={{fontSize:11,color:clr,fontWeight:600,textTransform:'uppercase',letterSpacing:'.05em',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s}</span>
+                <span className="sc-lbl" style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'.05em',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s}</span>
               </div>
-              <div style={{fontSize:24,fontWeight:700,color:'var(--t1)',lineHeight:1}}>{count}<span style={{fontSize:11,color:'var(--t3)',fontWeight:400,marginLeft:6}}>{pctOfTotal}%</span></div>
+              <div style={{fontSize:24,fontWeight:850,color:'var(--t1)',lineHeight:1,letterSpacing:'-.02em'}}>{count}<span style={{fontSize:11,color:'var(--t3)',fontWeight:400,marginLeft:6}}>{pctOfTotal}%</span></div>
               <div className="sc-bar" style={{height:3,background:'var(--b1)',borderRadius:2,marginTop:8,overflow:'hidden'}}>
                 <div style={{height:'100%',width:pctOfTotal+'%',background:clr,borderRadius:2,transition:'width .8s ease'}}/>
               </div>
             </div>
           );
         };
+        const open=(s,list,clr)=>{ if(list.length) setTierPopup({label:s,sub:SUBS[s]||'',color:clr,icon:'●',list}); };
+        // Account Activity reads as one health meter: how the whole book splits
+        // between buying, slipping and gone — the proportion is the message.
+        const Meter=({icon,title,note,keys,map})=>{
+          if(!keys.length) return null;
+          const total=keys.reduce((a,k)=>a+(map[k]||[]).length,0)||1;
+          return(
+            <div className="card ov-activity" style={{marginBottom:12}}>
+              <div className="sec-title">{icon} {title}<span className="sec-note">{note}</span></div>
+              <div className="hm-bar">
+                {keys.map(k=>{const list=map[k]||[];const clr=statusColorMap[k]||'#64748b';
+                  return <div key={k} style={{flex:list.length,background:clr}} title={`${k} · ${list.length}`} onClick={()=>open(k,list,clr)}/>;})}
+              </div>
+              <div className="hm-legend">
+                {keys.map(k=>{const list=map[k]||[];const clr=statusColorMap[k]||'#64748b';
+                  return(
+                    <button key={k} className="hm-item" style={{'--tone':clr}} onClick={()=>open(k,list,clr)}>
+                      <span className="hm-lbl"><i/>{k}</span>
+                      <span className="hm-n"><CountUp value={list.length}/><small>{Math.round(list.length/total*100)}%</small></span>
+                      <span className="hm-sub">{SUBS[k]||''}</span>
+                    </button>
+                  );})}
+              </div>
+            </div>
+          );
+        };
+        // Selected User: each label as a ring — share of all dealers at a glance.
+        const Rings=({icon,title,note,keys,map})=>{
+          if(!keys.length) return null;
+          const C=2*Math.PI*26;
+          return(
+            <div className="card ov-selected" style={{marginBottom:12}}>
+              <div className="sec-title">{icon} {title}<span className="sec-note">{note}</span></div>
+              <div className="ring-grid">
+                {keys.map(k=>{const list=map[k]||[];const clr=statusColorMap[k]||'#64748b';
+                  const p=myD.length?Math.round(list.length/myD.length*100):0;
+                  return(
+                    <button key={k} className="ring-item" style={{'--tone':clr}} onClick={()=>open(k,list,clr)}>
+                      <span className="ring-wrap">
+                        <svg viewBox="0 0 64 64" width="72" height="72">
+                          <circle cx="32" cy="32" r="26" fill="none" strokeWidth="7" className="ring-bg"/>
+                          <circle cx="32" cy="32" r="26" fill="none" strokeWidth="7" stroke={clr} strokeLinecap="round"
+                            strokeDasharray={`${Math.max(p,1)/100*C} ${C}`} transform="rotate(-90 32 32)" className="ring-fg"/>
+                        </svg>
+                        <b><CountUp value={list.length}/></b>
+                      </span>
+                      <span className="ring-lbl">{k}</span>
+                      <span className="ring-p">{p}% of dealers</span>
+                    </button>
+                  );})}
+              </div>
+            </div>
+          );
+        };
         const Section=({icon,title,note,keys,map}) => keys.length===0 ? null : (
           <div className="card" style={{marginBottom:12}}>
-            <div style={{fontSize:13,fontWeight:600,color:'var(--t2)',marginBottom:12,display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+            <div className="sec-title">
               {icon} {title}
-              <span style={{fontSize:11,color:'var(--t3)',fontWeight:400}}>{note}</span>
+              <span className="sec-note">{note}</span>
             </div>
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:10}}>
               {keys.map(k=><Card key={k} s={k} list={map[k]||[]}/>)}
@@ -1970,11 +2096,11 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
           </div>
         );
         return(<>
-          <Section icon={<Clock size={14} color="#fb923c"/>}
-            title="Account Activity" note="(calculated from sales · click to view)"
+          <Meter icon={<span className="sec-ico" style={{'--tone':'#ea580c'}}><Clock size={15}/></span>}
+            title={tr(mine?'Your dealers’ activity':'Account Activity')} note="calculated from sales · tap a part to view"
             keys={activityKeys} map={perfMap}/>
-          <Section icon={<Star size={14} color="#34d399"/>}
-            title="Selected User" note="(set by the salesman · click to view)"
+          <Rings icon={<span className="sec-ico" style={{'--tone':'var(--grn)'}}><Star size={15}/></span>}
+            title={tr(mine?'Your selected status dealers':'Selected User')} note={mine?'the status you set · tap to view':'set by the salesman · tap to view'}
             keys={potentialKeys} map={potMap}/>
         </>);
       })()}
@@ -1999,75 +2125,68 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
       {/* Category drill chart */}
       <CategoryDrillChart dealers={dealers} selectedMonthIdx={selectedMonthIdx} onNavigate={onNavigate}/>
 
-      {/* Geo filter */}
-      {(allCitiesOv.length>0||allStatesOv.length>0)&&(
-        <div className="card" style={{marginBottom:16,padding:'12px 16px'}}>
-          {/* <div style={{fontSize:12,fontWeight:600,color:'var(--t2)',marginBottom:10,display:'flex',alignItems:'center',gap:6}}>
-            <MapPin size={13} color="var(--acc)"/> Geography Filter
-            {hasGeoFilter&&<button onClick={()=>setGeoFilter({city:'',state:''})} className="btn" style={{fontSize:10,padding:'2px 8px',marginLeft:'auto',color:'var(--red)'}}><X size={10} style={{display:'inline',verticalAlign:'middle'}}/> Clear</button>}
-          </div> */}
-          {/* <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-            {allStatesOv.map(s=>(
-              <button key={s} onClick={()=>setGeoFilter(f=>({...f,state:f.state===s?'':s,city:''}))} className="btn"
-                style={{fontSize:11,padding:'4px 10px',background:geoFilter.state===s?'var(--accL)':'var(--bg2)',color:geoFilter.state===s?'var(--acc)':'var(--t2)',borderColor:geoFilter.state===s?'var(--acc)':'var(--b2)'}}>
-                {s}
-              </button>
-            ))}
-            {allCitiesOv.map(c=>(
-              <button key={c} onClick={()=>setGeoFilter(f=>({...f,city:f.city===c?'':c}))} className="btn"
-                style={{fontSize:11,padding:'4px 10px',background:geoFilter.city===c?'rgba(34,211,238,0.15)':'var(--bg2)',color:geoFilter.city===c?'#22d3ee':'var(--t2)',borderColor:geoFilter.city===c?'#22d3ee':'var(--b2)'}}>
-                {c}
-              </button>
-            ))}
-          </div> */}
-        </div>
-      )}
+      {/* (the old geography chips live in the filter bar at the top now) */}
 
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(320px,1fr))',gap:16,marginBottom:16}}>
         <div className="card">
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
-            <div style={{fontSize:13,fontWeight:600,color:'var(--t2)'}}>
-              11-Month Sales Trend
+          <div className="sec-title">
+            <span className="sec-ico" style={{'--tone':'var(--acc)'}}><TrendingUp size={15}/></span>
+            <div style={{display:'contents'}}>
+              Sales trend
               {hasGeoFilter&&<span style={{fontSize:10,color:'var(--acc)',marginLeft:6}}>({geoFilter.state||''}{geoFilter.city?(geoFilter.state?' · ':'')+geoFilter.city:''})</span>}
             </div>
-            <div style={{fontSize:11,color:'var(--t3)'}}>Forecast: <strong style={{color:'var(--acc)'}}>{Math.round(projected)}</strong></div>
+            <div style={{flex:1}}/>
+            <span className="kpi-pill" title="Where this month is heading at the current pace">Forecast <b>{Math.round(projected).toLocaleString('en-IN')}</b></span>
           </div>
-          <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={trendData}>
+          <ResponsiveContainer width="100%" height={220}>
+            <AreaChart data={trendData} margin={{top:18,right:8,left:-12,bottom:0}}>
               <defs>
                 <linearGradient id="grad1" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#6366f1" stopOpacity={0.4}/>
-                  <stop offset="100%" stopColor="#6366f1" stopOpacity={0}/>
+                  <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.35}/>
+                  <stop offset="70%" stopColor="#3b82f6" stopOpacity={0.06}/>
+                  <stop offset="100%" stopColor="#3b82f6" stopOpacity={0}/>
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--b1)"/>
-              <XAxis dataKey="month" tick={{fill:'var(--t3)',fontSize:11}} stroke="var(--b2)"/>
-              <YAxis tick={{fill:'var(--t3)',fontSize:11}} stroke="var(--b2)"/>
-              <Tooltip contentStyle={{background:'var(--bg2)',border:'1px solid var(--b2)',borderRadius:8}}/>
-              <Area type="monotone" dataKey="units" stroke="#6366f1" strokeWidth={2} fill="url(#grad1)" label={{position:'top',fill:'var(--t2)',fontSize:10}}/>
-              <ReferenceLine x={MO[selectedMonthIdx].slice(0,3)} stroke="#fbbf24" strokeWidth={2} strokeDasharray="3 3"/>
+              <CartesianGrid vertical={false}/>
+              <XAxis dataKey="month" tickLine={false} axisLine={false}/>
+              <YAxis tickLine={false} axisLine={false} width={44}/>
+              <Tooltip/>
+              <Area type="monotone" dataKey="units" name="Units" stroke="#3b82f6" strokeWidth={2.5} fill="url(#grad1)"
+                dot={{r:3,fill:'#3b82f6',strokeWidth:0}} activeDot={{r:6}} label={{position:'top',fill:'var(--t2)',fontSize:10,fontWeight:700}}/>
+              <ReferenceLine x={MO[selectedMonthIdx].slice(0,3)} stroke="#f59e0b" strokeWidth={2} strokeDasharray="3 3"/>
             </AreaChart>
           </ResponsiveContainer>
         </div>
         <div className="card">
-          <div style={{fontSize:13,fontWeight:600,color:'var(--t2)',marginBottom:14}}>Status Distribution</div>
-          <ResponsiveContainer width="100%" height={200}>
-            <PieChart>
-              <Pie data={statusCounts} cx="50%" cy="50%" innerRadius={50} outerRadius={75} paddingAngle={2} dataKey="value"
-                onClick={d=>onNavigate('dealers',{status:d.name})} style={{cursor:'pointer'}}
-                label={({value})=>value}>
-                {statusCounts.map((d,i)=><Cell key={i} fill={d.color}/>)}
-              </Pie>
-              <Tooltip contentStyle={{background:'var(--bg2)',border:'1px solid var(--b2)',borderRadius:8}}/>
-              <Legend wrapperStyle={{fontSize:11}} iconType="circle"/>
-            </PieChart>
-          </ResponsiveContainer>
+          <div className="sec-title">
+            <span className="sec-ico" style={{'--tone':'var(--pur)'}}><Activity size={15}/></span> Status distribution
+            <span className="sec-note">tap a slice to open those dealers</span>
+          </div>
+          <div style={{position:'relative'}}>
+            <ResponsiveContainer width="100%" height={220}>
+              <PieChart>
+                <Pie data={statusCounts} cx="50%" cy="45%" innerRadius={62} outerRadius={88} paddingAngle={3} cornerRadius={6} dataKey="value" stroke="none"
+                  onClick={d=>onNavigate('dealers',{status:d.name})} style={{cursor:'pointer'}}>
+                  {statusCounts.map((d,i)=><Cell key={i} fill={d.color}/>)}
+                </Pie>
+                <Tooltip/>
+                <Legend wrapperStyle={{fontSize:11}} iconType="circle" iconSize={8}/>
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="donut-center" style={{top:'45%'}}>
+              <b>{statusCounts.reduce((a,d)=>a+(d.value||0),0).toLocaleString('en-IN')}</b>
+              <span>dealers</span>
+            </div>
+          </div>
         </div>
       </div>
 
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))',gap:14,marginBottom:14}}>
         <div className="card">
-          <div style={{fontSize:13,fontWeight:600,color:'var(--t2)',marginBottom:14}}>🏆 Top 5 — {periodLabel}</div>
+          <div className="sec-title">
+            <span className="sec-ico" style={{'--tone':'var(--yel)'}}><Crown size={15}/></span> Top 5
+            <span className="sec-note">{periodLabel} · by target achieved</span>
+          </div>
           {top5.length>0?top5.map((x,i)=>{
             const p=pct(x.target,x.achieved);
             return(
@@ -2075,14 +2194,14 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
                 style={{display:'flex',alignItems:'center',gap:10,marginBottom:11,cursor:'pointer',padding:'4px 6px',borderRadius:6,transition:'background .15s'}}
                 onMouseEnter={e=>e.currentTarget.style.background='var(--bg2)'}
                 onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-                <span style={{fontSize:12,color:'var(--t3)',width:14,textAlign:'right'}}>{i+1}</span>
+                <span className={'rank rank-'+(i+1)}>{i+1}</span>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}>
                     <span style={{fontSize:12,color:'var(--t1)',fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:160}}>{x.name}</span>
                     <span style={{fontSize:12,fontWeight:700,color:pclr(p),marginLeft:6}}>{spct(x.target,x.achieved)}</span>
                   </div>
-                  <div style={{height:4,background:'var(--b1)',borderRadius:2,overflow:'hidden'}}>
-                    <div style={{height:'100%',width:`${Math.min(p||0,100)}%`,background:pclr(p),borderRadius:2,transition:'width .8s ease'}}/>
+                  <div style={{height:6,background:'var(--bg3)',borderRadius:4,overflow:'hidden'}}>
+                    <div style={{height:'100%',width:`${Math.min(p||0,100)}%`,background:`linear-gradient(90deg, color-mix(in srgb, ${pclr(p)} 55%, transparent), ${pclr(p)})`,borderRadius:4,transition:'width .8s ease'}}/>
                   </div>
                 </div>
                 <span style={{fontSize:12,color:'var(--t3)',width:22,textAlign:'right'}}>{x.achieved}</span>
@@ -2092,21 +2211,25 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
         </div>
 
         <div className="card">
-          <div style={{fontSize:13,fontWeight:600,color:'var(--t2)',marginBottom:14}}>📊 Achievement Distribution</div>
+          <div className="sec-title">
+            <span className="sec-ico" style={{'--tone':'var(--grn)'}}><Target size={15}/></span> Achievement distribution
+            <span className="sec-note">dealers by % of target</span>
+          </div>
           {(()=>{
             const buckets={'0%':0,'1-50%':0,'51-99%':0,'100%+':0};
             myD.forEach(x=>{if(!x.target)return;const p=pct(x.target,x.achieved)||0;if(p===0)buckets['0%']++;else if(p<51)buckets['1-50%']++;else if(p<100)buckets['51-99%']++;else buckets['100%+']++;});
-            const colors={'0%':'#f87171','1-50%':'#fb923c','51-99%':'#fbbf24','100%+':'#34d399'};
+            const colors={'0%':'#ef4444','1-50%':'#f97316','51-99%':'#f59e0b','100%+':'#10b981'};
             const data=Object.entries(buckets).map(([k,v])=>({name:k,value:v,fill:colors[k]}));
             return(
               <ResponsiveContainer width="100%" height={180}>
-                <BarChart data={data}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--b1)"/>
-                  <XAxis dataKey="name" tick={{fill:'var(--t3)',fontSize:11}}/>
-                  <YAxis tick={{fill:'var(--t3)',fontSize:11}}/>
-                  <Tooltip contentStyle={{background:'var(--bg2)',border:'1px solid var(--b2)',borderRadius:8}}/>
-                  <Bar dataKey="value" radius={[4,4,0,0]} label={{position:'top',fill:'var(--t2)',fontSize:11,fontWeight:600}}>
-                    {data.map((d,i)=><Cell key={i} fill={d.fill}/>)}
+                <BarChart data={data} margin={{top:20,right:6,left:-18,bottom:0}}>
+                  <defs>{data.map((d,i)=><linearGradient key={i} id={'ad'+i} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={d.fill} stopOpacity={1}/><stop offset="100%" stopColor={d.fill} stopOpacity={0.55}/></linearGradient>)}</defs>
+                  <CartesianGrid vertical={false}/>
+                  <XAxis dataKey="name" tickLine={false} axisLine={false}/>
+                  <YAxis tickLine={false} axisLine={false} allowDecimals={false}/>
+                  <Tooltip/>
+                  <Bar dataKey="value" name="Dealers" radius={[8,8,0,0]} maxBarSize={46} label={{position:'top',fill:'var(--t1)',fontSize:12,fontWeight:800}}>
+                    {data.map((d,i)=><Cell key={i} fill={`url(#ad${i})`}/>)}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -2118,21 +2241,20 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
       {/* Needs Attention */}
       <div className="card">
         <div className="row" style={{marginBottom:14,flexWrap:'wrap',gap:10}}>
-          <div style={{fontSize:13,fontWeight:600,color:'var(--t2)',display:'flex',alignItems:'center',gap:6}}>
-            <AlertTriangle size={14} color={attentionDirection==='lt'?'#fbbf24':'#34d399'}/>
-            {attentionDirection==='lt'?'Needs Attention':'High Performers'} — {attentionDirection==='lt'?'below':'above'} {attentionThreshold}%
-            <span style={{fontSize:11,color:'var(--t3)',fontWeight:400,marginLeft:4}}>({lowAll.length} dealers)</span>
+          <div className="sec-title" style={{marginBottom:0}}>
+            <span className="sec-ico" style={{'--tone':attentionDirection==='lt'?'var(--yel)':'var(--grn)'}}>{attentionDirection==='lt'?<AlertTriangle size={15}/>:<TrendingUp size={15}/>}</span>
+            {attentionDirection==='lt'?'Needs attention':'High performers'}
+            <span className="sec-note">{attentionDirection==='lt'?'below':'above'} {attentionThreshold}% · {lowAll.length} dealers</span>
           </div>
           <div className="spacer"/>
           <div className="row" style={{gap:4,flexWrap:'wrap'}}>
-            <div style={{display:'flex',background:'var(--bg2)',border:'1px solid var(--b2)',borderRadius:6,overflow:'hidden'}}>
-              <button onClick={()=>setAttentionDirection('lt')} style={{background:attentionDirection==='lt'?'#fbbf24':'transparent',color:attentionDirection==='lt'?'#1a1a2e':'var(--t2)',border:'none',padding:'4px 12px',fontSize:12,fontWeight:700,cursor:'pointer'}}>&lt; Below</button>
-              <button onClick={()=>setAttentionDirection('gt')} style={{background:attentionDirection==='gt'?'#34d399':'transparent',color:attentionDirection==='gt'?'#1a1a2e':'var(--t2)',border:'none',padding:'4px 12px',fontSize:12,fontWeight:700,cursor:'pointer',borderLeft:'1px solid var(--b2)'}}>&gt; Above</button>
+            <div className="seg">
+              <button onClick={()=>setAttentionDirection('lt')} className={'seg-b'+(attentionDirection==='lt'?' on':'')} style={{'--tone':'var(--yel)'}}>&lt; Below</button>
+              <button onClick={()=>setAttentionDirection('gt')} className={'seg-b'+(attentionDirection==='gt'?' on':'')} style={{'--tone':'var(--grn)'}}>&gt; Above</button>
             </div>
             {[50,60,75,90,100].map(t=>{
-              const ac=attentionDirection==='lt'?'#fbbf24':'#34d399';
-              return(<button key={t} onClick={()=>setAttentionThreshold(t)}
-                style={{background:attentionThreshold===t?ac:'var(--bg2)',color:attentionThreshold===t?'#1a1a2e':'var(--t2)',border:`1px solid ${attentionThreshold===t?ac:'var(--b2)'}`,borderRadius:6,padding:'4px 10px',fontSize:11,fontWeight:attentionThreshold===t?700:500,cursor:'pointer'}}>
+              const ac=attentionDirection==='lt'?'#f59e0b':'#10b981';
+              return(<button key={t} onClick={()=>setAttentionThreshold(t)} className={'thr'+(attentionThreshold===t?' on':'')} style={{'--tone':ac}}>
                 {attentionDirection==='lt'?'<':'>'}{t}%
               </button>);
             })}
@@ -2144,15 +2266,12 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
               {low.map(x=>{
                 const p=pct(x.target,x.achieved)||0;
                 const sm=users[x.salesman];
-                const cardClr=attentionDirection==='lt'?(p<30?'#f87171':p<60?'#fb923c':'#fbbf24'):(p>=150?'#34d399':p>=100?'#22d3ee':'#a78bfa');
+                const cardClr=attentionDirection==='lt'?(p<30?'#ef4444':p<60?'#f97316':'#f59e0b'):(p>=150?'#10b981':p>=100?'#06b6d4':'#8b5cf6');
                 return(
-                  <div key={x.id} onClick={()=>onOpenDealer(x.id)}
-                    style={{background:cardClr+'14',border:`1px solid ${cardClr}33`,borderRadius:8,padding:'11px 13px',cursor:'pointer',transition:'transform .15s'}}
-                    onMouseEnter={e=>e.currentTarget.style.transform='translateY(-2px)'}
-                    onMouseLeave={e=>e.currentTarget.style.transform='translateY(0)'}>
+                  <div key={x.id} onClick={()=>onOpenDealer(x.id)} className="att-card" style={{'--tone':cardClr}}>
                     <div style={{fontSize:12,color:'var(--t1)',fontWeight:500,marginBottom:3,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{x.name}</div>
-                    <div style={{fontSize:20,fontWeight:700,color:cardClr}}>{spct(x.target,x.achieved)}</div>
-                    <div style={{fontSize:11,color:'var(--t3)',marginTop:2}}>{x.achieved}/{x.target} units</div>
+                    <div style={{display:'flex',alignItems:'baseline',gap:6}}><span style={{fontSize:22,fontWeight:850,color:cardClr,letterSpacing:'-.02em'}}>{spct(x.target,x.achieved)}</span><span style={{fontSize:11,color:'var(--t3)'}}>{x.achieved}/{x.target}</span></div>
+                    <div className="att-bar"><div style={{width:Math.min(p,100)+'%'}}/></div>
                     {x.category&&<div style={{fontSize:10,color:'var(--t3)',marginTop:2}}>{x.category}</div>}
                     {(currentUser.role==='admin'||currentUser.role==='superadmin')&&sm&&<div style={{fontSize:10,color:'var(--t3)',marginTop:2,display:'flex',alignItems:'center',gap:4}}><span style={{width:6,height:6,borderRadius:'50%',background:sm.color}}/>{sm.name}</div>}
                     <div style={{marginTop:6}}><MiniBars months={x.months} highlightIdx={selectedMonthIdx}/></div>
@@ -2168,7 +2287,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
       {/* All dealers table */}
       <div className="card" style={{marginTop:14}}>
         <div className="row" style={{marginBottom:14,flexWrap:'wrap',gap:8}}>
-          <div style={{fontSize:13,fontWeight:600,color:'var(--t2)',display:'flex',alignItems:'center',gap:6}}><Users size={14}/> All Dealers ({myD.length})</div>
+          <div className="sec-title" style={{marginBottom:0}}><span className="sec-ico" style={{'--tone':'#6366f1'}}><Users size={15}/></span> All dealers <span className="count-pill">{myD.length.toLocaleString('en-IN')}</span></div>
           <div className="spacer"/>
           <div style={{position:'relative'}}>
             <Search size={13} style={{position:'absolute',left:9,top:'50%',transform:'translateY(-50%)',color:'var(--t3)'}}/>
@@ -2228,7 +2347,12 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
                   return(
                     <tr key={x.id} onClick={()=>onOpenDealer(x.id)} style={{cursor:'pointer'}}>
                       <td style={{color:'var(--t3)',fontSize:11}}>{i+1}</td>
-                      <td style={{fontWeight:600,color:'var(--t1)',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis'}}>{x.name}</td>
+                      <td style={{maxWidth:240}}>
+                        <div style={{display:'flex',alignItems:'center',gap:9,minWidth:0}}>
+                          <span className="ini" style={{'--h':(x.name||'?').charCodeAt(0)*37%360}}>{(x.name||'?').replace(/[^A-Za-z0-9]/g,'').slice(0,2).toUpperCase()}</span>
+                          <div style={{minWidth:0}}><div style={{fontWeight:700,color:'var(--t1)',overflow:'hidden',textOverflow:'ellipsis'}}>{x.name}</div>{(x.city||x.zone)&&<div style={{fontSize:10.5,color:'var(--t3)'}}>{[x.zone,x.city].filter(Boolean).join(' · ')}</div>}</div>
+                        </div>
+                      </td>
                       <td>{sm?<div style={{display:'flex',alignItems:'center',gap:6}}><Avatar user={sm} size={20}/><span style={{fontSize:12}}>{sm.name}</span></div>:<span style={{color:'var(--t3)'}}>—</span>}</td>
                       <td style={{fontSize:11,color:'var(--t3)'}}>{x.zone||'—'}</td>
                       <td onClick={e=>e.stopPropagation()}>
@@ -2243,8 +2367,11 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
                       <td>{x.status&&x.status!=='NONE'?<StatusBadge status={x.status}/>:<span style={{fontSize:11,color:'var(--t3)'}}>—</span>}</td>
                       <td style={{textAlign:'right'}}>{x.target||'—'}</td>
                       <td style={{textAlign:'right',fontWeight:600,color:x.achieved>0?'var(--t1)':'var(--t3)'}}>{x.achieved||'—'}</td>
-                      <td style={{textAlign:'right',fontWeight:700,color:pclr(p)}}>{spct(x.target,x.achieved)}</td>
-                      <td><span style={{fontSize:11,color:tp>0?'#34d399':tp<0?'#f87171':'var(--t3)',display:'inline-flex',alignItems:'center',gap:2}}>{tp>0?<ArrowUpRight size={11}/>:tp<0?<ArrowDownRight size={11}/>:'—'}{tp?Math.abs(tp)+'%':''}</span></td>
+                      <td style={{textAlign:'right',minWidth:92}}>
+                        <div style={{fontWeight:800,color:pclr(p)}}>{spct(x.target,x.achieved)}</div>
+                        {x.target>0&&<div className="pbar"><div style={{width:Math.min(p||0,100)+'%',background:pclr(p)}}/></div>}
+                      </td>
+                      <td><span className={'trend '+(tp>0?'up':tp<0?'down':'')}>{tp>0?<ArrowUpRight size={11}/>:tp<0?<ArrowDownRight size={11}/>:'—'}{tp?Math.abs(tp)+'%':''}</span></td>
                       <td><MiniBars months={x.months} highlightIdx={selectedMonthIdx}/></td>
                     </tr>
                   );
@@ -2291,7 +2418,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
                         <th>#</th><th>Dealer Name</th><th>Zone</th><th>State</th><th>Performance</th><th>Selected User</th>
                         <th style={{textAlign:'right'}}>Tgt</th><th style={{textAlign:'right'}}>Ach</th><th style={{textAlign:'right'}}>%</th>
                         <th style={{textAlign:'right'}}>6m Avg</th>
-                        {[...MO].map((_,di)=>{const i=MO.length-1-di;return<th key={i} style={{textAlign:'right',background:i===selectedMonthIdx?'rgba(99,102,241,.08)':'var(--bg1)'}}>{MO[i]}</th>;})}
+                        {vRev.map(i=>{return<th key={i} style={{textAlign:'right',background:i===selectedMonthIdx?'color-mix(in srgb, var(--acc) 8%, transparent)':'var(--bg1)'}}>{MO[i]}</th>;})}
                         <th>Bars</th><th>Trend</th><th style={{textAlign:'right'}}>Fcst</th>
                       </tr>
                     </thead>
@@ -2301,7 +2428,12 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
                         return(
                           <tr key={x.id} onClick={()=>{onOpenDealer(x.id);closePopup();}} style={{cursor:'pointer'}}>
                             <td style={{color:'var(--t3)',fontSize:11}}>{idx+1}</td>
-                            <td style={{fontWeight:600,color:'var(--t1)',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis'}}>{x.name}</td>
+                            <td style={{maxWidth:240}}>
+                        <div style={{display:'flex',alignItems:'center',gap:9,minWidth:0}}>
+                          <span className="ini" style={{'--h':(x.name||'?').charCodeAt(0)*37%360}}>{(x.name||'?').replace(/[^A-Za-z0-9]/g,'').slice(0,2).toUpperCase()}</span>
+                          <div style={{minWidth:0}}><div style={{fontWeight:700,color:'var(--t1)',overflow:'hidden',textOverflow:'ellipsis'}}>{x.name}</div>{(x.city||x.zone)&&<div style={{fontSize:10.5,color:'var(--t3)'}}>{[x.zone,x.city].filter(Boolean).join(' · ')}</div>}</div>
+                        </div>
+                      </td>
                             <td style={{fontSize:11,color:'var(--t3)'}}>{x.zone||'—'}</td>
                             <td style={{fontSize:11}}>{x.state||'—'}</td>
                             <td><StatusBadge status={x.perfStatus} emptyLabel="NEW DEALER"/></td>
@@ -2310,9 +2442,9 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
                             <td style={{textAlign:'right',fontWeight:700,color:popup.color}}>{x.achieved}</td>
                             <td style={{textAlign:'right',fontWeight:700,color:pclr(p)}}>{spct(x.target,x.achieved)}</td>
                             <td style={{textAlign:'right',color:'var(--t3)'}}>{x.avg6m||'—'}</td>
-                            {[...x.months].map((_,di)=>{const i=x.months.length-1-di;const v=x.months[i];return<td key={i} style={{textAlign:'right',fontSize:12,color:i===selectedMonthIdx?'var(--acc)':v>0?'var(--t2)':'var(--t3)',fontWeight:i===selectedMonthIdx?700:400,background:i===selectedMonthIdx?'rgba(99,102,241,.05)':'transparent'}}>{v||'—'}</td>;})}
+                            {vRev.map(i=>{const v=x.months[i];return<td key={i} style={{textAlign:'right',fontSize:12,color:i===selectedMonthIdx?'var(--acc)':v>0?'var(--t2)':'var(--t3)',fontWeight:i===selectedMonthIdx?700:400,background:i===selectedMonthIdx?'color-mix(in srgb, var(--acc) 5%, transparent)':'transparent'}}>{v||'—'}</td>;})}
                             <td><MiniBars months={x.months} highlightIdx={selectedMonthIdx}/></td>
-                            <td><span style={{fontSize:11,color:tp>0?'#34d399':tp<0?'#f87171':'var(--t3)',display:'inline-flex',alignItems:'center',gap:2}}>{tp>0?<ArrowUpRight size={11}/>:tp<0?<ArrowDownRight size={11}/>:'—'}{tp?Math.abs(tp)+'%':''}</span></td>
+                            <td><span style={{fontSize:11,color:tp>0?'var(--grn)':tp<0?'var(--red)':'var(--t3)',display:'inline-flex',alignItems:'center',gap:2}}>{tp>0?<ArrowUpRight size={11}/>:tp<0?<ArrowDownRight size={11}/>:'—'}{tp?Math.abs(tp)+'%':''}</span></td>
                             <td style={{textAlign:'right',color:'var(--acc)',fontWeight:600}}>{fc||'—'}</td>
                           </tr>
                         );

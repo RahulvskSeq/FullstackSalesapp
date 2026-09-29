@@ -1,4 +1,5 @@
 import { _requestBase, _requestHeaders, _requestHandle, getToken } from '../api';
+import { saveBlob, isNative } from '../lib/saveFile';
 
 /**
  * Request layer for the Collections module. Every call goes to
@@ -51,6 +52,43 @@ export const col = {
   cancelPayment:  (id, reason)=> post(`/payments/${id}/cancel`, { reason }),
   paymentCountedOn: (id, ofPaymentId, reason) => post(`/payments/${id}/counted-on`, { ofPaymentId, reason }),
   proofUrl:       (id)        => base() + `/payments/attachments/${id}`,
+  // a plain link opens in a tab without the login token and gets 401 — ask where the file is first
+  //
+  // Web: the tab is opened synchronously, inside the click, because Safari/iOS
+  // block window.open() that runs after an await; it is pointed at the file
+  // once the fetch finishes (and closed if it fails). No 'noopener' here — that
+  // makes window.open return null, and the tab could not be navigated.
+  // Native (APK): a WebView cannot show a blob: URL in a new window, so a
+  // Cloudinary link goes to the system browser and a stored file is written out
+  // and opened with the device's viewer.
+  openProof:      async (id)  => {
+    const native = isNative();
+    const w = native ? null : window.open('', '_blank');
+    try {
+      const meta = await fetch(base() + `/payments/attachments/${id}?meta=1`, { headers: _requestHeaders() }).then(_requestHandle);
+      if (meta?.url) {
+        if (native) window.open(meta.url, '_system');
+        else if (w) { try { w.opener = null; } catch {} w.location.href = meta.url; }
+        else window.open(meta.url, '_blank', 'noopener');
+        return;
+      }
+      const res = await fetch(base() + `/payments/attachments/${id}`, { headers: _requestHeaders() });
+      if (!res.ok) throw new Error('Could not load the proof');
+      const blob = await res.blob();
+      if (native) {
+        const ext = (blob.type.split('/')[1] || 'bin').split(/[;+]/)[0].replace('jpeg', 'jpg');
+        await saveBlob(blob, `payment-proof-${id}.${ext}`);
+        return;
+      }
+      const u = URL.createObjectURL(blob);
+      if (w) { try { w.opener = null; } catch {} w.location.href = u; }
+      else window.open(u, '_blank', 'noopener');
+      setTimeout(() => URL.revokeObjectURL(u), 60000);
+    } catch (e) {
+      if (w) { try { w.close(); } catch {} }
+      throw e;
+    }
+  },
   pendingApprovals: (q)       => get('/payments/pending-approvals', q),
   approveDecrease:  (id)      => post(`/payments/approvals/${id}/approve`),
   dismissDecrease:  (id, reason) => post(`/payments/approvals/${id}/dismiss`, { reason }),
@@ -94,6 +132,5 @@ export async function downloadReport(kind, q, format = 'xlsx') {
   const res = await fetch(col.reportFileUrl(kind, q, format), { headers: { Authorization: `Bearer ${getToken()}` } });
   if (!res.ok) { const t = await res.text().catch(() => ''); throw new Error(t.slice(0, 200) || `HTTP ${res.status}`); }
   const blob = await res.blob();
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${kind}.${format}`; a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  await saveBlob(blob, `${kind}.${format}`);
 }

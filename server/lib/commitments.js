@@ -31,10 +31,7 @@ export const isSettled = (f) => isCommitment(f) && receivedOn(f) >= (Number(f.am
 
 // Local-date 'YYYY-MM-DD' — commitments are compared on calendar days, not
 // timestamps, so a promise due today is never treated as already broken.
-export const todayStr = () => {
-  const t = new Date();
-  return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
-};
+export const todayStr = () => new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);   // the Indian business day
 
 export const commitmentState = (f, today = todayStr()) => {
   if (!isCommitment(f)) return null;

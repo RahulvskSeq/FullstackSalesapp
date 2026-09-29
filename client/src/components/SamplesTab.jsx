@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
-import { RefreshCw, Package } from 'lucide-react';
+import { RefreshCw, Package, CheckCircle2, Clock } from 'lucide-react';
 import { notify } from './Toast';
 
-const today = () => new Date().toISOString().slice(0,10);
+// Local calendar date — toISOString() is UTC and gives yesterday before 05:30 IST.
+const today = () => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`; };
 
 export default function SamplesTab({ dealer, currentUser }) {
   const [samples,  setSamples]  = useState([]);
@@ -110,8 +111,8 @@ export default function SamplesTab({ dealer, currentUser }) {
       <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:14}}>
         {[
           {l:'Total',   v:totalCount,   c:'var(--acc)'},
-          {l:'Given',   v:givenCount,   c:'#34d399'},
-          {l:'Pending', v:pendingCount, c:'#f87171'},
+          {l:'Given',   v:givenCount,   c:'#10b981'},
+          {l:'Pending', v:pendingCount, c:'#ef4444'},
         ].map(k=>(
           <div key={k.l} className="stat-card">
             <div style={{fontSize:9,color:'var(--t3)',textTransform:'uppercase',marginBottom:4}}>{k.l}</div>
@@ -124,12 +125,12 @@ export default function SamplesTab({ dealer, currentUser }) {
       <div style={{marginBottom:14}}>
         <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'var(--t3)',marginBottom:4}}>
           <span>Zone: <strong style={{color:'var(--acc)'}}>{dealer.zone||'—'}</strong></span>
-          <span style={{fontWeight:700,color:pct===100?'#34d399':pct>50?'#fbbf24':'#f87171'}}>{pct}% given</span>
+          <span style={{fontWeight:700,color:pct===100?'var(--grn)':pct>50?'var(--yel)':'var(--red)'}}>{pct}% given</span>
         </div>
         <div style={{height:6,background:'var(--b2)',borderRadius:3,overflow:'hidden'}}>
           <div style={{
             height:'100%', width:`${pct}%`,
-            background:pct===100?'#34d399':pct>50?'#fbbf24':'#f87171',
+            background:pct===100?'#10b981':pct>50?'#f59e0b':'#ef4444',
             borderRadius:3, transition:'width .4s ease',
           }}/>
         </div>
@@ -141,8 +142,8 @@ export default function SamplesTab({ dealer, currentUser }) {
       <div style={{display:'flex',flexDirection:'column',gap:6}}>
         {/* Given (shown first) */}
         {givenCount > 0 && (
-          <div style={{fontSize:10,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'.08em',marginBottom:2,marginTop:4}}>
-            ✅ Given ({givenCount})
+          <div className="sec-title" style={{fontSize:14,marginBottom:2,marginTop:4}}>
+            <span className="sec-ico" style={{'--tone':'var(--grn)'}}><CheckCircle2 size={15}/></span> Given ({givenCount})
           </div>
         )}
         {zoneSamples.filter(s => given[s._id]).map(s => {
@@ -151,8 +152,8 @@ export default function SamplesTab({ dealer, currentUser }) {
             <div key={s._id} style={{
               display:'flex', alignItems:'center', gap:10,
               padding:'10px 12px', borderRadius:8,
-              background:'rgba(52,211,153,0.06)',
-              border:'1px solid rgba(52,211,153,0.25)',
+              background:'color-mix(in srgb, var(--grn) 6%, transparent)',
+              border:'1px solid color-mix(in srgb, var(--grn) 25%, transparent)',
               transition:'all .2s',
             }}>
               {/* Checked checkbox — click to uncheck */}
@@ -161,8 +162,8 @@ export default function SamplesTab({ dealer, currentUser }) {
                 disabled={toggling[s._id]}
                 style={{
                   width:22, height:22, borderRadius:5,
-                  border:'2px solid #34d399',
-                  background:'#34d399',
+                  border:'2px solid var(--grn)',
+                  background:'var(--grn)',
                   cursor:'pointer', flexShrink:0,
                   display:'flex', alignItems:'center', justifyContent:'center',
                   transition:'all .15s',
@@ -200,16 +201,16 @@ export default function SamplesTab({ dealer, currentUser }) {
 
         {/* Pending (shown below Given) */}
         {pendingCount > 0 && (
-          <div style={{fontSize:10,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'.08em',marginBottom:2,marginTop:8}}>
-            ⬜ Pending ({pendingCount})
+          <div className="sec-title" style={{fontSize:14,marginBottom:2,marginTop:8}}>
+            <span className="sec-ico" style={{'--tone':'var(--yel)'}}><Clock size={15}/></span> Pending ({pendingCount})
           </div>
         )}
         {zoneSamples.filter(s => !given[s._id]).map(s => (
           <div key={s._id} style={{
             display:'flex', alignItems:'center', gap:10,
             padding:'10px 12px', borderRadius:8,
-            background:'rgba(248,113,113,0.04)',
-            border:'1px solid rgba(248,113,113,0.15)',
+            background:'color-mix(in srgb, var(--red) 4%, transparent)',
+            border:'1px solid color-mix(in srgb, var(--red) 15%, transparent)',
             transition:'all .2s',
           }}>
             {/* Checkbox toggle */}
@@ -246,7 +247,7 @@ export default function SamplesTab({ dealer, currentUser }) {
 
             <span style={{
               fontSize:10, padding:'2px 8px', borderRadius:4, flexShrink:0,
-              background:'rgba(248,113,113,0.12)', color:'var(--red)',
+              background:'color-mix(in srgb, var(--red) 12%, transparent)', color:'var(--red)',
             }}>Pending</span>
           </div>
         ))}

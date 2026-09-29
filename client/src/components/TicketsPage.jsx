@@ -8,7 +8,9 @@ import {
   LifeBuoy, Plus, RefreshCw, Send, Trash2, X, Camera, ImageIcon,
   Download,
 } from 'lucide-react';
+import { PageHead } from '../collections/ui';
 import { api } from '../api';
+import { saveText } from '../lib/saveFile';
 import { notify, confirmDialog } from './Toast';
 import { VoiceTextarea } from './VoiceInput';
 
@@ -16,11 +18,11 @@ const STATUSES   = ['OPEN','IN_PROGRESS','RESOLVED','CLOSED','REOPENED'];
 const PRIORITIES = ['LOW','MEDIUM','HIGH','URGENT'];
 const CATEGORIES = ['Bug','Feature','Question','UI Issue','Data Issue','Other'];
 const STATUS_COLOR = {
-  OPEN:'#3b82f6', IN_PROGRESS:'#fbbf24', RESOLVED:'#34d399',
-  CLOSED:'#94a3b8', REOPENED:'#f87171',
+  OPEN:'#3b82f6', IN_PROGRESS:'#f59e0b', RESOLVED:'#10b981',
+  CLOSED:'#94a3b8', REOPENED:'#ef4444',
 };
 const PRIORITY_COLOR = {
-  LOW:'#94a3b8', MEDIUM:'#a5b4fc', HIGH:'#fb923c', URGENT:'#f87171',
+  LOW:'#94a3b8', MEDIUM:'#a5b4fc', HIGH:'#f97316', URGENT:'#ef4444',
 };
 
 const fmtTime = (d) => d ? new Date(d).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'}) : '';
@@ -85,11 +87,9 @@ function exportCSV(filename, headers, rows){
   if(!rows || rows.length === 0){ notify.info('Nothing to export'); return; }
   const esc = v => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s; };
   const csv = [headers.map(esc).join(','), ...rows.map(r => r.map(esc).join(','))].join('\n');
-  const a = document.createElement('a');
-  a.href = 'data:text/csv;charset=utf-8,﻿' + encodeURIComponent(csv);
-  a.download = filename;
-  a.click();
-  notify.success('Exported ' + rows.length + ' rows');
+  saveText('\ufeff' + csv, filename, 'text/csv;charset=utf-8')
+    .then(() => notify.success('Exported ' + rows.length + ' rows'))
+    .catch(e => notify.error('Export failed: ' + (e?.message || e)));
 }
 
 export default function TicketsPage({ users, currentUser }){
@@ -100,6 +100,7 @@ export default function TicketsPage({ users, currentUser }){
   const [filterStatus, setFilterStatus] = useState('');
   const [editing, setEditing] = useState(null);
   const [zoom, setZoom] = useState('');
+  const [busy, setBusy] = useState(false);   // create in flight — blocks a double tap
 
   const [form, setForm] = useState({
     title:'', description:'', category:'Bug', priority:'MEDIUM', screenshot:'',
@@ -118,7 +119,9 @@ export default function TicketsPage({ users, currentUser }){
   useEffect(()=>{ load(); }, [filterStatus]);
 
   const create = async () => {
+    if(busy) return;
     if(!form.title.trim()){ notify.error('Title required'); return; }
+    setBusy(true);
     try {
       const res = await api.ticketsCreate(form);
       notify.success('Ticket raised: ' + res.ticketNo);
@@ -126,6 +129,7 @@ export default function TicketsPage({ users, currentUser }){
       setShowForm(false);
       load();
     } catch(e){ notify.error(e.message); }
+    finally { setBusy(false); }
   };
   const remove = async (id) => {
     const ok = await confirmDialog({ title:'Delete this ticket?', danger:true, confirmText:'Delete' });
@@ -136,19 +140,14 @@ export default function TicketsPage({ users, currentUser }){
 
   return (
     <div className="fade" style={{display:'flex', flexDirection:'column', gap:14}}>
-      <div>
-        <div style={{fontSize:11, color:'var(--acc)', textTransform:'uppercase', letterSpacing:'.15em', marginBottom:4}}>Support</div>
-        <div className="crm-page-title" style={{fontSize:22, fontWeight:700}}>Tickets</div>
-        <div className="crm-page-sub" style={{fontSize:13, color:'var(--t3)', marginTop:4}}>
-          {isStaff ? 'Resolve user-raised issues. Mark progress and close out.'
-                   : 'Found a bug or have a feature request? Raise a ticket — you can attach a screenshot.'}
-        </div>
-      </div>
+      <PageHead icon={LifeBuoy} tone="var(--acc)" eyebrow="Support" title="Tickets"
+        sub={isStaff ? 'Resolve user-raised issues. Mark progress and close out.'
+                     : 'Found a bug or have a feature request? Raise a ticket — you can attach a screenshot.'} />
 
       <div className="card">
         <div className="row" style={{marginBottom:10, flexWrap:'wrap', gap:6}}>
-          <div style={{fontSize:13, fontWeight:700, display:'flex', alignItems:'center', gap:6}}>
-            <LifeBuoy size={14}/> Tickets {items.length ? `(${items.length})` : ''}
+          <div className="sec-title" style={{marginBottom:0}}>
+            <span className="sec-ico" style={{'--tone':'var(--acc)'}}><LifeBuoy size={15}/></span> Tickets {items.length ? <span className="count-pill">{items.length}</span> : ''}
           </div>
           <div className="spacer"/>
           <select className="inp" value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}
@@ -209,8 +208,8 @@ export default function TicketsPage({ users, currentUser }){
             </div>
             <div style={{display:'flex', justifyContent:'flex-end', gap:8, marginTop:10}}>
               <button onClick={()=>setShowForm(false)} className="btn" style={{fontSize:12}}>Cancel</button>
-              <button onClick={create} className="btnp" style={{display:'inline-flex', alignItems:'center', gap:6, fontSize:12}}>
-                <Send size={12}/> Raise ticket
+              <button onClick={create} disabled={busy} className="btnp" style={{display:'inline-flex', alignItems:'center', gap:6, fontSize:12}}>
+                <Send size={12}/> {busy ? 'Raising…' : 'Raise ticket'}
               </button>
             </div>
           </div>
@@ -224,26 +223,21 @@ export default function TicketsPage({ users, currentUser }){
               const sc = STATUS_COLOR[T.status] || '#3b82f6';
               const pc = PRIORITY_COLOR[T.priority] || '#a5b4fc';
               return (
-                <div key={T._id} onClick={()=>setEditing(T)} style={{
-                  cursor:'pointer', padding:'10px 12px', borderRadius:8,
-                  background:'var(--bg2)', border:'1px solid var(--b2)',
-                  borderLeft:'3px solid ' + sc,
-                  display:'flex', gap:10,
-                }}>
+                <div key={T._id} onClick={()=>setEditing(T)} className="att-card" style={{'--tone':sc, display:'flex', gap:10, flexShrink:0}}>
                   {T.screenshot
                     ? <img src={T.screenshot} alt="" onClick={(e)=>{ e.stopPropagation(); setZoom(T.screenshot); }}
-                        style={{width:60, height:60, objectFit:'cover', borderRadius:6, border:'1px solid var(--b2)', flexShrink:0, cursor:'zoom-in'}}/>
-                    : <div style={{width:60, height:60, borderRadius:6, background:'var(--bg1)', display:'flex', alignItems:'center', justifyContent:'center', color:'var(--t3)', flexShrink:0}}>—</div>}
+                        style={{width:60, height:60, objectFit:'cover', borderRadius:10, border:'1px solid var(--b2)', flexShrink:0, cursor:'zoom-in'}}/>
+                    : <div style={{width:60, height:60, borderRadius:10, background:'var(--bg2)', display:'flex', alignItems:'center', justifyContent:'center', color:'var(--t3)', flexShrink:0}}>—</div>}
                   <div style={{flex:1, minWidth:0}}>
                     <div style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
                       <span style={{fontSize:11, fontFamily:'monospace', color:'var(--acc)', fontWeight:700}}>{T.ticketNo}</span>
                       <span style={{fontSize:13, fontWeight:700}}>{T.title}</span>
-                      <span style={{fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:3, background:sc+'22', color:sc}}>{T.status}</span>
-                      <span style={{fontSize:9, fontWeight:700, padding:'2px 7px', borderRadius:3, background:pc+'22', color:pc}}>{T.priority}</span>
+                      <span style={{fontSize:9, fontWeight:800, padding:'2px 8px', borderRadius:20, background:sc+'22', color:sc}}>{T.status}</span>
+                      <span style={{fontSize:9, fontWeight:800, padding:'2px 8px', borderRadius:20, background:pc+'22', color:pc}}>{T.priority}</span>
                     </div>
-                    <div style={{display:'flex', gap:10, marginTop:4, fontSize:11, color:'var(--t3)', flexWrap:'wrap'}}>
+                    <div style={{display:'flex', gap:10, marginTop:4, fontSize:11, color:'var(--t3)', flexWrap:'wrap', alignItems:'center'}}>
                       <span>{T.category}</span>
-                      <span>By {T.createdByName}</span>
+                      <span style={{display:'inline-flex', alignItems:'center', gap:5}}><span className="ini" style={{'--h':String(T.createdByName||'?').charCodeAt(0)*37%360, width:18, height:18, borderRadius:6, fontSize:8}}>{String(T.createdByName||'?').replace(/[^A-Za-z0-9]/g,'').slice(0,2).toUpperCase()}</span>By {T.createdByName}</span>
                       <span>{fmtTime(T.createdAt)}</span>
                       {T.updates?.length > 0 && <span>· {T.updates.length} update{T.updates.length===1?'':'s'}</span>}
                     </div>
@@ -364,23 +358,26 @@ function TicketDetailModal({ ticket, users, isStaff, onClose, onSaved, onDelete 
               </select>
             )}
             <div style={{flex:1}}/>
-            {isStaff && <button onClick={onDelete} className="btn" style={{color:'var(--red)', border:'1px solid #7f1d1d', fontSize:12, display:'inline-flex', alignItems:'center', gap:4}}><Trash2 size={11}/> Delete</button>}
+            {isStaff && <button onClick={onDelete} className="btn" style={{color:'var(--red)', border:'1px solid color-mix(in srgb, var(--red) 45%, transparent)', fontSize:12, display:'inline-flex', alignItems:'center', gap:4}}><Trash2 size={11}/> Delete</button>}
             <button onClick={save} disabled={busy} className="btnp" style={{display:'inline-flex', alignItems:'center', gap:6}}>
               <Send size={12}/> {busy ? 'Saving…' : 'Save'}
             </button>
           </div>
         </div>
 
-        <div style={{fontSize:12, fontWeight:700, marginBottom:6}}>Activity ({ticket.updates?.length || 0})</div>
+        <div style={{fontSize:12, fontWeight:700, marginBottom:6, display:'flex', alignItems:'center', gap:6}}>Activity <span className="count-pill">{ticket.updates?.length || 0}</span></div>
         <div style={{display:'flex', flexDirection:'column', gap:6, maxHeight:240, overflowY:'auto'}}>
           {(ticket.updates || []).slice().reverse().map((u, idx) => (
-            <div key={idx} style={{background:'var(--bg2)', borderRadius:6, padding:'8px 10px'}}>
-              <div style={{fontSize:11, color:'var(--t3)'}}>{u.byName || u.by} · {fmtTime(u.at)}{u.status ? ' · → ' + u.status : ''}</div>
-              {u.comment && <div style={{fontSize:12, color:'var(--t1)', marginTop:2, whiteSpace:'pre-wrap'}}>{u.comment}</div>}
-              {u.screenshot && (
-                <img src={u.screenshot} alt="" onClick={()=>setZoom(u.screenshot)}
-                  style={{maxWidth:160, marginTop:6, borderRadius:6, border:'1px solid var(--b2)', cursor:'zoom-in'}}/>
-              )}
+            <div key={idx} style={{background:'var(--bg2)', borderRadius:10, padding:'8px 10px', display:'flex', gap:9, alignItems:'flex-start'}}>
+              <span className="ini" style={{'--h':String(u.byName||u.by||'?').charCodeAt(0)*37%360, width:26, height:26, borderRadius:8, fontSize:10}}>{String(u.byName||u.by||'?').replace(/[^A-Za-z0-9]/g,'').slice(0,2).toUpperCase()}</span>
+              <div style={{minWidth:0, flex:1}}>
+                <div style={{fontSize:11, color:'var(--t3)'}}><b style={{color:'var(--t1)', fontWeight:700}}>{u.byName || u.by}</b> · {fmtTime(u.at)}{u.status ? ' · → ' + u.status : ''}</div>
+                {u.comment && <div style={{fontSize:12, color:'var(--t1)', marginTop:2, whiteSpace:'pre-wrap'}}>{u.comment}</div>}
+                {u.screenshot && (
+                  <img src={u.screenshot} alt="" onClick={()=>setZoom(u.screenshot)}
+                    style={{maxWidth:160, marginTop:6, borderRadius:6, border:'1px solid var(--b2)', cursor:'zoom-in'}}/>
+                )}
+              </div>
             </div>
           ))}
           {(!ticket.updates || ticket.updates.length === 0) && (

@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Lock, Unlock, AlertTriangle, RefreshCw, Pencil, X, ChevronDown, ChevronRight,
          ArrowUpRight, ArrowDownRight, Trophy, Users, Layers, Package, Monitor, Star, Calculator,
-         Clock, CheckCircle2, Banknote, ShieldCheck, AlertOctagon } from 'lucide-react';
+         Clock, CheckCircle2, Banknote, ShieldCheck, AlertOctagon, Target, BarChart3 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { api } from '../api';
 import Skeleton from './Skeleton';
+import { PageHead } from '../collections/ui';
 
 /**
  * Salesman incentive — the laminate scheme, shown in POINTS only.
@@ -24,10 +25,7 @@ function Delta({ pct }) {
   if (pct === null || pct === undefined) return null;
   const up = pct >= 0;
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10.5,
-                   fontWeight: 700, padding: '2px 7px', borderRadius: 20, whiteSpace: 'nowrap',
-                   color: up ? 'var(--grn)' : 'var(--red)',
-                   background: up ? 'rgba(22,163,74,.12)' : 'rgba(220,38,38,.12)' }}>
+    <span className={'trend ' + (pct > 0 ? 'up' : pct < 0 ? 'down' : '')} style={{ whiteSpace: 'nowrap' }}>
       {up ? <ArrowUpRight size={11} /> : <ArrowDownRight size={11} />}{Math.abs(pct)}%
     </span>
   );
@@ -53,8 +51,7 @@ function KpiTile({ icon: Icon, tint, label, value, pct }) {
 
 function Stat({ label, value, tone, sub }) {
   return (
-    <div style={{ padding: '13px 15px', borderRadius: 11, background: 'var(--bg1)',
-                  border: '1px solid var(--b1)', minWidth: 0 }}>
+    <div className="card" style={{ padding: '13px 15px', minWidth: 0 }}>
       <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '.09em',
                     textTransform: 'uppercase', color: 'var(--t3)' }}>{label}</div>
       <div style={{ fontSize: 21, fontWeight: 800, marginTop: 3, color: tone || 'var(--t1)',
@@ -300,16 +297,15 @@ function EstimateModal({ d, person, onClose }) {
       `}</style>
       <div className="card" style={{ width: 'min(960px, 100%)', maxHeight: 'calc(100vh - 24px)', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden', margin: 'auto' }}>
         <div style={{ padding: '14px 20px 12px', borderBottom: '1px solid var(--b1)', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
-          <div style={{ width: 36, height: 36, borderRadius: 10, display: 'grid', placeItems: 'center', background: 'rgba(99,102,241,.14)', color: 'var(--acc)', flexShrink: 0 }}><Calculator size={17} /></div>
+          <div style={{ width: 36, height: 36, borderRadius: 10, display: 'grid', placeItems: 'center', background: 'color-mix(in srgb, var(--acc) 14%, transparent)', color: 'var(--acc)', flexShrink: 0 }}><Calculator size={17} /></div>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 16, fontWeight: 800 }}>Calculate my incentive</div>
             <div style={{ fontSize: 11.5, color: 'var(--t3)' }}>Type what you expect to sell this month — your own targets are used. {ppr} points = ₹1.</div>
           </div>
-          <div style={{ marginLeft: 'auto', display: 'inline-flex', border: '1px solid var(--b2)', borderRadius: 8, overflow: 'hidden', flexShrink: 0 }}>
+          <div className="seg" style={{ marginLeft: 'auto', flexShrink: 0 }}>
             {[['earn', 'What will I earn'], ['goal', 'How much to sell']].map(([m, label]) => (
               <button key={m} onClick={() => setMode(m)}
-                style={{ fontSize: 12, padding: '6px 12px', border: 'none', cursor: 'pointer', fontWeight: mode === m ? 800 : 500,
-                         background: mode === m ? 'var(--acc)' : 'var(--bg1)', color: mode === m ? '#fff' : 'var(--t2)' }}>{label}</button>
+                className={'seg-b' + (mode === m ? ' on' : '')} style={{ '--tone': 'var(--acc)' }}>{label}</button>
             ))}
           </div>
           <button className="btn" onClick={onClose} style={{ padding: '5px 8px', flexShrink: 0 }}><X size={15} /></button>
@@ -327,7 +323,7 @@ function EstimateModal({ d, person, onClose }) {
               </div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
                 {[10000, 25000, 50000, 100000, 200000].map(g => (
-                  <button key={g} className="btn" onClick={() => setGoal(String(g))} style={{ fontSize: 11.5, padding: '5px 10px', fontWeight: goalRs === g ? 800 : 500, borderColor: goalRs === g ? 'var(--acc)' : undefined, background: goalRs === g ? 'rgba(99,102,241,.12)' : undefined }}>₹{num(g)}</button>
+                  <button key={g} className={'thr' + (goalRs === g ? ' on' : '')} onClick={() => setGoal(String(g))} style={{ '--tone': 'var(--acc)' }}>₹{num(g)}</button>
                 ))}
               </div>
               <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 6 }}>= <b style={{ color: 'var(--t1)' }}>{num(goalN)} pts</b> · {ppr} points = ₹1</div>
@@ -412,7 +408,7 @@ function EstimateModal({ d, person, onClose }) {
                     const on = lamNow === basic + sc.x;
                     return (
                       <button key={sc.x} className="btn" onClick={() => set('LAMINATE', basic + sc.x)} title={`Set laminate to ${num(basic + sc.x)} sheets`}
-                              style={{ fontSize: 11, padding: '5px 10px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1, borderColor: on ? 'var(--acc)' : undefined, background: on ? 'rgba(99,102,241,.12)' : undefined }}>
+                              style={{ fontSize: 11, padding: '5px 10px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1, borderColor: on ? 'var(--acc)' : undefined, background: on ? 'color-mix(in srgb, var(--acc) 12%, transparent)' : undefined }}>
                         <span style={{ color: 'var(--t3)' }}>{num(basic + sc.x)} sheets</span>
                         <b style={{ color: 'var(--grn)' }}>{num(sc.pts)} pts</b>
                       </button>
@@ -553,8 +549,8 @@ export default function SalesIncentive() {
     const pct = target > 0 ? Math.min(100, (actual / target) * 100) : 0;
     const over = target > 0 && actual > target;
     return (
-      <div style={{ height: 6, borderRadius: 3, background: 'var(--b1)', overflow: 'hidden' }}>
-        <div style={{ width: pct + '%', height: '100%', borderRadius: 3, background: over ? 'var(--grn)' : (tone || 'var(--acc)'), transition: 'width .3s' }} />
+      <div className="pbar" style={{ width: '100%', height: 6, marginLeft: 0 }}>
+        <div style={{ width: pct + '%', background: over ? 'var(--grn)' : (tone || 'var(--acc)'), transition: 'width .3s' }} />
       </div>
     );
   };
@@ -580,14 +576,11 @@ export default function SalesIncentive() {
       `}</style>
 
       {/* ── head ─────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
-        <div>
-          <div className="page-eyebrow">{mine ? 'My incentive' : 'Salesman incentive'}</div>
-          <div className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <PageHead icon={Target} tone="var(--acc)" eyebrow={mine ? 'My incentive' : 'Salesman incentive'}
+        title={<span style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             {mine ? 'My points' : 'Points earned'} <Chip tone="var(--acc)" bg="rgba(99,102,241,.12)">{ppr} points = ₹1</Chip>
-          </div>
-        </div>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          </span>}
+        right={<>
           <select value={d?.month || ''} onChange={e => setMonth(e.target.value)} style={input}>
             {(d?.months || []).map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
           </select>
@@ -600,8 +593,7 @@ export default function SalesIncentive() {
           <button className="btn" onClick={reload} disabled={busy} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12 }}>
             <RefreshCw size={12} className={busy ? 'spin' : ''} /> Refresh
           </button>
-        </div>
-      </div>
+        </>} />
 
       {err && <div className="card" style={{ color: 'var(--red)', fontSize: 12.5 }}>{err}</div>}
       {busy && !d && <Skeleton kind="dashboard" rows={6} />}
@@ -667,24 +659,31 @@ export default function SalesIncentive() {
           {/* ── trend + attention ─────────────────────────────── */}
           <div className="si-grid" style={{ display: 'grid', gap: 12, gridTemplateColumns: mine ? '1fr' : '2fr 1fr', marginBottom: 14 }}>
             <div className="card" style={{ padding: '14px 16px' }}>
-              <div style={{ fontSize: 12.5, fontWeight: 800, marginBottom: 2 }}>{mine ? 'My points by month' : 'Points by month'}</div>
-              <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 8 }}>{mine ? 'last six months' : 'everyone together, last six months'}</div>
+              <div className="sec-title">
+                <span className="sec-ico" style={{ '--tone': 'var(--grn)' }}><BarChart3 size={15} /></span> {mine ? 'My points by month' : 'Points by month'}
+                <span className="sec-note">{mine ? 'last six months' : 'everyone together, last six months'}</span>
+              </div>
               <div style={{ height: 170 }}>
                 <ResponsiveContainer>
                   <BarChart data={(d.trend || []).map(x => ({ m: monthLabel(x.month), points: pts(x.payable), cur: x.month === d.month }))} margin={{ top: 4, right: 4, left: -18, bottom: 0 }}>
-                    <CartesianGrid vertical={false} stroke="var(--b1)" />
-                    <XAxis dataKey="m" tick={{ fontSize: 11, fill: 'var(--t3)' }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 10, fill: 'var(--t3)' }} axisLine={false} tickLine={false} tickFormatter={v => num(v)} />
-                    <Tooltip formatter={v => [num(v) + ' pts', 'Points']} contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid var(--b1)', background: 'var(--bg1)', color: 'var(--t1)' }} />
-                    <Bar dataKey="points" radius={[6, 6, 0, 0]}>
-                      {(d.trend || []).map((x, i) => <Cell key={i} fill={x.status === 'paid' ? 'var(--grn)' : x.month === d.month ? 'var(--acc)' : 'rgba(99,102,241,.35)'} />)}
+                    <defs>
+                      <linearGradient id="siPtsPaid" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#10b981" stopOpacity={1} /><stop offset="100%" stopColor="#10b981" stopOpacity={0.55} /></linearGradient>
+                      <linearGradient id="siPtsCur" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3b82f6" stopOpacity={1} /><stop offset="100%" stopColor="#3b82f6" stopOpacity={0.55} /></linearGradient>
+                      <linearGradient id="siPtsPast" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3b82f6" stopOpacity={0.4} /><stop offset="100%" stopColor="#3b82f6" stopOpacity={0.2} /></linearGradient>
+                    </defs>
+                    <CartesianGrid vertical={false} />
+                    <XAxis dataKey="m" axisLine={false} tickLine={false} />
+                    <YAxis axisLine={false} tickLine={false} width={60} tickFormatter={v => num(v)} />
+                    <Tooltip formatter={v => [num(v) + ' pts', 'Points']} />
+                    <Bar dataKey="points" radius={[8, 8, 0, 0]} maxBarSize={46}>
+                      {(d.trend || []).map((x, i) => <Cell key={i} fill={x.status === 'paid' ? 'url(#siPtsPaid)' : x.month === d.month ? 'url(#siPtsCur)' : 'url(#siPtsPast)'} />)}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             </div>
             {!mine && <div className="card" style={{ padding: '14px 16px' }}>
-              <div style={{ fontSize: 12.5, fontWeight: 800, marginBottom: 8 }}>Needs attention</div>
+              <div className="sec-title"><span className="sec-ico" style={{ '--tone': 'var(--yel)' }}><AlertTriangle size={15} /></span> Needs attention</div>
               <div style={{ display: 'grid', gap: 8, fontSize: 11.5, color: 'var(--t2)', lineHeight: 1.5 }}>
                 {noTarget.length > 0 && <div style={{ display: 'flex', gap: 8 }}><AlertTriangle size={14} color="var(--yel,#ca8a04)" style={{ flexShrink: 0, marginTop: 2 }} /><span><b>Not in this month's scheme:</b> {noTarget.map(p => `${p.name}${p.credited ? ` (${num(p.credited)} laminate)` : ''}`).join(', ')} — no laminate target set, so they are hidden from the list. Set a target in Sales by Category → Salesman-wise to include them.</span></div>}
                 {cleared.length === 0 && <div style={{ display: 'flex', gap: 8 }}><Lock size={14} color="var(--red)" style={{ flexShrink: 0, marginTop: 2 }} /><span><b>Nobody has crossed laminate basic yet.</b> Laminate points start only above it; other products keep earning above their own targets.</span></div>}
@@ -696,12 +695,14 @@ export default function SalesIncentive() {
 
           {/* ── leaderboard ───────────────────────────────────── */}
           <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--b1)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <div style={{ fontSize: 12.5, fontWeight: 800 }}>{mine ? 'My working' : 'Every salesman'}</div>
-              <div style={{ fontSize: 11, color: 'var(--t3)' }}>{mine ? 'target, actual and points for each product' : 'click a row for the full working'}</div>
+            <div className="sec-title" style={{ padding: '12px 16px', borderBottom: '1px solid var(--b1)', marginBottom: 0 }}>
+              <span className="sec-ico" style={{ '--tone': 'var(--acc)' }}><Users size={15} /></span> {mine ? 'My working' : 'Every salesman'}
+              {!mine && <span className="count-pill">{people.length}</span>}
+              <span className="sec-note">{mine ? 'target, actual and points for each product' : 'click a row for the full working'}</span>
+              <div style={{ flex: 1 }} />
               {mine && (
                 <button className="btnp" onClick={() => setCalc(true)} title="Type what you expect to sell and see the points"
-                        style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, padding: '7px 14px' }}>
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, padding: '7px 14px' }}>
                   <Calculator size={14} /> Calculate my incentive
                 </button>
               )}
@@ -727,9 +728,12 @@ export default function SalesIncentive() {
                       <React.Fragment key={p.salesmanId}>
                         <tr className="si-row" onClick={() => setOpen(o => ({ ...o, [p.salesmanId]: !isOpen }))}
                             style={{ borderTop: '1px solid var(--b1)', cursor: 'pointer', background: isOpen ? 'var(--bg2)' : undefined }}>
-                          <td style={{ padding: '10px 16px', color: 'var(--t3)', fontWeight: 700 }}>{i + 1}</td>
+                          <td style={{ padding: '10px 16px' }}><span className={'rank rank-' + (i + 1)}>{i + 1}</span></td>
                           <td style={{ padding: '10px 6px' }}>
-                            <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+                            <span className="ini" style={{ '--h': (p.name || '?').charCodeAt(0) * 37 % 360 }}>{(p.name || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase()}</span>
+                            <div style={{ minWidth: 0 }}>
+                            <div style={{ fontWeight: 700, color: 'var(--t1)', display: 'flex', alignItems: 'center', gap: 6 }}>
                               {p.gateOpen ? <Unlock size={12} color="var(--grn)" /> : <Lock size={12} color={p.basic ? 'var(--red)' : 'var(--t3)'} />}{p.name}
                             </div>
                             <div style={{ marginTop: 3, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
@@ -740,6 +744,8 @@ export default function SalesIncentive() {
                               {p.effective?.latePaymentSheets > 0 && <Chip tone="var(--red)" bg="rgba(220,38,38,.12)" >late −{num(p.effective.latePaymentSheets)}</Chip>}
                               {!p.auto?.lateFinal && p.auto?.atRiskUnits > 0 && <Chip tone="#b45309" bg="rgba(180,83,9,.12)">{num(p.auto.atRiskUnits)} at risk</Chip>}
                               {p.effective?.projectSheets > 0 && <Chip tone={p.needsApproval ? '#b45309' : 'var(--acc)'} bg={p.needsApproval ? 'rgba(180,83,9,.12)' : 'rgba(99,102,241,.12)'}>project {num(p.effective.projectSheets)}{p.needsApproval ? ' · approve' : ' ✓'}</Chip>}
+                            </div>
+                            </div>
                             </div>
                           </td>
                           <td style={{ padding: '10px 6px' }}>
@@ -844,7 +850,7 @@ export default function SalesIncentive() {
                                   </div>
                                 )}
                                 {p.badDebtOutstanding > 0 && <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 6 }}>Bad debt still to recover: {money(p.badDebtOutstanding)}{p.clawback > 0 ? ` — ${money(p.clawback)} taken this month, ${money(Math.max(0, p.badDebtOutstanding - p.clawback))} carried forward` : ' — no earnings this month, so no deduction'}. Never more than the month's incentive.</div>}
-                                {p.paid && <div style={{ fontSize: 11, color: 'var(--grn)', marginTop: 6 }}>Paid {fmtDay(String(p.paid.at).slice(0, 10))}{p.paid.by ? ` by ${p.paid.by}` : ''} · figures frozen at {num(p.points)} pts.{!mine && d.canPay && <button className="btn" style={{ fontSize: 10, padding: '1px 6px', marginLeft: 8 }} onClick={e => { e.stopPropagation(); unmarkPaid(p); }}>un-mark (superadmin)</button>}</div>}
+                                {p.paid && <div style={{ fontSize: 11, color: 'var(--grn)', marginTop: 6 }}>Paid {new Date(p.paid.at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })}{p.paid.by ? ` by ${p.paid.by}` : ''} · figures frozen at {num(p.points)} pts.{!mine && d.canPay && <button className="btn" style={{ fontSize: 10, padding: '1px 6px', marginLeft: 8 }} onClick={e => { e.stopPropagation(); unmarkPaid(p); }}>un-mark (superadmin)</button>}</div>}
                                 {p.adjustments?.note && <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 6 }}>Note: {p.adjustments.note}</div>}
                               </div>
                             </td>

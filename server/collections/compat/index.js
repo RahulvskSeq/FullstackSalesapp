@@ -2,7 +2,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import { protect } from '../../middleware/auth.js';
 import { ColBalance, ColFollowUp, ColPromise } from '../models/index.js';
-import { withScope, scopeFilter, fail } from '../lib/http.js';
+import { withScope, scopeFilter, fail, ensureInScope, isStaff } from '../lib/http.js';
 import { sortPeriods, OLDER } from '../lib/periods.js';
 import { cancelPromise } from '../services/followups.js';
 /** A Map field is a Map on a document and a plain object after .lean(); either way, an object. */
@@ -52,6 +52,9 @@ router.put('/followups/:id', protect, withScope, async (req, res) => {
   try {
     const f = await ColFollowUp.findById(req.params.id).lean();
     if (!f) return res.status(404).json({ error: 'not found' });
+    // the dealer must be in the caller's scope, and a salesman closes only his own promises
+    if (!ensureInScope(req, res, f.dealerId)) return;
+    if (!isStaff(req) && f.employeeId !== req.user.id && f.createdBy !== req.user.id) return res.status(403).json({ error: 'not your follow-up' });
     if (req.body?.status === 'done' && f.promiseId) await cancelPromise(f.promiseId, { by: req.user.id, reason: 'marked done in the Follow-ups screen' });
     res.json({ ok: true });
   } catch (e) { fail(res, e); }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ScrollText, RefreshCw, Search, AlertTriangle } from 'lucide-react';
 import { api } from '../api';
 
@@ -52,7 +52,11 @@ export default function ActivityLog() {
   const [failedOnly, setFailedOnly] = useState(false);
   const [open, setOpen]   = useState(null);
 
+  // Only the newest request may write: typing fires a load per filter change,
+  // and an older, slower reply must not overwrite a newer one.
+  const seqRef = useRef(0);
   const load = useCallback(async () => {
+    const seq = ++seqRef.current;
     setBusy(true); setErr('');
     try {
       const r = await api.auditLog({
@@ -61,12 +65,14 @@ export default function ActivityLog() {
         ...(failedOnly ? { failedOnly: 1 } : {}),
         limit: 300,
       });
+      if (seq !== seqRef.current) return;
       setRows(r?.rows || []); setTotal(r?.total || 0); setUsers(r?.users || []);
-    } catch (e) { setErr(e?.message || 'Could not load the activity log'); }
-    setBusy(false);
+    } catch (e) { if (seq === seqRef.current) setErr(e?.message || 'Could not load the activity log'); }
+    if (seq === seqRef.current) setBusy(false);
   }, [q, by, from, to, failedOnly]);
 
-  useEffect(() => { load(); }, [load]);
+  // Debounced, so the search box does not fire a request per keystroke.
+  useEffect(() => { const t = setTimeout(load, 300); return () => clearTimeout(t); }, [load]);
 
   const cell = { padding:'7px 10px', verticalAlign:'top', borderBottom:'1px solid var(--b1)' };
   const th   = { ...cell, position:'sticky', top:0, background:'var(--bg1)', zIndex:1,
@@ -75,14 +81,15 @@ export default function ActivityLog() {
 
   return (
     <div>
-      <div style={{display:'flex', alignItems:'center', gap:10, flexWrap:'wrap', marginBottom:12}}>
-        <ScrollText size={15} color="var(--acc)"/>
-        <div style={{fontSize:14, fontWeight:700}}>Activity log</div>
-        <span style={{fontSize:11, color:'var(--t3)'}}>
+      <div className="sec-title">
+        <span className="sec-ico" style={{'--tone':'var(--acc)'}}><ScrollText size={15}/></span> Activity log
+        {total > 0 && <span className="count-pill">{Number(total).toLocaleString('en-IN')}</span>}
+        <span className="sec-note">
           {busy ? 'loading…' : `showing ${rows.length} of ${total}`}
         </span>
+        <div style={{flex:1}}/>
         <button className="btn" onClick={load} disabled={busy}
-          style={{marginLeft:'auto', display:'inline-flex', alignItems:'center', gap:5, fontSize:12}}>
+          style={{display:'inline-flex', alignItems:'center', gap:5, fontSize:12}}>
           <RefreshCw size={12} className={busy ? 'spin' : ''}/> Refresh
         </button>
       </div>
@@ -103,7 +110,7 @@ export default function ActivityLog() {
         <input type="date" className="sel" value={to} onChange={e=>setTo(e.target.value)}
           style={{fontSize:12}} title="To"/>
         <label style={{display:'inline-flex', alignItems:'center', gap:6, fontSize:12,
-                       color: failedOnly ? '#f87171' : 'var(--t3)', cursor:'pointer'}}>
+                       color: failedOnly ? 'var(--red)' : 'var(--t3)', cursor:'pointer'}}>
           <input type="checkbox" checked={failedOnly} onChange={e=>setFailedOnly(e.target.checked)} style={{margin:0}}/>
           <AlertTriangle size={12}/> Failed only
         </label>
@@ -115,11 +122,10 @@ export default function ActivityLog() {
 
       {err && (
         <div style={{padding:'8px 12px', borderRadius:7, marginBottom:12, fontSize:12,
-          background:'rgba(248,113,113,0.10)', border:'1px solid #7f1d1d55', color:'#fca5a5'}}>{err}</div>
+          background:'color-mix(in srgb, var(--red) 10%, transparent)', border:'1px solid color-mix(in srgb, var(--red) 33%, transparent)', color:'var(--red)'}}>{err}</div>
       )}
 
-      <div className="scroll" style={{maxHeight:'64vh', overflow:'auto',
-        border:'1px solid var(--b1)', borderRadius:8}}>
+      <div className="scroll card" style={{maxHeight:'64vh', overflow:'auto', padding:0}}>
         <table style={{width:'100%', borderCollapse:'collapse', fontSize:12}}>
           <thead>
             <tr>
@@ -143,14 +149,21 @@ export default function ActivityLog() {
                     <div style={{fontWeight:600}}>{w.full}</div>
                     <div style={{fontSize:10, color:'var(--t3)'}}>{w.ago}</div>
                   </td>
-                  <td style={{...cell, fontWeight:700}}>{r.byName || '—'}</td>
+                  <td style={cell}>
+                    {r.byName ? (
+                      <div style={{display:'flex', alignItems:'center', gap:9, minWidth:0}}>
+                        <span className="ini" style={{'--h':String(r.byName).charCodeAt(0)*37%360}}>{String(r.byName).replace(/[^A-Za-z0-9]/g,'').slice(0,2).toUpperCase()}</span>
+                        <div style={{minWidth:0}}><div style={{fontWeight:700, color:'var(--t1)', overflow:'hidden', textOverflow:'ellipsis'}}>{r.byName}</div><div style={{fontSize:10.5, color:'var(--t3)'}}>{w.ago}</div></div>
+                      </div>
+                    ) : '—'}
+                  </td>
                   <td style={cell}>
                     <div style={{display:'flex', alignItems:'center', gap:6, flexWrap:'wrap'}}>
-                      <span style={{fontWeight:700, color: VERB_COLOUR[verb] || 'var(--t2)'}}>{verb}</span>
+                      <span style={{fontSize:10.5, fontWeight:800, color: VERB_COLOUR[verb] || 'var(--t2)', background:`color-mix(in srgb, ${VERB_COLOUR[verb] || 'var(--t3)'} 12%, transparent)`, padding:'2px 8px', borderRadius:20}}>{verb}</span>
                       <span style={{color:'var(--t2)'}}>{p}</span>
                       {failed && (
-                        <span style={{fontSize:10, fontWeight:700, color:'#f87171',
-                          background:'rgba(248,113,113,0.12)', padding:'1px 6px', borderRadius:4}}>
+                        <span style={{fontSize:10, fontWeight:700, color:'var(--red)',
+                          background:'color-mix(in srgb, var(--red) 12%, transparent)', padding:'2px 8px', borderRadius:20}}>
                           {r.detail.status}
                         </span>
                       )}

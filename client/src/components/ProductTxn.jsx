@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Package, Upload, RefreshCw, AlertTriangle, CheckCircle2, Layers, FileSpreadsheet, X, IndianRupee, Settings } from 'lucide-react';
+import { Package, Upload, RefreshCw, AlertTriangle, CheckCircle2, Layers, FileSpreadsheet, X, IndianRupee, Settings, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { api, getApiBase } from '../api';
 import { notify, confirmDialog } from './Toast';
+import { PageHead } from '../collections/ui';
 
 /**
  * ProductTxn — raw ERP product-transaction reporting.
@@ -60,12 +61,9 @@ function ChipFilter({ label, options, selected, onChange, maxHeight = 118 }) {
               key={o}
               onClick={() => toggle(o)}
               title={o}
+              className={'thr' + (on ? ' on' : '')}
               style={{
-                border: on ? '1px solid var(--acc)' : '1px solid var(--b2)',
-                background: on ? 'var(--acc)' : 'var(--bg1)',
-                color: on ? '#fff' : 'var(--t2)',
-                borderRadius: 5, padding: '3px 8px', fontSize: 11,
-                fontWeight: on ? 600 : 400, cursor: 'pointer', maxWidth: '100%',
+                '--tone': 'var(--acc)', padding: '3px 9px', fontSize: 11, maxWidth: '100%',
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               }}>
               {o}
@@ -177,12 +175,8 @@ function ImportPanel({ onImported, txnTotal }) {
 
   const Card = ({ step, title, desc, kind, disabled, hint }) => (
     <div className="card" style={{ flex: '1 1 320px', opacity: disabled ? .55 : 1 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 6 }}>
-        <span style={{
-          width: 22, height: 22, borderRadius: '50%', background: 'var(--acc)', color: '#fff',
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700,
-        }}>{step}</span>
-        <b style={{ fontSize: 14 }}>{title}</b>
+      <div className="sec-title" style={{ marginBottom: 6 }}>
+        <span className="sec-ico" style={{ '--tone': 'var(--acc)' }}>{step}</span> {title}
       </div>
       <div style={{ fontSize: 12, color: 'var(--t3)', lineHeight: 1.5, marginBottom: 10 }}>{desc}</div>
       {hint}
@@ -205,7 +199,7 @@ function ImportPanel({ onImported, txnTotal }) {
           hint={masterStats?.total ? (
             <div style={{
               display: 'inline-flex', alignItems: 'center', gap: 7, marginBottom: 10, padding: '5px 10px',
-              borderRadius: 7, background: 'rgba(52,211,153,.10)', border: '1px solid rgba(52,211,153,.3)',
+              borderRadius: 7, background: 'color-mix(in srgb, var(--grn) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--grn) 30%, transparent)',
               fontSize: 11.5, color: 'var(--grn)', fontWeight: 600,
             }}>
               <CheckCircle2 size={13} />
@@ -233,14 +227,11 @@ function ImportPanel({ onImported, txnTotal }) {
           rest of the app reads. Kept as a separate, explicitly confirmed
           step: it rewrites the numbers behind Overview, MTD and targets. */}
       {txnTotal > 0 && (
-        <div className="card" style={{ marginBottom: 16, borderColor: 'rgba(52,211,153,.35)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 6, flexWrap: 'wrap' }}>
-            <span style={{
-              width: 22, height: 22, borderRadius: '50%', background: 'var(--grn)', color: '#04231a',
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700,
-            }}>3</span>
-            <b style={{ fontSize: 14 }}>Update monthly sales</b>
-            <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+        <div className="card" style={{ marginBottom: 16, borderColor: 'color-mix(in srgb, var(--grn) 35%, transparent)' }}>
+          <div className="sec-title" style={{ marginBottom: 6 }}>
+            <span className="sec-ico" style={{ '--tone': 'var(--grn)' }}>3</span> Update monthly sales
+            <div style={{ flex: 1 }} />
+            <div style={{ display: 'flex', gap: 8 }}>
               {!sync && (
                 <button className="btnp" onClick={previewSync} disabled={!!busy}>
                   {busy === 'sync' ? 'Checking…' : 'Check what would change'}
@@ -269,7 +260,7 @@ function ImportPanel({ onImported, txnTotal }) {
                 <div key={m.month} style={{
                   marginBottom: 12, padding: '10px 12px', borderRadius: 9,
                   background: 'var(--bg2)',
-                  border: '1px solid ' + (m.warnLowers ? 'rgba(248,113,113,.45)' : 'var(--b1)'),
+                  border: '1px solid ' + (m.warnLowers ? 'color-mix(in srgb, var(--red) 45%, transparent)' : 'var(--b1)'),
                 }}>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
                     <b style={{ fontSize: 14 }}>{m.month}</b>
@@ -279,11 +270,9 @@ function ImportPanel({ onImported, txnTotal }) {
                       <b style={{ color: 'var(--t1)' }}>{qtyF(m.newQty)}</b>
                       <span style={{ opacity: .6 }}> ({m.newRows} rows)</span>
                     </span>
-                    <span style={{
-                      fontSize: 12.5, fontWeight: 700,
-                      color: m.delta === 0 ? 'var(--t3)' : m.delta > 0 ? 'var(--grn)' : 'var(--red)',
-                    }}>
-                      {m.delta === 0 ? 'no change' : (m.delta > 0 ? '+' : '') + qtyF(m.delta)}
+                    <span className={'trend ' + (m.delta > 0 ? 'up' : m.delta < 0 ? 'down' : '')}>
+                      {m.delta > 0 ? <ArrowUpRight size={11} /> : m.delta < 0 ? <ArrowDownRight size={11} /> : null}
+                      {m.delta === 0 ? 'no change' : qtyF(Math.abs(m.delta))}
                     </span>
                     {m.bySource?.length > 0 && (
                       <span className="chip">
@@ -320,15 +309,18 @@ function ImportPanel({ onImported, txnTotal }) {
                       </thead>
                       <tbody>
                         {m.categories.map((c, i) => (
-                          <tr key={i} style={{ background: c.delta !== 0 ? 'rgba(251,191,36,.07)' : 'transparent' }}>
+                          <tr key={i} style={{ background: c.delta !== 0 ? 'color-mix(in srgb, var(--yel) 7%, transparent)' : 'transparent' }}>
                             <td style={{ padding: '5px 9px' }}>{c.category}</td>
                             <td style={{ padding: '5px 9px', color: 'var(--t3)' }}>{c.subCategory || '—'}</td>
                             <td style={{ padding: '5px 9px', textAlign: 'right' }}>{qtyF(c.before)}</td>
                             <td style={{ padding: '5px 9px', textAlign: 'right', fontWeight: 600 }}>{qtyF(c.after)}</td>
-                            <td style={{
-                              padding: '5px 9px', textAlign: 'right', fontWeight: 700,
-                              color: c.delta === 0 ? 'var(--t3)' : c.delta > 0 ? 'var(--grn)' : 'var(--red)',
-                            }}>{c.delta === 0 ? '—' : (c.delta > 0 ? '+' : '') + qtyF(c.delta)}</td>
+                            <td style={{ padding: '5px 9px', textAlign: 'right' }}>
+                              {c.delta === 0 ? <span style={{ color: 'var(--t3)' }}>—</span> : (
+                                <span className={'trend ' + (c.delta > 0 ? 'up' : 'down')}>
+                                  {c.delta > 0 ? <ArrowUpRight size={11} /> : <ArrowDownRight size={11} />}{qtyF(Math.abs(c.delta))}
+                                </span>
+                              )}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -350,7 +342,7 @@ function ImportPanel({ onImported, txnTotal }) {
         <div style={{
           display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
           marginBottom: 16, padding: '10px 14px', borderRadius: 9,
-          background: 'rgba(248,113,113,.07)', border: '1px solid rgba(248,113,113,.22)',
+          background: 'color-mix(in srgb, var(--red) 7%, transparent)', border: '1px solid color-mix(in srgb, var(--red) 22%, transparent)',
         }}>
           <div style={{ flex: '1 1 300px', fontSize: 12, color: 'var(--t3)', lineHeight: 1.5 }}>
             <b style={{ color: 'var(--t2)' }}>Starting over?</b> Erase every imported transaction line and
@@ -367,10 +359,9 @@ function ImportPanel({ onImported, txnTotal }) {
 
       {d && (
         <div className="card" style={{ borderColor: 'var(--acc)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-            <b style={{ fontSize: 15 }}>
-              Preview — nothing has been saved yet
-            </b>
+          <div className="sec-title">
+            <span className="sec-ico" style={{ '--tone': 'var(--yel)' }}><FileSpreadsheet size={15} /></span> Preview — nothing has been saved yet
+            <div style={{ flex: 1 }} />
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn" onClick={() => setPreview(null)}>Cancel</button>
               <button className="btnp" onClick={confirm} disabled={!!busy}>
@@ -434,7 +425,7 @@ const StatRow = ({ items }) => (
     {items.map(([k, v, tone]) => (
       <div key={k} style={{
         padding: '9px 12px', borderRadius: 8, background: 'var(--bg2)', minWidth: 0,
-        border: '1px solid ' + (tone === 'warn' ? 'rgba(251,191,36,.4)' : tone === 'ok' ? 'rgba(52,211,153,.35)' : 'var(--b1)'),
+        border: '1px solid ' + (tone === 'warn' ? 'color-mix(in srgb, var(--yel) 40%, transparent)' : tone === 'ok' ? 'color-mix(in srgb, var(--grn) 35%, transparent)' : 'var(--b1)'),
       }}>
         <div style={{ fontSize: 10, color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: 700 }}>{k}</div>
         <div style={{
@@ -475,7 +466,7 @@ const MiniTable = ({ head, rows, align = [] }) => (
 const Warn = ({ children }) => (
   <div style={{
     display: 'flex', gap: 8, alignItems: 'flex-start', padding: '9px 12px', borderRadius: 8,
-    background: 'rgba(251,191,36,.10)', border: '1px solid rgba(251,191,36,.3)',
+    background: 'color-mix(in srgb, var(--yel) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--yel) 30%, transparent)',
     fontSize: 12, color: 'var(--t2)', lineHeight: 1.5, marginTop: 8,
   }}>
     <AlertTriangle size={14} style={{ color: 'var(--yel)', flexShrink: 0, marginTop: 1 }} />
@@ -487,8 +478,8 @@ const Parked = ({ title, rows }) => {
   if (!rows?.length) return null;
   return (
     <div style={{ marginTop: 10 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--yel)', marginBottom: 5 }}>
-        {title} ({rows.length})
+      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--yel)', marginBottom: 5, display: 'flex', alignItems: 'center', gap: 6 }}>
+        {title} <span className="count-pill">{rows.length}</span>
       </div>
       <div style={{
         maxHeight: 140, overflowY: 'auto', border: '1px solid var(--b1)',
@@ -685,20 +676,13 @@ function IncentivePanel() {
   return (
     <div style={{ marginBottom: 14 }}>
       {/* ── header ─────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
-        <span style={{ width: 30, height: 30, borderRadius: 9, display: 'flex',
-                       alignItems: 'center', justifyContent: 'center',
-                       background: 'linear-gradient(135deg,#4f46e5,#6366f1)', color: '#fff' }}>
-          <IndianRupee size={15} />
-        </span>
-        <div>
-          <div style={{ fontSize: 14.5, fontWeight: 750, letterSpacing: '-.01em' }}>Billing incentive</div>
-          {data && (
-            <div style={{ fontSize: 11, color: 'var(--t3)' }}>
-              {data.month === 'all' ? 'all months' : data.month} · {data.totals.people} billing {data.totals.people === 1 ? 'person' : 'people'}
-            </div>
-          )}
-        </div>
+      <div className="sec-title" style={{ marginBottom: 14 }}>
+        <span className="sec-ico" style={{ '--tone': 'var(--grn)' }}><IndianRupee size={15} /></span> Billing incentive
+        {data && (
+          <span className="sec-note">
+            {data.month === 'all' ? 'all months' : data.month} · {data.totals.people} billing {data.totals.people === 1 ? 'person' : 'people'}
+          </span>
+        )}
         <div style={{ flex: 1 }} />
         {data?.months?.length > 0 && (
           <select className="sel" value={month} onChange={e => setMonth(e.target.value)} style={{ fontSize: 12 }}>
@@ -765,7 +749,7 @@ function IncentivePanel() {
 
           {/* ── one card per person, with progress to the next tier ─ */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {data.people.map(p => {
+            {data.people.map((p, pi) => {
               const band = BAND[p.band] || BAND['upto-tier1'];
               // How far through the current band they are — the bar answers
               // "how close is this person to more money" at a glance.
@@ -774,14 +758,25 @@ function IncentivePanel() {
                 : Math.max(3, Math.min(100, Math.round((p.units / Math.max(1, ceiling)) * 100)));
               return (
                 <div key={p.name} className="card" style={{ padding: '13px 15px' }}>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-                    <div style={{ fontSize: 14, fontWeight: 750 }}>{p.name}</div>
-                    <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '.06em',
-                                   padding: '2px 7px', borderRadius: 5,
-                                   color: band.c, background: band.bg }}>{band.label}</span>
-                    <span style={{ fontSize: 11, color: 'var(--t3)' }}>
-                      bills for {(p.reps || []).join(', ') || '—'}
-                    </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    {/* Server sends people sorted by amount, highest first. */}
+                    <span className={'rank rank-' + (pi + 1)}>{pi + 1}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+                      <span className="ini" style={{ '--h': (p.name || '?').charCodeAt(0) * 37 % 360 }}>
+                        {(p.name || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase()}
+                      </span>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{ fontSize: 14, fontWeight: 750, color: 'var(--t1)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
+                          <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '.06em',
+                                         padding: '2px 7px', borderRadius: 5,
+                                         color: band.c, background: band.bg }}>{band.label}</span>
+                        </div>
+                        <div style={{ fontSize: 10.5, color: 'var(--t3)' }}>
+                          bills for {(p.reps || []).join(', ') || '—'}
+                        </div>
+                      </div>
+                    </div>
                     <div style={{ flex: 1 }} />
                     <div style={{ textAlign: 'right' }}>
                       <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--grn)',
@@ -815,7 +810,7 @@ function IncentivePanel() {
           {data.unassigned?.units > 0 && (
             <div style={{ fontSize: 11.5, color: 'var(--t2)', marginTop: 12, lineHeight: 1.75,
                           padding: '11px 13px', borderRadius: 9,
-                          background: 'rgba(251,191,36,.09)', border: '1px solid rgba(251,191,36,.3)' }}>
+                          background: 'color-mix(in srgb, var(--yel) 9%, transparent)', border: '1px solid color-mix(in srgb, var(--yel) 30%, transparent)' }}>
               <b style={{ color: 'var(--yel)' }}>{num(data.unassigned.units)} units earn nothing</b>
               {' '}— no billing person is assigned to these salesmen. Add them under <b>Edit rule</b>.
               <div style={{ marginTop: 6, display: 'flex', gap: 7, flexWrap: 'wrap' }}>
@@ -962,12 +957,7 @@ export default function ProductTxn({ currentUser }) {
     const csv = [head, ...body]
       .map(row => row.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))
       .join('\n');
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `product-transactions_${dims.join('-')}_${from}_${to}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    import('../lib/saveFile').then(m => m.saveText(csv, `product-transactions_${dims.join('-')}_${from}_${to}.csv`, 'text/csv;charset=utf-8'));
   };
 
   return (
@@ -976,32 +966,19 @@ export default function ProductTxn({ currentUser }) {
         .ptx-row:hover{background:var(--bg3) !important}
         .ptx-row td[title^="Show only"]:hover{color:var(--acc) !important;text-decoration-color:var(--acc) !important}
       `}</style>
-      <div className="page-head" style={{ marginBottom: 18, display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
-        <div style={{ flex: '1 1 auto', minWidth: 240 }}>
-          <div className="page-eyebrow" style={{ fontSize: 11, color: 'var(--acc)', textTransform: 'uppercase', letterSpacing: '.15em', marginBottom: 4 }}>
-            Raw ERP data
-          </div>
-          <div className="page-title" style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-.02em' }}>
-            Product Transactions
-          </div>
-          <div style={{ fontSize: 12.5, color: 'var(--t3)', marginTop: 5, maxWidth: 620, lineHeight: 1.5 }}>
-            Invoice-level sales straight from the ERP, mapped to categories through the product master.
-            Unlike Monthly Entry this keeps the real invoice date, so you can slice by day and by
-            transaction category.
-          </div>
-        </div>
-        {isAdmin && (
-          <div className="tabs" style={{ display: 'flex', gap: 6 }}>
+      <PageHead icon={Package} tone="var(--acc)" eyebrow="Raw ERP data" title="Product Transactions"
+        sub="Invoice-level sales straight from the ERP, mapped to categories through the product master. Unlike Monthly Entry this keeps the real invoice date, so you can slice by day and by transaction category."
+        right={isAdmin && (
+          <div className="seg">
             {[['report', 'Report', Layers], ['incentive', 'Incentive', IndianRupee], ['import', 'Import', Upload]].map(([id, label, Icon]) => (
               <button key={id} onClick={() => setTab(id)}
-                className={tab === id ? 'btnp' : 'btn'}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                className={'seg-b' + (tab === id ? ' on' : '')}
+                style={{ '--tone': 'var(--acc)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                 <Icon size={14} />{label}
               </button>
             ))}
           </div>
-        )}
-      </div>
+        )} />
 
       {tab === 'incentive' && isAdmin && <IncentivePanel />}
       {tab === 'import' && isAdmin && <ImportPanel onImported={loadFacets} txnTotal={facets?.total || 0} />}
@@ -1088,7 +1065,7 @@ export default function ProductTxn({ currentUser }) {
                 <div style={{
                   display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap',
                   marginBottom: 12, padding: '9px 12px', borderRadius: 9,
-                  background: 'var(--accL)', border: '1px solid rgba(99,102,241,.3)',
+                  background: 'var(--accL)', border: '1px solid color-mix(in srgb, var(--acc) 30%, transparent)',
                 }}>
                   <span style={{ fontSize: 10, color: 'var(--t3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.1em' }}>
                     Showing
@@ -1127,8 +1104,9 @@ export default function ProductTxn({ currentUser }) {
               {/* ── Result table ── */}
               {lines ? (
                 <div className="card">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                    <b>Invoice lines ({lines.count})</b>
+                  <div className="sec-title">
+                    <span className="sec-ico" style={{ '--tone': 'var(--acc)' }}><Package size={15} /></span> Invoice lines <span className="count-pill">{lines.count}</span>
+                    <div style={{ flex: 1 }} />
                     <button className="btn" onClick={() => setLines(null)}>Back to summary</button>
                   </div>
                   <div style={{ overflowX: 'auto', maxHeight: '60vh', overflowY: 'auto' }}>
@@ -1149,8 +1127,18 @@ export default function ProductTxn({ currentUser }) {
                           <tr key={r._id || i} style={{ background: i % 2 ? 'var(--bg2)' : 'transparent' }}>
                             <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>{r.dateStr}</td>
                             <td style={{ padding: '6px 10px', whiteSpace: 'nowrap', color: 'var(--t3)' }}>{r.voucherNo}</td>
-                            <td style={{ padding: '6px 10px', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                              title={r.dealerName || r.companyName}>{r.dealerName || r.companyName}</td>
+                            <td style={{ padding: '6px 10px', maxWidth: 220 }}
+                              title={r.dealerName || r.companyName}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+                                <span className="ini" style={{ '--h': (r.dealerName || r.companyName || '?').charCodeAt(0) * 37 % 360 }}>
+                                  {(r.dealerName || r.companyName || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase()}
+                                </span>
+                                <div style={{ minWidth: 0 }}>
+                                  <div style={{ fontWeight: 700, color: 'var(--t1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.dealerName || r.companyName}</div>
+                                  {r.city && <div style={{ fontSize: 10.5, color: 'var(--t3)', whiteSpace: 'nowrap' }}>{r.city}</div>}
+                                </div>
+                              </div>
+                            </td>
                             <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>{r.brand}</td>
                             <td style={{ padding: '6px 10px', whiteSpace: 'nowrap', color: r.resolved ? 'var(--t1)' : 'var(--yel)' }}>
                               {r.category || 'unresolved'}
@@ -1221,7 +1209,16 @@ export default function ProductTxn({ currentUser }) {
                                         // the colour on re-render.
                                         textDecoration: can ? 'underline var(--b2)' : 'none',
                                         textUnderlineOffset: 3,
-                                      }}>{val || '(none)'}</td>
+                                      }}>
+                                      {(d === 'dealer' || d === 'salesman') && val ? (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+                                          <span className="ini" style={{ '--h': String(val).charCodeAt(0) * 37 % 360 }}>
+                                            {String(val).replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase()}
+                                          </span>
+                                          <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{val}</span>
+                                        </div>
+                                      ) : (val || '(none)')}
+                                    </td>
                                   );
                                 })}
                                 <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700 }}>
@@ -1229,6 +1226,7 @@ export default function ProductTxn({ currentUser }) {
                                   <span style={{ color: 'var(--t3)', fontWeight: 400, fontSize: 11, marginLeft: 6 }}>
                                     {share >= 0.5 ? `${share.toFixed(0)}%` : ''}
                                   </span>
+                                  <div className="pbar"><div style={{ width: Math.min(share, 100) + '%', background: 'var(--acc)' }} /></div>
                                 </td>
                                 <td style={{ padding: '8px 12px', textAlign: 'right' }}>{money(r.amount)}</td>
                                 <td style={{ padding: '8px 12px', textAlign: 'right', color: 'var(--t3)' }}>{r.vouchers}</td>

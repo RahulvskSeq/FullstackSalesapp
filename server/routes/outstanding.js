@@ -568,6 +568,10 @@ router.get('/batches/:id', protect, adminOnly, async (req,res) => {
 router.get('/history/:dealerName', protect, async (req,res) => {
   try {
     const name = decodeURIComponent(req.params.dealerName);
+    if (req.user?.role === 'salesman') {   // his own dealers only
+      const Dl = (await import('../models/Dealer.js')).default;
+      if (!(await Dl.exists({ name: new RegExp(`^\\s*${name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}\\s*$`,'i'), salesman: req.user.id }))) return res.status(403).json({ error:'Not your dealer' });
+    }
     const rows = await OutstandingHistory.find({
       dealerName: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}$`,'i'),
     }).sort({ createdAt:-1 }).limit(300).lean();
@@ -718,7 +722,8 @@ router.put('/:name', protect, adminOnly, async (req,res) => {
     if(!month) return res.status(400).json({error:'month required'});
     const name=decodeURIComponent(req.params.name);
     const rx=new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}$`,'i');
-    const rec=await Outstanding.findOneAndUpdate({dealerName:rx},{$set:{[`monthlyOutstanding.${month}`]:Number(amount)||0}},{new:true,upsert:true});
+    // a regex filter is not copied into an upserted record, so the name is set on insert explicitly
+    const rec=await Outstanding.findOneAndUpdate({dealerName:rx},{$set:{[`monthlyOutstanding.${month}`]:Number(amount)||0},$setOnInsert:{dealerName:name}},{new:true,upsert:true});
     audit(req, 'outstanding.manual-edit', { dealer:name, month, amount:Number(amount)||0 });
     res.json(toPlain(rec));
   }catch(e){res.status(500).json({error:e.message});}

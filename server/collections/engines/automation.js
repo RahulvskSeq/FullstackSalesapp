@@ -102,7 +102,7 @@ export async function tick() {
       continue;
     }
     if (rule.id === 'promise-reminder-tomorrow') {
-      const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+      const tomorrow = new Date(Date.now() + 86400000 + 5.5 * 3600e3).toISOString().slice(0, 10);   // tomorrow in IST
       const due = await ColPromise.find({ status: { $in: ['PENDING', 'PARTIALLY_FULFILLED'] }, promiseDate: tomorrow }).lean();
       for (const p of due) { const t = await act(rule, p.dealerId, p.cycleId, { dedupe: 'promise:' + p._id }); if (t) out.tasks++; }
       continue;

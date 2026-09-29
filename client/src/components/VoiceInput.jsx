@@ -345,8 +345,8 @@ function VoiceField({ as='textarea', value, onChange, placeholder='', className=
           {translating && (
             <div style={{
               fontSize:9, padding:'4px 7px', borderRadius:5,
-              background:'rgba(251,191,36,0.15)', color:'var(--yel)',
-              border:'1px solid rgba(251,191,36,0.35)',
+              background:'color-mix(in srgb, var(--yel) 15%, transparent)', color:'var(--yel)',
+              border:'1px solid color-mix(in srgb, var(--yel) 35%, transparent)',
               fontWeight:700, letterSpacing:'.04em',
             }}>
               Translating…

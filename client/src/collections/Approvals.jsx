@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X, Paperclip } from 'lucide-react';
 import { col } from './api';
-import { useLoad, Modal, Busy, ErrorBox, Empty, money, num, fmtDate, DealerLink, useDealerCtx, userName, PENDING_BG, periodsOf, periodLabel, OldestPill } from './ui';
+import { useLoad, Modal, Busy, ErrorBox, Empty, money, num, fmtDate, DealerLink, useDealerCtx, userName, PENDING_BG, periodsOf, periodLabel, OldestPill, today, Ini } from './ui';
 
 const Num = ({ k, v, c, sub }) => <div style={{ minWidth: 0 }}><div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--t3)' }}>{k}</div><div style={{ fontSize: 15, fontWeight: 800, color: c, fontVariantNumeric: 'tabular-nums', overflowWrap: 'anywhere', lineHeight: 1.2 }}>{v}</div>{sub ? <div style={{ fontSize: 10, color: 'var(--t3)', lineHeight: 1.3 }}>{sub}</div> : null}</div>;
 
@@ -13,7 +13,7 @@ const Num = ({ k, v, c, sub }) => <div style={{ minWidth: 0 }}><div style={{ fon
 export default function ApprovalsModal({ onClose, onChanged, mode = 'waiting', dealerId = null }) {
   const [q, setQ] = useState('');
   const { users } = useDealerCtx();
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayKey = today();   // local date, not UTC
   const rec = useLoad(() => mode === 'today' ? col.payments({ recordedOn: todayKey, status: 'RECORDED,CONFIRMED', limit: 200 }) : col.payments({ status: 'RECORDED', limit: 200 }), [mode]);
   const [acting, setActing] = useState('');
   const [err, setErr] = useState('');
@@ -30,10 +30,11 @@ export default function ApprovalsModal({ onClose, onChanged, mode = 'waiting', d
           <div key={p._id} style={{ padding: '7px 10px', borderRadius: 9, background: done ? 'rgba(22,163,74,.10)' : PENDING_BG, border: '1px solid ' + (done ? 'rgba(22,163,74,.4)' : 'rgba(245,158,11,.45)'), boxShadow: `inset 3px 0 0 ${done ? '#16a34a' : '#f59e0b'}` }}>
             {/* line 1: who · when · how · by whom, with cancel at the end */}
             <div className="row" style={{ justifyContent: 'space-between', gap: 8, alignItems: 'flex-start', flexWrap: 'nowrap' }}>
-              <div style={{ flex: 1, minWidth: 0, display: 'flex', gap: '2px 8px', alignItems: 'baseline', flexWrap: 'wrap' }}>
+              <Ini name={p.dealer?.name || String(p.dealerId)} size={28} />
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', gap: '2px 8px', alignItems: 'baseline', flexWrap: 'wrap', alignSelf: 'center' }}>
                 <DealerLink id={p.dealerId} name={p.dealer?.name || String(p.dealerId)} code={p.dealer?.code} />
                 <span style={{ fontSize: 11, color: 'var(--t2)', whiteSpace: 'nowrap' }}>{fmtDate(p.date)} · {p.mode}{p.reference ? ' · ' + p.reference : ''} · {userName(users, p.enteredBy)}</span>
-                {p.proofId && <a className="btn" href={col.proofUrl(p.proofId)} target="_blank" rel="noreferrer" style={{ fontSize: 10.5, padding: '1px 6px', display: 'inline-flex', gap: 3, alignItems: 'center' }}><Paperclip size={10} /> Proof</a>}
+                {p.proofId && <button className="btn" onClick={e => { e.stopPropagation(); col.openProof(p.proofId).catch(err => alert(err.message)); }} style={{ fontSize: 10.5, padding: '1px 6px', display: 'inline-flex', gap: 3, alignItems: 'center' }}><Paperclip size={10} /> Proof</button>}
               </div>
               {done ? <span style={{ fontSize: 11.5, color: 'var(--grn)', fontWeight: 700, whiteSpace: 'nowrap' }}>✓ collected</span>
                 : p.beforeFirstStatement ? <span className="row" style={{ gap: 4, flexShrink: 0 }}>
@@ -49,6 +50,7 @@ export default function ApprovalsModal({ onClose, onChanged, mode = 'waiting', d
               <Num k="Came" v={p.beforeFirstStatement && !done && !came ? 'not visible' : money(came)} c={came > 0 ? 'var(--grn)' : 'var(--t3)'} sub={!done && came > 0 && (p.cameFrom || []).length ? `credited to ${(p.cameFrom || []).slice(0, 2).map(x => `#${x.paymentNo} · ${fmtDate(x.date)}`).join(', ')}` : (p.beforeFirstStatement && !done ? `told before the first statement (${fmtDate(p.firstStatementAsOn)}) — the app cannot see money that came by then; check Tally` : '')} />
               <Num k="Still to come" v={money(done ? 0 : Math.max(0, p.amount - came))} c={full ? 'var(--grn)' : 'var(--red)'} />
             </div>
+            {p.amount > 0 && <div className="att-bar" style={{ '--tone': done || full ? '#10b981' : '#f59e0b', margin: '2px 0 5px' }}><div style={{ width: Math.min(100, came / p.amount * 100) + '%' }} /></div>}
             {/* line 3: the months, in one line */}
             {ps.length > 0 && <div style={{ display: 'flex', gap: '4px 12px', flexWrap: 'wrap', alignItems: 'center', fontSize: 11.5, color: 'var(--t2)', fontVariantNumeric: 'tabular-nums' }}>
               {ps.map((m, i) => <span key={m} style={{ whiteSpace: 'nowrap' }}>{i === 0 ? <span style={{ color: 'var(--red)', fontWeight: 700 }}>{periodLabel(m)}</span> : periodLabel(m)} {p.buckets?.[m] ? (i === 0 ? <OldestPill>{money(p.buckets[m])}</OldestPill> : <b style={{ color: 'var(--t1)' }}>{money(p.buckets[m])}</b>) : '–'}</span>)}

@@ -1,0 +1,16 @@
+{
+  "name": "Sales Tracker Pro",
+  "short_name": "Sales Tracker",
+  "description": "Dealer sales, targets, collections, visits and samples in one place.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#e4e8ee",
+  "theme_color": "#2f4162",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

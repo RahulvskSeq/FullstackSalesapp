@@ -11,7 +11,8 @@ const pad = n => String(n).padStart(2, '0');
 export const ym = (y, mi) => `${y}-${pad(mi + 1)}`;                    // mi 0-based
 export const ymOfDate = d => ym(d.getFullYear(), d.getMonth());
 export const ymdOfDate = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-export const todayYmd = () => ymdOfDate(new Date());
+// the Indian business day, whatever timezone the server itself runs in
+export const todayYmd = () => new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
 
 /** 'aug', 'August', '(3)\r\nAug', 'AUG', 'Sept' → 0-based index, or -1. */
 export function monthIndex(s) {

@@ -1154,7 +1154,8 @@
 
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Search, Plus, Download, Trash2, X, CheckSquare, Square, ArrowUpRight, ArrowDownRight, MessageSquare, Columns, List, GripVertical } from 'lucide-react';
+import { Search, Plus, Download, Trash2, X, CheckSquare, Square, ArrowUpRight, ArrowDownRight, MessageSquare, Columns, List, GripVertical, Users, SlidersHorizontal, LayoutGrid, ArrowUpDown, Eye, SearchX } from 'lucide-react';
+import { PageHead } from '../collections/ui';
 import { MO as MO_CONST, CURRENT_MONTH_IDX, DEALER_TYPES } from '../constants';
 import { pct, spct, pclr, fcash, num, trendPct, monthTarget } from '../utils';
 import { api } from '../api';
@@ -1165,13 +1166,16 @@ import { notify } from './Toast';
 
 // ── Drag-and-drop Kanban board ────────────────────────────
 const STATUS_COLORS = {
-  'ACTIVE':'#34d399','ACHIVERS':'#34d399','ACHIEVERS':'#34d399',
-  'KEY ACCOUNT':'#a78bfa','INACTIVE':'#fbbf24','REACTIVE':'#fb923c',
-  'DEAD':'#f87171','NEW':'#22d3ee','PROSPECT':'#818cf8'
+  'ACTIVE':'#10b981','ACHIVERS':'#10b981','ACHIEVERS':'#10b981',
+  'KEY ACCOUNT':'#8b5cf6','INACTIVE':'#f59e0b','REACTIVE':'#f97316',
+  'DEAD':'#ef4444','NEW':'#06b6d4','PROSPECT':'#6366f1'
 };
 const getStatusColor = s => STATUS_COLORS[(s||'').toUpperCase()] || '#55546a';
 
 function KanbanBoard({ dealers, selectedMonthIdx, users, onEdit, onUpdateStatus, isAdmin, groupBy='status' }) {
+  // the month labels the cards print (it read a name that only exists inside DealersList)
+  const { MO: ctxMO } = useMonth();
+  const MO = ctxMO || MO_CONST;
   // Which dimension the board is showing. Cards can only be dragged when it is
   // the manual one — the performance tier is calculated from sales, so dropping
   // a card into "DEAD" would be a lie the next recompute erases.
@@ -1231,7 +1235,7 @@ function KanbanBoard({ dealers, selectedMonthIdx, users, onEdit, onUpdateStatus,
               minWidth:220, maxWidth:240, flexShrink:0,
               background: isOver?`${clr}18`:'var(--bg1)',
               border:`1.5px solid ${isOver?clr:'var(--b1)'}`,
-              borderRadius:10, overflow:'hidden',
+              borderRadius:14, overflow:'hidden',
               transition:'border .15s,background .15s',
             }}>
             {/* Column header. Columns are in a fixed, meaningful order now —
@@ -1239,13 +1243,12 @@ function KanbanBoard({ dealers, selectedMonthIdx, users, onEdit, onUpdateStatus,
             <div style={{padding:'10px 12px',background:`${clr}18`,borderBottom:`1px solid ${clr}33`,
               display:'flex',alignItems:'center',gap:6,userSelect:'none'}}>
               <span style={{width:8,height:8,borderRadius:'50%',background:clr,flexShrink:0}}/>
-              <span style={{width:8,height:8,borderRadius:'50%',background:clr,flexShrink:0}}/>
-              <span style={{fontSize:12,fontWeight:700,color:clr,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{col}</span>
-              <span style={{fontSize:11,color:clr,fontWeight:700,background:`${clr}22`,padding:'1px 6px',borderRadius:8}}>{colDealers.length}</span>
+              <span style={{fontSize:12,fontWeight:800,color:clr,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{col}</span>
+              <span className="count-pill" style={{color:clr,background:`${clr}22`}}>{colDealers.length}</span>
               <span style={{fontSize:10,color:'var(--t3)'}}>·{colTotal}</span>
             </div>
             {/* Cards */}
-            <div style={{padding:8,display:'flex',flexDirection:'column',gap:6,maxHeight:500,overflowY:'auto'}}>
+            <div style={{padding:8,display:'flex',flexDirection:'column',gap:8,maxHeight:500,overflowY:'auto'}}>
               {colDealers.map(d=>{
                 const ach=d.months[selectedMonthIdx]||0;
                 const tgt=monthTarget(d, selectedMonthIdx);
@@ -1255,26 +1258,33 @@ function KanbanBoard({ dealers, selectedMonthIdx, users, onEdit, onUpdateStatus,
                   <div key={d.id}
                     draggable={isManual} onDragStart={e=>onCardDragStart(e,d.id,col)}
                     onClick={()=>onEdit(d.id)}
-                    style={{background:'var(--bg2)',borderRadius:8,padding:'9px 11px',cursor:'pointer',
-                      border:`1px solid ${overCard===d.id?clr:'var(--b2)'}`,
-                      boxShadow:dragCard?.dealerId===d.id?'0 4px 12px rgba(0,0,0,.4)':'none',
+                    className="att-card"
+                    style={{'--tone':clr,padding:'10px 12px 10px 15px',
+                      border:`1px solid ${overCard===d.id?clr:'var(--b1)'}`,
+                      boxShadow:dragCard?.dealerId===d.id?'0 4px 12px rgba(0,0,0,.4)':undefined,
                       opacity:dragCard?.dealerId===d.id?0.6:1,
-                      transition:'border .1s,opacity .1s'}}
+                      transition:'border .1s,opacity .1s,transform .15s,box-shadow .15s'}}
                     onMouseEnter={e=>{e.currentTarget.style.borderColor=clr;}}
-                    onMouseLeave={e=>{e.currentTarget.style.borderColor='var(--b2)';}}>
-                    <div style={{fontSize:12,fontWeight:600,color:'var(--t1)',marginBottom:5,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.name}</div>
-                    <div style={{display:'flex',justifyContent:'space-between',marginBottom:6,fontSize:11}}>
-                      <span style={{color:'var(--t3)'}}>{MO[selectedMonthIdx].slice(0,3)}: <strong style={{color:ach>0?'var(--t1)':'var(--t3)'}}>{ach||'—'}</strong></span>
-                      <span style={{color:pclr(p),fontWeight:700}}>{spct(tgt,ach)}</span>
+                    onMouseLeave={e=>{e.currentTarget.style.borderColor='var(--b1)';}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6,minWidth:0}}>
+                      <span className="ini" style={{'--h':(d.name||'?').charCodeAt(0)*37%360,width:26,height:26,fontSize:10,borderRadius:8}}>{(d.name||'?').replace(/[^A-Za-z0-9]/g,'').slice(0,2).toUpperCase()}</span>
+                      <div style={{minWidth:0}}>
+                        <div style={{fontSize:12,fontWeight:700,color:'var(--t1)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.name}</div>
+                        {(d.zone||d.city)&&<div style={{fontSize:10,color:'var(--t3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{[d.zone,d.city].filter(Boolean).join(' · ')}</div>}
+                      </div>
                     </div>
-                    {tgt>0&&<div style={{height:3,background:'var(--b1)',borderRadius:2,marginBottom:6,overflow:'hidden'}}>
-                      <div style={{height:'100%',width:`${Math.min(p||0,100)}%`,background:pclr(p),borderRadius:2}}/>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',fontSize:11}}>
+                      <span style={{color:'var(--t3)'}}>{MO[selectedMonthIdx].slice(0,3)}: <strong style={{color:ach>0?'var(--t1)':'var(--t3)'}}>{ach||'—'}</strong></span>
+                      <span style={{color:pclr(p),fontWeight:850,fontSize:13,letterSpacing:'-.01em'}}>{spct(tgt,ach)}</span>
+                    </div>
+                    {tgt>0&&<div className="att-bar" style={{marginBottom:6}}>
+                      <div style={{width:`${Math.min(p||0,100)}%`,background:pclr(p)}}/>
                     </div>}
                     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                       <MiniBars months={d.months} highlightIdx={selectedMonthIdx}/>
                       {isAdmin&&sm&&<Avatar user={sm} size={18}/>}
                     </div>
-                    {d.category&&<div style={{fontSize:10,color:'#818cf8',marginTop:4}}>{d.category}{d.categoryType?` · ${d.categoryType}`:''}</div>}
+                    {d.category&&<div style={{fontSize:10,color:'var(--acc)',marginTop:4}}>{d.category}{d.categoryType?` · ${d.categoryType}`:''}</div>}
                   </div>
                 );
               })}
@@ -1294,10 +1304,14 @@ function KanbanBoard({ dealers, selectedMonthIdx, users, onEdit, onUpdateStatus,
 // server/lib/accountStatus.js; Type 1 is calculated and never picked here.
 const ACCOUNT_STATUSES = ['NONE','STAR','KEY ACCOUNT','ACHIEVER','REACTIVE'];
 const PERF_STATUSES = ['TOP PERFORMER','PRIORITY ACCOUNT','RISING STAR','ACTIVE','RECENTLY INACTIVE','INACTIVE','DEAD'];
+// One source of truth for the empty filter set — every key the filter code reads.
+const DEFAULT_FILTERS = {q:'',zone:[],status:[],sm:[],credit:'',minPct:'',maxPct:'',city:[],state:[],category:[],categoryType:[],pin:'',perf:[],dtype:[],quick:''};
 
 const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,setSelected,onBulkAction,notes,pendingFilters,clearPending,onUpdateDealer})=>{
-  const {selectedMonthIdx, MO:ctxMO}=useMonth();
+  const {selectedMonthIdx, MO:ctxMO, viewIdx}=useMonth();
   const MO = ctxMO || MO_CONST;
+  // month columns follow the chosen view cycle, newest first
+  const vRev=[...(viewIdx&&viewIdx.length?viewIdx:MO.map((_,i)=>i))].filter(i=>i<MO.length).reverse();
   const selMoLabel=MO[selectedMonthIdx].slice(0,3);
   const isAdmin=currentUser.role==='admin'||currentUser.role==='superadmin';
   // Only a superadmin may type straight into the month columns — and only
@@ -1307,7 +1321,8 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
   const { excluded: catFilter } = useGlobalCategoryFilter();
   const catFilterOn  = !!(catFilter && catFilter.size > 0);
   const isSuperAdmin = currentUser.role==='superadmin' && !catFilterOn;
-  const [viewMode,setViewMode]=useState('table'); // 'table' | 'kanban'
+  // phones open on cards — a 30-column table is no way to browse on a small screen
+  const [viewMode,setViewMode]=useState(()=>typeof window!=='undefined'&&window.innerWidth<700?'cards':'table'); // 'table' | 'cards' | 'kanban'
   // Which dimension the Kanban groups by. Potential is the default because
   // it is the one a rep can actually change by dragging.
   const [kanbanBy,setKanbanBy]=useState('status'); // 'status' | 'perfStatus'
@@ -1317,15 +1332,21 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
   const [exportCats,setExportCats] = useState(new Set());
   const [allSaleCats,setAllSaleCats] = useState([]);
   const [exportBusy,setExportBusy] = useState(false);
-  const [filters,setFilters]=useState({q:'',zone:[],status:[],sm:[],credit:'',minPct:'',maxPct:'',city:[],state:[],category:[],categoryType:[],pin:'',perf:[]});
+  const [filters,setFilters]=useState(()=>({...DEFAULT_FILTERS}));
+  const [showFilters,setShowFilters]=useState(false);   // filter panel folded until asked for
   const [sort,setSort]=useState({col:'name',dir:1});
+  const [limit,setLimit]=useState(150);          // rows drawn at once; "Show more" draws the rest
+  const [colsOpen,setColsOpen]=useState(false);
+  const COLS0={loc:true,type:true,months:true,credit:true};
+  const [cols,setCols]=useState(()=>{ try{ return {...COLS0,...JSON.parse(localStorage.getItem('stp_dl_cols')||'{}')}; }catch{ return COLS0; } });
+  useEffect(()=>{ try{ localStorage.setItem('stp_dl_cols',JSON.stringify(cols)); }catch{} },[cols]);
   const [editCell,setEditCell]=useState(null);   // { id, i } — month cell being typed into
   const [editVal,setEditVal]  =useState('');
   const [savingCell,setSavingCell]=useState(null); // `${id}:${i}` while the PUT is in flight
 
   useEffect(()=>{
     if(pendingFilters){
-      const f={q:'',zone:[],status:[],sm:[],credit:'',minPct:'',maxPct:'',city:[],state:[],category:[],categoryType:[]};
+      const f={...DEFAULT_FILTERS};
       Object.keys(pendingFilters).forEach(k=>{
         if(k==='_ts')return;
         if(['status','perf','category','categoryType','sm','city','state','zone'].includes(k))f[k]=[pendingFilters[k]];
@@ -1384,7 +1405,7 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
     };
   },[dealers]);
 
-  const filtered=useMemo(()=>{
+  const baseFiltered=useMemo(()=>{
     let d=dealersForMonth;
     if(filters.q)d=d.filter(x=>x.name.toLowerCase().includes(filters.q.toLowerCase())||(x.city||'').toLowerCase().includes(filters.q.toLowerCase())||(x.state||'').toLowerCase().includes(filters.q.toLowerCase()));
     if(filters.zone.length>0)d=d.filter(x=>filters.zone.includes(x.zone||''));
@@ -1409,21 +1430,77 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
     if(filters.categoryType.length>0)d=d.filter(x=>filters.categoryType.includes(x.categoryType||''));
     if(filters.minPct)d=d.filter(x=>(pct(x.target,x.achieved)||0)>=num(filters.minPct));
     if(filters.maxPct)d=d.filter(x=>(pct(x.target,x.achieved)||0)<=num(filters.maxPct));
+    if(filters.dtype.length>0)d=d.filter(x=>filters.dtype.includes(x.dealerType||'None'));
+    return d;
+  },[dealersForMonth,filters,isAdmin]);
+
+  // Follow-up counts per dealer, worked out once instead of once per row.
+  const noteMaps=useMemo(()=>{
+    const all={},over={},now=new Date();
+    (notes||[]).forEach(n=>{
+      all[n.dealerId]=(all[n.dealerId]||0)+1;
+      if(n.type==='followup'&&!n.completed&&new Date(n.dueDate)<now)over[n.dealerId]=(over[n.dealerId]||0)+1;
+    });
+    return {all,over};
+  },[notes]);
+  // Quick segments: one tap narrows the list to a group that means something.
+  // Each chip's count is how many of the currently filtered dealers it keeps.
+  const QUICK=useMemo(()=>[
+    {k:'',       label:'All',               tone:'var(--acc)', test:()=>true},
+    {k:'hit',    label:'Target hit',        tone:'#10b981', test:x=>x.target>0&&(pct(x.target,x.achieved)||0)>=100},
+    {k:'mid',    label:'50–99%',            tone:'#3b82f6', test:x=>{const p=pct(x.target,x.achieved)||0;return x.target>0&&p>=50&&p<100;}},
+    {k:'low',    label:'Below 50%',         tone:'#ef4444', test:x=>x.target>0&&(pct(x.target,x.achieved)||0)<50},
+    {k:'nosale', label:'No sale this month',tone:'#64748b', test:x=>!x.achieved},
+    {k:'up',     label:'Trending up',       tone:'#10b981', test:x=>trendPct(x.months||[])>0},
+    {k:'down',   label:'Trending down',     tone:'#f59e0b', test:x=>trendPct(x.months||[])<0},
+    {k:'overdue',label:'Overdue follow-up', tone:'#ec4899', test:x=>(noteMaps.over[x.id]||0)>0},
+  ],[noteMaps]);
+  const quickCounts=useMemo(()=>{
+    const c={}; QUICK.forEach(q=>{ c[q.k]=q.k?baseFiltered.filter(q.test).length:baseFiltered.length; }); return c;
+  },[QUICK,baseFiltered]);
+  const filtered=useMemo(()=>{
+    const q=QUICK.find(z=>z.k===filters.quick);
+    const d=q&&q.k?baseFiltered.filter(q.test):baseFiltered;
+    // pct / trend / salesman name are worked out, not stored, so sort on the value shown
+    const val=x=>sort.col==='pct'?(pct(x.target,x.achieved)??-1)
+      :sort.col==='trend'?trendPct(x.months||[])
+      :sort.col==='salesmanName'?(users[x.salesman]?.name||x.salesman||'')
+      :(x[sort.col]??'');
     return[...d].sort((a,b)=>{
-      let av=(a[sort.col]??''),bv=(b[sort.col]??'');
-      if(typeof av==='string'){av=av.toLowerCase();bv=bv.toLowerCase();}
+      let av=val(a),bv=val(b);
+      if(typeof av==='string'){av=av.toLowerCase();bv=String(bv).toLowerCase();}
       return av<bv?-sort.dir:av>bv?sort.dir:0;
     });
-  },[dealersForMonth,filters,sort,isAdmin]);
+  },[baseFiltered,QUICK,filters.quick,sort,users]);
+  useEffect(()=>{ setLimit(150); },[filters,sort]);
 
   const tt=filtered.reduce((s,x)=>s+x.target,0);
   const ta=filtered.reduce((s,x)=>s+x.achieved,0);
-  const noteCount    =id=>notes.filter(n=>n.dealerId===id).length;
-  const overdueCount =id=>notes.filter(n=>n.dealerId===id&&n.type==='followup'&&!n.completed&&new Date(n.dueDate)<new Date()).length;
+  const noteCount    =id=>noteMaps.all[id]||0;
+  const overdueCount =id=>noteMaps.over[id]||0;
   const toggleSel    =id=>setSelected(s=>s.includes(id)?s.filter(x=>x!==id):[...s,id]);
   const toggleAll    =()=>{if(selected.length===filtered.length)setSelected([]);else setSelected(filtered.map(x=>x.id));};
-  const hasF=filters.q||filters.zone.length>0||filters.status.length>0||filters.sm.length>0||filters.credit||filters.city.length>0||filters.state.length>0||filters.category.length>0||filters.categoryType.length>0||filters.minPct||filters.maxPct||filters.pin||filters.perf.length>0;
-  const clearFilters =()=>setFilters({q:'',zone:[],status:[],sm:[],credit:'',minPct:'',maxPct:'',city:[],state:[],category:[],categoryType:[],pin:'',perf:[]});
+  const hasF=filters.q||filters.zone.length>0||filters.status.length>0||filters.sm.length>0||filters.credit||filters.city.length>0||filters.state.length>0||filters.category.length>0||filters.categoryType.length>0||filters.minPct||filters.maxPct||filters.pin||filters.perf.length>0||filters.dtype.length>0||filters.quick;
+  const clearFilters =()=>setFilters({...DEFAULT_FILTERS});
+  // What is narrowing the list right now, one removable chip per choice.
+  const LBL={status:'Selected user',perf:'Performance',zone:'Zone',sm:'Salesman',city:'City',state:'State',category:'Category',categoryType:'Cat type',dtype:'Type'};
+  const PIN_LBL={noBoth:'No pincode & address',noPin:'No pincode',noAddr:'No address',hasPin:'Has pincode'};
+  const unset=k=>()=>setFilters(f=>({...f,[k]:''}));
+  const chips=[
+    ...(filters.q?[{key:'q',text:`“${filters.q}”`,off:unset('q')}]:[]),
+    ...Object.keys(LBL).filter(k=>k!=='sm'||isAdmin).flatMap(k=>filters[k].map(v=>({key:k+':'+v,
+      text:`${LBL[k]}: ${k==='sm'?(users[v]?.name||v):v}`,
+      off:()=>setFilters(f=>({...f,[k]:f[k].filter(z=>z!==v)}))}))),
+    ...(filters.pin?[{key:'pin',text:PIN_LBL[filters.pin]||filters.pin,off:unset('pin')}]:[]),
+    ...(filters.credit?[{key:'cr',text:filters.credit==='yes'?'Has credit limit':'No credit limit',off:unset('credit')}]:[]),
+    ...(filters.minPct?[{key:'min',text:`Ach ≥ ${filters.minPct}%`,off:unset('minPct')}]:[]),
+    ...(filters.maxPct?[{key:'max',text:`Ach ≤ ${filters.maxPct}%`,off:unset('maxPct')}]:[]),
+  ];
+  const activeCount=chips.filter(c=>c.key!=='q').length;
+  const NUMERIC=new Set(['achieved','pct','trend','target','avg6m','creditLimit','creditDays']);
+  const SORTS=[['name','Name'],...(isAdmin?[['salesmanName','Salesman']]:[]),['achieved',selMoLabel+' achieved'],['pct','Achievement %'],['trend','Trend'],
+    ['target','Target'],['avg6m','6-month average'],['perfStatus','Performance'],['status','Selected user'],['zone','Zone'],['city','City'],
+    ['state','State'],['pincode','PIN'],['creditLimit','Credit limit'],['creditDays','Credit days']];
 
   // Potential Status — the salesman's own label. Persist it, don't just move
   // it in local state: this previously updated React only, so a pick (or a
@@ -1604,11 +1681,8 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
         freezeCols:2,
       };
       const blob = await api.dealersExportXlsx(payload);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = payload.filename+'.xlsx';
-      a.click();
-      URL.revokeObjectURL(url);
+      const { saveBlob } = await import('../lib/saveFile');
+      await saveBlob(blob, payload.filename+'.xlsx');
       setExportOpen(false);
     } catch(e){
       notify.error('Export failed: ' + (e?.message || 'could not load category data'));
@@ -1626,62 +1700,127 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
   return(
     <div className="fade">
       {/* Header */}
-      <div className="row" style={{marginBottom:14,flexWrap:'wrap',gap:10}}>
-        <div>
-          <div style={{fontSize:11,color:'var(--acc)',textTransform:'uppercase',letterSpacing:'0.15em',marginBottom:2}}>Dealer Records · {MO[selectedMonthIdx]}</div>
-          <div style={{fontSize:20,fontWeight:700}}>{filtered.length} dealers <span style={{fontSize:13,color:'var(--t3)',fontWeight:400}}>· Tgt {tt} · Ach {ta} · {spct(tt,ta)}</span></div>
-        </div>
-        <div className="spacer"/>
-        {selected.length>0&&(
-          <div style={{display:'flex',gap:6,alignItems:'center',background:'var(--accL)',padding:'6px 10px',borderRadius:6}}>
-            <span style={{fontSize:12,color:'var(--acc)',fontWeight:600}}>{selected.length} selected</span>
-            <button className="btn" style={{fontSize:11,padding:'4px 10px'}} onClick={()=>onBulkAction('status')}>Change Status</button>
-            {isAdmin&&<button className="btn" style={{fontSize:11,padding:'4px 10px'}} onClick={()=>onBulkAction('salesman')}>Reassign</button>}
-            <button className="btnd" style={{fontSize:11}} onClick={()=>onBulkAction('delete')}>Delete</button>
-            <button className="btn" style={{fontSize:11,padding:'4px 8px'}} onClick={()=>setSelected([])}><X size={12}/></button>
-          </div>
-        )}
-        {/* View toggle */}
-        <div style={{display:'flex',background:'var(--bg2)',border:'1px solid var(--b2)',borderRadius:7,overflow:'hidden'}}>
-          <button onClick={()=>setViewMode('table')} style={{background:viewMode==='table'?'var(--acc)':'transparent',color:viewMode==='table'?'#fff':'var(--t3)',border:'none',padding:'6px 12px',cursor:'pointer',display:'flex',alignItems:'center',gap:4,fontSize:12,transition:'all .15s'}}><List size={13}/> Table</button>
-          <button onClick={()=>setViewMode('kanban')} style={{background:viewMode==='kanban'?'var(--acc)':'transparent',color:viewMode==='kanban'?'#fff':'var(--t3)',border:'none',padding:'6px 12px',cursor:'pointer',display:'flex',alignItems:'center',gap:4,fontSize:12,borderLeft:'1px solid var(--b2)',transition:'all .15s'}}><Columns size={13}/> Kanban</button>
-        </div>
+      <PageHead icon={Users} tone="var(--acc)" eyebrow={<>Dealer Records · {MO[selectedMonthIdx]}</>}
+        title="All Dealers"
+        sub={<>{filtered.length.toLocaleString('en-IN')} of {dealers.length.toLocaleString('en-IN')} dealers · Target {tt.toLocaleString('en-IN')} · Achieved {ta.toLocaleString('en-IN')} · <b style={{color:pclr(pct(tt,ta))}}>{spct(tt,ta)}</b></>}
+        right={<>
         <button onClick={openExport} className="btn" style={{fontSize:12,display:'flex',alignItems:'center',gap:5}}><Download size={13}/> Export</button>
         <button onClick={onAdd} className="btnp" style={{display:'flex',alignItems:'center',gap:5}}><Plus size={14}/> Add Dealer</button>
+      </>}/>
+
+      {/* Toolbar: search · filters · sort · view · columns */}
+      <div className="card dl-toolbar">
+        <div className="dl-tb-row">
+          <div className="dl-search">
+            <Search size={15}/>
+            <input placeholder="Search dealer, city or state…" value={filters.q} onChange={e=>setFilters({...filters,q:e.target.value})}/>
+            {filters.q&&<button onClick={()=>setFilters({...filters,q:''})} title="Clear search"><X size={12}/></button>}
+          </div>
+          <button className={'btn dl-fbtn'+(showFilters||activeCount?' on':'')} onClick={()=>setShowFilters(v=>!v)}>
+            <SlidersHorizontal size={14}/> Filters{activeCount>0&&<span className="dl-badge">{activeCount}</span>}
+          </button>
+          <div className="dl-sort" title="Sort the list">
+            <ArrowUpDown size={13}/>
+            <select value={sort.col} onChange={e=>{const col=e.target.value;setSort({col,dir:NUMERIC.has(col)?-1:1});}}>
+              {SORTS.map(([v,l])=><option key={v} value={v}>{l}</option>)}
+            </select>
+            <button onClick={()=>setSort(s=>({...s,dir:-s.dir}))} title={sort.dir>0?'Ascending — tap for descending':'Descending — tap for ascending'}>{sort.dir>0?'↑':'↓'}</button>
+          </div>
+          <div className="seg">
+            {[['table','Table',List],['cards','Cards',LayoutGrid],['kanban','Board',Columns]].map(([v,l,I])=>(
+              <button key={v} onClick={()=>setViewMode(v)} className={'seg-b'+(viewMode===v?' on':'')} style={{'--tone':'var(--acc)',display:'flex',alignItems:'center',gap:4}}><I size={13}/> {l}</button>
+            ))}
+          </div>
+          {viewMode==='table'&&(
+            <div style={{position:'relative'}}>
+              <button className="btn dl-fbtn" onClick={()=>setColsOpen(o=>!o)}><Eye size={14}/> Columns</button>
+              {colsOpen&&(<>
+                <div style={{position:'fixed',inset:0,zIndex:59}} onClick={()=>setColsOpen(false)}/>
+                <div className="dl-cols">
+                  {[['loc','Location (city, state, PIN, address)'],['type','Dealer type'],['months','Month-by-month figures'],['credit','Credit days & limit']].map(([k,l])=>(
+                    <label key={k}><input type="checkbox" checked={!!cols[k]} onChange={()=>setCols(c=>({...c,[k]:!c[k]}))} style={{accentColor:'var(--acc)'}}/>{l}</label>
+                  ))}
+                </div>
+              </>)}
+            </div>
+          )}
+        </div>
+
+        {showFilters&&(
+          <div className="dl-fpanel">
+            <div className="dl-fl"><span>Selected user</span>
+              <MultiSelect options={allStatuses} selected={filters.status} onChange={v=>setFilters({...filters,status:v})} placeholder="All" renderOption={s=><StatusBadge status={s}/>}/></div>
+            <div className="dl-fl"><span>Performance</span>
+              <MultiSelect options={PERF_STATUSES} selected={filters.perf} onChange={v=>setFilters({...filters,perf:v})} placeholder="All" renderOption={s=><StatusBadge status={s}/>}/></div>
+            {isAdmin&&<div className="dl-fl"><span>Salesman</span>
+              <MultiSelect options={Object.values(users).filter(u=>u.role==='salesman').map(s=>s.id)} selected={filters.sm}
+                onChange={v=>setFilters({...filters,sm:v})} placeholder="All"
+                renderOption={id=>{const s=users[id];return s?<div style={{display:'flex',alignItems:'center',gap:6}}><Avatar user={s} size={18}/><span style={{fontSize:12}}>{s.name}</span></div>:<span>{id}</span>;}}/></div>}
+            <div className="dl-fl"><span>Zone</span>
+              <MultiSelect options={allZones} selected={filters.zone} onChange={v=>setFilters({...filters,zone:v})} placeholder="All"/></div>
+            {allStates.length>0&&<div className="dl-fl"><span>State</span>
+              <MultiSelect options={allStates} selected={filters.state} onChange={v=>setFilters({...filters,state:v})} placeholder="All"/></div>}
+            {allCities.length>0&&<div className="dl-fl"><span>City</span>
+              <MultiSelect options={allCities} selected={filters.city} onChange={v=>setFilters({...filters,city:v})} placeholder="All"/></div>}
+            {allCategories.length>0&&<div className="dl-fl"><span>Category</span>
+              <MultiSelect options={allCategories} selected={filters.category} onChange={v=>setFilters({...filters,category:v})} placeholder="All"
+                renderOption={c=><span style={{fontSize:12,color:'var(--acc)'}}>{c}</span>}/></div>}
+            {allCategoryTypes.length>0&&<div className="dl-fl"><span>Category type</span>
+              <MultiSelect options={allCategoryTypes} selected={filters.categoryType} onChange={v=>setFilters({...filters,categoryType:v})} placeholder="All"/></div>}
+            <div className="dl-fl"><span>Dealer type</span>
+              <MultiSelect options={DEALER_TYPES} selected={filters.dtype} onChange={v=>setFilters({...filters,dtype:v})} placeholder="All"/></div>
+            <div className="dl-fl"><span>Credit</span>
+              <select className="sel" value={filters.credit} onChange={e=>setFilters({...filters,credit:e.target.value})}>
+                <option value="">All</option><option value="yes">Has credit limit</option><option value="no">No credit limit</option>
+              </select></div>
+            <div className="dl-fl"><span>Location data</span>
+              <select className="sel" value={filters.pin}
+                title="Find records with missing location details — useful for reviewing dealers created by a sheet sync"
+                onChange={e=>setFilters({...filters,pin:e.target.value})}>
+                <option value="">All</option>
+                <option value="noBoth">No pincode &amp; no address ({pinCounts.noBoth})</option>
+                <option value="noPin">No pincode ({pinCounts.noPin})</option>
+                <option value="noAddr">No address ({pinCounts.noAddr})</option>
+                <option value="hasPin">Has pincode</option>
+              </select></div>
+            <div className="dl-fl"><span>Achievement %</span>
+              <div className="dl-range">
+                <input className="inp" type="number" placeholder="Min" value={filters.minPct} onChange={e=>setFilters({...filters,minPct:e.target.value})}/>
+                <input className="inp" type="number" placeholder="Max" value={filters.maxPct} onChange={e=>setFilters({...filters,maxPct:e.target.value})}/>
+              </div></div>
+          </div>
+        )}
+
+        {(chips.length>0||filters.quick)&&(
+          <div className="dl-chips">
+            {chips.map(c=><span key={c.key} className="dl-chip">{c.text}<button onClick={c.off} title="Remove"><X size={12}/></button></span>)}
+            <button onClick={clearFilters} className="btn" style={{color:'var(--red)',fontSize:11.5,padding:'4px 10px'}}>Clear all</button>
+          </div>
+        )}
       </div>
 
-      {/* Filters */}
-      <div className="row" style={{marginBottom:12,flexWrap:'wrap',gap:8}}>
-        <div style={{position:'relative'}}>
-          <Search size={14} style={{position:'absolute',left:10,top:'50%',transform:'translateY(-50%)',color:'var(--t3)'}}/>
-          <input className="inp" style={{width:200,paddingLeft:32}} placeholder="Search name/city/state..." value={filters.q} onChange={e=>setFilters({...filters,q:e.target.value})}/>
-        </div>
-        <MultiSelect options={allStatuses} selected={filters.status} onChange={v=>setFilters({...filters,status:v})} placeholder="Selected User (All)"
-          renderOption={s=><StatusBadge status={s}/>}/>
-        <MultiSelect options={PERF_STATUSES} selected={filters.perf} onChange={v=>setFilters({...filters,perf:v})} placeholder="Performance Status (All)"
-          renderOption={s=><StatusBadge status={s}/>}/>
-        <MultiSelect options={allZones} selected={filters.zone} onChange={v=>setFilters({...filters,zone:v})} placeholder="Zone (All)"/>
-        {allCategories.length>0&&<MultiSelect options={allCategories} selected={filters.category} onChange={v=>setFilters({...filters,category:v})} placeholder="Category (All)"
-          renderOption={c=><span style={{fontSize:12,color:'#818cf8'}}>{c}</span>}/>}
-        {allCategoryTypes.length>0&&<MultiSelect options={allCategoryTypes} selected={filters.categoryType} onChange={v=>setFilters({...filters,categoryType:v})} placeholder="Cat Type (All)"/>}
-        {allCities.length>0&&<MultiSelect options={allCities} selected={filters.city} onChange={v=>setFilters({...filters,city:v})} placeholder="City (All)"/>}
-        {allStates.length>0&&<MultiSelect options={allStates} selected={filters.state} onChange={v=>setFilters({...filters,state:v})} placeholder="State (All)"/>}
-        <select className="inp" style={{width:210}} value={filters.pin}
-          title="Find records with missing location details — useful for reviewing dealers created by a sheet sync"
-          onChange={e=>setFilters({...filters,pin:e.target.value})}>
-          <option value="">Pincode (All)</option>
-          <option value="noBoth">No pincode &amp; no address ({pinCounts.noBoth})</option>
-          <option value="noPin">No pincode ({pinCounts.noPin})</option>
-          <option value="noAddr">No address ({pinCounts.noAddr})</option>
-          <option value="hasPin">Has pincode</option>
-        </select>
-        {isAdmin&&<MultiSelect options={Object.values(users).filter(u=>u.role==='salesman').map(s=>s.id)} selected={filters.sm}
-          onChange={v=>setFilters({...filters,sm:v})} placeholder="Salesman (All)"
-          renderOption={id=>{const s=users[id];return s?<div style={{display:'flex',alignItems:'center',gap:6}}><Avatar user={s} size={18}/><span style={{fontSize:12}}>{s.name}</span></div>:<span>{id}</span>;}}/>}
-        <input className="inp" style={{width:80}} type="number" placeholder="Min %" value={filters.minPct} onChange={e=>setFilters({...filters,minPct:e.target.value})}/>
-        <input className="inp" style={{width:80}} type="number" placeholder="Max %" value={filters.maxPct} onChange={e=>setFilters({...filters,maxPct:e.target.value})}/>
-        {hasF&&<button onClick={clearFilters} className="btn" style={{color:'var(--red)',fontSize:12}}><X size={12} style={{display:'inline',verticalAlign:'middle'}}/> Clear</button>}
+      {/* Quick segments */}
+      <div className="dl-quick">
+        {QUICK.map(q=>(
+          <button key={q.k||'all'} className={'thr'+(filters.quick===q.k?' on':'')} style={{'--tone':q.tone}}
+            onClick={()=>setFilters(f=>({...f,quick:f.quick===q.k?'':q.k}))}>
+            {q.label}<i>{(quickCounts[q.k]||0).toLocaleString('en-IN')}</i>
+          </button>
+        ))}
       </div>
+
+      {/* Bulk actions for ticked dealers */}
+      {selected.length>0&&(
+        <div className="dl-selbar">
+          <span className="count-pill">{selected.length}</span>
+          <b style={{fontSize:13,color:'var(--t1)'}}>selected</b>
+          <div style={{flex:1}}/>
+          <button className="btn" style={{fontSize:12}} onClick={()=>onBulkAction('status')}>Change status</button>
+          {isAdmin&&<button className="btn" style={{fontSize:12}} onClick={()=>onBulkAction('salesman')}>Reassign</button>}
+          <button className="btnd" style={{fontSize:12}} onClick={()=>onBulkAction('delete')}>Delete</button>
+          <button className="btn" style={{padding:'5px 8px'}} onClick={()=>setSelected([])} title="Clear selection"><X size={13}/></button>
+        </div>
+      )}
 
       {/* Export dialog — pick which sale categories the month columns count */}
       {exportOpen && (
@@ -1720,9 +1859,9 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
                     return (
                       <label key={c} style={{fontSize:12,display:'inline-flex',alignItems:'center',gap:6,cursor:'pointer',
                         padding:'6px 10px',borderRadius:5,
-                        background:on?'rgba(99,102,241,0.18)':'transparent',
-                        border:'1px solid '+(on?'rgba(99,102,241,0.5)':'var(--b1)'),
-                        color:on?'#a5b4fc':'var(--t2)',fontWeight:on?700:500}}>
+                        background:on?'color-mix(in srgb, var(--acc) 18%, transparent)':'transparent',
+                        border:'1px solid '+(on?'color-mix(in srgb, var(--acc) 50%, transparent)':'var(--b1)'),
+                        color:on?'var(--acc)':'var(--t2)',fontWeight:on?700:500}}>
                         <input type="checkbox" checked={on} onChange={()=>{
                           const next=new Set(exportCats);
                           on?next.delete(c):next.add(c);
@@ -1750,11 +1889,11 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
         <div className="card" style={{padding:14,marginBottom:0}}>
           <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10,flexWrap:'wrap'}}>
             <span style={{fontSize:11,color:'var(--t3)'}}>Group by</span>
-            <div style={{display:'flex',border:'1px solid var(--b2)',borderRadius:6,overflow:'hidden'}}>
+            <div className="seg">
               {[['status','Selected User'],['perfStatus','Performance Status']].map(([v,label])=>(
                 <button key={v} onClick={()=>setKanbanBy(v)}
-                  style={{background:kanbanBy===v?'var(--acc)':'transparent',color:kanbanBy===v?'#fff':'var(--t3)',
-                    border:'none',padding:'5px 12px',cursor:'pointer',fontSize:11,fontWeight:600}}>
+                  className={'seg-b'+(kanbanBy===v?' on':'')}
+                  style={{'--tone':'var(--acc)',fontSize:11.5}}>
                   {label}
                 </button>
               ))}
@@ -1777,8 +1916,57 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
         </div>
       )}
 
+      {/* Cards view */}
+      {viewMode==='cards'&&(
+        <div className="dl-cards">
+          {filtered.slice(0,limit).map(x=>{
+            const p=pct(x.target,x.achieved);const tp=trendPct(x.months||[]);const oc=overdueCount(x.id);const sm=users[x.salesman];const on=selected.includes(x.id);
+            return(
+              <div key={x.id} className={'dl-card'+(on?' sel':'')} style={{'--tone':pclr(p)}} onClick={()=>onEdit(x.id)}>
+                <div className="dl-card-top">
+                  <span className="ini" style={{'--h':(x.name||'?').charCodeAt(0)*37%360,width:38,height:38,fontSize:13,borderRadius:12}}>{(x.name||'?').replace(/[^A-Za-z0-9]/g,'').slice(0,2).toUpperCase()}</span>
+                  <div style={{minWidth:0,flex:1}}>
+                    <div className="dl-card-name">{x.name}</div>
+                    <div className="dl-card-sub">{[x.city,x.state].filter(Boolean).join(', ')||'No location'}{x.zone?' · '+x.zone:''}</div>
+                  </div>
+                  <button className="dl-card-chk" onClick={e=>{e.stopPropagation();toggleSel(x.id);}} title={on?'Untick':'Tick for bulk actions'}>
+                    {on?<CheckSquare size={16} color="var(--acc)"/>:<Square size={16}/>}
+                  </button>
+                </div>
+                <div className="dl-card-badges">
+                  <StatusBadge status={x.perfStatus} emptyLabel="NEW DEALER"/>
+                  {x.status&&x.status!=='NONE'&&<span className="chip">{x.status}</span>}
+                  {x.dealerType&&x.dealerType!=='None'&&<span className="chip">{x.dealerType}</span>}
+                </div>
+                <div className="dl-card-fig">
+                  <div><span>{selMoLabel} ach.</span><b>{(x.achieved||0).toLocaleString('en-IN')}</b></div>
+                  <div><span>Target</span><b>{x.target?x.target.toLocaleString('en-IN'):'—'}</b></div>
+                  <div><span>Done</span><b style={{color:pclr(p)}}>{spct(x.target,x.achieved)}</b></div>
+                </div>
+                {x.target>0&&<div className="pbar" style={{marginTop:-4}}><div style={{width:Math.min(p||0,100)+'%',background:pclr(p)}}/></div>}
+                <div className="dl-card-foot">
+                  <MiniBars months={x.months} highlightIdx={selectedMonthIdx}/>
+                  <span className={'trend '+(tp>0?'up':tp<0?'down':'')}>{tp>0?<ArrowUpRight size={11}/>:tp<0?<ArrowDownRight size={11}/>:'—'}{tp?Math.abs(tp)+'%':''}</span>
+                  <div style={{flex:1}}/>
+                  {oc>0&&<span className="dl-od" title="Overdue follow-ups"><MessageSquare size={11}/> {oc}</span>}
+                  {isAdmin&&sm&&<span title={sm.name}><Avatar user={sm} size={22}/></span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {viewMode!=='kanban'&&filtered.length===0&&(
+        <div className="card dl-empty">
+          <SearchX size={30}/>
+          <b style={{color:'var(--t1)',fontSize:15}}>No dealers match</b>
+          <span style={{fontSize:12.5}}>Try a different search, or remove a filter.</span>
+          {hasF&&<button className="btne" onClick={clearFilters}>Clear all filters</button>}
+        </div>
+      )}
+
       {/* Table view */}
-      {viewMode==='table'&&(
+      {viewMode==='table'&&filtered.length>0&&(
         <div className="card" style={{padding:0,overflow:'hidden'}}>
           {isSuperAdmin&&(
             <div style={{fontSize:11,color:'var(--t3)',padding:'8px 12px',borderBottom:'1px solid var(--b1)'}}>
@@ -1797,40 +1985,47 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
                 <tr>
                   <th style={{width:30}}><button onClick={toggleAll} style={{background:'none',border:'none',color:'var(--t3)',cursor:'pointer',display:'flex'}}>{selected.length===filtered.length&&filtered.length>0?<CheckSquare size={14}/>:<Square size={14}/>}</button></th>
                   {sh('name','Dealer Name')}
-                  {isAdmin&&<th>Salesman</th>}
+                  {isAdmin&&sh('salesmanName','Salesman')}
                   {sh('zone','Zone')}
-                  <th style={{minWidth:130}}>Dealer Type</th>
-                  {sh('city','City')}{sh('state','State')}
-                  {sh('pincode','PIN')}<th style={{minWidth:180}}>Address</th>
+                  {cols.type&&<th style={{minWidth:130}}>Dealer Type</th>}
+                  {cols.loc&&<>{sh('city','City')}{sh('state','State')}
+                  {sh('pincode','PIN')}<th style={{minWidth:180}}>Address</th></>}
                   {sh('perfStatus','Performance Status')}
                   {sh('status','Selected User')}
-                  {sh('target','Tgt')}{sh('achieved','Ach')}<th>%</th><th>Trend</th>
+                  {sh('target','Tgt')}{sh('achieved','Ach')}{sh('pct','%')}{sh('trend','Trend')}
                   {sh('avg6m','6m Avg')}
-                  {[...MO].map((_,di)=>{const i=MO.length-1-di;return<th key={i} style={{background:i===selectedMonthIdx?'rgba(99,102,241,.08)':'var(--bg1)'}}>{MO[i]}</th>;})}
-                  {sh('creditDays','CrD')}{sh('creditLimit','Cr Limit')}
+                  {cols.months&&vRev.map(i=>{return<th key={i} style={{background:i===selectedMonthIdx?'color-mix(in srgb, var(--acc) 8%, transparent)':'var(--bg1)'}}>{MO[i]}</th>;})}
+                  {cols.credit&&<>{sh('creditDays','CrD')}{sh('creditLimit','Cr Limit')}</>}
                   <th>Notes</th><th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(x=>{
+                {filtered.slice(0,limit).map(x=>{
                   const p=pct(x.target,x.achieved);const tp=trendPct(x.months);const nc=noteCount(x.id);const oc=overdueCount(x.id);
                   return(
                     <tr key={x.id} onClick={()=>onEdit(x.id)} style={{cursor:'pointer',background:selected.includes(x.id)?'var(--accL)':'transparent'}}>
                       <td onClick={e=>{e.stopPropagation();toggleSel(x.id);}}>{selected.includes(x.id)?<CheckSquare size={14} color="var(--acc)"/>:<Square size={14} color="var(--t3)"/>}</td>
-                      <td style={{fontWeight:600,color:'var(--t1)',maxWidth:190,overflow:'hidden',textOverflow:'ellipsis'}}>{x.name}</td>
+                      <td style={{maxWidth:240}}>
+                        <div style={{display:'flex',alignItems:'center',gap:9,minWidth:0}}>
+                          <span className="ini" style={{'--h':(x.name||'?').charCodeAt(0)*37%360}}>{(x.name||'?').replace(/[^A-Za-z0-9]/g,'').slice(0,2).toUpperCase()}</span>
+                          <div style={{minWidth:0}}><div style={{fontWeight:700,color:'var(--t1)',overflow:'hidden',textOverflow:'ellipsis'}}>{x.name}</div>{(x.city||x.zone)&&<div style={{fontSize:10.5,color:'var(--t3)'}}>{[x.zone,x.city].filter(Boolean).join(' · ')}</div>}</div>
+                        </div>
+                      </td>
                       {isAdmin&&<td><div style={{display:'flex',alignItems:'center',gap:6}}><Avatar user={users[x.salesman]} size={20}/><span style={{fontSize:12}}>{users[x.salesman]?.name||x.salesman}</span></div></td>}
                       <td style={{fontSize:11,color:'var(--t3)'}}>{x.zone||'—'}</td>
-                      <td onClick={e=>e.stopPropagation()}>
+                      {cols.type&&<td onClick={e=>e.stopPropagation()}>
                         <select className="inp" value={x.dealerType||'None'}
                           onChange={e=>onUpdateDealerType(x.id, e.target.value)}
                           style={{fontSize:11, padding:'3px 6px', width:'auto', maxWidth:130}}>
                           {DEALER_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
                         </select>
-                      </td>
+                      </td>}
+                      {cols.loc&&<>
                       <td style={{fontSize:11,color:'var(--t2)'}}>{x.city||'—'}</td>
                       <td style={{fontSize:11,color:'var(--t2)'}}>{x.state||'—'}</td>
                       <td style={{fontSize:11,color:'var(--t2)',fontFamily:'"JetBrains Mono", monospace'}}>{x.pincode||'—'}</td>
                       <td title={x.address||''} style={{fontSize:11,color:'var(--t3)',maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{x.address||'—'}</td>
+                      </>}
                       {/* Type 1 — auto. Read-only by design: it is derived from
                           sales, so anything typed here would be overwritten by
                           the next upload. */}
@@ -1851,11 +2046,13 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
                       </td>
                       <td style={{textAlign:'right'}}>{x.target||'—'}</td>
                       <td style={{textAlign:'right',fontWeight:600,color:x.achieved>0?'var(--t1)':'var(--t3)'}}>{x.achieved||'—'}</td>
-                      <td style={{textAlign:'right',fontWeight:700,color:pclr(p)}}>{spct(x.target,x.achieved)}</td>
-                      <td><span style={{fontSize:11,color:tp>0?'#34d399':tp<0?'#f87171':'var(--t3)',display:'flex',alignItems:'center',gap:2}}>{tp>0?<ArrowUpRight size={11}/>:tp<0?<ArrowDownRight size={11}/>:'—'}{tp?Math.abs(tp)+'%':''}</span></td>
+                      <td style={{textAlign:'right',minWidth:92}}>
+                        <div style={{fontWeight:800,color:pclr(p)}}>{spct(x.target,x.achieved)}</div>
+                        {x.target>0&&<div className="pbar"><div style={{width:Math.min(p||0,100)+'%',background:pclr(p)}}/></div>}
+                      </td>
+                      <td><span className={'trend '+(tp>0?'up':tp<0?'down':'')}>{tp>0?<ArrowUpRight size={11}/>:tp<0?<ArrowDownRight size={11}/>:'—'}{tp?Math.abs(tp)+'%':''}</span></td>
                       <td style={{textAlign:'right',color:'var(--t3)'}}>{x.avg6m||'—'}</td>
-                      {[...x.months].map((_,di)=>{
-                        const i=x.months.length-1-di;
+                      {cols.months&&vRev.map(i=>{
                         // With a salesman filter on, a month belongs in this row
                         // only if the FILTERED salesman owned the dealer that
                         // month — a handed-over dealer's earlier months were the
@@ -1874,7 +2071,7 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
                               fontWeight:i===selectedMonthIdx?700:400,
                               cursor:isSuperAdmin?'cell':undefined,
                               opacity:isSaving?0.45:1,
-                              background:i===selectedMonthIdx?'rgba(99,102,241,.05)':'transparent'}}>
+                              background:i===selectedMonthIdx?'color-mix(in srgb, var(--acc) 5%, transparent)':'transparent'}}>
                             {isEditing?(
                               <input autoFocus type="number" className="inp"
                                 value={editVal}
@@ -1890,9 +2087,11 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
                           </td>
                         );
                       })}
+                      {cols.credit&&<>
                       <td style={{textAlign:'right',color:'var(--t3)'}}>{x.creditDays?x.creditDays+'d':'—'}</td>
                       <td style={{textAlign:'right',color:'var(--t3)'}}>{fcash(x.creditLimit)}</td>
-                      <td onClick={e=>e.stopPropagation()}>{nc>0?<span style={{display:'inline-flex',alignItems:'center',gap:3,fontSize:11,color:oc>0?'#fbbf24':'var(--t2)'}}><MessageSquare size={11}/> {nc}{oc>0&&<span style={{color:'var(--red)',fontWeight:700}}>!</span>}</span>:<span style={{color:'var(--t3)'}}>—</span>}</td>
+                      </>}
+                      <td onClick={e=>e.stopPropagation()}>{nc>0?<span style={{display:'inline-flex',alignItems:'center',gap:3,fontSize:11,color:oc>0?'var(--yel)':'var(--t2)'}}><MessageSquare size={11}/> {nc}{oc>0&&<span style={{color:'var(--red)',fontWeight:700}}>!</span>}</span>:<span style={{color:'var(--t3)'}}>—</span>}</td>
                       <td onClick={e=>e.stopPropagation()}>
                         <div style={{display:'flex',gap:5}}>
                           <button className="btne" onClick={e=>{e.stopPropagation();onEdit(x.id);}}>Open</button>
@@ -1900,12 +2099,7 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
                             <button
                               onClick={e=>{e.stopPropagation();onDelete(x.id);}}
                               title={`Delete ${x.name} from database (admin only)`}
-                              style={{
-                                display:'inline-flex',alignItems:'center',gap:4,
-                                padding:'3px 8px',borderRadius:5,fontSize:11,fontWeight:600,
-                                color:'#fca5a5',background:'rgba(248,113,113,0.08)',
-                                border:'1px solid rgba(248,113,113,0.4)',cursor:'pointer',
-                              }}>
+                              className="btnd" style={{display:'inline-flex',alignItems:'center',gap:4,padding:'3px 8px',fontSize:11}}>
                               <Trash2 size={11}/> Delete
                             </button>
                           )}
@@ -1914,17 +2108,15 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
                     </tr>
                   );
                 })}
-                {filtered.length===0&&<tr><td colSpan="30" style={{textAlign:'center',color:'var(--t3)',padding:40}}>No dealers match your filters</td></tr>}
-              </tbody>
+                              </tbody>
               <tfoot>
                 <tr>
-                  <td colSpan={isAdmin?8:7} style={{color:'var(--t1)'}}>TOTAL</td>
+                  <td colSpan={(isAdmin?6:5)+(cols.type?1:0)+(cols.loc?4:0)} style={{color:'var(--t1)'}}>TOTAL</td>
                   <td style={{textAlign:'right'}}>{tt}</td>
                   <td style={{textAlign:'right',color:'var(--grn)'}}>{ta}</td>
                   <td style={{textAlign:'right',color:pclr(pct(tt,ta))}}>{spct(tt,ta)}</td>
                   <td colSpan="2"/>
-                  {[...MO].map((_,di)=>{
-                    const i=MO.length-1-di;
+                  {cols.months&&vRev.map(i=>{
                     // Footer mirrors the cells: months owned by a different
                     // salesman are excluded when a salesman filter is active.
                     const s=filtered.reduce((a,x)=>{
@@ -1932,13 +2124,20 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
                       if(isAdmin&&filters.sm.length>0&&!filters.sm.includes(cellOwner))return a;
                       return a+(x.months[i]||0);
                     },0);
-                    return<td key={i} style={{textAlign:'right',color:i===selectedMonthIdx?'var(--acc)':'var(--t1)',background:i===selectedMonthIdx?'rgba(99,102,241,.05)':'transparent'}}>{s||''}</td>;
+                    return<td key={i} style={{textAlign:'right',color:i===selectedMonthIdx?'var(--acc)':'var(--t1)',background:i===selectedMonthIdx?'color-mix(in srgb, var(--acc) 5%, transparent)':'transparent'}}>{s||''}</td>;
                   })}
-                  <td colSpan="4"/>
+                  <td colSpan={cols.credit?4:2}/>
                 </tr>
               </tfoot>
             </table>
           </div>
+        </div>
+      )}
+      {viewMode!=='kanban'&&filtered.length>limit&&(
+        <div className="dl-more">
+          Showing {limit.toLocaleString('en-IN')} of {filtered.length.toLocaleString('en-IN')}
+          <button className="btn" onClick={()=>setLimit(l=>l+150)}>Show 150 more</button>
+          <button className="btne" onClick={()=>setLimit(filtered.length)}>Show all</button>
         </div>
       )}
     </div>

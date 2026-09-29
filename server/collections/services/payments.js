@@ -118,6 +118,7 @@ export async function confirmPayment(paymentId, { by }) {
       for (const period of sortPeriods(Object.keys(buckets))) { if (left <= 0) break; left = reduceBucket(period, left); }
       balance.buckets = buckets;
       balance.total = Math.max(0, (balance.total || 0) - p.amount);
+      applied.totalTaken = applied.before - balance.total;   // what a bounce must put back — never more than came off
       balance.lastPaymentAt = new Date(p.date + 'T00:00:00'); balance.lastPaymentAmount = p.amount; followupSettled(balance, p.date);
       const oldest = oldestPeriodOf(buckets);
       balance.oldestPeriod = oldest; balance.ageDays = oldest ? daysSincePeriodStart(oldest, todayYmd()) : balance.ageDays;
@@ -173,7 +174,7 @@ export async function bouncePayment(paymentId, { by, reason }) {
     if (balance) {
       const buckets = asObj(balance.buckets);
       for (const [period, amt] of Object.entries(rev.buckets || {})) buckets[period] = (buckets[period] || 0) + amt;
-      balance.buckets = buckets; balance.total = (balance.total || 0) + p.amount;
+      balance.buckets = buckets; balance.total = (balance.total || 0) + (rev.totalTaken ?? p.amount);
       const oldest = oldestPeriodOf(buckets);
       balance.oldestPeriod = oldest; balance.ageDays = oldest ? daysSincePeriodStart(oldest, todayYmd()) : balance.ageDays;
     }

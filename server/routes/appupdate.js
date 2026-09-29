@@ -87,7 +87,15 @@ router.get('/download', async (req, res) => {
 // Called by the GitHub Actions workflow. Auth is the same shared-key pattern
 // used by the Tally and attendance feeds — CI has no user session.
 // multipart: file=<apk>, versionCode, versionName, notes
-router.post('/publish', upload.single('file'), async (req, res) => {
+// the key is checked BEFORE the upload is read, so nobody without it can push 120 MB into memory
+const publishKey = (req, res, next) => {
+  const expected = process.env.APP_PUBLISH_KEY;
+  if (!expected) return res.status(503).json({ error: 'Publishing not configured — set APP_PUBLISH_KEY in server .env' });
+  const key = req.headers['x-api-key'] || req.query.key;
+  if (!key || String(key) !== String(expected)) return res.status(401).json({ error: 'Invalid or missing API key' });
+  next();
+};
+router.post('/publish', publishKey, upload.single('file'), async (req, res) => {
   try {
     const expected = process.env.APP_PUBLISH_KEY;
     if (!expected) return res.status(503).json({ error: 'Publishing not configured — set APP_PUBLISH_KEY in server .env' });

@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { IndianRupee, Trophy, Settings, TrendingUp, AlertTriangle, RefreshCw,
          Upload as UploadIcon, ArrowUpRight, ArrowDownRight, Package, Award,
-         Users, CheckCircle2, UserX, X, CalendarClock, Check } from 'lucide-react';
+         Users, CheckCircle2, UserX, X, CalendarClock, Check, UploadCloud,
+         Target, Activity, SlidersHorizontal, Hourglass, UserCheck, Calculator } from 'lucide-react';
 import { PieChart, Pie, Cell, ComposedChart, Area, Line, XAxis, YAxis,
          CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { api } from '../api';
 import Skeleton from './Skeleton';
+import { PageHead } from '../collections/ui';
 
 /**
  * Incentive — what each billing person earned, in rupees and in points.
@@ -55,8 +57,7 @@ function useIncentive(month) {
 
 function Stat({ label, value, tone, sub }) {
   return (
-    <div style={{ padding: '13px 15px', borderRadius: 11, background: 'var(--bg1)',
-                  border: '1px solid var(--b1)', minWidth: 0 }}>
+    <div className="card" style={{ padding: '13px 15px', minWidth: 0 }}>
       <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '.09em',
                     textTransform: 'uppercase', color: 'var(--t3)' }}>{label}</div>
       <div style={{ fontSize: 22, fontWeight: 800, marginTop: 3, color: tone || 'var(--t1)',
@@ -89,10 +90,7 @@ function Delta({ pct, compact }) {
   if (pct === null || pct === undefined) return null;
   const up = pct >= 0;
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10.5,
-                   fontWeight: 700, padding: '2px 7px', borderRadius: 20, whiteSpace: 'nowrap',
-                   color: up ? 'var(--grn)' : 'var(--red)',
-                   background: up ? 'rgba(22,163,74,.12)' : 'rgba(220,38,38,.12)' }}>
+    <span className={'trend ' + (pct > 0 ? 'up' : pct < 0 ? 'down' : '')} style={{ whiteSpace: 'nowrap' }}>
       {up ? <ArrowUpRight size={11} /> : <ArrowDownRight size={11} />}
       {Math.abs(pct)}%{compact ? '' : ' from last month'}
     </span>
@@ -197,11 +195,8 @@ function Controls({ d, onSaved }) {
               return (
                 <button key={r.key} onClick={() => toggle(r.key)} disabled={busy}
                         title={on ? `Stop paying ${r.name || r.key}` : `Pay ${r.name || r.key}`}
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
-                                 fontSize: 12, fontWeight: 650, padding: '5px 10px', borderRadius: 7,
-                                 background: on ? 'rgba(22,163,74,.12)' : 'var(--bg2)',
-                                 color: on ? 'var(--grn)' : 'var(--t3)',
-                                 border: '1px solid ' + (on ? 'rgba(22,163,74,.35)' : 'var(--b1)') }}>
+                        className={'thr' + (on ? ' on' : '')}
+                        style={{ '--tone': 'var(--grn)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                   {on ? <Check size={12} /> : <X size={12} />}
                   {r.name || r.key}
                   {r.code && <span style={{ opacity: .6, fontWeight: 400 }}>{r.code}</span>}
@@ -256,15 +251,9 @@ function Dashboard({ month, setMonth, currentUser }) {
 
   return (
     <div className="fade">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12,
-                    flexWrap: 'wrap', marginBottom: 18 }}>
-        <div>
-          <div className="page-eyebrow">Billing incentive</div>
-          <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-.02em' }}>
-            {greet}{who ? `, ${who}` : ''}!
-          </div>
-        </div>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+      <PageHead icon={IndianRupee} tone="var(--acc)" eyebrow="Billing incentive"
+        title={<>{greet}{who ? `, ${who}` : ''}!</>}
+        right={<>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
             <input type="date" value={from} onChange={e => setFrom(e.target.value)}
                    style={{ fontSize: 12, padding: '5px 7px', borderRadius: 7,
@@ -285,8 +274,7 @@ function Dashboard({ month, setMonth, currentUser }) {
             style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12 }}>
             <RefreshCw size={12} className={busy ? 'spin' : ''} />
           </button>
-        </div>
-      </div>
+        </>} />
 
       {err && <div className="card" style={{ color: 'var(--red)', fontSize: 12.5 }}>{err}</div>}
       {busy && !d && <Skeleton kind="dashboard" rows={5} />}
@@ -303,7 +291,7 @@ function Dashboard({ month, setMonth, currentUser }) {
 
             {/* earnings — the number everyone comes here for */}
             <div className="card" style={{ padding: '18px 20px', textAlign: 'center' }}>
-              <div style={{ fontSize: 11.5, color: 'var(--t2)', fontWeight: 650 }}>Points payable</div>
+              <div className="sec-title" style={{ justifyContent: 'center', marginBottom: 4 }}><span className="sec-ico" style={{ '--tone': 'var(--grn)' }}><IndianRupee size={15} /></span> Points payable</div>
               <div style={{ fontSize: 32, fontWeight: 850, color: 'var(--acc)',
                             letterSpacing: '-.02em', margin: '2px 0 4px',
                             fontVariantNumeric: 'tabular-nums' }}>
@@ -352,16 +340,15 @@ function Dashboard({ month, setMonth, currentUser }) {
 
             {/* top earners */}
             <div className="card" style={{ padding: '15px 17px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
-                <div style={{ fontSize: 12.5, fontWeight: 750 }}>Top earners</div>
-                <span style={{ marginLeft: 'auto', fontSize: 10.5, color: 'var(--t3)' }}>
-                  {num(d.totals.people)} people
-                </span>
+              <div className="sec-title">
+                <span className="sec-ico" style={{ '--tone': 'var(--grn)' }}><Trophy size={15} /></span> Top earners
+                <span className="sec-note">{num(d.totals.people)} people</span>
               </div>
               {d.people.slice(0, 4).map((p, i) => (
                 <div key={p.name} style={{ display: 'flex', alignItems: 'center', gap: 9,
                       padding: '7px 0', borderTop: i ? '1px solid var(--b1)' : 'none' }}>
-                  <Trophy size={14} color={MEDAL[i] || 'var(--t3)'} style={{ flexShrink: 0 }} />
+                  <span className={'rank rank-' + (i + 1)}>{i + 1}</span>
+                  <span className="ini" style={{ '--h': (p.name || '?').charCodeAt(0) * 37 % 360 }}>{(p.name || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase()}</span>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ fontSize: 12.5, fontWeight: 700, overflow: 'hidden',
                                   textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
@@ -382,7 +369,7 @@ function Dashboard({ month, setMonth, currentUser }) {
 
             {/* things that would make the payout wrong */}
             <div className="card" style={{ padding: '15px 17px' }}>
-              <div style={{ fontSize: 12.5, fontWeight: 750, marginBottom: 10 }}>Needs attention</div>
+              <div className="sec-title"><span className="sec-ico" style={{ '--tone': 'var(--yel)' }}><AlertTriangle size={15} /></span> Needs attention</div>
 
               {d.noHistory?.length > 0 && (
                 <div style={{ display: 'flex', gap: 9, padding: '7px 0' }}>
@@ -491,27 +478,23 @@ function Dashboard({ month, setMonth, currentUser }) {
 
             {/* attainment donut */}
             <div className="card" style={{ padding: '15px 17px' }}>
-              <div style={{ fontSize: 12.5, fontWeight: 750 }}>Attainment summary</div>
-              <div style={{ fontSize: 10.5, color: 'var(--t3)', marginBottom: 6 }}>
-                Units by rate band, {d.month}
+              <div className="sec-title">
+                <span className="sec-ico" style={{ '--tone': 'var(--pur)' }}><Target size={15} /></span> Attainment summary
+                <span className="sec-note">Units by rate band, {d.month}</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{ width: 132, height: 132, position: 'relative', flexShrink: 0 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie data={donut} dataKey="value" nameKey="name"
-                           innerRadius={44} outerRadius={62} paddingAngle={2} stroke="none">
+                           innerRadius={46} outerRadius={64} paddingAngle={3} cornerRadius={6} stroke="none">
                         {donut.map(e => <Cell key={e.band} fill={BAND[e.band].c} />)}
                       </Pie>
                     </PieChart>
                   </ResponsiveContainer>
-                  <div style={{ position: 'absolute', inset: 0, display: 'grid',
-                                placeItems: 'center', pointerEvents: 'none' }}>
-                    <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: 9.5, color: 'var(--t3)' }}>Total</div>
-                      <div style={{ fontSize: 16, fontWeight: 800,
-                                    fontVariantNumeric: 'tabular-nums' }}>{num(totalUnits)}</div>
-                    </div>
+                  <div className="donut-center" style={{ top: '50%' }}>
+                    <b style={{ fontSize: 16, fontVariantNumeric: 'tabular-nums' }}>{num(totalUnits)}</b>
+                    <span>units</span>
                   </div>
                 </div>
                 <div style={{ minWidth: 0, flex: 1 }}>
@@ -535,13 +518,15 @@ function Dashboard({ month, setMonth, currentUser }) {
 
             {/* metric tiles */}
             <div className="card" style={{ padding: '15px 17px' }}>
-              <div style={{ fontSize: 12.5, fontWeight: 750 }}>Performance metrics</div>
-              <div style={{ fontSize: 10.5, color: 'var(--t3)', marginBottom: 12 }}>
-                {d.range
-                  ? `${num(d.range.days)} ${d.range.days === 1 ? 'day' : 'days'} selected`
-                  : partial
-                  ? `${d.month} so far — day ${dayOf} of ${daysIn}`
-                  : `${d.month} against ${d.previous?.month || 'nothing yet'}`}
+              <div className="sec-title">
+                <span className="sec-ico" style={{ '--tone': 'var(--pur)' }}><Activity size={15} /></span> Performance metrics
+                <span className="sec-note">
+                  {d.range
+                    ? `${num(d.range.days)} ${d.range.days === 1 ? 'day' : 'days'} selected`
+                    : partial
+                    ? `${d.month} so far — day ${dayOf} of ${daysIn}`
+                    : `${d.month} against ${d.previous?.month || 'nothing yet'}`}
+                </span>
               </div>
               <div style={{ display: 'grid', gap: 15,
                             gridTemplateColumns: 'repeat(2,minmax(0,1fr))' }}>
@@ -558,47 +543,52 @@ function Dashboard({ month, setMonth, currentUser }) {
 
             {/* six-month trend */}
             <div className="card" style={{ padding: '15px 17px' }}>
-              <div style={{ fontSize: 12.5, fontWeight: 750 }}>Six-month trend</div>
-              <div style={{ fontSize: 10.5, color: 'var(--t3)', marginBottom: 6 }}>
-                Units billed and points earned
+              <div className="sec-title">
+                <span className="sec-ico" style={{ '--tone': 'var(--acc)' }}><TrendingUp size={15} /></span> Six-month trend
+                <span className="sec-note">Units billed and points earned</span>
               </div>
               <div style={{ height: 168 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={d.trend} margin={{ top: 6, right: 0, left: -6, bottom: 0 }}>
-                    <CartesianGrid stroke="var(--b1)" vertical={false} />
-                    <XAxis dataKey="month" tick={{ fontSize: 10, fill: 'var(--t3)' }}
+                    <defs>
+                      <linearGradient id="incTrendUnits" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.35} />
+                        <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid vertical={false} />
+                    <XAxis dataKey="month"
                            tickFormatter={m => m.slice(5) + '/' + m.slice(2, 4)}
                            axisLine={false} tickLine={false} />
                     {/* Points are a multiple of units, so sharing one axis
                         flattens the units line into the floor. */}
-                    <YAxis yAxisId="u" tick={{ fontSize: 10, fill: 'var(--t3)' }}
+                    <YAxis yAxisId="u"
                            axisLine={false} tickLine={false} width={44} />
-                    <YAxis yAxisId="p" orientation="right" tick={{ fontSize: 10, fill: 'var(--t3)' }}
+                    <YAxis yAxisId="p" orientation="right"
                            axisLine={false} tickLine={false} width={44} />
                     <Tooltip
-                      contentStyle={{ background: 'var(--bg1)', border: '1px solid var(--b1)',
-                                      borderRadius: 8, fontSize: 11.5 }}
                       formatter={(v, n) => n === 'points' ? [points(v), 'Points'] : [num(v), 'Units']} />
-                    <Area yAxisId="u" type="monotone" dataKey="units" stroke="#2563eb" strokeWidth={2}
-                          fill="#2563eb" fillOpacity={0.14} />
-                    <Line yAxisId="p" type="monotone" dataKey="points" stroke="#7c3aed" strokeWidth={2}
-                          dot={{ r: 2.5 }} />
+                    <Area yAxisId="u" type="monotone" dataKey="units" stroke="#3b82f6" strokeWidth={2.5}
+                          fill="url(#incTrendUnits)" dot={{ r: 3, fill: '#3b82f6', strokeWidth: 0 }} activeDot={{ r: 6 }} />
+                    <Line yAxisId="p" type="monotone" dataKey="points" stroke="#8b5cf6" strokeWidth={2.5}
+                          dot={{ r: 2 }} activeDot={{ r: 5 }} />
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
               <div style={{ display: 'flex', gap: 14, fontSize: 10.5, color: 'var(--t3)', marginTop: 4 }}>
                 <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 9,
-                                     background: '#2563eb', marginRight: 4 }} />Units</span>
+                                     background: '#3b82f6', marginRight: 4 }} />Units</span>
                 <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 9,
-                                     background: '#7c3aed', marginRight: 4 }} />Points</span>
+                                     background: '#8b5cf6', marginRight: 4 }} />Points</span>
               </div>
             </div>
           </div>
 
           {/* ── leaderboard ────────────────────────────────────────── */}
           <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
-            <div style={{ padding: '14px 17px 10px', fontSize: 12.5, fontWeight: 750 }}>
-              Everyone in {d.month}
+            <div className="sec-title" style={{ padding: '14px 17px 0', marginBottom: 10 }}>
+              <span className="sec-ico" style={{ '--tone': 'var(--acc)' }}><Users size={15} /></span> Everyone in {d.month}
+              <span className="count-pill">{num(d.people.length)}</span>
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
               <thead>
@@ -617,10 +607,12 @@ function Dashboard({ month, setMonth, currentUser }) {
                   const band = BAND[p.band] || BAND.base;
                   return (
                     <tr key={p.name} style={{ borderTop: '1px solid var(--b1)' }}>
-                      <td style={{ padding: '9px 16px', fontWeight: 650 }}>
-                        {i < 3 && <Trophy size={12} color={MEDAL[i]}
-                                    style={{ verticalAlign: -1, marginRight: 5 }} />}
-                        {p.name}
+                      <td style={{ padding: '9px 16px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+                          <span className={'rank rank-' + (i + 1)}>{i + 1}</span>
+                          <span className="ini" style={{ '--h': (p.name || '?').charCodeAt(0) * 37 % 360 }}>{(p.name || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase()}</span>
+                          <div style={{ minWidth: 0 }}><div style={{ fontWeight: 700, color: 'var(--t1)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div></div>
+                        </div>
                       </td>
                       <td style={{ padding: '9px 16px', textAlign: 'right',
                                    fontVariantNumeric: 'tabular-nums' }}>{num(p.units)}</td>
@@ -677,10 +669,7 @@ function ThisMonth({ month, setMonth }) {
 
   return (
     <div className="fade">
-      <div className="page-head" style={{ marginBottom: 16 }}>
-        <div className="page-eyebrow">Billing incentive</div>
-        <div className="page-title">This month</div>
-      </div>
+      <PageHead icon={Trophy} tone="var(--acc)" eyebrow="Billing incentive" title="This month" />
 
       <div className="row" style={{ marginBottom: 14, gap: 8 }}>
         <MonthPicker data={data} month={month} setMonth={setMonth} />
@@ -743,9 +732,10 @@ function ThisMonth({ month, setMonth }) {
                 : Math.max(3, Math.min(100, Math.round((p.units / Math.max(1, ceiling)) * 100)));
               return (
                 <div key={p.name} className="card" style={{ padding: '14px 16px' }}>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-                    {i < 3 && <Trophy size={15} color={MEDAL[i]} />}
-                    <div style={{ fontSize: 15, fontWeight: 750 }}>{p.name}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <span className={'rank rank-' + (i + 1)}>{i + 1}</span>
+                    <span className="ini" style={{ '--h': (p.name || '?').charCodeAt(0) * 37 % 360 }}>{(p.name || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase()}</span>
+                    <div style={{ fontSize: 15, fontWeight: 750, color: 'var(--t1)' }}>{p.name}</div>
                     <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '.06em',
                                    padding: '2px 7px', borderRadius: 5,
                                    color: band.c, background: band.bg }}>{band.label}</span>
@@ -791,7 +781,7 @@ function ThisMonth({ month, setMonth }) {
           {data.unassigned?.units > 0 && (
             <div style={{ fontSize: 11.5, color: 'var(--t2)', marginTop: 14, lineHeight: 1.75,
                           padding: '11px 13px', borderRadius: 9,
-                          background: 'rgba(251,191,36,.09)', border: '1px solid rgba(251,191,36,.3)' }}>
+                          background: 'color-mix(in srgb, var(--yel) 9%, transparent)', border: '1px solid color-mix(in srgb, var(--yel) 30%, transparent)' }}>
               <AlertTriangle size={12} style={{ verticalAlign: -2, color: 'var(--yel)' }} />
               {' '}<b style={{ color: 'var(--yel)' }}>{num(data.unassigned.units)} units earn nothing</b>
               {' '}— no billing person on these lines.
@@ -822,10 +812,7 @@ function History({ month, setMonth }) {
 
   return (
     <div className="fade">
-      <div className="page-head" style={{ marginBottom: 16 }}>
-        <div className="page-eyebrow">Billing incentive</div>
-        <div className="page-title">History</div>
-      </div>
+      <PageHead icon={TrendingUp} tone="var(--acc)" eyebrow="Billing incentive" title="History" />
       <div className="row" style={{ marginBottom: 14 }}>
         <MonthPicker data={data} month={month} setMonth={setMonth} />
       </div>
@@ -860,7 +847,12 @@ function History({ month, setMonth }) {
                   const byMonth = Object.fromEntries((p.history || []).map(h => [h.month, h.units]));
                   return (
                     <tr key={p.name} style={{ background: i % 2 ? 'var(--bg2)' : 'transparent' }}>
-                      <td style={{ ...cell, fontWeight: 700 }}>{p.name}</td>
+                      <td style={cell}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+                          <span className="ini" style={{ '--h': (p.name || '?').charCodeAt(0) * 37 % 360 }}>{(p.name || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase()}</span>
+                          <div style={{ minWidth: 0 }}><div style={{ fontWeight: 700, color: 'var(--t1)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>{p.averageSource && <div style={{ fontSize: 10.5, color: 'var(--t3)' }}>{p.averageSource === 'none' ? 'no history yet' : p.averageSource === 'opening' ? 'opening figure' : `${p.monthsOfHistory}mo average`}</div>}</div>
+                        </div>
+                      </td>
                       {cols.map(m => {
                         const v = m === data.month ? p.units : (byMonth[m] || 0);
                         return (
@@ -1040,15 +1032,12 @@ function Rule() {
 
   return (
     <div className="fade">
-      <div className="page-head" style={{ marginBottom: 16 }}>
-        <div className="page-eyebrow">Billing incentive</div>
-        <div className="page-title">Rule &amp; setup</div>
-      </div>
+      <PageHead icon={Settings} tone="var(--acc)" eyebrow="Billing incentive" title="Rule & setup" />
 
       {err && <div className="card" style={{ color: 'var(--red)', fontSize: 12.5, marginBottom: 12 }}>{err}</div>}
 
       <div className="card" style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Rates and thresholds</div>
+        <div className="sec-title"><span className="sec-ico" style={{ '--tone': 'var(--pur)' }}><SlidersHorizontal size={15} /></span> Rates and thresholds</div>
         <div style={{ display: 'grid', gap: 12, marginBottom: 12,
                       gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))' }}>
           {field('Low rate ₹',   'rateLow',        '0.05', 'per unit up to the target')}
@@ -1097,7 +1086,7 @@ function Rule() {
       </div>
 
       <div className="card" style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>Who is on the incentive</div>
+        <div className="sec-title" style={{ marginBottom: 6 }}><span className="sec-ico" style={{ '--tone': 'var(--pur)' }}><Users size={15} /></span> Who is on the incentive</div>
         <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 10, lineHeight: 1.7 }}>
           Only these people are scored and paid. Anyone else who bills still has their units stored
           and counted on the dashboard as “not on the roster”, so nothing is lost — they are simply
@@ -1170,7 +1159,7 @@ function Rule() {
       </div>
 
       <div className="card" style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>Opening average</div>
+        <div className="sec-title" style={{ marginBottom: 6 }}><span className="sec-ico" style={{ '--tone': 'var(--pur)' }}><Hourglass size={15} /></span> Opening average</div>
         <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 10, lineHeight: 1.7 }}>
           The bar to use until someone has real history. Billing-person data only starts when the
           ERP&nbsp;<b>Created By</b> import does, so without a figure here everyone&apos;s first months
@@ -1180,6 +1169,7 @@ function Rule() {
         <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fill,minmax(210px,1fr))' }}>
           {knownPeople.map(name => (
             <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span className="ini" style={{ '--h': (labelFor(name) || '?').charCodeAt(0) * 37 % 360 }}>{(labelFor(name) || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase()}</span>
               <span title={name} style={{ flex: 1, fontSize: 12, fontWeight: 600, overflow: 'hidden',
                              textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{labelFor(name)}</span>
               <input type="number" className="inp" min="0" step="50" placeholder="—"
@@ -1192,7 +1182,7 @@ function Rule() {
       </div>
 
       <div className="card" style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>Fallback: who bills for each salesman</div>
+        <div className="sec-title" style={{ marginBottom: 6 }}><span className="sec-ico" style={{ '--tone': 'var(--pur)' }}><UserCheck size={15} /></span> Fallback: who bills for each salesman</div>
         <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 10 }}>
           Used only when a line has no <b>Created By</b> value from the ERP.
         </div>
@@ -1314,11 +1304,9 @@ function Coverage({ month, onUploadToday, onUploadFor }) {
 
   return (
     <div className="card" style={{ padding: '15px 17px', marginBottom: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 4 }}>
-        <div style={{ fontSize: 13, fontWeight: 750 }}>Daily coverage — {d.month}</div>
-        <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--t3)' }}>
-          {d.fileName ? `last file: ${d.fileName}` : ''}
-        </span>
+      <div className="sec-title" style={{ marginBottom: 8 }}>
+        <span className="sec-ico" style={{ '--tone': 'var(--acc)' }}><CalendarClock size={15} /></span> Daily coverage — {d.month}
+        <span className="sec-note">{d.fileName ? `last file: ${d.fileName}` : ''}</span>
       </div>
 
       {/* today, which is the thing a daily upload is actually about */}
@@ -1482,10 +1470,7 @@ function Upload() {
 
   return (
     <div className="fade">
-      <div className="page-head" style={{ marginBottom: 16 }}>
-        <div className="page-eyebrow">Billing incentive</div>
-        <div className="page-title">Upload sheet</div>
-      </div>
+      <PageHead icon={UploadCloud} tone="var(--acc)" eyebrow="Billing incentive" title="Upload sheet" />
 
       <div className="card" style={{ padding: '16px 18px', marginBottom: 14 }}>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -1501,19 +1486,22 @@ function Upload() {
             <UploadIcon size={13} /> {(forDay || todayKey) === todayKey ? 'Upload today\'s sheet' : `Upload sheet for ${(forDay || todayKey).slice(8)}/${(forDay || todayKey).slice(5, 7)}`}
           </button>
           <button className="btn" onClick={() => setMore(m => !m)} style={{ fontSize: 11.5 }}>{more ? 'Less' : 'More…'}</button>
+          {/* Always mounted, so "Upload today's sheet", the coverage "Upload today"
+              and the missed-day buttons have a picker to open even with More closed. */}
+          <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" disabled={busy} style={{ display: 'none' }}
+                 onChange={e => pick(e.target.files?.[0] || null)} />
           {more && <>
-          <label className="btn" style={{ display: 'inline-flex', alignItems: 'center',
+          <label className="btn" onClick={() => { if (!busy) fileRef.current?.click(); }}
+                 style={{ display: 'inline-flex', alignItems: 'center',
                   gap: 6, fontSize: 12.5, cursor: busy ? 'default' : 'pointer' }}>
             <UploadIcon size={13} />
             {file ? 'Choose another file' : 'Choose sheet (any day)'}
-            <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" disabled={busy} style={{ display: 'none' }}
-                   onChange={e => pick(e.target.files?.[0] || null)} />
           </label>
 
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <span style={{ fontSize: 11, color: 'var(--t3)' }}>Month</span>
             <input type="month" value={month} disabled={busy}
-                   onChange={e => { setMonth(e.target.value); if (file) run(file, e.target.value, false); }}
+                   onChange={e => { setMonth(e.target.value); if (file) run(file, e.target.value, false, seed, seed ? '' : forDay); }}
                    style={{ fontSize: 12, padding: '5px 7px', borderRadius: 7,
                             border: '1px solid var(--b1)', background: 'var(--bg1)', color: 'var(--t1)' }} />
             <span style={{ fontSize: 10.5, color: 'var(--t3)' }}>
@@ -1526,7 +1514,7 @@ function Upload() {
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6,
                           fontSize: 11.5, cursor: busy ? 'default' : 'pointer' }}>
             <input type="checkbox" checked={seed} disabled={busy}
-                   onChange={e => { setSeed(e.target.checked); if (file) run(file, month, false, e.target.checked); }} />
+                   onChange={e => { setSeed(e.target.checked); if (file) run(file, month, false, e.target.checked, e.target.checked ? '' : forDay); }} />
             Load every month in this sheet
           </label>
           </>}
@@ -1638,7 +1626,7 @@ function Upload() {
             <div className="card" style={{ padding: '13px 16px', marginBottom: 12 }}>
               <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '.08em',
                             textTransform: 'uppercase', color: 'var(--t3)', marginBottom: 8 }}>
-                Months this sheet would file
+                Months this sheet would file <span className="count-pill">{prev.perMonth.length}</span>
               </div>
               {prev.perMonth.map(m => (
                 <div key={m.month} style={{ display: 'flex', gap: 12, alignItems: 'center',
@@ -1691,10 +1679,12 @@ function Upload() {
                   const band = BAND[p.band] || BAND.base;
                   return (
                     <tr key={p.person} style={{ borderTop: '1px solid var(--b1)' }}>
-                      <td style={{ padding: '9px 14px', fontWeight: 650 }}>
-                        {i < 3 && <Trophy size={12} color={MEDAL[i]}
-                                    style={{ verticalAlign: -1, marginRight: 5 }} />}
-                        {p.person}
+                      <td style={{ padding: '9px 14px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+                          <span className={'rank rank-' + (i + 1)}>{i + 1}</span>
+                          <span className="ini" style={{ '--h': (p.person || '?').charCodeAt(0) * 37 % 360 }}>{(p.person || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase()}</span>
+                          <div style={{ minWidth: 0 }}><div style={{ fontWeight: 700, color: 'var(--t1)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.person}</div></div>
+                        </div>
                       </td>
                       <td style={{ padding: '9px 14px', textAlign: 'right',
                                    fontVariantNumeric: 'tabular-nums' }}>{num(p.units)}</td>
@@ -1745,7 +1735,7 @@ function Upload() {
 
           <div className="row" style={{ gap: 8 }}>
             <button className="btn btn-primary" disabled={busy || !file}
-                    onClick={() => run(file, month, true, seed)}
+                    onClick={() => run(file, month, true, seed, seed ? '' : (prev.forcedDay || ''))}
                     style={{ fontSize: 12.5 }}>
               {prev.saveAll
                 ? `Save all ${prev.perMonth.length} months`
@@ -1761,7 +1751,7 @@ function Upload() {
         <div style={{ marginTop: 22 }}>
           <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '.08em',
                         textTransform: 'uppercase', color: 'var(--t3)', marginBottom: 8 }}>
-            Uploaded months
+            Uploaded months <span className="count-pill">{periods.length}</span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
             {periods.map(p => (
@@ -1801,7 +1791,7 @@ function MyBilling({ d }) {
     </div>
   );
   const Cell2 = ({ label, value, sub, tone }) => (
-    <div style={{ padding: '12px 14px', borderRadius: 10, background: 'var(--bg2)', border: '1px solid var(--b1)', minWidth: 0 }}>
+    <div className="card" style={{ padding: '12px 14px', minWidth: 0 }}>
       <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.07em', textTransform: 'uppercase', color: 'var(--t3)' }}>{label}</div>
       <div style={{ fontSize: 18, fontWeight: 800, marginTop: 2, color: tone || 'var(--t1)', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
       {sub && <div style={{ fontSize: 10.5, color: 'var(--t3)', marginTop: 2 }}>{sub}</div>}
@@ -1811,7 +1801,7 @@ function MyBilling({ d }) {
   return (
     <div style={{ display: 'grid', gap: 12 }}>
       <div className="card" style={{ padding: '20px 22px', display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap' }}>
-        <div style={{ width: 52, height: 52, borderRadius: 14, display: 'grid', placeItems: 'center', background: 'rgba(99,102,241,.14)', color: 'var(--acc)', flexShrink: 0 }}><Trophy size={24} /></div>
+        <div style={{ width: 52, height: 52, borderRadius: 14, display: 'grid', placeItems: 'center', background: 'color-mix(in srgb, var(--acc) 14%, transparent)', color: 'var(--acc)', flexShrink: 0 }}><Trophy size={24} /></div>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 11.5, color: 'var(--t2)', fontWeight: 650 }}>My points · {d.month}</div>
           <div style={{ fontSize: 36, fontWeight: 850, color: 'var(--acc)', letterSpacing: '-.02em', lineHeight: 1.1, fontVariantNumeric: 'tabular-nums' }}>{points(p.points)}</div>
@@ -1837,7 +1827,7 @@ function MyBilling({ d }) {
       </div>
 
       <div className="card" style={{ padding: '14px 16px' }}>
-        <div style={{ fontSize: 12.5, fontWeight: 800, marginBottom: 4 }}>How the points were reached</div>
+        <div className="sec-title" style={{ marginBottom: 8 }}><span className="sec-ico" style={{ '--tone': 'var(--grn)' }}><Calculator size={15} /></span> How the points were reached</div>
         <div style={{ fontSize: 12, color: 'var(--t2)', lineHeight: 1.7 }}>
           {p.detail} → {points(p.grossPoints)} points{p.deduction > 0 ? <>, less {Math.round((p.deductionPct || 0) * 100)}% deduction = <b style={{ color: 'var(--t1)' }}>{points(p.points)} points</b></> : null}.
           <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 4 }}>Low rate {Math.round((d.config?.rateLow || 0) * ppr)} pts/unit up to target · high rate {Math.round((d.config?.rateHigh || 0) * ppr)} pts/unit above it</div>
@@ -1845,15 +1835,22 @@ function MyBilling({ d }) {
       </div>
 
       <div className="card" style={{ padding: '14px 16px' }}>
-        <div style={{ fontSize: 12.5, fontWeight: 800, marginBottom: 8 }}>My points by month</div>
+        <div className="sec-title"><span className="sec-ico" style={{ '--tone': 'var(--grn)' }}><TrendingUp size={15} /></span> My points by month</div>
         <div style={{ height: 160 }}>
           <ResponsiveContainer>
             <ComposedChart data={trend} margin={{ top: 4, right: 4, left: -18, bottom: 0 }}>
-              <CartesianGrid vertical={false} stroke="var(--b1)" />
-              <XAxis dataKey="m" tick={{ fontSize: 11, fill: 'var(--t3)' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 10, fill: 'var(--t3)' }} axisLine={false} tickLine={false} tickFormatter={v => num(v)} />
-              <Tooltip formatter={v => [num(v) + ' pts', 'Points']} contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid var(--b1)', background: 'var(--bg1)', color: 'var(--t1)' }} />
-              <Area type="monotone" dataKey="points" stroke="var(--acc)" fill="rgba(99,102,241,.18)" strokeWidth={2} />
+              <defs>
+                <linearGradient id="incMyPoints" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.35} />
+                  <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid vertical={false} />
+              <XAxis dataKey="m" axisLine={false} tickLine={false} />
+              <YAxis axisLine={false} tickLine={false} width={60} tickFormatter={v => num(v)} />
+              <Tooltip formatter={v => [num(v) + ' pts', 'Points']} />
+              <Area type="monotone" dataKey="points" stroke="#3b82f6" fill="url(#incMyPoints)" strokeWidth={2.5}
+                    dot={{ r: 3, fill: '#3b82f6', strokeWidth: 0 }} activeDot={{ r: 6 }} />
             </ComposedChart>
           </ResponsiveContainer>
         </div>

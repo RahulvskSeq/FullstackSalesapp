@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Upload, Download, FileSpreadsheet, CheckCircle, AlertCircle, X, Calendar, Layers } from 'lucide-react';
+import { Upload, Download, FileSpreadsheet, CheckCircle, AlertCircle, X, Calendar, Layers, UploadCloud } from 'lucide-react';
+import { PageHead } from '../collections/ui';
 import { api } from '../api';
 import { notify } from './Toast';
 
@@ -92,7 +93,7 @@ const SalesUpload = ({ currentUser, onUploaded }) => {
     return (
       <div className="card" style={{padding:20}}>
         <div style={{display:'flex',alignItems:'center',gap:10}}>
-          <AlertCircle size={18} color="#f59e0b"/>
+          <AlertCircle size={18} color="var(--yel)"/>
           <div style={{fontSize:14,fontWeight:600}}>Only admins can upload sales data.</div>
         </div>
       </div>
@@ -102,31 +103,19 @@ const SalesUpload = ({ currentUser, onUploaded }) => {
   return (
     <div className="fade" style={{display:'grid',gap:14}}>
       {/* Top — title + month picker */}
-      <div className="row">
-        <div style={{display:'flex',alignItems:'center',gap:8}}>
-          <FileSpreadsheet size={18} color="var(--acc)"/>
-          <div>
-            <div style={{fontSize:18,fontWeight:700}}>Upload Category-wise Sales</div>
-            <div style={{fontSize:12,color:'var(--t3)'}}>One row per dealer. Columns = product types.</div>
-          </div>
-        </div>
-        <div className="spacer"/>
-      </div>
+      <PageHead icon={UploadCloud} tone="var(--acc)" eyebrow={null} title="Upload Category-wise Sales"
+        sub="One row per dealer. Columns = product types." />
 
       {/* Step 1 — Template */}
       <div className="card" style={{padding:16}}>
-        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
-          <div style={{
-            width:26,height:26,borderRadius:13,background:'var(--acc)',color:'white',
-            display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,fontSize:13,
-          }}>1</div>
-          <div style={{fontSize:14,fontWeight:700}}>Download the Excel template</div>
+        <div className="sec-title" style={{marginBottom:8}}>
+          <span className="sec-ico" style={{'--tone':'var(--acc)',fontSize:13}}>1</span> Download the Excel template
         </div>
-        <div style={{fontSize:12,color:'var(--t3)',marginBottom:10,paddingLeft:34}}>
+        <div style={{fontSize:12,color:'var(--t3)',marginBottom:10,paddingLeft:39}}>
           The template auto-generates columns from your current Category Types &amp; Product Types.
           Manage them under <b>Admin Panel → Categories</b>.
         </div>
-        <div style={{paddingLeft:34}}>
+        <div style={{paddingLeft:39}}>
           <button className="btnp" onClick={downloadTpl} disabled={busyT}
             style={{display:'inline-flex',alignItems:'center',gap:6}}>
             <Download size={14}/> {busyT ? 'Building…' : 'Download Sales Template'}
@@ -136,14 +125,10 @@ const SalesUpload = ({ currentUser, onUploaded }) => {
 
       {/* Step 2 — Month + replace toggle */}
       <div className="card" style={{padding:16}}>
-        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
-          <div style={{
-            width:26,height:26,borderRadius:13,background:'var(--acc)',color:'white',
-            display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,fontSize:13,
-          }}>2</div>
-          <div style={{fontSize:14,fontWeight:700}}>Pick the month this data is for</div>
+        <div className="sec-title" style={{marginBottom:10}}>
+          <span className="sec-ico" style={{'--tone':'var(--acc)',fontSize:13}}>2</span> Pick the month this data is for
         </div>
-        <div style={{display:'flex',flexWrap:'wrap',gap:14,alignItems:'center',paddingLeft:34}}>
+        <div style={{display:'flex',flexWrap:'wrap',gap:14,alignItems:'center',paddingLeft:39}}>
           <div style={{display:'flex',alignItems:'center',gap:6}}>
             <Calendar size={14} color="var(--t3)"/>
             <select value={month} onChange={e=>setMonth(e.target.value)} className="inp" style={{minWidth:160}}>
@@ -159,19 +144,15 @@ const SalesUpload = ({ currentUser, onUploaded }) => {
             Replace existing data for this month
           </label>
           {monthHasData && replace && (
-            <span style={{fontSize:11,color:'#f59e0b'}}>⚠ existing rows for {month} will be wiped before insert</span>
+            <span style={{fontSize:11,color:'var(--yel)'}}>⚠ existing rows for {month} will be wiped before insert</span>
           )}
         </div>
       </div>
 
       {/* Step 3 — Upload */}
       <div className="card" style={{padding:16}}>
-        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
-          <div style={{
-            width:26,height:26,borderRadius:13,background:'var(--acc)',color:'white',
-            display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,fontSize:13,
-          }}>3</div>
-          <div style={{fontSize:14,fontWeight:700}}>Upload the filled Excel</div>
+        <div className="sec-title" style={{marginBottom:10}}>
+          <span className="sec-ico" style={{'--tone':'var(--acc)',fontSize:13}}>3</span> Upload the filled Excel
         </div>
         <div
           onDragOver={e=>{e.preventDefault();setDrag(true);}}
@@ -179,10 +160,10 @@ const SalesUpload = ({ currentUser, onUploaded }) => {
           onDrop={onDrop}
           onClick={()=>fileRef.current?.click()}
           style={{
-            marginLeft:34,
+            marginLeft:39,
             border:`2px dashed ${drag?'var(--acc)':'var(--b2)'}`,
             borderRadius:10, padding:24, textAlign:'center', cursor:'pointer',
-            background: drag ? 'rgba(99,102,241,.06)' : 'transparent',
+            background: drag ? 'color-mix(in srgb, var(--acc) 6%, transparent)' : 'transparent',
           }}
         >
           <Upload size={28} color={drag?'var(--acc)':'var(--t3)'} style={{marginBottom:6}}/>
@@ -208,24 +189,24 @@ const SalesUpload = ({ currentUser, onUploaded }) => {
 
       {/* Result */}
       {err && (
-        <div className="card" style={{padding:14,borderColor:'#ef4444',background:'rgba(239,68,68,.06)'}}>
+        <div className="card" style={{padding:14,borderColor:'var(--red)',background:'color-mix(in srgb, var(--red) 6%, transparent)'}}>
           <div style={{display:'flex',alignItems:'center',gap:8}}>
-            <AlertCircle size={16} color="#ef4444"/>
-            <div style={{fontSize:13,fontWeight:600,color:'#ef4444'}}>{err}</div>
+            <AlertCircle size={16} color="var(--red)"/>
+            <div style={{fontSize:13,fontWeight:600,color:'var(--red)'}}>{err}</div>
           </div>
         </div>
       )}
       {result && (
-        <div className="card" style={{padding:14,borderColor:'#34d399',background:'rgba(52,211,153,.05)'}}>
+        <div className="card" style={{padding:14,borderColor:'var(--grn)',background:'color-mix(in srgb, var(--grn) 5%, transparent)'}}>
           <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
-            <CheckCircle size={16} color="#34d399"/>
+            <CheckCircle size={16} color="var(--grn)"/>
             <div style={{fontSize:13,fontWeight:700}}>Upload successful</div>
           </div>
           <div style={{fontSize:12,color:'var(--t2)',display:'grid',gap:4}}>
             <div>Month: <b>{result.month}</b></div>
             <div>Inserted: <b>{result.inserted}</b> line items</div>
             {result.unknownSubCategories?.length > 0 && (
-              <div style={{color:'#f59e0b'}}>
+              <div style={{color:'var(--yel)'}}>
                 ⚠ Unknown sub-categories skipped: {result.unknownSubCategories.join(', ')}
                 <div style={{fontSize:10,color:'var(--t3)',marginTop:2}}>
                   Add them in Admin → Categories, then re-upload.
@@ -233,7 +214,7 @@ const SalesUpload = ({ currentUser, onUploaded }) => {
               </div>
             )}
             {result.unmatchedDealersCount > 0 && (
-              <div style={{color:'#f59e0b'}}>
+              <div style={{color:'var(--yel)'}}>
                 ⚠ {result.unmatchedDealersCount} dealer name(s) didn't match the dealer master list
                 {result.unmatchedDealers?.length ? `: ${result.unmatchedDealers.slice(0,5).join(', ')}${result.unmatchedDealersCount>5?'…':''}` : ''}.
                 <div style={{fontSize:10,color:'var(--t3)',marginTop:2}}>

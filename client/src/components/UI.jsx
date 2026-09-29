@@ -583,7 +583,7 @@
 // );
 
 import React, { useState, useRef, useEffect } from 'react';
-import { X, ChevronDown } from 'lucide-react';
+import { X, ChevronDown, CalendarRange } from 'lucide-react';
 import { MO as MO_CONST, CURRENT_MONTH_IDX } from '../constants';
 import { useMonth } from '../context';
 import { pclr, readableOn } from '../utils';
@@ -616,7 +616,7 @@ const STATUS_COLORS = {
   'NEW DEALER':        '#7c3aed',   // violet
   // Type 2 — chosen labels, deliberately off the Type 1 ramp
   'STAR':              '#db2777',   // pink
-  'KEY ACCOUNT':       '#4f46e5',   // indigo
+  'KEY ACCOUNT':       '#2563eb',   // indigo
   'ACHIEVER':          '#0d9488',   // teal
   'REACTIVE':          '#0284c7',   // sky
   'NONE':              '#8a93a8',   // grey
@@ -653,8 +653,8 @@ export const StatusBadge = ({status, emptyLabel}) => {
     // adapts to whatever background the active palette paints.
     bg = cl + '1f';
   }
-  else if(t==='ACHIVERS'||t==='ACHIEVERS'){bg='rgba(52,211,153,0.12)';cl='#34d399';}
-  else if(t.includes('INACTIVE')){bg='rgba(251,191,36,0.12)';cl='#fbbf24';}
+  else if(t==='ACHIVERS'||t==='ACHIEVERS'){bg='rgba(52,211,153,0.12)';cl='#10b981';}
+  else if(t.includes('INACTIVE')){bg='rgba(251,191,36,0.12)';cl='#f59e0b';}
   else{bg='rgba(255,255,255,.05)';cl='#8a93a8';}
   // class hook lets a light palette fix the text contrast without touching
   // this component's (theme-neutral) tinted colours.
@@ -663,13 +663,45 @@ export const StatusBadge = ({status, emptyLabel}) => {
 
 export const Avatar = ({user,size=28}) => {
   if(!user)return null;
+  // the person's own photo when they have uploaded one (Profile page)
+  if(user.avatar) return(<img src={user.avatar} alt={user.name||''} width={size} height={size} style={{width:size,height:size,borderRadius:'50%',objectFit:'cover',flexShrink:0,border:`1px solid ${(user.color||'#818cf8')}44`}}/>);
   return(<div style={{width:size,height:size,borderRadius:'50%',background:user.color+'22',color:user.color,border:`1px solid ${user.color}44`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:Math.round(size*0.36),fontWeight:600,flexShrink:0}}>{user.ini}</div>);
 };
 
+// A number that counts up to its value (and eases between values when it changes).
+export const CountUp = ({ value, duration = 900, format = v => Math.round(v).toLocaleString('en-IN') }) => {
+  const target = Number(value) || 0;
+  const [v, setV] = useState(0);
+  const last = useRef(0);
+  useEffect(() => {
+    const from = last.current;
+    // no animation when it could not be seen or is not wanted — show the real figure at once
+    if (from === target || (typeof document !== 'undefined' && document.hidden) || (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)) {
+      last.current = target; setV(target); return;
+    }
+    let raf, start;
+    const step = t => {
+      if (!start) start = t;
+      const k = Math.min(1, (t - start) / duration), e = 1 - Math.pow(1 - k, 3);
+      const cur = from + (target - from) * e;
+      last.current = cur; setV(cur);
+      if (k < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    // a hidden tab pauses animation frames — never leave a figure short of its real value
+    const snap = setTimeout(() => { cancelAnimationFrame(raf); last.current = target; setV(target); }, duration + 150);
+    return () => { cancelAnimationFrame(raf); clearTimeout(snap); };
+  }, [target, duration]);
+  return <>{format(v)}</>;
+};
+
 export const MiniBars = ({months,highlightIdx}) => {
+  const { viewIdx } = useMonth();
   const hi=highlightIdx!==undefined?highlightIdx:CURRENT_MONTH_IDX;
-  const mx=Math.max(...months,1);
-  return(<div style={{display:'flex',gap:2,alignItems:'flex-end',height:28,minWidth:70}}>{months.map((v,i)=>(<div key={i} style={{flex:1,height:Math.max((v/mx)*26,v>0?2:0),background:i===hi?'var(--acc)':'var(--b2)',borderRadius:'1px 1px 0 0'}}/>))}</div>);
+  // only the months of the chosen view cycle
+  const idxs=(viewIdx&&viewIdx.length?viewIdx:(months||[]).map((_,i)=>i)).filter(i=>i<(months||[]).length);
+  const mx=Math.max(...idxs.map(i=>months[i]||0),1);
+  return(<div style={{display:'flex',gap:2,alignItems:'flex-end',height:28,minWidth:70}}>{idxs.map(i=>{const v=months[i]||0;return(<div key={i} style={{flex:1,height:Math.max((v/mx)*26,v>0?2:0),background:i===hi?'var(--acc)':'var(--b2)',borderRadius:'1px 1px 0 0'}}/>);})}</div>);
 };
 
 export const KPI = ({label,value,color='var(--t1)',sub}) => (
@@ -682,11 +714,11 @@ export const KPI = ({label,value,color='var(--t1)',sub}) => (
 
 export const StatCard = ({label,value,sub,valueColor='var(--t1)',progress,icon:Icon}) => (
   <div className="stat-card">
-    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
-      <div style={{fontSize:10,color:'var(--t3)',textTransform:'uppercase',letterSpacing:'0.1em'}}>{label}</div>
-      {Icon&&<Icon size={14} color="var(--t3)"/>}
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8,marginBottom:10}}>
+      <div style={{fontSize:10.5,color:'var(--t3)',fontWeight:700,textTransform:'uppercase',letterSpacing:'0.08em',paddingTop:2}}>{label}</div>
+      {Icon&&<span className="stat-ico"><Icon size={17}/></span>}
     </div>
-    <div style={{fontSize:24,fontWeight:700,color:valueColor,lineHeight:1.1}}>{value}</div>
+    <div style={{fontSize:26,fontWeight:850,color:valueColor,lineHeight:1.05,letterSpacing:'-.02em'}}>{value}</div>
     {sub&&<div style={{fontSize:11,color:'var(--t3)',marginTop:4}}>{sub}</div>}
     {progress!==undefined&&(<div style={{height:6,background:'var(--b1)',borderRadius:3,marginTop:10,overflow:'hidden'}}><div style={{height:'100%',width:`${Math.min(progress||0,100)}%`,background:pclr(progress),borderRadius:3,transition:'width 1s ease'}}/></div>)}
   </div>
@@ -747,7 +779,7 @@ export const LoadingScreen = ({ message='Loading...' }) => (
       <div style={{
         position:'absolute', inset:6, borderRadius:'50%',
         border:'3px solid var(--b1)',
-        borderTopColor:'#f87171',
+        borderTopColor:'var(--red)',
         animation:'spin 1.2s linear infinite reverse',
       }}/>
     </div>
@@ -868,26 +900,50 @@ export const SkeletonLoader = ({ screen='overview' }) => {
 };
 
 export const MonthSelectorBar = ({selectedMonthIdx,setSelectedMonthIdx,onRefreshMonth}) => {
-  const { MO:ctxMO, currentMonthIdx } = useMonth();
+  const { MO:ctxMO, currentMonthIdx, viewIdx, cycle, setCycle, cycles } = useMonth();
   const MO = ctxMO || MO_CONST;
   const curIdx = currentMonthIdx ?? CURRENT_MONTH_IDX;
   const selectedMonth = MO[selectedMonthIdx] || '';
+  const shown = viewIdx && viewIdx.length ? viewIdx : MO.map((_,i)=>i);
+  // keep the chosen month in view — on a phone the strip starts far to the left of it
+  const stripRef = useRef(null);
+  useEffect(() => {
+    const center = () => {
+      const box = stripRef.current; if (!box) return;
+      const btn = box.querySelector('[data-sel="1"]'); if (!btn) return;
+      box.scrollLeft = Math.max(0, btn.offsetLeft - box.clientWidth / 2 + btn.offsetWidth / 2);
+    };
+    center();
+    // again once fonts and the rest of the page have settled
+    const t1 = setTimeout(center, 250), t2 = setTimeout(center, 1200);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [selectedMonthIdx, shown.length]);
   return (
   // Colours route through --chip*/--monthBar*/--ok* variables (originals as
   // fallbacks) so a palette can restyle this strip. Inline styles outrank CSS,
   // so a theme cannot override them any other way.
-  <div style={{display:'flex',alignItems:'center',gap:6,padding:'8px 14px',background:'var(--monthBarBg, var(--bg1))',borderBottom:'1px solid var(--monthBarBorder, var(--b1))',overflowX:'auto',flexShrink:0}}>
+  <div ref={stripRef} className="mo-strip" style={{position:'relative',display:'flex',alignItems:'center',gap:6,padding:'8px 14px',background:'var(--monthBarBg, var(--bg1))',borderBottom:'1px solid var(--monthBarBorder, var(--b1))',overflowX:'auto',flexShrink:0,scrollbarWidth:'none'}}>
+    {setCycle && (cycles||[]).length>0 && (
+      <label className="cyc-pick" title="Which 12 months the whole app shows — every month list and chart follows this">
+        <CalendarRange size={13}/>
+        <select value={cycle} onChange={e=>setCycle(e.target.value)}>
+          <option value="latest">Last 12 months</option>
+          {cycles.map(c=><option key={c.v} value={c.v}>{c.label}</option>)}
+          <option value="all">All {MO.length} months</option>
+        </select>
+      </label>
+    )}
     <span style={{fontSize:10,color:'var(--monthBarLabel, var(--t3))',textTransform:'uppercase',letterSpacing:'.12em',whiteSpace:'nowrap',marginRight:4}}>Viewing:</span>
-    {MO.map((m,i)=>(
-      <button key={m} onClick={()=>setSelectedMonthIdx(i)} style={{padding:'4px 12px',borderRadius:6,border:selectedMonthIdx===i?'1px solid var(--chipActiveBorder, var(--acc))':'1px solid var(--chipBorder, var(--b2))',background:selectedMonthIdx===i?'var(--chipActiveBg, var(--accL))':'var(--chipBg, var(--bg2))',color:selectedMonthIdx===i?'var(--chipActiveText, var(--acc))':i===curIdx?'var(--chipCurrentText, var(--t2))':'var(--chipText, var(--t3))',fontWeight:selectedMonthIdx===i?700:i===curIdx?600:400,fontSize:11,cursor:'pointer',whiteSpace:'nowrap',transition:'all .15s',flexShrink:0,position:'relative'}}>
-        {m}{i===curIdx&&<span style={{position:'absolute',top:-3,right:-3,width:6,height:6,background:'var(--okDot, #34d399)',borderRadius:'50%'}}/>}
+    {shown.map(i=>MO[i]).map((m,k)=>{const i=shown[k];return(
+      <button key={m} data-sel={selectedMonthIdx===i?'1':undefined} onClick={()=>setSelectedMonthIdx(i)} style={{padding:'4px 12px',borderRadius:6,border:selectedMonthIdx===i?'1px solid var(--chipActiveBorder, var(--acc))':'1px solid var(--chipBorder, var(--b2))',background:selectedMonthIdx===i?'var(--chipActiveBg, var(--accL))':'var(--chipBg, var(--bg2))',color:selectedMonthIdx===i?'var(--chipActiveText, var(--acc))':i===curIdx?'var(--chipCurrentText, var(--t2))':'var(--chipText, var(--t3))',fontWeight:selectedMonthIdx===i?700:i===curIdx?600:400,fontSize:11,cursor:'pointer',whiteSpace:'nowrap',transition:'all .15s',flexShrink:0,position:'relative'}}>
+        {m}{i===curIdx&&<span style={{position:'absolute',top:-3,right:-3,width:6,height:6,background:'var(--okDot, var(--grn))',borderRadius:'50%'}}/>}
       </button>
-    ))}
-    {selectedMonthIdx!==curIdx&&(<button onClick={()=>setSelectedMonthIdx(curIdx)} style={{padding:'4px 10px',borderRadius:6,border:'1px solid var(--okBorder, #34d39944)',background:'var(--okBg, rgba(52,211,153,0.1))',color:'var(--okText, #34d399)',fontSize:11,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0}}>→ Current</button>)}
+    );})}
+    {selectedMonthIdx!==curIdx&&(<button onClick={()=>setSelectedMonthIdx(curIdx)} style={{padding:'4px 10px',borderRadius:6,border:'1px solid var(--okBorder, color-mix(in srgb, var(--grn) 27%, transparent))',background:'var(--okBg, color-mix(in srgb, var(--grn) 10%, transparent))',color:'var(--okText, var(--grn))',fontSize:11,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0}}>→ Current</button>)}
     {onRefreshMonth && (
       <button onClick={()=>onRefreshMonth(selectedMonth)}
         title={'Refresh ' + selectedMonth + ' data from MongoDB (does NOT touch Google Sheets)'}
-        style={{padding:'4px 10px',borderRadius:6,border:'1px solid var(--okBorder, #15803d)',background:'var(--okBg, rgba(34,197,94,0.10))',color:'var(--okText, #86efac)',fontSize:11,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,display:'inline-flex',alignItems:'center',gap:4}}>
+        style={{padding:'4px 10px',borderRadius:6,border:'1px solid var(--okBorder, var(--grn))',background:'var(--okBg, color-mix(in srgb, var(--grn) 10%, transparent))',color:'var(--okText, var(--grn))',fontSize:11,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0,display:'inline-flex',alignItems:'center',gap:4}}>
         ↻ Refresh {selectedMonth}
       </button>
     )}

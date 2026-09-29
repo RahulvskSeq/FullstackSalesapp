@@ -6,7 +6,7 @@ import { PaymentForm } from './forms';
 
 /** Payment manager: record → confirm (accounts) → the balance moves. */
 export default function Payments({ params }) {
-  const { users, isStaff, features, openRecord } = useDealerCtx();
+  const { users, isStaff, features, openRecord, bump } = useDealerCtx();
   // Opens on the queue accounts actually works from — payments waiting to be
   // confirmed — and falls back to everything once that queue is empty.
   // Opens on today's collections (the morning statement's date) unless a tile
@@ -16,7 +16,7 @@ export default function Payments({ params }) {
   const [autoFell, setAutoFell] = useState(false);
   const monthStart = today().slice(0, 7) + '-01';
   const pick = (from, to, status = 'CONFIRMED') => set({ from, to, status });
-  const { data, busy, err, reload } = useLoad(() => col.payments(q), [JSON.stringify(q)]);
+  const { data, busy, err, reload } = useLoad(() => col.payments(q), [JSON.stringify(q), bump]);
   const rangeSum = (data?.items || []).filter(p => p.status === 'CONFIRMED').reduce((a, p) => a + p.amount, 0);
   const [form, setForm] = useState(false);
   useEffect(() => { if (!autoFell && data && q.from === yday && !params?.from && data.total === 0) { setAutoFell(true); setQ(x => ({ ...x, from: '', to: '' })); } }, [data]);   // eslint-disable-line
@@ -29,7 +29,7 @@ export default function Payments({ params }) {
       <Card style={{ marginBottom: 12 }}>
         <div className="row" style={{ gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
           {[['Today', today(), today()], ['Yesterday', yday, yday], ['This month', monthStart, today()], ['All time', '', '']].map(([l, f, t]) =>
-            <button key={l} className={q.from === f && q.to === t && q.status === 'CONFIRMED' ? 'btnp' : 'btn'} style={{ padding: '5px 12px', fontSize: 12 }} onClick={() => pick(f, t)}>{l}</button>)}
+            <button key={l} className={'thr' + (q.from === f && q.to === t && q.status === 'CONFIRMED' ? ' on' : '')} style={{ '--tone': 'var(--grn)' }} onClick={() => pick(f, t)}>{l}</button>)}
         </div>
         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
           <input type="date" className="inp" style={{ maxWidth: 160 }} value={q.from} onChange={e => set({ from: e.target.value })} /><span style={{ color: 'var(--t3)' }}>to</span><input type="date" className="inp" style={{ maxWidth: 160 }} value={q.to} onChange={e => set({ to: e.target.value })} max={today()} />
@@ -41,9 +41,9 @@ export default function Payments({ params }) {
         {err ? <ErrorBox err={err} onRetry={reload} /> : busy && !data ? <Busy kind="table" /> : <Table cols={[
           { k: 'date', h: 'Date', r: r => fmtDate(r.date) },
           { k: 'paymentNo', h: '#', r: r => <span className="chip">{r.paymentNo}</span> },
-          { k: 'dealer', h: 'Dealer', r: r => <DealerLink id={r.dealerId} name={r.dealer?.name || String(r.dealerId)} code={r.dealer?.code} /> },
+          { k: 'dealer', h: 'Dealer', avatar: r => r.dealer?.name || String(r.dealerId), r: r => <DealerLink id={r.dealerId} name={r.dealer?.name || String(r.dealerId)} code={r.dealer?.code} /> },
           ...monthCols(data?.items), { k: 'balanceTotal', h: 'Outstanding', align: 'right', r: r => r.balanceTotal == null ? '—' : <b>{money(r.balanceTotal)}</b> },
-          { k: 'amount', h: 'Amount', align: 'right', r: r => <b>{money(r.amount)}</b> },
+          { k: 'amount', h: 'Amount', align: 'right', r: r => <b style={{ color: r.status === 'CONFIRMED' ? 'var(--grn)' : r.status === 'BOUNCED' ? 'var(--red)' : undefined }}>{money(r.amount)}</b> },
           { k: 'how', h: 'How it was known', r: r => r.status === 'CANCELLED' && /counted/.test(r.cancelReason || '') ? <span style={{ color: 'var(--grn)' }}>received · {r.cancelReason}</span> : r.status === 'CANCELLED' ? `cancelled${r.cancelReason ? ' · ' + r.cancelReason : ''}` : r.source === 'statement' ? (/[Pp]romised/.test(r.remarks || '') ? 'promise kept · statement' : 'seen in statement') : (r.status === 'CONFIRMED' ? 'recorded · confirmed by statement' : 'recorded, not yet in a statement') },
           { k: 'mode', h: 'Mode' }, { k: 'reference', h: 'Reference' },
           { k: 'status', h: 'Status', r: r => <Badge v={r.status} /> },
@@ -51,7 +51,7 @@ export default function Payments({ params }) {
           { k: 'collectedBy', h: 'Collected by', r: r => userName(users, r.collectedBy) },
           { k: 'enteredBy', h: 'Entered by', r: r => userName(users, r.enteredBy) },
           { k: 'confirmedAt', h: 'Confirmed', r: r => r.confirmedAt ? `${fmtWhen(r.confirmedAt)} · ${userName(users, r.confirmedBy)}` : '—' },
-          { k: 'proof', h: '', r: r => r.proofId ? <a href={col.proofUrl(r.proofId)} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} title="Proof"><Paperclip size={13} /></a> : null },
+          { k: 'proof', h: '', r: r => r.proofId ? <button onClick={e => { e.stopPropagation(); col.openProof(r.proofId).catch(err => alert(err.message)); }} title="Open the proof" style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--acc)', padding: 2 }}><Paperclip size={13} /></button> : null },
           { k: 'act', h: '', r: r => <div className="row" style={{ gap: 4 }}>
               {r.status === 'RECORDED' && <button className="btn" style={{ padding: '3px 7px' }} data-tip="Cancel" onClick={() => act(rs => col.cancelPayment(r._id, rs), 'Reason for cancelling?')}><X size={12} /></button>}
             </div> },
@@ -65,7 +65,7 @@ export default function Payments({ params }) {
           {r.balanceTotal != null && <MonthKVs row={r} rows={data?.items} total={r.balanceTotal} />}
           <div className="row" style={{ gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
             {r.status === 'RECORDED' && <button className="btn" style={{ padding: '4px 8px', fontSize: 12 }} onClick={() => act(rs => col.cancelPayment(r._id, rs), 'Reason for cancelling?')}><X size={12} /> Cancel</button>}
-            {r.proofId && <a className="btn" style={{ padding: '4px 8px', fontSize: 12 }} href={col.proofUrl(r.proofId)} target="_blank" rel="noreferrer"><Paperclip size={12} /> Proof</a>}
+            {r.proofId && <button className="btn" style={{ padding: '4px 8px', fontSize: 12 }} onClick={e => { e.stopPropagation(); col.openProof(r.proofId).catch(err => alert(err.message)); }}><Paperclip size={12} /> Proof</button>}
           </div>
         </>} />}
         <div style={{ padding: '0 12px 10px' }}><Pager page={data?.page} limit={data?.limit} total={data?.total} onPage={p => setQ(x => ({ ...x, page: p }))} /></div>
