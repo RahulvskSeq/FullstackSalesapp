@@ -23,6 +23,10 @@ const fmtDate  = (d) => new Date(d).toLocaleDateString('en-IN', { day:'2-digit',
 
 // Generic CSV exporter — UTF-8 BOM so Excel opens Indian rupees / accents
 // without garbling them.
+// GSTIN: 2-digit state, PAN (5 letters, 4 digits, 1 letter), entity no., 'Z', check char
+const GSTIN_RE = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
+const IN_STATES = ['Andhra Pradesh','Arunachal Pradesh','Assam','Bihar','Chhattisgarh','Goa','Gujarat','Haryana','Himachal Pradesh','Jharkhand','Karnataka','Kerala','Madhya Pradesh','Maharashtra','Manipur','Meghalaya','Mizoram','Nagaland','Odisha','Punjab','Rajasthan','Sikkim','Tamil Nadu','Telangana','Tripura','Uttar Pradesh','Uttarakhand','West Bengal','Andaman and Nicobar Islands','Chandigarh','Dadra and Nagar Haveli and Daman and Diu','Delhi','Jammu and Kashmir','Ladakh','Lakshadweep','Puducherry'];
+
 function exportCSV(filename, headers, rows){
   if(!rows || rows.length === 0){
     notify.info('Nothing to export');
@@ -740,6 +744,18 @@ export function VisitsPage({ dealers, users, currentUser }){
   const coCamRef = useRef(null);
   const [coPreview, setCoPreview] = useState(false);
   const [coMissing, setCoMissing] = useState(false);   // discussion note missing
+  // A visit planned on the calendar for a NEW party: the plan handed over by the calendar,
+  // and the party's real details, which check-out requires (and which fix a wrong name).
+  const [ciPlan, setCiPlan] = useState(null);
+  const [coParty, setCoParty] = useState({ name:'', gst:'', noGst:false, city:'', state:'', phone:'' });
+  const [coPartyErr, setCoPartyErr] = useState({});
+  useEffect(() => {
+    try {
+      const h = JSON.parse(localStorage.getItem('stp_plan_checkin') || 'null');
+      localStorage.removeItem('stp_plan_checkin');
+      if (h?.planId && Date.now() - (h.t || 0) < 12 * 3600e3) { setCiPlan(h); setCiNewDealerMode(true); setCiDealer(h.name || ''); }
+    } catch { /* storage blocked */ }
+  }, []);
 
   // List
   const [items,   setItems]   = useState([]);
@@ -892,6 +908,11 @@ export function VisitsPage({ dealers, users, currentUser }){
     ? activeVisit
     : items.find(v => v.status === 'in-progress' && v.userId === currentUser.id);
 
+  useEffect(() => {
+    if (!myActive?.newParty) return;
+    setCoParty(p => p.name ? p : { ...p, name: myActive.dealerName || '', city: p.city || myActive.checkInCity || '', state: p.state || myActive.checkInState || '' });
+  }, [myActive?._id, myActive?.newParty]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Today's visits for current user — used for the day-total card
   const today = todayStr();
   const myToday = items.filter(v => v.userId === currentUser.id && v.dateStr === today);
@@ -952,6 +973,7 @@ export function VisitsPage({ dealers, users, currentUser }){
         dealerId:   match?.id || '',
         dealerName: ciDealer.trim(),
         isNewDealer: ciNewDealerMode || !match,
+        ...(ciPlan?.planId ? { planId: ciPlan.planId } : {}),
         purpose:    ciPurpose,
         // Prepend purpose to the note so existing CSV exports/history strips
         // see the reason inline too.
@@ -963,7 +985,8 @@ export function VisitsPage({ dealers, users, currentUser }){
         city:       loc.city    || '',
         state:      loc.state   || '',
       });
-      notify.success('Checked in — visit started');
+      notify.success(ciPlan ? 'Checked in — fill the party details before you check out' : 'Checked in — visit started');
+      setCiPlan(null);
       setCiDealer(''); setCiNote(''); setCiPhoto(''); setCiPurpose('');
       setCiNewDealerMode(false);
       setCiPreview(false);
@@ -973,7 +996,19 @@ export function VisitsPage({ dealers, users, currentUser }){
   };
 
   // Step 1: require the discussion note, then open the camera directly.
+  const partyProblems = () => {
+    const e = {};
+    if ((coParty.name || '').trim().length < 3) e.name = 'Type the correct party name';
+    if (!coParty.noGst && !GSTIN_RE.test((coParty.gst || '').replace(/\s/g, '').toUpperCase())) e.gst = coParty.gst ? 'GST number looks wrong — 15 characters like 29ABCDE1234F1Z5' : 'Enter the GST number, or tick "Not registered"';
+    if (!(coParty.city || '').trim()) e.city = 'City is required';
+    if (!(coParty.state || '').trim()) e.state = 'State is required';
+    return e;
+  };
   const startCheckOut = () => {
+    if (myActive?.newParty) {
+      const e = partyProblems(); setCoPartyErr(e);
+      if (Object.keys(e).length) { notify.error('Fill the new party details before checking out'); return; }
+    }
     if(!coNote || !coNote.trim()){
       setCoMissing(true);
       notify.error('Discussion notes are required at check-out');
@@ -1005,6 +1040,7 @@ export function VisitsPage({ dealers, users, currentUser }){
     const loc = await freshLocation(coLoc).catch(() => ({ lat:null, lng:null }));
     try {
       await api.visitsCheckout(myActive._id, {
+        ...(myActive.newParty ? { party: { ...coParty, gst: (coParty.gst || '').replace(/\s/g, '').toUpperCase() } } : {}),
         photo: coPhoto,
         note:  coNote,
         lat:   loc.lat,
@@ -1013,7 +1049,8 @@ export function VisitsPage({ dealers, users, currentUser }){
         city:    loc.city    || '',
         state:   loc.state   || '',
       });
-      notify.success('Checked out — visit completed');
+      notify.success(myActive.newParty ? 'Checked out — party details saved and sent to the office as a lead' : 'Checked out — visit completed');
+      setCoParty({ name:'', gst:'', noGst:false, city:'', state:'', phone:'' }); setCoPartyErr({});
       setCoNote(''); setCoPhoto(''); setCoLoc({ lat:null, lng:null });
       setCoPreview(false);
       load();
@@ -1093,6 +1130,32 @@ export function VisitsPage({ dealers, users, currentUser }){
             {myActive.checkInAddress ? ' · ' + myActive.checkInAddress : ''}
           </div>
           <div style={{display:'flex', flexDirection:'column', gap:8}}>
+            {myActive.newParty && (
+              <div className="np-box">
+                <div className="np-h"><span>New party</span> Correct details are needed before check-out — fix the name if it was planned wrong.</div>
+                {[['name', 'Party name (as on the board / bill)'], ['gst', 'GST number']].map(([k, ph]) => (
+                  <div key={k}>
+                    <input className="inp" placeholder={ph} value={coParty[k]} disabled={k === 'gst' && coParty.noGst}
+                      onChange={e => { const v = k === 'gst' ? e.target.value.toUpperCase() : e.target.value; setCoParty(p => ({ ...p, [k]: v })); if (coPartyErr[k]) setCoPartyErr(x => ({ ...x, [k]: '' })); }}
+                      maxLength={k === 'gst' ? 15 : 150} style={coPartyErr[k] ? { borderColor:'var(--red)', boxShadow:'0 0 0 1px var(--red)' } : undefined}/>
+                    {coPartyErr[k] && <div className="np-err">{coPartyErr[k]}</div>}
+                  </div>
+                ))}
+                <label className="np-chk"><input type="checkbox" checked={coParty.noGst} onChange={e => { setCoParty(p => ({ ...p, noGst: e.target.checked, gst: e.target.checked ? '' : p.gst })); setCoPartyErr(x => ({ ...x, gst: '' })); }}/> Not registered — the party has no GST</label>
+                <div className="np-2">
+                  {[['city', 'City'], ['state', 'State']].map(([k, ph]) => (
+                    <div key={k}>
+                      <input className="inp" placeholder={ph} value={coParty[k]} list={k === 'state' ? 'np-states' : undefined}
+                        onChange={e => { setCoParty(p => ({ ...p, [k]: e.target.value })); if (coPartyErr[k]) setCoPartyErr(x => ({ ...x, [k]: '' })); }}
+                        style={coPartyErr[k] ? { borderColor:'var(--red)', boxShadow:'0 0 0 1px var(--red)' } : undefined}/>
+                      {coPartyErr[k] && <div className="np-err">{coPartyErr[k]}</div>}
+                    </div>
+                  ))}
+                </div>
+                <datalist id="np-states">{IN_STATES.map(s => <option key={s} value={s}/>)}</datalist>
+                <input className="inp" placeholder="Phone (optional)" inputMode="tel" value={coParty.phone} onChange={e => setCoParty(p => ({ ...p, phone: e.target.value }))}/>
+              </div>
+            )}
             <div style={coMissing ? { borderRadius:13, boxShadow:'0 0 0 2px var(--red)' } : undefined}>
               <VoiceTextarea
                 placeholder="REQUIRED: what was discussed in the meeting…"
@@ -1183,12 +1246,19 @@ export function VisitsPage({ dealers, users, currentUser }){
                 </div>
               </div>
             )}
+            {ciPlan && (
+              <div className="np-box" style={{ gap:4 }}>
+                <div className="np-h"><span>Planned · new party</span> From your visit calendar{ciPlan.date ? ' · ' + ciPlan.date : ''}</div>
+                <div style={{ fontSize:12, color:'var(--t2)' }}>Check in below — correct the name if it was typed wrong. At check-out you will fill GST, city and state.</div>
+                <button type="button" className="btn" style={{ justifySelf:'start', fontSize:11, padding:'3px 9px' }} onClick={() => setCiPlan(null)}>Not this plan</button>
+              </div>
+            )}
             {/* Existing-dealer vs New-dealer toggle. New-dealer mode swaps the
                 autocomplete input for a plain text box so salesman can type
                 a name that isn't in the roster yet. */}
             <div style={{display:'flex', gap:8, padding:4, background:'var(--bg2)', borderRadius:14, border:'1px solid var(--b2)'}}>
               <button type="button"
-                onClick={()=>{ setCiNewDealerMode(false); setCiDealer(''); }}
+                onClick={()=>{ setCiNewDealerMode(false); setCiDealer(''); setCiPlan(null); }}
                 style={{
                   flex:1, minWidth:120,
                   padding:'9px 12px', borderRadius:11, fontSize:12.5, fontWeight:700, cursor:'pointer',
@@ -2032,7 +2102,7 @@ function _LeadsBody({ users, currentUser, isStaff }){
                       <span className="ini" style={{'--h':(L.name||'?').charCodeAt(0)*37%360}}>{(L.name||'?').replace(/[^A-Za-z0-9]/g,'').slice(0,2).toUpperCase()}</span>
                       <div style={{minWidth:0}}>
                         <div style={{fontSize:13, fontWeight:700, color:'var(--t1)', overflow:'hidden', textOverflow:'ellipsis'}}>{L.name}</div>
-                        {L.company && <div style={{fontSize:10.5, color:'var(--t3)'}}>{L.company}</div>}
+                        {L.company && <div style={{fontSize:10.5, color:'var(--t3)'}}>{L.company}{L.gst ? ' · GST ' + L.gst : ''}</div>}
                       </div>
                     </div>
                     <span style={{
@@ -2103,7 +2173,7 @@ function LeadDetailModal({ lead, users, currentUser, isStaff, onClose, onSaved, 
       const body = {};
       // Allow admin to edit full record
       if(isStaff){
-        ['name','company','phone','email','city','state','source','status','assignedTo','notes','value'].forEach(k => {
+        ['name','company','gst','phone','email','city','state','source','status','assignedTo','notes','value'].forEach(k => {
           body[k] = draft[k];
         });
       } else {
@@ -2140,6 +2210,7 @@ function LeadDetailModal({ lead, users, currentUser, isStaff, onClose, onSaved, 
           <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px,1fr))', gap:10, marginBottom:14}}>
             <Field label="Name"><input className="inp" value={draft.name||''} onChange={e=>setDraft({...draft, name:e.target.value})}/></Field>
             <Field label="Company"><input className="inp" value={draft.company||''} onChange={e=>setDraft({...draft, company:e.target.value})}/></Field>
+            <Field label="GST"><input className="inp" value={draft.gst||''} maxLength={15} onChange={e=>setDraft({...draft, gst:e.target.value.toUpperCase()})}/></Field>
             <Field label="Phone"><input className="inp" value={draft.phone||''} onChange={e=>setDraft({...draft, phone:e.target.value})}/></Field>
             <Field label="Email"><input className="inp" value={draft.email||''} onChange={e=>setDraft({...draft, email:e.target.value})}/></Field>
             <Field label="City"><input className="inp" value={draft.city||''} onChange={e=>setDraft({...draft, city:e.target.value})}/></Field>
@@ -2162,7 +2233,7 @@ function LeadDetailModal({ lead, users, currentUser, isStaff, onClose, onSaved, 
           </div>
         ) : (
           <div style={{background:'var(--bg2)', borderRadius:8, padding:12, marginBottom:14}}>
-            {lead.company && <div style={{fontSize:12, color:'var(--t2)'}}>{lead.company}</div>}
+            {lead.company && <div style={{fontSize:12, color:'var(--t2)'}}>{lead.company}{lead.gst ? ' · GST ' + lead.gst : ''}</div>}
             <div style={{display:'flex', gap:14, flexWrap:'wrap', marginTop:6}}>
               {lead.phone && <a href={`tel:${lead.phone}`} style={{fontSize:12, color:'var(--acc)', display:'inline-flex', alignItems:'center', gap:4}}><Phone size={11}/> {lead.phone}</a>}
               {lead.email && <a href={`mailto:${lead.email}`} style={{fontSize:12, color:'var(--acc)', display:'inline-flex', alignItems:'center', gap:4}}><Mail size={11}/> {lead.email}</a>}

@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Search, CheckCircle2, CalendarDays, Repeat, Pencil, Trash2, ArrowRight, AlertTriangle, ListChecks, Sun, MapPin, Wallet, X, Clock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Search, CheckCircle2, CalendarDays, Repeat, Pencil, Trash2, ArrowRight, AlertTriangle, ListChecks, Sun, MapPin, Wallet, X, Clock, Package } from 'lucide-react';
 import { api } from '../api';
 import DealerVisitModal from './DealerVisitModal';
 import DealerOutstandingModal from './DealerOutstandingModal';
+import SamplesCarryModal from './SamplesCarryModal';
 import { useT } from '../i18n';
 import { PageHead } from '../collections/ui';
 
@@ -22,12 +23,13 @@ const todayYmd = () => ymd(new Date());
 const fmtDay = s => new Date(s + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-export default function VisitCalendar({ dealers = [], users = {}, currentUser }) {
+export default function VisitCalendar({ dealers = [], users = {}, currentUser, onNavigate }) {
   const isStaff = ['admin', 'superadmin', 'employee'].includes(currentUser?.role);
   const salesmen = useMemo(() => Object.entries(users || {}).filter(([, u]) => u?.role === 'salesman' && u?.active !== false).map(([id, u]) => ({ id, name: u.name || id })).sort((a, b) => a.name.localeCompare(b.name)), [users]);
   const [sm, setSm] = useState(isStaff ? '' : currentUser?.id || '');
   const [month, setMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
   const [day, setDay] = useState(todayYmd());
+  const [carryOpen, setCarryOpen] = useState(false);
   const [plans, setPlans] = useState([]);
   const { t: tr } = useT();
   const [unplanned, setUnplanned] = useState([]);   // visits made without a plan
@@ -100,6 +102,22 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser })
       else await api.addVisitPlan({ date: day, salesmanId: daySm, dealerId: d._id || d.id, note, collectTarget: Number(collect) || 0 });
       setQ(''); setNote(''); setCollect('');
     });
+  };
+  // a party not in the dealer list yet: planned by the name typed; real details come at check-out
+  const typed = q.replace(/\s+/g, ' ').trim();
+  const exactDealer = typed && dealers.some(d => (d.name || '').replace(/\s+/g, ' ').trim().toLowerCase() === typed.toLowerCase());
+  const canNewParty = !replacing && typed.length >= 3 && !exactDealer;
+  const addNewParty = () => {
+    if (!daySm) { setErr('Pick a salesman first'); return; }
+    act(async () => {
+      await api.addVisitPlan({ date: day, salesmanId: daySm, newPartyName: typed, note, collectTarget: Number(collect) || 0 });
+      setQ(''); setNote(''); setCollect('');
+    });
+  };
+  // Visit on a new party: hand the plan to the check-in screen (name prefilled, correctable there)
+  const visitNewParty = (p) => {
+    try { localStorage.setItem('stp_plan_checkin', JSON.stringify({ planId: p._id, name: p.dealerName, date: p.date, t: Date.now() })); } catch { /* storage blocked */ }
+    if (onNavigate) onNavigate('visits'); else window.location.hash = '#/visits';
   };
   const saveNote = (p) => act(async () => { await api.updateVisitPlan(p._id, { note: editing[p._id] }); setEditing(e => { const n = { ...e }; delete n[p._id]; return n; }); });
 
@@ -237,6 +255,9 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser })
                 <span style={{ color: 'var(--t3)' }}>· {dayPlans.length} dealer{dayPlans.length === 1 ? '' : 's'}</span>
               </div>
             </div>
+            {dayPlans.length > 0 && <button className="btn vc-carry" onClick={() => setCarryOpen(true)} title="Every sample to show on this day's visits — each one listed once">
+              <Package size={15} /><span>{tr('Samples for visits')}</span>
+            </button>}
           </div>
           <div className="vc-daystats">
             {daySm && <div className="vc-capbox" style={{ '--tone': full ? 'var(--red)' : 'var(--acc)' }}>
@@ -267,11 +288,15 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser })
                   </span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                      <a href="#" onClick={e => { e.preventDefault(); setOpen(p.dealerId); }} style={{ fontSize: 13.5, fontWeight: 750, color: 'var(--t1)', textDecoration: 'none', minWidth: 0, overflowWrap: 'anywhere' }}>{p.dealerName}</a>
+                      {p.newParty ? <span style={{ fontSize: 13.5, fontWeight: 750, color: 'var(--t1)', minWidth: 0, overflowWrap: 'anywhere' }}>{p.dealerName}</span>
+                        : <a href="#" onClick={e => { e.preventDefault(); setOpen(p.dealerId); }} style={{ fontSize: 13.5, fontWeight: 750, color: 'var(--t1)', textDecoration: 'none', minWidth: 0, overflowWrap: 'anywhere' }}>{p.dealerName}</a>}
                       <Badge tone={toneOf(p)}>{labelOf(p)}</Badge>
+                      {p.newParty && <Badge tone="#d97706">New party</Badge>}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 2, display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
                       {[p.zone, p.city].filter(Boolean).length > 0 && <span><MapPin size={10} style={{ verticalAlign: -1 }} /> {[p.zone, p.city].filter(Boolean).join(' · ')}</span>}
+                      {p.newParty && p.party?.name && <span><MapPin size={10} style={{ verticalAlign: -1 }} /> {[p.party.city, p.party.state].filter(Boolean).join(', ')} · {p.party.noGst ? 'no GST' : 'GST ' + p.party.gst}{p.leadId ? ' · saved to Leads' : ''}</span>}
+                      {p.newParty && !p.party?.name && <span>· not in the dealer list — details at check-out</span>}
                       {!sm && <span>· {p.salesmanName}</span>}
                       {p.accountStatus && p.accountStatus !== 'NONE' && <span>· {p.accountStatus}</span>}
                       {p.selfAdded ? <span>· added by {p.salesmanId === currentUser?.id ? 'you' : firstName(p.salesmanId)}</span> : p.plannedByName ? <span>· planned by {p.plannedByName.split(' ')[0]}</span> : null}
@@ -291,8 +316,11 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser })
                       ) : null
                     )}
                     <div className="vc-actions">
+                      {p.newParty ? (p.status === 'DONE' ? null
+                        : <button className="btnp" title="Check in at this new party — you will fill its details at check-out" style={{ fontSize: 12, padding: '5px 12px', display: 'inline-flex', alignItems: 'center', gap: 5 }} onClick={() => visitNewParty(p)}>{tr('Visit')} <ArrowRight size={13} /></button>)
+                      : <>
                       <button className={p.status === 'DONE' ? 'btn' : 'btnp'} title="Open the dealer: summary, check-in, MOM" style={{ fontSize: 12, padding: '5px 12px', display: 'inline-flex', alignItems: 'center', gap: 5 }} onClick={() => setOpen(p.dealerId)}>{tr(p.status === 'DONE' ? 'Open' : 'Visit')} <ArrowRight size={13} /></button>
-                      <button className="btn vc-out" title="See what this dealer owes" onClick={() => setOutFor({ id: p.dealerId, name: p.dealerName })}><Wallet size={13} /> {tr('Outstanding')}</button>
+                      </>}
                       {canPlan && editing[p._id] === undefined && <button className="btn vc-ib" title="Edit the office note" onClick={() => setEditing(x => ({ ...x, [p._id]: p.note }))}><Pencil size={13} /></button>}
                       {canPlan && p.status !== 'DONE' && <button className="btn vc-ib" title="Replace with another dealer" style={replacing?._id === p._id ? { color: 'var(--acc)', borderColor: 'var(--acc)', background: 'var(--accL)' } : undefined} onClick={() => { setReplacing(r => r?._id === p._id ? null : p); setQ(''); }}><Repeat size={13} /></button>}
                       {canPlan && p.status !== 'DONE' && <button className="btn vc-ib" title="Mark visited" style={{ color: 'var(--grn)' }} onClick={() => act(() => api.updateVisitPlan(p._id, { status: 'DONE' }))}><CheckCircle2 size={13} /></button>}
@@ -339,12 +367,16 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser })
               </div>
               <div className="inp" style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 11px', background: 'var(--bg1)' }}>
                 <Search size={14} color="var(--t3)" />
-                <input value={q} onChange={e => setQ(e.target.value)} placeholder="dealer name…" disabled={!daySm} style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', color: 'var(--t1)', fontSize: 13, outline: 'none', padding: 0 }} />
+                <input value={q} onChange={e => setQ(e.target.value)} placeholder="dealer name — or type a new party's name" disabled={!daySm} style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', color: 'var(--t1)', fontSize: 13, outline: 'none', padding: 0 }} />
               </div>
               {!replacing && canPlan && <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                 <input className="inp" value={note} onChange={e => setNote(e.target.value)} placeholder="note for this visit — e.g. show Candid folder" disabled={!daySm} style={{ flex: 1, minWidth: 0, fontSize: 12.5, padding: '7px 10px', background: 'var(--bg1)' }} />
                 {canPlan && <input className="inp" type="number" min="0" value={collect} onChange={e => setCollect(e.target.value)} placeholder="collect ₹" disabled={!daySm} title="Amount to collect on this visit" style={{ width: 110, flexShrink: 0, fontSize: 12.5, padding: '7px 10px', background: 'var(--bg1)' }} />}
               </div>}
+              {canNewParty && daySm && <button type="button" className="vc-new" disabled={busy} onClick={addNewParty} style={{ marginTop: 8 }}>
+                <span className="sec-ico" style={{ '--tone': '#d97706', width: 28, height: 28, borderRadius: 9 }}><Plus size={14} /></span>
+                <span style={{ flex: 1, minWidth: 0 }}><b>Plan “{typed}” as a new party</b><small>not in the dealer list — correct name, GST, city and state are taken at check-out</small></span>
+              </button>}
               {pool.length > 0 && <div style={{ marginTop: 8, display: 'grid', gap: 4, maxHeight: 260, overflowY: 'auto' }}>
                 {pool.map(d => (
                   <div key={d._id || d.id} className="vc-pick">
@@ -408,7 +440,7 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser })
                   <div key={p._id} className="att-card" style={{ '--tone': 'var(--red)', display: 'flex', gap: 10, alignItems: 'center', fontSize: 12.5, padding: '10px 12px 10px 16px', cursor: 'default' }}>
                     <span className="ini" style={{ '--h': hue(p.dealerName), width: 32, height: 32, borderRadius: 10 }}>{inits(p.dealerName)}</span>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <a href="#" onClick={e => { e.preventDefault(); setOpen(p.dealerId); }} style={{ fontWeight: 750, color: 'var(--t1)', textDecoration: 'none', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.dealerName}</a>
+                      <a href="#" onClick={e => { e.preventDefault(); if (!p.newParty) setOpen(p.dealerId); }} style={{ fontWeight: 750, color: 'var(--t1)', textDecoration: 'none', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.dealerName}{p.newParty ? ' · new party' : ''}</a>
                       <div style={{ fontSize: 11, color: 'var(--t3)', display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center' }}>
                         <span style={{ color: 'var(--red)', fontWeight: 700 }}><CalendarDays size={10} style={{ verticalAlign: -1 }} /> {fmtDay(p.date)}</span>
                         {!sm && <span>· {p.salesmanName}</span>}
@@ -438,7 +470,7 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser })
         @media (min-width: 980px) { .vc-grid { grid-template-columns: minmax(0, 1.55fr) minmax(320px, 1fr); align-items: start; } .vc-day { position: sticky; top: 12px; } }
         .vc-month { padding: 14px; }
         .vc-month-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
-        .vc-out { font-size: 12px; padding: 5px 11px; display: inline-flex; align-items: center; gap: 5px; color: var(--grn); border-color: color-mix(in srgb, var(--grn) 40%, transparent); }
+        .vc-carry { align-self: flex-start; flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 750; padding: 8px 12px; border-radius: 12px; color: #6d28d9; border-color: color-mix(in srgb, #8b5cf6 45%, transparent); background: color-mix(in srgb, #8b5cf6 8%, var(--bg1)); }
         .vc-unpl { margin: 0 0 12px; padding: 10px 12px; border-radius: 14px; border: 1px dashed color-mix(in srgb, #8b5cf6 45%, transparent); background: color-mix(in srgb, #8b5cf6 6%, var(--bg1)); display: grid; gap: 8px; }
         .vc-unpl-t { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12.5px; font-weight: 800; color: #7c3aed; }
         .vc-unpl-t b { font-size: 11px; background: #8b5cf6; color: #fff; padding: 0 7px; border-radius: 999px; }
@@ -509,6 +541,7 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser })
         .vc-missed { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); }
         @media (max-width: 860px) { .vc-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } }
         @media (max-width: 600px) {
+          .vc-carry { padding: 7px 10px; font-size: 11.5px; }
           /* unplanned row: name gets the full first line, status + buttons wrap below */
           .vc-unpl-row { flex-wrap: wrap; row-gap: 6px; }
           .vc-unpl-row .vc-unpl-info { flex: 1 1 calc(100% - 42px) !important; }
@@ -534,6 +567,7 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser })
           .vc-nav > b { min-width: 96px; font-size: 12.5px; }
         }
       `}</style>
+      {carryOpen && <SamplesCarryModal date={day} salesmanId={daySm || ''} onClose={() => setCarryOpen(false)} />}
       {outFor && <DealerOutstandingModal dealerId={outFor.id} dealerName={outFor.name} onClose={() => setOutFor(null)} />}
       {open && <DealerVisitModal dealerId={open} dealerName={plans.find(p => p.dealerId === open)?.dealerName || ''} onClose={() => { setOpen(null); load(); }} />}
     </div>

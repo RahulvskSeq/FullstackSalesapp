@@ -21,6 +21,16 @@ const S = new mongoose.Schema({
   momId:       { type: String, default: '' },
   plannedBy:   { type: String, default: '' },
   plannedByName: { type: String, default: '' },
+  // A party not in the dealer list yet: dealerId is 'new:<id>' and dealerName is what the
+  // salesman typed. At check-out he must give the real details, which land in `party`
+  // (the name may be corrected then) and in a Lead for the office.
+  newParty:    { type: Boolean, default: false },
+  party: {
+    name: { type: String, default: '' }, gst: { type: String, default: '' }, noGst: { type: Boolean, default: false },
+    city: { type: String, default: '' }, state: { type: String, default: '' }, phone: { type: String, default: '' },
+  },
+  visitId:     { type: String, default: '' },
+  leadId:      { type: String, default: '' },
 }, { timestamps: true });
 
 S.index({ date: 1, salesmanId: 1, order: 1 });

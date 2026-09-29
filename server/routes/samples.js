@@ -776,13 +776,12 @@ async function autoAllocate(sample, by, opts = {}) {
   // best first: STAR, then KEY ACCOUNT, then ACHIEVER; within a tier, the bigger
   // buyer of this kind of product first — laminate sales for a laminate sample
   // (the sample's category when it matches a sales category, else LAMINATE),
-  // over the last six months. After the three tiers, every other dealer of the
-  // zone who bought this product in those months, biggest buyer first. A dealer
-  // with no tier and no sales does not get a sample by himself.
+  // over the last six months. Only these three tiers are GIVEN a folder; every
+  // other dealer of the zone sees it under "To be shown" ("sell well and it is yours").
   const sales = await salesByDealer(sample.category);
   const rank = d => { const i = PRIORITY_STATUS.indexOf(d.status); return i >= 0 ? i : PRIORITY_STATUS.length; };
   const vol = d => sales.get(String(d._id)) || 0;
-  const dealers = all.filter(d => rank(d) < PRIORITY_STATUS.length || vol(d) > 0);
+  const dealers = all.filter(d => rank(d) < PRIORITY_STATUS.length);
   dealers.sort((a, b) => rank(a) - rank(b) || vol(b) - vol(a) || (b.perfQty || 0) - (a.perfQty || 0) || a.name.localeCompare(b.name));
   const sameName = (await Sample.find({}, 'name').lean()).filter(x => nameKey(x.name) === nameKey(sample.name)).map(x => String(x._id));
   const have = new Set((await SampleAllocation.find({ sampleId: { $in: sameName }, status: { $in: ['REQUESTED', 'ALLOCATED', 'GIVEN'] } }, 'dealerId').lean()).map(a => a.dealerId));

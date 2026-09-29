@@ -1797,6 +1797,8 @@ export const api = {
   saveVisitMom: (id, body)  => fetch(`${BASE}/dealer-visit/${id}/mom`,{method:'POST',headers:{...authHeaders(),'Content-Type':'application/json'},body:JSON.stringify(body)}).then(handle),
   // ── Visit calendar ──
   visitPlans:      (params) => fetch(`${BASE}/visit-plan?${new URLSearchParams(params).toString()}`,{headers:authHeaders()}).then(handle),
+  visitCoverage:   (month, salesmanId='') => fetch(`${BASE}/visit-plan/coverage?${new URLSearchParams({ month, ...(salesmanId?{salesmanId}:{}) }).toString()}`,{headers:authHeaders()}).then(handle),
+  visitPlanCarry:  (date, salesmanId='') => fetch(`${BASE}/visit-plan/carry?${new URLSearchParams({ date, ...(salesmanId?{salesmanId}:{}) }).toString()}`,{headers:authHeaders()}).then(handle),
   addVisitPlan:    (body)   => fetch(`${BASE}/visit-plan`,{method:'POST',headers:{...authHeaders(),'Content-Type':'application/json'},body:JSON.stringify(body)}).then(handle),
   updateVisitPlan: (id, body) => fetch(`${BASE}/visit-plan/${id}`,{method:'PUT',headers:{...authHeaders(),'Content-Type':'application/json'},body:JSON.stringify(body)}).then(handle),
   deleteVisitPlan: (id)     => fetch(`${BASE}/visit-plan/${id}`,{method:'DELETE',headers:authHeaders()}).then(handle),

@@ -227,6 +227,34 @@ router.get('/attendance/feed', async (req, res) => {
 
 // ───────────────────────────────── Visits ─────────────────────────────────
 
+// GSTIN: 2-digit state, PAN (5 letters, 4 digits, 1 letter), entity no., 'Z', check char
+const GSTIN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
+
+// A new party met on a planned visit goes to the office as a Lead (the office adds it to
+// the dealer list once it is real). Same GST, or same name with no GST, updates that lead
+// instead of making a second one.
+async function leadForNewParty(party, visit, note){
+  const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const q = party.gst ? { gst: party.gst } : { company: new RegExp('^\\s*' + esc(party.name) + '\\s*$', 'i') };
+  const who = visit.userName || visit.userId;
+  const line = `Visited ${new Date(visit.checkInTime || Date.now()).toISOString().slice(0, 10)} by ${who}: ${note}`;
+  const found = await Lead.findOne(q);
+  if(found){
+    Object.assign(found, { company: party.name, ...(party.gst ? { gst: party.gst } : {}), ...(party.phone ? { phone: party.phone } : {}), city: party.city, state: party.state });
+    found.updates.push({ by: visit.userId, byName: who, comment: line });
+    await found.save();
+    return String(found._id);
+  }
+  const lead = await Lead.create({
+    name: party.name, company: party.name, gst: party.gst, phone: party.phone, city: party.city, state: party.state,
+    source: 'Visit calendar — new party', status: 'CONTACTED',
+    assignedTo: visit.userId, assignedName: who, createdBy: visit.userId, createdByName: who,
+    notes: [party.noGst ? 'No GST (not registered).' : `GST ${party.gst}.`, line].join('\n'),
+    updates: [{ by: visit.userId, byName: who, comment: line, status: 'CONTACTED' }],
+  });
+  return String(lead._id);
+}
+
 // POST /api/crm/visits — CHECK IN to a party. Creates an in-progress visit.
 // The salesman can only have ONE in-progress visit at a time per dealer — but
 // they can have visits to DIFFERENT parties open. We don't enforce that
@@ -239,6 +267,14 @@ router.post('/visits', protect, async (req, res) => {
       lat=null, lng=null, address='', city='', state='',
     } = req.body;
     if(!dealerName || !dealerName.trim()) return res.status(400).json({ error:'dealerName required' });
+    // Checking in from a calendar plan for a NEW party: remember the plan, so check-out
+    // asks for the party's real details and ticks that plan.
+    let fromPlan = null;
+    if(req.body.planId && mongoose.isValidObjectId(req.body.planId)){
+      fromPlan = await VisitPlan.findById(req.body.planId).lean();
+      if(!fromPlan || (fromPlan.salesmanId !== req.user.id && !isStaff(req))) return res.status(403).json({ error:'That plan is not yours' });
+      if(fromPlan.status !== 'PLANNED') return res.status(400).json({ error:'That planned visit is already closed' });
+    }
     if(photo && photo.length > PHOTO_MAX) return res.status(413).json({ error:'Photo too large' });
 
     // Guard: a salesman can only have ONE in-progress visit at a time. They
@@ -278,6 +314,7 @@ router.post('/visits', protect, async (req, res) => {
       userId:   req.user.id,
       userName: me?.name || req.user.name || '',
       dealerId, dealerName: dealerName.trim(),
+      ...(fromPlan ? { planId: String(fromPlan._id), newParty: !!fromPlan.newParty } : {}),
       status:   'in-progress',
       checkInTime:    new Date(),
       checkInPhoto:   photo,
@@ -343,6 +380,22 @@ router.post('/visits/:id/checkout', protect, async (req, res) => {
     if(!note || !note.trim()) return res.status(400).json({ error:'Discussion notes are required at check-out' });
     if(photo && photo.length > PHOTO_MAX) return res.status(413).json({ error:'Photo too large' });
 
+    // A planned NEW party cannot be checked out until the salesman gives its real details;
+    // the name he types here also corrects a wrong name typed while planning.
+    let party = null;
+    if(v.newParty){
+      const b = req.body?.party || {};
+      const clean = x => String(x || '').replace(/\s+/g, ' ').trim();
+      party = { name: clean(b.name).slice(0, 150), gst: clean(b.gst).toUpperCase().replace(/\s/g, ''), noGst: !!b.noGst,
+        city: clean(b.city).slice(0, 80), state: clean(b.state).slice(0, 80), phone: clean(b.phone).replace(/[^\d+]/g, '').slice(0, 15) };
+      const missing = [party.name.length < 3 && 'party name', !party.noGst && !party.gst && 'GST number', !party.city && 'city', !party.state && 'state'].filter(Boolean);
+      if(missing.length) return res.status(400).json({ error:'Fill the new party details first: ' + missing.join(', '), needParty:true });
+      if(party.noGst) party.gst = '';
+      else if(!GSTIN.test(party.gst)) return res.status(400).json({ error:'GST number looks wrong — 15 characters like 29ABCDE1234F1Z5', needParty:true });
+      v.party = party;
+      v.dealerName = party.name;
+    }
+
     const now = new Date();
     v.status           = 'completed';
     v.checkOutTime     = now;
@@ -362,8 +415,15 @@ router.post('/visits/:id/checkout', protect, async (req, res) => {
     v.comment = note.trim();
 
     await v.save();
+    if(v.planId){
+      try {
+        const set = { status: 'DONE', visitId: String(v._id) };
+        if(party){ set.party = party; set.dealerName = party.name; set.leadId = await leadForNewParty(party, v, note.trim()); }
+        await VisitPlan.updateOne({ _id: v.planId, status: 'PLANNED' }, { $set: set });
+      } catch (e) { console.warn('[CRM/visits checkout] new party:', e.message); }
+    }
     // A real check-out at a dealer the office planned for today ticks that plan as visited.
-    try {
+    if(!v.planId) try {
       const day = new Date(start + 5.5 * 3600e3).toISOString().slice(0, 10);
       const f = { salesmanId: v.userId, date: day, status: 'PLANNED', ...(v.dealerId ? { dealerId: String(v.dealerId) } : { dealerName: new RegExp('^\\s*' + String(v.dealerName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*$', 'i') }) };
       await VisitPlan.updateMany(f, { $set: { status: 'DONE' } });
@@ -560,7 +620,7 @@ router.put('/leads/:id', protect, async (req, res) => {
     const b = req.body || {};
     // Allowed direct fields
     const allowed = staff
-      ? ['name','company','phone','email','city','state','source','status','assignedTo','notes','value']
+      ? ['name','company','gst','phone','email','city','state','source','status','assignedTo','notes','value']
       : ['status'];
     allowed.forEach(k => {
       if(b[k] !== undefined) lead[k] = b[k];

@@ -14,6 +14,7 @@ const S = new mongoose.Schema({
   // Basic lead info
   name:        { type:String, required:true },     // person / decision-maker
   company:     { type:String, default:'' },
+  gst:         { type:String, default:'' },       // GSTIN, when the party has one
   phone:       { type:String, default:'' },
   email:       { type:String, default:'' },
   city:        { type:String, default:'' },

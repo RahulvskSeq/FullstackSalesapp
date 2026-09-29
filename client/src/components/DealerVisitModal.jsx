@@ -401,7 +401,7 @@ export default function DealerVisitModal({ dealerId, dealerName = '', onClose })
                     : <div style={{ fontSize: 13 }}>{prev?.remarks ? <>{prev.remarks}<Added m={prev} /></> : <span style={{ color: 'var(--t3)' }}>No remarks from the office.</span>}</div>}
               </Sec>
 
-              <Sec n={6} icon={Package} title="Samples" sub={`${sm.given.filter(g => !g.takeBack).length} with the dealer · ${sm.toGive.filter(x => x.source !== 'auto').length} to give · ${sm.given.filter(g => g.takeBack).length + sm.toTakeBack.length} to take back`} tone="#0891b2">
+              <Sec n={6} icon={Package} title="Samples" sub={`${sm.given.filter(g => !g.takeBack).length} with the dealer · ${sm.toGive.length} to give · ${sm.given.filter(g => g.takeBack).length + sm.toTakeBack.length} to take back`} tone="#0891b2">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, padding: '8px 12px', borderRadius: 12, border: '1px solid var(--b2)', background: 'var(--bg2)' }}>
                   <Search size={14} color="var(--t3)" />
                   <input value={sq} onChange={e => setSq(e.target.value)} placeholder="Search a sample in all four lists…" style={{ flex: 1, border: 'none', background: 'transparent', color: 'var(--t1)', fontSize: 12.5, outline: 'none' }} />
@@ -410,16 +410,15 @@ export default function DealerVisitModal({ dealerId, dealerName = '', onClose })
                 {ed && <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 6 }}>Drag a sample into any column, or tick a few and press "Move here" on the column you want. Changes save at once and the salesman sees them.</div>}
                 {(() => {
                   const cols = [
-                    // automatic allotments (by tier and zone) are suggestions to SHOW; only a confirmed one is "to be given"
+                    // allotments (STAR / KEY ACCOUNT / ACHIEVER of the zone, or by the office) are to be GIVEN; the zone's other folders are to be SHOWN
                     { key: 'show', title: 'To be shown', tone: 'var(--acc)', more: 'show', empty: 'Nothing new for this zone.',
                       items: [
-                        ...sm.toGive.filter(x => x.source === 'auto').map(x => ({ kind: 'alloc', id: String(x.id), name: x.name, sub: `suggested for this dealer · ${x.reason}`, star: true })),
                         ...sm.toShow.map(x => ({ kind: 'sample', id: String(x.id), name: x.name, sub: `${x.zone}${x.stock ? ` · ${x.stock} in stock` : ' · no stock'}${x.addedAt ? ` · added ${fmtDate(x.addedAt)}` : ''}` })),
                       ] },
                     { key: 'has', title: 'Already has', tone: 'var(--t3)', more: 'has', empty: 'No sample with this dealer.',
                       items: [...sm.given].filter(g => !g.takeBack).sort((x, y) => String(y.date).localeCompare(String(x.date))).map(g => ({ kind: 'given', id: String(g.id), name: g.name, sub: `given ${fmtDate(g.date)}`, extra: g.sold3m ? `selling: ${num(g.sold3m)} in 3 months` : '' })) },
                     { key: 'give', title: 'To be given', tone: 'var(--grn)', more: 'give', empty: ed ? 'Nothing yet — move a sample here once the dealer wants it.' : 'Nothing to give yet.',
-                      items: sm.toGive.filter(x => x.source !== 'auto').map(x => ({ kind: 'alloc', id: String(x.id), name: x.name, sub: x.reason })) },
+                      items: sm.toGive.map(x => ({ kind: 'alloc', id: String(x.id), name: x.name, sub: x.reason })) },
                     { key: 'back', title: 'To be taken back', tone: 'var(--red)', more: 'back', empty: ed ? 'Nothing yet — drag or move samples here.' : 'Nothing to take back.',
                       items: [...sm.given.filter(g => g.takeBack).map(g => ({ kind: 'given', id: String(g.id), name: g.name, sub: g.takeBackReason, warn: true })), ...sm.toTakeBack.filter(x => !sm.given.some(g => g.allocId === String(x.id))).map(x => ({ kind: 'alloc', id: String(x.id), name: x.name, sub: `flagged by office · given ${fmtDate(x.givenDate)}`, warn: true }))] },
                   ];

@@ -69,6 +69,24 @@ async function featureChecker(req) {
   return () => role === 'admin';
 }
 
+/**
+ * The sample lists for one dealer — the single rule behind the dealer popup's columns
+ * and the calendar's "samples to carry". `allocs` are his REQUESTED/ALLOCATED/GIVEN
+ * allocations, `master` the active samples, `given` his SampleGiven rows.
+ *   toShow    — this zone's samples he has not been given, promised or asked for
+ *   toGive    — allocated to him (source 'auto' ones are only suggestions to show)
+ */
+export function sampleListsFor(d, { allocs, master, given }) {
+  const zoneNum = (d.zone || '').match(/\d+/)?.[0];
+  // zone rows: 'ZONE 5' for a Zone 5 dealer, 'All Zones' for everyone; special tags (NEW DEALERS ONLY, Architects) stay with the office
+  const inZone = master.filter(s => { const z = String(s.zone || '').trim(); if (/^(all\s*zones?|general|all)$/i.test(z)) return true; const nums = [...z.matchAll(/\d+/g)].map(m => m[0]); return nums.length > 0 && zoneNum && nums.includes(zoneNum); });
+  const givenIds = new Set(given.map(g => String(g.sampleId)));
+  const toGive = allocs.filter(a => a.status === 'ALLOCATED');
+  const requested = allocs.filter(a => a.status === 'REQUESTED');
+  const toShow = inZone.filter(s => !givenIds.has(String(s._id)) && !toGive.some(a => a.sampleId === String(s._id)) && !requested.some(a => a.sampleId === String(s._id)));
+  return { inZone, toGive, requested, toShow };
+}
+
 /** The pre-visit summary. Exported so it can be checked without HTTP. Pass the dealer when it is already loaded. */
 export async function visitSummary(dealerId, { dealer = null } = {}) {
   const d = dealer || await Dealer.findById(dealerId).lean();
@@ -86,7 +104,7 @@ export async function visitSummary(dealerId, { dealer = null } = {}) {
     ColPayment.find({ dealerId: d._id, status: 'RECORDED' }, 'date amount mode').lean(),
     SampleAllocation.find({ dealerId: id, status: { $in: ['REQUESTED', 'ALLOCATED', 'GIVEN'] } }).sort({ createdAt: -1 }).lean(),
     DealerMom.find({ dealerId: id }).sort({ date: -1, createdAt: -1 }).limit(5).lean(),
-    Visit.find({ dealerId: id }).sort({ checkInTime: -1 }).limit(5).lean(),
+    Visit.find({ dealerId: id }, '-checkInPhoto -checkOutPhoto -photo').sort({ checkInTime: -1 }).limit(5).lean(),   // photos (~200 KB each) are never shown here
     cached('cm', 60e3, () => collectionMonthOf()),
     cached('master', 60e3, () => Sample.find({ active: true }).sort({ createdAt: -1, name: 1 }).lean()),   // newest sample first
     SampleGiven.find({ $or: [{ dealerId: id }, { dealerName: new RegExp(`^${d.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }] }).sort({ givenDate: -1 }).lean(),
@@ -96,14 +114,8 @@ export async function visitSummary(dealerId, { dealer = null } = {}) {
   const nameOf = Object.fromEntries(users.map(u => [u.id, u.name]));
 
   // samples: master of this zone, what he has, what is earmarked, what is to come back
-  const zoneNum = (d.zone || '').match(/\d+/)?.[0];
-  // zone rows: 'ZONE 5' for a Zone 5 dealer, 'All Zones' for everyone; special tags (NEW DEALERS ONLY, Architects) stay with the office
-  const inZone = master.filter(s => { const z = String(s.zone || '').trim(); if (/^(all\s*zones?|general|all)$/i.test(z)) return true; const nums = [...z.matchAll(/\d+/g)].map(m => m[0]); return nums.length > 0 && zoneNum && nums.includes(zoneNum); });
-  const givenIds = new Set(given.map(g => String(g.sampleId)));
-  const toGive = allocs.filter(a => a.status === 'ALLOCATED');
+  const { toGive, requested, toShow } = sampleListsFor(d, { allocs, master, given });
   const toTakeBack = allocs.filter(a => a.status === 'GIVEN' && a.takeBack);
-  const requested = allocs.filter(a => a.status === 'REQUESTED');
-  const toShow = inZone.filter(s => !givenIds.has(String(s._id)) && !toGive.some(a => a.sampleId === String(s._id)) && !requested.some(a => a.sampleId === String(s._id)));
 
   // volume: this month against target, and the average of the six months before it
   const md = d.monthlyData instanceof Map ? Object.fromEntries(d.monthlyData) : (d.monthlyData || {});

@@ -1067,7 +1067,7 @@ export function buildAdminRail({ can, isStaff, modules = [], userCount = 0, mont
   // can already open appear (App passes them pre-filtered by the same rule as
   // the menu), and each renders exactly as it does on its own screen.
   const MOD_GROUPS = [
-    { group:'CRM',         ids:['visits','calendar','leads','tasks','followups','attendance','leaves'] },
+    { group:'CRM',         ids:['visits','calendar','coverage','leads','tasks','followups','attendance','leaves'] },
     { group:'Incentives',  ids:['incentiveHome','incentive','incentiveUpload','incentiveHistory','incentiveRule','salesIncentive','salesIncentiveRule'] },
     { group:'Collections', ids:['colDashboard','colToday','colOutstanding','colPayments','colFollowups','colImports','colReconciliation','colReports','colEmployees','colSettings'] },
     { group:'Data',        ids:['entry','upload','months','salesUpload','producttx','sheets','reports'] },
@@ -1078,7 +1078,7 @@ export function buildAdminRail({ can, isStaff, modules = [], userCount = 0, mont
     colDashboard:'Dashboard', months:'Month uploads', upload:'Upload data', reports:'Reports (sales)', colReports:'Reports',
   };
   const MOD_DESC = {
-    visits:'Every visit, check-in photo and MOM', calendar:'Plan who visits which dealer, and when', leads:'New prospects and where they stand',
+    visits:'Every visit, check-in photo and MOM', calendar:'Plan who visits which dealer, and when', coverage:'STAR / KEY ACCOUNT / ACHIEVER dealers nobody met this month', leads:'New prospects and where they stand',
     tasks:'Work handed to the team', followups:'Calls and reminders due on dealers', attendance:'Who checked in, and where', leaves:'Leave requests and approvals',
     incentiveHome:'Billing team points at a glance', incentive:'This month\'s billing incentive', incentiveUpload:'Upload the billing sheet',
     incentiveHistory:'Past months, person by person', incentiveRule:'How billing points are worked out',

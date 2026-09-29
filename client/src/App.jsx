@@ -15382,7 +15382,7 @@ import { createPortal } from 'react-dom';
 // }
 
 import React, { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
-import { Sun, Moon, LayoutDashboard, Users, TrendingUp, Settings, LogOut, Bell, GitCompare, Menu, RefreshCw, Map, AlertTriangle, Upload, Edit3, Calendar, LogIn, ChevronDown, ShieldCheck, Shield, Palette, Check, Briefcase, Camera, ClipboardList, UserCheck, Plane, FileSpreadsheet, LifeBuoy, CheckSquare, BarChart3, Table, Package, IndianRupee, Trophy, UploadCloud, Landmark, Wallet, Scale, CalendarCheck, PhoneCall, ClipboardCheck, FileBarChart2, Gauge, BadgeIndianRupee, HandCoins, SlidersHorizontal } from 'lucide-react';
+import { Sun, Moon, LayoutDashboard, Users, TrendingUp, Settings, LogOut, Bell, GitCompare, Menu, RefreshCw, Map, AlertTriangle, Upload, Edit3, Calendar, LogIn, ChevronDown, ShieldCheck, Shield, Palette, Check, Briefcase, Camera, ClipboardList, UserCheck, Plane, FileSpreadsheet, LifeBuoy, CheckSquare, BarChart3, Table, Package, IndianRupee, Trophy, UploadCloud, Landmark, Wallet, Scale, CalendarCheck, PhoneCall, ClipboardCheck, FileBarChart2, Gauge, BadgeIndianRupee, HandCoins, SlidersHorizontal , UserX } from 'lucide-react';
 import { DEFAULT_USERS, MO as MO_DEFAULT, CURRENT_MONTH_IDX as CURRENT_MONTH_IDX_DEFAULT, CURRENT_MONTH_LABEL as CURRENT_MONTH_LABEL_DEFAULT, CURRENT_MONTH_SHORT as CURRENT_MONTH_SHORT_DEFAULT } from './constants';
 import { pct, spct, pclr, uid, isoNow, storage, parseCSV, fetchCSV, parseOutstandingCSV } from './utils';
 import { api, dbDealerToApp, dbOutstandingToApp, saveToken, getToken, getApiBase } from './api';
@@ -15391,46 +15391,80 @@ import Styles            from './components/Styles';
 import { MonthSelectorBar, Avatar, SkeletonLoader, LoadingScreen, LogoMark } from './components/UI';
 import NotificationCenter, { notify, confirmDialog } from './components/Toast';
 import { THEMES, applyTheme, loadSavedTheme, saveTheme, themeById } from './themes';
-import CRM, { AttendancePage, VisitsPage, LeadsPage, LeavesPage } from './components/CRM';
-import Reports             from './components/Reports';
 // Sheets is lazy-loaded — it pulls in the heavy Univer spreadsheet engine, so
 // we keep it out of the initial bundle and only fetch it when Sheets is opened.
 const Sheets = lazy(() => import('./components/Sheets'));
-import TasksPage           from './components/TasksPage';
-import TicketsPage         from './components/TicketsPage';
 import LoginPage         from './components/LoginPage';
 import Overview          from './components/Overview';
-import DealersList       from './components/DealersList';
-import DealerModal       from './components/DealerModal';
-import MonthlyTrend      from './components/MonthlyTrend';
-import Compare           from './components/Compare';
-import FollowupsHub      from './components/FollowupsHub';
 import AdminPanel, { buildAdminRail } from './components/AdminPanel';
-import ProfilePage from './components/ProfilePage';
 import StockSearch from './components/StockSearch';
 import { LangContext, translate, loadLang, saveLang } from './i18n';
 import UserManagement    from './components/UserManagement';
-import Incentive        from './components/Incentive';
-import SalesIncentive   from './components/SalesIncentive';
-import SalesIncentiveRule from './components/SalesIncentiveRule';
-import VisitCalendar from './components/VisitCalendar';
 import ErrorBoundary from './components/ErrorBoundary';
 import { BottomNav, QuickFab, QuickSheet, HomeHero, DailyQuote, LangPicker, quickActions } from './components/AppShell';
 import Collections, { COL_SCREENS } from './collections';
-import AddDealerModal    from './components/AddDealerModal';
-import BulkActionModal   from './components/BulkActionModal';
 import UpdateButton, { isNativeApp } from './components/UpdateButton';
 import { SHEET_SYNC_ENABLED } from './featureFlags';
-import IndiaMap          from './components/IndiaMap';
-import UploadMonth      from './components/UploadMonth';
-import MonthlyEntry     from './components/Monthlyentry';
-import Outstanding      from './components/Outstanding';
-import ManageMonths     from './components/ManageMonths';
 import ApiUrlSettings   from './components/ApiUrlSettings';
-import SalesUpload      from './components/SalesUpload';
 import SalesByCategory  from './components/SalesByCategory';
-import ProductTxn       from './components/ProductTxn';
 import { useAllMonthsCategoryFilteredDealers, moToYM } from './hooks/useAllMonthsCategoryFilter';
+
+// Screens load when first opened (then everything is prefetched once the app is idle),
+// so a phone parses a small start-up bundle instead of every page at once.
+const loadCRM = () => import('./components/CRM');
+const loadReports = () => import('./components/Reports');
+const Reports = lazy(loadReports);
+const loadTasksPage = () => import('./components/TasksPage');
+const TasksPage = lazy(loadTasksPage);
+const loadTicketsPage = () => import('./components/TicketsPage');
+const TicketsPage = lazy(loadTicketsPage);
+const loadDealersList = () => import('./components/DealersList');
+const DealersList = lazy(loadDealersList);
+const loadDealerModal = () => import('./components/DealerModal');
+const DealerModal = lazy(loadDealerModal);
+const loadMonthlyTrend = () => import('./components/MonthlyTrend');
+const MonthlyTrend = lazy(loadMonthlyTrend);
+const loadCompare = () => import('./components/Compare');
+const Compare = lazy(loadCompare);
+const loadFollowupsHub = () => import('./components/FollowupsHub');
+const FollowupsHub = lazy(loadFollowupsHub);
+const loadProfilePage = () => import('./components/ProfilePage');
+const ProfilePage = lazy(loadProfilePage);
+const loadIncentive = () => import('./components/Incentive');
+const Incentive = lazy(loadIncentive);
+const loadSalesIncentive = () => import('./components/SalesIncentive');
+const SalesIncentive = lazy(loadSalesIncentive);
+const loadSalesIncentiveRule = () => import('./components/SalesIncentiveRule');
+const SalesIncentiveRule = lazy(loadSalesIncentiveRule);
+const loadVisitCalendar = () => import('./components/VisitCalendar');
+const VisitCalendar = lazy(loadVisitCalendar);
+const loadAddDealerModal = () => import('./components/AddDealerModal');
+const AddDealerModal = lazy(loadAddDealerModal);
+const loadBulkActionModal = () => import('./components/BulkActionModal');
+const BulkActionModal = lazy(loadBulkActionModal);
+const loadIndiaMap = () => import('./components/IndiaMap');
+const IndiaMap = lazy(loadIndiaMap);
+const loadUploadMonth = () => import('./components/UploadMonth');
+const UploadMonth = lazy(loadUploadMonth);
+const loadMonthlyEntry = () => import('./components/Monthlyentry');
+const MonthlyEntry = lazy(loadMonthlyEntry);
+const loadOutstanding = () => import('./components/Outstanding');
+const Outstanding = lazy(loadOutstanding);
+const loadManageMonths = () => import('./components/ManageMonths');
+const ManageMonths = lazy(loadManageMonths);
+const loadSalesUpload = () => import('./components/SalesUpload');
+const SalesUpload = lazy(loadSalesUpload);
+const loadProductTxn = () => import('./components/ProductTxn');
+const ProductTxn = lazy(loadProductTxn);
+const CRM            = lazy(loadCRM);
+const AttendancePage = lazy(() => loadCRM().then(m => ({ default: m.AttendancePage })));
+const VisitsPage     = lazy(() => loadCRM().then(m => ({ default: m.VisitsPage })));
+const LeadsPage      = lazy(() => loadCRM().then(m => ({ default: m.LeadsPage })));
+const LeavesPage     = lazy(() => loadCRM().then(m => ({ default: m.LeavesPage })));
+const loadTierCoverage = () => import('./components/TierCoverage');
+const TierCoverage = lazy(loadTierCoverage);
+const PREFETCH_SCREENS = [loadTierCoverage, loadCRM, loadReports, loadTasksPage, loadTicketsPage, loadDealersList, loadDealerModal, loadMonthlyTrend, loadCompare, loadFollowupsHub, loadProfilePage, loadIncentive, loadSalesIncentive, loadSalesIncentiveRule, loadVisitCalendar, loadAddDealerModal, loadBulkActionModal, loadIndiaMap, loadUploadMonth, loadMonthlyEntry, loadOutstanding, loadManageMonths, loadSalesUpload, loadProductTxn];
+
 
 // ── Cookie helpers ────────────────────────────────────────
 const COOKIE_KEY = 'stp_session';
@@ -15449,7 +15483,7 @@ const clearCookie = () => { document.cookie = `${COOKIE_KEY}=;expires=Thu, 01 Ja
 // ── Slug routing helpers ──────────────────────────────────
 const VALID_SCREENS = ['overview','dealers','monthly','compare','map','outstanding','upload','entry','followups','months','admin','crm','attendance','visits','leads','leaves','reports','tasks','tickets',
   // every other page the menu opens, so Back and refresh return to it instead of Overview
-  'calendar','profile','sheets','producttx','salesCat','salesUpload','incentiveHome','incentive','incentiveHistory','incentiveRule','incentiveUpload','salesIncentive','salesIncentiveRule'];
+  'calendar','coverage','profile','sheets','producttx','salesCat','salesUpload','incentiveHome','incentive','incentiveHistory','incentiveRule','incentiveUpload','salesIncentive','salesIncentiveRule'];
 const isValidScreen = s => VALID_SCREENS.includes(s) || COL_SCREENS.has(s);
 const getScreenFromUrl = () => {
   const hash = window.location.hash.replace('#/','').split('?')[0];
@@ -16378,6 +16412,15 @@ export default function App(){
     return () => { dead = true; window.removeEventListener('focus', onFocus); clearInterval(iv); };
   }, [currentUser?.id, currentUser?.role, JSON.stringify(currentUser?.permissions || {})]);
 
+  // Warm every screen's code once the first page is on screen and the phone is idle,
+  // so the first tap on any menu item opens instantly.
+  React.useEffect(() => {
+    if (!dbLoaded) return;
+    const idle = window.requestIdleCallback || (fn => setTimeout(fn, 1500));
+    const h = idle(() => PREFETCH_SCREENS.forEach(load => load().catch(() => {})));
+    return () => { try { (window.cancelIdleCallback || clearTimeout)(h); } catch { /* ignore */ } };
+  }, [dbLoaded]);
+
   // Someone sitting on a screen when it gets switched off, or that their
   // pages / role no longer include — or arriving by a saved URL — lands back
   // on the first page they may see rather than on a dead page.
@@ -16386,6 +16429,7 @@ export default function App(){
     if (disabledFeatures.includes(screen)) { setScreen('overview'); return; }
     if (currentUser.role === 'superadmin') return;
     if (screen === 'profile') return;              // everyone may open their own profile
+    if (screen === 'coverage' && (list.includes('coverage') || list.includes('calendar'))) return;   // follows the calendar
     const own = Array.isArray(currentUser.permissions?.pages) ? currentUser.permissions.pages : [];
     const list = own.length ? own : (rolePerms[currentUser.role]?.pages || []);
     if (!list.length) return;                       // built-in defaults: nothing to enforce here
@@ -16448,8 +16492,8 @@ export default function App(){
     // be granted by a page list — showing them would only lead to a 403.
     if (item.superAdmin) return false;
     if (Array.isArray(item.roles) && !item.roles.includes(currentUser?.role)) return false;
-    if (hasPagePerms) return pagePerms.includes(item.id);   // explicit grant wins
-    if (rolePages.length) return rolePages.includes(item.id); // then the role's own list
+    if (hasPagePerms) return pagePerms.includes(item.id) || (!!item.follows && pagePerms.includes(item.follows));   // explicit grant wins
+    if (rolePages.length) return rolePages.includes(item.id) || (!!item.follows && rolePages.includes(item.follows)); // then the role's own list
     // Built-in gates when neither is set:
     if (item.staff && !isStaff) return false;
     return hasFeature(item.feature);
@@ -16474,6 +16518,8 @@ export default function App(){
         // Visits is where a check-in outside the calendar happens — hence "Unplanned visit"
         {id:'visits', label:'Unplanned visit', icon:ClipboardList},
         {id:'calendar', label:'My visit calendar', icon:Calendar},
+        // who may see the calendar sees this report too (it is the calendar's month, by top dealer)
+        {id:'coverage', label:'Top dealers not met', icon:UserX, follows:'calendar'},
         {id:'leads',  label:'Leads',  icon:UserCheck},
         {id:'tasks',  label:'Tasks',  icon:CheckSquare},
     ]},
@@ -16571,7 +16617,8 @@ export default function App(){
                   {screen==='attendance' && <AttendancePage users={users} currentUser={currentUser}/>}
                   {screen==='visits'     && <VisitsPage     dealers={myDealers} users={users} currentUser={currentUser}/>}
                   {screen==='profile'    && <ProfilePage currentUser={currentUser} onUpdated={onProfileUpdated} onLogout={handleLogout} onReturn={impersonatingFrom?handleReturnToSelf:null} returnName={impersonatingFrom?.name}/>}
-                  {screen==='calendar'   && <VisitCalendar  dealers={(currentUser?.role==='admin'||currentUser?.role==='superadmin'||currentUser?.role==='employee')?dealers:myDealers} users={users} currentUser={currentUser}/>}
+                  {screen==='coverage'   && <TierCoverage users={users} currentUser={currentUser}/>}
+                  {screen==='calendar'   && <VisitCalendar  dealers={(currentUser?.role==='admin'||currentUser?.role==='superadmin'||currentUser?.role==='employee')?dealers:myDealers} users={users} currentUser={currentUser} onNavigate={navigate}/>}
                   {screen==='leads'      && <LeadsPage      users={users} currentUser={currentUser}/>}
                   {screen==='leaves'     && <LeavesPage     users={users} currentUser={currentUser}/>}
                   {screen==='reports' && isStaff && <Reports dealers={dealers} users={users} currentUser={currentUser} monthConfig={monthConfig} outstandingData={outstandingData}/>}
@@ -17134,7 +17181,7 @@ export default function App(){
 
             <div id="main">
               <ErrorBoundary key={screen} name={screen}>{(!dbLoaded || (dealers.length===0 && syncing))?<SkeletonLoader screen={screen}/>:(
-                pageEl(screen)
+                <Suspense fallback={<SkeletonLoader screen={screen}/>}>{pageEl(screen)}</Suspense>
               )}</ErrorBoundary>
             </div>
             <BottomNav screen={screen} can={canOpen} navigate={navigate} onPlus={()=>setQuickOpen(true)} onMore={()=>setSidebarOpen(true)}/>
@@ -17143,6 +17190,7 @@ export default function App(){
           </div>
         </div>
 
+        <Suspense fallback={null}>
         {editing&&<DealerModal dealer={editing} users={users} currentUser={currentUser} onSave={saveDealer} onDelete={deleteDealer} onClose={()=>setEditingId(null)} notes={notes} onAddNote={addNote} onUpdateNote={updateNote} onDeleteNote={deleteNote} onLog={addLog} outstandingData={outstandingData} outFollowups={outFollowups} onFollowupSaved={()=>api.getFollowups().then(d=>setOutFollowups(d)).catch(()=>{})}/>}
         <StockSearch open={stockOpen} mode={stockMode} onClose={()=>setStockOpen(false)}/>
         {showAdd&&<AddDealerModal users={users} currentUser={currentUser} onAdd={addDealer} onClose={()=>setShowAdd(false)}/>}
@@ -17172,6 +17220,7 @@ export default function App(){
           }}
         />}
         {bulkAction&&<BulkActionModal action={bulkAction} selected={selected} dealers={dealers} users={users} onApply={applyBulk} onClose={()=>setBulkAction(null)}/>}
+        </Suspense>
         {showApiSettings && <ApiUrlSettings onClose={()=>setShowApiSettings(false)}/>}
         {/* Global toasts + confirm dialog — replaces window.alert / confirm */}
         <NotificationCenter/>

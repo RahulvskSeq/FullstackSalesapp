@@ -562,7 +562,6 @@ function DealerSamples({ busy, act }) {
   const counts = useMemo(() => d ? {
     toGive: d.dealers.filter(r => r.toGive.length).length, requested: d.dealers.filter(r => r.requested.length).length,
     takeBack: d.dealers.filter(r => r.takeBack.length).length, none: d.dealers.filter(r => !r.hasCount).length,
-    suggested: d.dealers.reduce((s, r) => s + r.toGive.filter(x => x.source === 'auto').length, 0),
   } : {}, [d]);
   const T = d?.totals || {};
 
@@ -591,7 +590,7 @@ function DealerSamples({ busy, act }) {
       <div className="smp-tiles">
         <Tile label="Dealers with samples" value={T.dealers} tone="var(--pur)" Icon={Users} onClick={() => setOnly('all')} active={only === 'all'} />
         <Tile label="Pieces with dealers" value={T.has} tone="var(--grn)" Icon={CheckCircle2} />
-        <Tile label="To be given" value={Math.max(0, (T.toGive || 0) - (counts.suggested || 0))} tone="var(--acc)" Icon={Send} onClick={() => setOnly('toGive')} active={only === 'toGive'} sub={counts.suggested ? `+ ${num(counts.suggested)} ★ suggested to show` : undefined} />
+        <Tile label="To be given" value={T.toGive} tone="var(--acc)" Icon={Send} onClick={() => setOnly('toGive')} active={only === 'toGive'} sub="STAR · KEY ACCOUNT · ACHIEVER" />
         <Tile label="Requested" value={T.requested} tone="var(--yel)" Icon={Zap} onClick={() => setOnly('requested')} active={only === 'requested'} />
         <Tile label="To take back" value={T.takeBack} tone="var(--red)" Icon={Undo2} onClick={() => setOnly('takeBack')} active={only === 'takeBack'} />
       </div>
@@ -624,14 +623,12 @@ function DealerSamples({ busy, act }) {
         <div className="smp-dl">
           {rows.slice(0, limit).map(r => {
             const k = r.id || r.name; const ex = !!open[k];
-            const auto = r.toGive.filter(x => x.source === 'auto'), manual = r.toGive.filter(x => x.source !== 'auto');
+            // allotted folders (the STAR / KEY ACCOUNT / ACHIEVER rule, or the office) are to be GIVEN; the zone's other folders are to be SHOWN
             const sub = [r.zone || 'no zone', r.salesmanName, r.city].filter(Boolean).join(' · ');
             const cols = [
-              ['To be shown', 'var(--pur)', Eye, [
-                ...auto.map(x => ({ key: x.id, text: x.name, star: true, sub: 'suggested', title: (x.why ? x.why + ' · ' : '') + 'suggested — show it to the dealer', act: ['given', () => given(x, r)] })),
-                ...(r.toShow || []).map(x => ({ key: x.id, text: x.name, title: 'in the zone, not with him yet' }))]],
+              ['To be shown', 'var(--pur)', Eye, (r.toShow || []).map(x => ({ key: x.id, text: x.name, title: 'in the zone, not with him yet — sell well and it is his' }))],
               ['Already has', 'var(--grn)', CheckCircle2, r.has.map((x, i) => ({ key: 'h' + i, text: x.name + (x.qty > 1 ? ' ×' + x.qty : ''), sub: x.date, title: x.date ? 'given ' + x.date : '' }))],
-              ['To be given', 'var(--acc)', Send, manual.map(x => ({ key: x.id, text: x.name, sub: x.why, title: x.why, act: ['given', () => given(x, r)] }))],
+              ['To be given', 'var(--acc)', Send, r.toGive.map(x => ({ key: x.id, text: x.name, sub: x.why, title: x.why, act: ['given', () => given(x, r)] }))],
               ['To be taken back', 'var(--red)', Undo2, [...r.takeBack.map(x => ({ key: x.id, text: x.name, sub: 'next visit', title: 'on the next visit' })), ...r.returned.map((x, i) => ({ key: 'r' + i, text: x.name, sub: 'taken back' + (x.date ? ' · ' + x.date : ''), dim: true }))]],
             ];
             const cnt = (n, tone, label, Icon) => n > 0 ? <span className="smp-cnt" style={{ '--tone': tone }}>{Icon && <Icon size={11} />}{num(n)} {label}</span> : null;
@@ -650,8 +647,7 @@ function DealerSamples({ busy, act }) {
                   <div className="smp-dh-r">
                     {cnt(r.requested.length, 'var(--yel)', 'requested', Zap)}
                     {cnt(r.hasCount, 'var(--grn)', 'has', null)}
-                    {cnt(manual.length, 'var(--acc)', 'to give', null)}
-                    {auto.length > 0 && <span className="smp-cnt" style={{ '--tone': 'var(--pur)' }}>★ {num(auto.length)} suggested</span>}
+                    {cnt(r.toGive.length, 'var(--acc)', 'to give', null)}
                     {cnt(r.takeBack.length, 'var(--red)', 'back', null)}
                     {nothing && <span className="smp-cnt zero">holds nothing</span>}
                     {r.id && <button className="btn smp-sb" onClick={e => { e.stopPropagation(); setDealer({ id: r.id, name: r.name }); }}>Open <ArrowUpRight size={12} /></button>}

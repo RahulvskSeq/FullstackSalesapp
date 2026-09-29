@@ -10,6 +10,12 @@ const S = new mongoose.Schema({
   userName:   { type:String, default:'' },        // snapshot of name
   dealerId:   { type:String, default:'' },        // Mongo _id of dealer if known
   dealerName: { type:String, required:true },     // free text — also fits leads
+  planId:     { type:String, default:'' },        // the calendar plan this visit carries out
+  newParty:   { type:Boolean, default:false },    // planned for a party not in the dealer list — check-out needs its details
+  party: {                                         // those details, as confirmed at check-out
+    name: { type:String, default:'' }, gst: { type:String, default:'' }, noGst: { type:Boolean, default:false },
+    city: { type:String, default:'' }, state: { type:String, default:'' }, phone: { type:String, default:'' },
+  },
 
   // ── Lifecycle ────────────────────────────────────────────────────────
   // 'in-progress' = checked in but not yet checked out

@@ -148,6 +148,7 @@
 
 import 'express-async-errors';
 import express from 'express';
+import compression from 'compression';
 import mongoose from 'mongoose';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -187,6 +188,10 @@ app.use(cors({
   origin: (origin, cb) => cb(null, origin || true), // reflect or allow non-browser callers
   credentials: true,
 }));
+// gzip every JSON answer: the dealer, outstanding and sales lists are several MB
+// of repetitive text and shrink ~8-10x — the biggest single speed-up on a phone.
+// The APK download is skipped (its type is not compressible), so its size/progress stays exact.
+app.use(compression({ threshold: 1024 }));
 // `verify` keeps the raw bytes so the WhatsApp webhook can check Meta's
 // HMAC signature against exactly what was sent, not a re-serialisation.
 app.use(express.json({ limit:'50mb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
