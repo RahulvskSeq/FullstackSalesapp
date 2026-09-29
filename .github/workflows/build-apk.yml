@@ -40,6 +40,11 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # The action's default list includes the old "tools" package, which
+          # Google removed — sdkmanager then exits 1 and the whole build fails.
+          # Ask only for what this app compiles against (compileSdk 35).
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
 
       - name: Install client dependencies
         working-directory: ./client
