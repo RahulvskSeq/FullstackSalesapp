@@ -1,5 +1,8 @@
 import express from 'express';
 import { protect } from '../middleware/auth.js';
+import mongoose from 'mongoose';
+import ProductTxn from '../models/ProductTxn.js';
+import Dealer from '../models/Dealer.js';
 
 // Live stock lookup from the Tally (Bizmate) connector.
 // The upstream call returns every product (~47k rows, ~5 MB), so it is fetched
@@ -137,6 +140,50 @@ router.get('/search', protect, async (req, res) => {
     });
   } catch (e) {
     console.error('[stock]', e.message);
+    res.status(e.status || (e.name === 'AbortError' ? 504 : 500)).json({ error: e.name === 'AbortError' ? 'Tally stock service took too long — try again' : e.message });
+  }
+});
+
+// Discontinued products and the dealers who bought them. Tally says which products are
+// discontinued (and how much is left); the product transactions say which dealer bought
+// which product code. The app searches this both ways: a dealer → his discontinued
+// products, a product → the dealers who buy it. A salesman sees his own dealers only.
+const codeKey = c => String(c || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+router.get('/discontinued/dealers', protect, async (req, res) => {
+  try {
+    const { rows } = await loadAll(req.query.refresh === '1');
+    const disc = new Map();
+    for (const r of rows) {
+      if (r.status.toLowerCase() !== 'discontinued') continue;
+      const k = codeKey(r.code) || codeKey(r.name); if (!k) continue;
+      const cur = disc.get(k);
+      // one design, many names: keep the row that holds the stock
+      if (!cur || r.eff > cur.stock) disc.set(k, { code: r.code, name: cur?.isParent && !r.isParent ? cur.name : r.name, stock: r.eff || 0, isParent: r.isParent });
+    }
+    const staff = ['admin', 'superadmin', 'employee'].includes(req.user?.role);
+    const mine = staff ? null : new Set((await Dealer.find({ salesman: req.user.id }, '_id').lean()).map(d => String(d._id)));
+    const txns = await ProductTxn.find({ productCode: { $nin: [null, ''] } }, 'productCode productName dealerId dealerName companyName city qty dateStr').lean();
+    const byProd = new Map(), byDealer = new Map();
+    for (const t of txns) {
+      const k = codeKey(t.productCode); const p = disc.get(k); if (!p) continue;
+      const did = t.dealerId ? String(t.dealerId) : '';
+      if (mine && !mine.has(did)) continue;
+      const dname = t.dealerName || t.companyName || 'Unknown party';
+      const dk = did || 'n:' + dname.toUpperCase();
+      const P = byProd.get(k) || byProd.set(k, { code: p.code, name: p.name, stock: p.stock, qty: 0, dealers: new Map() }).get(k);
+      const pd = P.dealers.get(dk) || P.dealers.set(dk, { id: did, name: dname, city: t.city || '', qty: 0, last: '' }).get(dk);
+      pd.qty += Number(t.qty) || 0; if ((t.dateStr || '') > pd.last) pd.last = t.dateStr || ''; P.qty += Number(t.qty) || 0;
+      const D = byDealer.get(dk) || byDealer.set(dk, { id: did, name: dname, city: t.city || '', qty: 0, products: new Map() }).get(dk);
+      const dp = D.products.get(k) || D.products.set(k, { code: p.code, name: p.name, stock: p.stock, qty: 0, last: '' }).get(k);
+      dp.qty += Number(t.qty) || 0; if ((t.dateStr || '') > dp.last) dp.last = t.dateStr || ''; D.qty += Number(t.qty) || 0;
+    }
+    const range = txns.reduce((a, t) => ({ from: !a.from || (t.dateStr && t.dateStr < a.from) ? t.dateStr : a.from, to: !a.to || t.dateStr > a.to ? t.dateStr : a.to }), { from: '', to: '' });
+    res.json({
+      discontinued: disc.size, range,
+      products: [...byProd.values()].map(p => ({ ...p, dealers: [...p.dealers.values()].sort((a, b) => b.qty - a.qty) })).sort((a, b) => b.dealers.length - a.dealers.length || b.qty - a.qty),
+      dealers: [...byDealer.values()].map(d => ({ ...d, products: [...d.products.values()].sort((a, b) => b.qty - a.qty) })).sort((a, b) => b.products.length - a.products.length || b.qty - a.qty),
+    });
+  } catch (e) {
     res.status(e.status || (e.name === 'AbortError' ? 504 : 500)).json({ error: e.name === 'AbortError' ? 'Tally stock service took too long — try again' : e.message });
   }
 });

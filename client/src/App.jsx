@@ -16518,9 +16518,6 @@ export default function App(){
         // Visits is where a check-in outside the calendar happens — hence "Unplanned visit"
         {id:'visits', label:'Unplanned visit', icon:ClipboardList},
         {id:'calendar', label:'My visit calendar', icon:Calendar},
-        // who may see the calendar sees this report too (it is the calendar's month, by top dealer)
-        {id:'coverage', label:'Top dealers not met', icon:UserX, follows:'calendar'},
-        {id:'leads',  label:'Leads',  icon:UserCheck},
         {id:'tasks',  label:'Tasks',  icon:CheckSquare},
     ]},
     // Its own group rather than a tab inside Product Transactions: the
@@ -16564,7 +16561,13 @@ export default function App(){
     ]},
     {id:'leaves',  label:'Leaves',  icon:Plane},
     {id:'tickets', label:'Support', icon:LifeBuoy},
-    {id:'reports', label:'Reports', icon:FileSpreadsheet, staff:true},
+    // Reports: the office's report builder plus the two lists a salesman reads too
+    { group:'reportsHub', label:'Reports', icon:FileSpreadsheet, children:[
+        {id:'reports',  label:'Sales & visit reports', icon:FileSpreadsheet, staff:true},
+        // who may see the calendar sees this report too (it is the calendar's month, by top dealer)
+        {id:'coverage', label:'Top dealers not met', icon:UserX, follows:'calendar'},
+        {id:'leads',    label:'Leads',  icon:UserCheck},
+    ]},
     {id:'sheets',  label:'Sheets', icon:Table},
     {id:'producttx', label:'Product Transactions', icon:Package},
     {id:'admin',   label:'Admin Panel', icon:Settings, feature:'manageCategories', staff:true},
@@ -16573,7 +16576,7 @@ export default function App(){
   const NAV_TONE = { overview:'#3b82f6', dealers:'#3b82f6', monthly:'#14b8a6', compare:'#8b5cf6', map:'#0ea5e9', outstanding:'#ef4444',
     upload:'#64748b', salesCat:'#f59e0b', entry:'#10b981', months:'#64748b', followups:'#f97316', attendance:'#ec4899',
     crm:'#8b5cf6', incentiveBilling:'#10b981', incentiveSales:'#f59e0b', collections:'#0ea5e9',
-    leaves:'#06b6d4', tickets:'#64748b', reports:'#3b82f6', sheets:'#22c55e', producttx:'#a855f7', admin:'#475569' };
+    leaves:'#06b6d4', tickets:'#64748b', reports:'#3b82f6', reportsHub:'#3b82f6', sheets:'#22c55e', producttx:'#a855f7', admin:'#475569' };
   const navTone = key => NAV_TONE[key] || '#3b82f6';
   const navItems = navItemsRaw
     .map(item => item.group ? { ...item, children:(item.children||[]).filter(pageVisible) } : item)

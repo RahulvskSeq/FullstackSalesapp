@@ -19,6 +19,8 @@
     "@capacitor/geolocation": "^6.1.1",
     "@capacitor/share": "^6.0.4",
     "@univerjs/presets": "^0.25.1",
+    "jspdf": "^2.5.2",
+    "jspdf-autotable": "^3.8.4",
     "lucide-react": "^0.383.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

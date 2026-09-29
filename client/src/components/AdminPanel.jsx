@@ -1067,10 +1067,11 @@ export function buildAdminRail({ can, isStaff, modules = [], userCount = 0, mont
   // can already open appear (App passes them pre-filtered by the same rule as
   // the menu), and each renders exactly as it does on its own screen.
   const MOD_GROUPS = [
-    { group:'CRM',         ids:['visits','calendar','coverage','leads','tasks','followups','attendance','leaves'] },
+    { group:'CRM',         ids:['visits','calendar','tasks','followups','attendance','leaves'] },
+    { group:'Reports',     ids:['reports','coverage','leads'] },
     { group:'Incentives',  ids:['incentiveHome','incentive','incentiveUpload','incentiveHistory','incentiveRule','salesIncentive','salesIncentiveRule'] },
     { group:'Collections', ids:['colDashboard','colToday','colOutstanding','colPayments','colFollowups','colImports','colReconciliation','colReports','colEmployees','colSettings'] },
-    { group:'Data',        ids:['entry','upload','months','salesUpload','producttx','sheets','reports'] },
+    { group:'Data',        ids:['entry','upload','months','salesUpload','producttx','sheets'] },
   ];
   const MOD_LABEL = {
     incentiveHome:'Billing · dashboard', incentive:'Billing · this month', incentiveUpload:'Billing · upload sheet',

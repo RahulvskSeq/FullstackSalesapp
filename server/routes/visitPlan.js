@@ -30,7 +30,7 @@ const isStaff = req => ['admin', 'superadmin', 'employee'].includes(req.user?.ro
 const canPlan = req => hasFeature(req, 'visitPlan');
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
 const todayYmd = () => new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);   // IST
-const MAX_PER_DAY = 5;   // a salesman's day holds at most this many planned visits
+const MAX_PER_DAY = 8;   // a salesman's day holds at most this many planned visits
 
 router.get('/', protect, async (req, res) => {
   try {
@@ -92,6 +92,60 @@ router.get('/carry', protect, async (req, res) => {
     const date = YMD.test(req.query.date || '') ? req.query.date : todayYmd();
     const salesmanId = !isStaff(req) ? req.user.id : (req.query.salesmanId ? String(req.query.salesmanId) : '');
     res.json(await carryList({ date, salesmanId }));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// The same carry list as a formatted Excel file: "What to carry" (one row per folder, pieces,
+// give-to / show-to) and "By dealer". One pair of sheets per salesman.
+router.get('/carry.xlsx', protect, async (req, res) => {
+  try {
+    const date = YMD.test(req.query.date || '') ? req.query.date : todayYmd();
+    const salesmanId = !isStaff(req) ? req.user.id : (req.query.salesmanId ? String(req.query.salesmanId) : '');
+    const data = await carryList({ date, salesmanId });
+    const { default: ExcelJS } = await import('exceljs');
+    const wb = new ExcelJS.Workbook(); wb.creator = 'Sales Tracker Pro';
+    const nice = new Date(date + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+    const head = (ws, cols) => {
+      const r = ws.getRow(3); r.values = cols; r.font = { bold: true, color: { argb: 'FFFFFFFF' } }; r.height = 20;
+      r.eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F46E5' } }; c.alignment = { vertical: 'middle' }; c.border = { bottom: { style: 'thin', color: { argb: 'FF312E81' } } }; });
+      ws.views = [{ state: 'frozen', ySplit: 3 }];
+    };
+    const title = (ws, text, sub, span) => {
+      ws.mergeCells(1, 1, 1, span); ws.getCell(1, 1).value = text; ws.getCell(1, 1).font = { bold: true, size: 14, color: { argb: 'FF1E1B4B' } };
+      ws.mergeCells(2, 1, 2, span); ws.getCell(2, 1).value = sub; ws.getCell(2, 1).font = { size: 10, color: { argb: 'FF6B7280' } };
+    };
+    const many = data.salesmen.length > 1;
+    for (const g of data.salesmen) {
+      const tag = many ? ' · ' + g.salesmanName.split(' ')[0] : '';
+      const pieces = g.carry.reduce((a, c) => a + Math.max(1, c.giveTo.length), 0);
+      const ws = wb.addWorksheet(('What to carry' + tag).slice(0, 31));
+      title(ws, `Samples to carry — ${nice}`, `${g.salesmanName} · ${g.dealers.length} dealer${g.dealers.length === 1 ? '' : 's'} · ${g.carry.length} folders · ${pieces} pieces`, 5);
+      head(ws, ['#', 'Folder', 'Pieces', 'Give to', 'Show to']);
+      ws.columns = [{ width: 5 }, { width: 44 }, { width: 8 }, { width: 38 }, { width: 44 }];
+      g.carry.forEach((c, i) => {
+        const r = ws.addRow([i + 1, c.name, Math.max(1, c.giveTo.length), c.giveTo.join(', '), c.dealers.filter(n => !c.giveTo.includes(n)).join(', ')]);
+        r.alignment = { vertical: 'top', wrapText: true };
+        if (c.giveTo.length) { r.getCell(4).font = { bold: true, color: { argb: 'FF047857' } }; r.getCell(3).font = { bold: true }; }
+        if (i % 2) r.eachCell(cell => { cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F5FF' } }; });
+      });
+      const wd = wb.addWorksheet(('By dealer' + tag).slice(0, 31));
+      title(wd, `By dealer — ${nice}`, g.salesmanName, 5);
+      head(wd, ['#', 'Dealer', 'City / zone', 'Folder', 'Give or show']);
+      wd.columns = [{ width: 5 }, { width: 36 }, { width: 22 }, { width: 44 }, { width: 13 }];
+      g.dealers.forEach((d, i) => {
+        const list = d.samples.length ? d.samples : ['(nothing new to show)'];
+        list.forEach((s, j) => {
+          const give = (d.give || []).includes(s);
+          const r = wd.addRow([j ? '' : i + 1, j ? '' : d.name, j ? '' : [d.city, d.zone].filter(Boolean).join(' · '), s, d.samples.length ? (give ? 'GIVE' : 'show') : '']);
+          if (give) { r.getCell(5).font = { bold: true, color: { argb: 'FF047857' } }; r.getCell(5).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD1FAE5' } }; }
+          if (!j) { r.getCell(2).font = { bold: true }; r.eachCell(cell => { cell.border = { top: { style: 'thin', color: { argb: 'FFE5E7EB' } } }; }); }
+        });
+      });
+    }
+    if (!data.salesmen.length) { const ws = wb.addWorksheet('What to carry'); ws.getCell('A1').value = `No dealers planned for ${nice}`; }
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="samples-to-carry_${date}.xlsx"`);
+    await wb.xlsx.write(res); res.end();
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Search, CheckCircle2, CalendarDays, Repeat, Pencil, Trash2, ArrowRight, AlertTriangle, ListChecks, Sun, MapPin, Wallet, X, Clock, Package } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Search, CheckCircle2, CalendarDays, Repeat, Pencil, Trash2, ArrowRight, AlertTriangle, ListChecks, Sun, MapPin, Wallet, X, Clock, Package, CalendarPlus } from 'lucide-react';
 import { api } from '../api';
 import DealerVisitModal from './DealerVisitModal';
 import DealerOutstandingModal from './DealerOutstandingModal';
 import SamplesCarryModal from './SamplesCarryModal';
+import PlanVisitDrawer from './PlanVisitDrawer';
 import { useT } from '../i18n';
 import { PageHead } from '../collections/ui';
 
@@ -30,12 +31,13 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
   const [month, setMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
   const [day, setDay] = useState(todayYmd());
   const [carryOpen, setCarryOpen] = useState(false);
+  const [planOpen, setPlanOpen] = useState(false);
   const [plans, setPlans] = useState([]);
   const { t: tr } = useT();
   const [unplanned, setUnplanned] = useState([]);   // visits made without a plan
   const [outFor, setOutFor] = useState(null);       // {id,name} — outstanding popup
   const [canPlan, setCanPlan] = useState(false);   // the server's answer: may this user plan for others
-  const [maxPerDay, setMaxPerDay] = useState(5);
+  const [maxPerDay, setMaxPerDay] = useState(8);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [q, setQ] = useState('');
@@ -191,8 +193,12 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
         <div className="card vc-month">
           <div className="vc-month-top">
             <div className="sec-title" style={{ margin: 0 }}>
-              <span className="sec-ico" style={{ '--tone': 'var(--acc)' }}><CalendarDays size={15} /></span> {month.toLocaleDateString('en-IN', { month: 'long' })}
+              <span className="sec-ico" style={{ '--tone': 'var(--acc)' }}><CalendarDays size={15} /></span>
+              <button className="vc-chev vc-mchev" title="Previous month" onClick={() => setMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1))}><ChevronLeft size={16} /></button>
+              <span className="vc-mname">{month.toLocaleDateString('en-IN', { month: 'long' })}{month.getFullYear() !== new Date().getFullYear() ? ' ' + month.getFullYear() : ''}</span>
+              <button className="vc-chev vc-mchev" title="Next month" onClick={() => setMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1))}><ChevronRight size={16} /></button>
               {busy && <span className="sec-note">loading…</span>}
+              {(canPlan || !isStaff) && <button className="btnp vc-planbtn" onClick={() => setPlanOpen(true)}><CalendarPlus size={15} /> {tr('Plan a visit')}</button>}
             </div>
             <div className="vc-legend">
               {[['Visited', 'var(--grn)'], ['Planned', 'var(--acc)'], ['Self-added', '#06b6d4'], ['Unplanned visit', '#8b5cf6'], ['Not visited', 'var(--red)']].map(([l, c]) => <span key={l}><i style={{ background: c }} />{tr(l)}</span>)}
@@ -470,6 +476,9 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
         @media (min-width: 980px) { .vc-grid { grid-template-columns: minmax(0, 1.55fr) minmax(320px, 1fr); align-items: start; } .vc-day { position: sticky; top: 12px; } }
         .vc-month { padding: 14px; }
         .vc-month-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+        .vc-mname { min-width: 92px; text-align: center; }
+        .vc-mchev { width: 30px; height: 30px; }
+        .vc-planbtn { margin-left: 10px; display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; padding: 7px 13px; border-radius: 11px; }
         .vc-carry { align-self: flex-start; flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 750; padding: 8px 12px; border-radius: 12px; color: #6d28d9; border-color: color-mix(in srgb, #8b5cf6 45%, transparent); background: color-mix(in srgb, #8b5cf6 8%, var(--bg1)); }
         .vc-unpl { margin: 0 0 12px; padding: 10px 12px; border-radius: 14px; border: 1px dashed color-mix(in srgb, #8b5cf6 45%, transparent); background: color-mix(in srgb, #8b5cf6 6%, var(--bg1)); display: grid; gap: 8px; }
         .vc-unpl-t { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12.5px; font-weight: 800; color: #7c3aed; }
@@ -567,6 +576,10 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
           .vc-nav > b { min-width: 96px; font-size: 12.5px; }
         }
       `}</style>
+      {planOpen && <PlanVisitDrawer dealers={dealers} plans={plans} day={day}
+        setDay={d => { setDay(d); const x = new Date(d + 'T00:00:00'); if (x.getFullYear() !== month.getFullYear() || x.getMonth() !== month.getMonth()) setMonth(new Date(x.getFullYear(), x.getMonth(), 1)); }}
+        salesmanId={isStaff ? sm : (currentUser?.id || '')} setSalesmanId={setSm} salesmen={salesmen} isStaff={isStaff} canPlan={canPlan} maxPerDay={maxPerDay}
+        onChanged={load} onClose={() => setPlanOpen(false)} />}
       {carryOpen && <SamplesCarryModal date={day} salesmanId={daySm || ''} onClose={() => setCarryOpen(false)} />}
       {outFor && <DealerOutstandingModal dealerId={outFor.id} dealerName={outFor.name} onClose={() => setOutFor(null)} />}
       {open && <DealerVisitModal dealerId={open} dealerName={plans.find(p => p.dealerId === open)?.dealerName || ''} onClose={() => { setOpen(null); load(); }} />}

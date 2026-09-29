@@ -1797,7 +1797,9 @@ export const api = {
   saveVisitMom: (id, body)  => fetch(`${BASE}/dealer-visit/${id}/mom`,{method:'POST',headers:{...authHeaders(),'Content-Type':'application/json'},body:JSON.stringify(body)}).then(handle),
   // ── Visit calendar ──
   visitPlans:      (params) => fetch(`${BASE}/visit-plan?${new URLSearchParams(params).toString()}`,{headers:authHeaders()}).then(handle),
+  discontinuedDealers: (refresh=false) => fetch(`${BASE}/stock/discontinued/dealers${refresh?'?refresh=1':''}`,{headers:authHeaders()}).then(handle),
   visitCoverage:   (month, salesmanId='') => fetch(`${BASE}/visit-plan/coverage?${new URLSearchParams({ month, ...(salesmanId?{salesmanId}:{}) }).toString()}`,{headers:authHeaders()}).then(handle),
+  visitPlanCarryXlsx: (date, salesmanId='') => fetch(`${BASE}/visit-plan/carry.xlsx?${new URLSearchParams({ date, ...(salesmanId?{salesmanId}:{}) }).toString()}`,{headers:authHeaders()}).then(async r => { if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || 'Could not make the Excel file'); } return r.blob(); }),
   visitPlanCarry:  (date, salesmanId='') => fetch(`${BASE}/visit-plan/carry?${new URLSearchParams({ date, ...(salesmanId?{salesmanId}:{}) }).toString()}`,{headers:authHeaders()}).then(handle),
   addVisitPlan:    (body)   => fetch(`${BASE}/visit-plan`,{method:'POST',headers:{...authHeaders(),'Content-Type':'application/json'},body:JSON.stringify(body)}).then(handle),
   updateVisitPlan: (id, body) => fetch(`${BASE}/visit-plan/${id}`,{method:'PUT',headers:{...authHeaders(),'Content-Type':'application/json'},body:JSON.stringify(body)}).then(handle),

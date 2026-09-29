@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { X, Package, Download, Share2, RefreshCw, Check, Store } from 'lucide-react';
+import { X, Package, Share2, RefreshCw, Check, Store, FileSpreadsheet, FileText } from 'lucide-react';
 import { api } from '../api';
 import { useT } from '../i18n';
 import { notify } from './Toast';
@@ -13,7 +13,6 @@ const loadTicks = (k) => { try { return new Set(JSON.parse(localStorage.getItem(
 const saveTicks = (k, set) => { try { localStorage.setItem(k, JSON.stringify([...set])); } catch { /* private mode */ } };
 // pieces to pack: one for each dealer it is GIVEN to; a folder only shown needs just one
 const piecesOf = c => Math.max(1, (c.giveTo || []).length);
-const csvCell = v => { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
 
 export default function SamplesCarryModal({ date, salesmanId = '', onClose }) {
   const { t: tr } = useT();
@@ -49,23 +48,82 @@ export default function SamplesCarryModal({ date, salesmanId = '', onClose }) {
     ...g.dealers.flatMap(d => [`• ${d.name}${d.city ? ' — ' + d.city : ''}`, ...(d.samples.length ? d.samples.map(s => `   - ${s}`) : ['   - nothing new to show'])]),
   ].join('\n')).join('\n\n');
 
-  const download = async () => {
-    const rows = [];
-    for (const g of groups) {
-      rows.push([title + ' — ' + g.salesmanName]);
-      rows.push(['#', 'Sample to carry', 'Pieces', 'Give to', 'Show to']);
-      g.carry.forEach((c, i) => rows.push([i + 1, c.name, piecesOf(c), (c.giveTo || []).join('; '), c.dealers.filter(n => !(c.giveTo || []).includes(n)).join('; ')]));
-      rows.push([]);
-      rows.push(['Dealer', 'City', 'Sample', 'Give or show']);
-      g.dealers.forEach(d => (d.samples.length ? d.samples : ['(nothing new to show)']).forEach(s => rows.push([d.name, d.city, s, (d.give || []).includes(s) ? 'GIVE' : 'show'])));
-      rows.push([]);
-    }
-    const csv = '﻿' + rows.map(r => r.map(csvCell).join(',')).join('\r\n');
-    const who = groups.length === 1 ? '_' + groups[0].salesmanName.replace(/\s+/g, '-') : '';
+  const who = groups.length === 1 ? '_' + groups[0].salesmanName.replace(/\s+/g, '-') : '';
+  const [making, setMaking] = useState('');
+  const excel = async () => {
+    setMaking('excel');
     try {
-      const { saveText } = await import('../lib/saveFile');
-      await saveText(csv, `samples-to-carry_${date}${who}.csv`, 'text/csv;charset=utf-8');
-    } catch (e) { notify.error('Could not save the list: ' + (e?.message || e)); }
+      const blob = await api.visitPlanCarryXlsx(date, salesmanId);
+      const { saveBlob } = await import('../lib/saveFile');
+      await saveBlob(blob, `samples-to-carry_${date}${who}.xlsx`);
+    } catch (e) { notify.error('Excel: ' + (e?.message || e)); }
+    setMaking('');
+  };
+
+  // A printable A4 sheet: coloured header band, summary boxes, then per salesman the
+  // folders to pack (pieces, give-to, show-to) and each dealer's list with GIVE marked.
+  const pdf = async () => {
+    setMaking('pdf');
+    try {
+      const { jsPDF } = await import('jspdf');
+      const { default: autoTable } = await import('jspdf-autotable');
+      const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+      const W = doc.internal.pageSize.getWidth(), M = 36;
+      const INDIGO = [79, 70, 229], DARK = [30, 27, 75], GREY = [107, 114, 128], GREEN = [4, 120, 87];
+      const band = () => {
+        doc.setFillColor(...INDIGO); doc.rect(0, 0, W, 64, 'F');
+        doc.setTextColor(255); doc.setFont('helvetica', 'bold'); doc.setFontSize(17); doc.text('Samples to carry', M, 30);
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(10.5); doc.text(fmtLong(date), M, 48);
+        doc.setFontSize(9); doc.text('Sales Tracker Pro', W - M, 30, { align: 'right' });
+      };
+      band();
+      let y = 84;
+      groups.forEach((g, gi) => {
+        const pieces = g.carry.reduce((a, c) => a + piecesOf(c), 0);
+        const giving = g.carry.filter(c => (c.giveTo || []).length).length;
+        if (gi && y > 640) { doc.addPage(); band(); y = 84; }
+        doc.setTextColor(...DARK); doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.text(g.salesmanName, M, y);
+        // summary boxes
+        const boxes = [[String(g.carry.length), 'FOLDERS'], [String(pieces), 'PIECES TO PACK'], [String(giving), 'TO GIVE'], [String(g.dealers.length), g.dealers.length === 1 ? 'DEALER' : 'DEALERS']];
+        const bw = (W - 2 * M - 3 * 8) / 4; y += 10;
+        boxes.forEach(([v, l], k) => {
+          const x = M + k * (bw + 8);
+          if (k === 0) doc.setFillColor(...INDIGO); else doc.setFillColor(243, 244, 246);
+          doc.roundedRect(x, y, bw, 44, 6, 6, 'F');
+          doc.setTextColor(k === 0 ? 255 : 30); doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.text(v, x + 10, y + 21);
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(k === 0 ? 230 : 107); doc.text(l, x + 10, y + 35);
+        });
+        y += 60;
+        autoTable(doc, {
+          startY: y, margin: { left: M, right: M },
+          head: [['', '#', 'Folder', 'Pcs', 'Give to', 'Show to']],
+          body: g.carry.map((c, i) => ['', i + 1, c.name, piecesOf(c), (c.giveTo || []).join(', '), c.dealers.filter(n => !(c.giveTo || []).includes(n)).join(', ')]),
+          styles: { font: 'helvetica', fontSize: 8.5, cellPadding: 4, valign: 'top', lineColor: [229, 231, 235], lineWidth: 0.5 },
+          headStyles: { fillColor: DARK, textColor: 255, fontStyle: 'bold' },
+          alternateRowStyles: { fillColor: [248, 248, 255] },
+          columnStyles: { 0: { cellWidth: 16 }, 1: { cellWidth: 20, halign: 'right', textColor: GREY }, 2: { cellWidth: 170, fontStyle: 'bold' }, 3: { cellWidth: 28, halign: 'center', fontStyle: 'bold' }, 4: { textColor: GREEN, fontStyle: 'bold' }, 5: { textColor: [75, 85, 99] } },
+          // an empty tick box to mark each folder as packed
+          didDrawCell: d => { if (d.section === 'body' && d.column.index === 0) { doc.setDrawColor(156, 163, 175); doc.setLineWidth(0.8); doc.rect(d.cell.x + 4, d.cell.y + 5, 8, 8); } },
+        });
+        y = doc.lastAutoTable.finalY + 18;
+        if (y > 720) { doc.addPage(); band(); y = 84; }
+        doc.setTextColor(...DARK); doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.text('By dealer', M, y); y += 6;
+        autoTable(doc, {
+          startY: y, margin: { left: M, right: M },
+          head: [['#', 'Dealer', 'Folders to give', 'Folders to show']],
+          body: g.dealers.map((d, i) => [i + 1, d.name + (d.city ? '\n' + [d.city, d.zone].filter(Boolean).join(' · ') : ''), (d.give || []).join('\n') || '—', d.samples.filter(s => !(d.give || []).includes(s)).join('\n') || (d.samples.length ? '—' : 'nothing new to show')]),
+          styles: { font: 'helvetica', fontSize: 8.5, cellPadding: 4, valign: 'top', lineColor: [229, 231, 235], lineWidth: 0.5 },
+          headStyles: { fillColor: [55, 65, 81], textColor: 255, fontStyle: 'bold' },
+          columnStyles: { 0: { cellWidth: 20, halign: 'right', textColor: GREY }, 1: { cellWidth: 150, fontStyle: 'bold' }, 2: { textColor: GREEN, fontStyle: 'bold' } },
+        });
+        y = doc.lastAutoTable.finalY + 26;
+      });
+      const n = doc.getNumberOfPages();
+      for (let p = 1; p <= n; p++) { doc.setPage(p); doc.setFontSize(8); doc.setTextColor(...GREY); doc.text(`Page ${p} of ${n}  ·  one piece per dealer it is given to; a folder only shown needs one`, M, doc.internal.pageSize.getHeight() - 18); }
+      const { saveBlob } = await import('../lib/saveFile');
+      await saveBlob(doc.output('blob'), `samples-to-carry_${date}${who}.pdf`);
+    } catch (e) { notify.error('PDF: ' + (e?.message || e)); }
+    setMaking('');
   };
 
   const share = async () => {
@@ -140,7 +198,8 @@ export default function SamplesCarryModal({ date, salesmanId = '', onClose }) {
         {data && totals.dealers > 0 && (
           <div className="scm-foot">
             <button className="btn" onClick={share}><Share2 size={14} /> {tr('Share')}</button>
-            <button className="btnp" onClick={download}><Download size={14} /> {tr('Download list')}</button>
+            <button className="btn scm-xl" onClick={excel} disabled={!!making}><FileSpreadsheet size={14} /> {making === 'excel' ? 'Making…' : 'Excel'}</button>
+            <button className="btnp scm-pdf" onClick={pdf} disabled={!!making}><FileText size={14} /> {making === 'pdf' ? 'Making…' : 'PDF'}</button>
           </div>
         )}
       </div>

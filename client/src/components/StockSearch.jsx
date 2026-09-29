@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import DiscontinuedWho from './DiscontinuedWho';
 import { Package, Search, X, RefreshCw, Boxes, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { api } from '../api';
 import { useT } from '../i18n';
@@ -12,6 +13,7 @@ const fmt = n => Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits:
 
 export default function StockSearch({ open, onClose, mode = '' }) {
   const disc = mode === 'discontinued';
+  const [dtab, setDtab] = useState('list');   // discontinued: the list, or who buys them — by product / by dealer
   const { t: tr } = useT();   // the discontinued list: same search, only discontinued items
   const [q, setQ] = useState('');
   const [inStock, setInStock] = useState(false);
@@ -81,6 +83,10 @@ export default function StockSearch({ open, onClose, mode = '' }) {
           <button className="stk-iconbtn" onClick={onClose} aria-label="Close"><X size={17}/></button>
         </div>
 
+        {disc && <div className="dw-tabs" role="tablist">
+          {[['list', 'All discontinued'], ['product', 'By product'], ['dealer', 'By dealer']].map(([k, l]) => <button key={k} role="tab" aria-selected={dtab === k} className={dtab === k ? 'on' : ''} onClick={() => setDtab(k)}>{l}</button>)}
+        </div>}
+        {disc && dtab !== 'list' ? <DiscontinuedWho key={dtab} by={dtab} /> : <>
         <div className="stk-search">
           <Search size={16}/>
           <input ref={inputRef} value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') remember(q); }}
@@ -145,6 +151,7 @@ export default function StockSearch({ open, onClose, mode = '' }) {
             <div className="stk-more">Showing {rows.length} of {fmt(data.matches)} — type more of the name or code to narrow it.</div>
           )}
         </div>
+        </>}
       </div>
     </div>
   );

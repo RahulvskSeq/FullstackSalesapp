@@ -31,10 +31,10 @@ export function quickActions({ can, navigate, onAddDealer, onStock, role, t = s 
   const staff = ['admin', 'superadmin', 'employee'].includes(role);
   const list = [
     { key: 'dealer',   label: 'Find a dealer',   hint: 'Search a dealer and see the summary',     icon: Search,       tone: '#334155', page: 'dealers',    go: () => navigate('dealers') },
-    { key: 'stock',    label: 'Check stock',     hint: 'Available quantity, live from Tally', icon: Boxes,       tone: '#059669', page: null,         go: () => onStock?.(), needs: onStock },
+    // Check stock is not a quick action any more — the Stock button in the top bar still opens it
     { key: 'plan',     label: 'My visit calendar', hint: staff ? 'Plan which dealers each salesman visits' : 'Dealers planned for your days',          icon: CalendarDays, tone: '#7c3aed', page: 'calendar',   go: () => navigate('calendar') },
     { key: 'today',    label: 'Collections today', hint: 'Dealers to collect money from today',   icon: CalendarCheck,tone: '#0891b2', page: 'colToday',   go: () => navigate('colToday') },
-    { key: 'discontinued', label: 'Discontinued stock', hint: 'Discontinued designs still in stock — sell these first', icon: PackageX, tone: '#dc2626', page: null, go: () => onStock?.('discontinued'), needs: onStock },
+    { key: 'discontinued', label: 'Discontinued stock', hint: 'Discontinued designs — stock left, and which dealers buy them', icon: PackageX, tone: '#dc2626', page: null, go: () => onStock?.('discontinued'), needs: onStock },
     { key: 'checkin',  label: 'Unplanned visit', hint: 'Visiting a dealer not on your calendar — check in here', icon: Zap,       tone: '#2563eb', page: 'visits',     go: () => navigate('visits') },
     { key: 'payment',  label: 'Record payment',  hint: 'Money a dealer paid',          icon: HandCoins,    tone: '#059669', page: 'colPayments', go: () => { navigate('colToday'); requestQuickForm('payment'); } },
     { key: 'followup', label: 'Add follow-up',   hint: 'Call, promise, next date',     icon: PhoneCall,    tone: '#d97706', page: 'colFollowups', go: () => { navigate('colToday'); requestQuickForm('followup'); } },
