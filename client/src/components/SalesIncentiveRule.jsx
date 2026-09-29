@@ -162,7 +162,7 @@ export default function SalesIncentiveRule() {
           rate on the sheets that fall inside it.
         </div>
         {cfg.starterTiers.map((t, i) => (
-          <div key={i} style={{ display: 'flex', gap: 9, alignItems: 'center', marginBottom: 8 }}>
+          <div key={i} style={{ display: 'flex', gap: 9, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', rowGap: 6 }}>
             <span style={{ fontSize: 11.5, color: 'var(--t3)', minWidth: 76 }}>
               {i === 0 ? 'first' : 'up to'}
             </span>

@@ -49,9 +49,30 @@ const CategorySalesPanel = ({
   excluded: controlledExcluded,
   onToggleExcluded,
   hideToggleChips = false,
+  // Month view: whose category targets to add up — '' = everyone (office),
+  // a salesman's id = only his own
+  targetFor = '',
 }) => {
   const [loading, setLoading] = useState(false);
   const [data, setData]       = useState(null);
+  const [targets, setTargets] = useState({});   // CATEGORY → target for the month
+
+  useEffect(() => {
+    const ym = !dealerName && monthLabel ? moLabelToYM(monthLabel) : '';
+    if (!ym) { setTargets({}); return; }
+    let dead = false;
+    api.salesTargetsList(ym).then(rows => {
+      if (dead) return;
+      const m = {};
+      (rows || []).filter(r => !targetFor || r.salesmanId === targetFor).forEach(r => {
+        const k = String(r.category || '').trim().toUpperCase();
+        if (k) m[k] = (m[k] || 0) + (Number(r.target) || 0);
+      });
+      setTargets(m);
+    }).catch(() => { if (!dead) setTargets({}); });
+    return () => { dead = true; };
+  }, [monthLabel, dealerName, targetFor]);
+  const targetOf = cat => targets[String(cat || '').trim().toUpperCase()] || 0;
 
   // Default to the global shared filter when no parent supplies its own.
   const global = useGlobalCategoryFilter();
@@ -153,7 +174,7 @@ const CategorySalesPanel = ({
         </div>
         <span className="count-pill">{groups.length}</span>
         <div className="spacer"/>
-        <span className="kpi-pill">Total <b>{fmt(grandTotal)}</b></span>
+        <span className="kpi-pill">Total <b>{fmt(grandTotal)}</b>{groups.some(g => targetOf(g.category)) ? <> / {fmt(groups.reduce((a, g) => a + targetOf(g.category), 0))}</> : null}</span>
         {onSeeAll && (
           <button className="btn" style={{padding:'4px 10px',fontSize:11,display:'inline-flex',alignItems:'center',gap:4}}
             onClick={onSeeAll}>See all <ArrowRight size={11}/></button>
@@ -199,6 +220,18 @@ const CategorySalesPanel = ({
                 <span className="cat-share">{pct.toFixed(1)}%</span>
               </div>
               <div className="cat-num">{fmt(g.total)}</div>
+              {(() => {
+                const t = targetOf(g.category);
+                if (!t) return null;
+                const p = Math.round(g.total / t * 100);
+                const tone = p >= 100 ? '#16a34a' : p >= 60 ? '#65a30d' : p >= 30 ? '#ca8a04' : '#dc2626';
+                return (
+                  <div className="cat-tgt">
+                    <div className="cat-tgt-t"><span>of <b>{fmt(t)}</b> target</span><em style={{ color: tone }}>{p}%</em></div>
+                    <div className="cat-tgt-bar"><div style={{ width: Math.min(p, 100) + '%', background: tone }}/></div>
+                  </div>
+                );
+              })()}
               <div className="cat-subs">
                 {subs.map(([sub,qty]) => (
                   <span key={sub}>{sub} <b>{fmt(qty)}</b></span>

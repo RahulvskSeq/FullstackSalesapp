@@ -335,6 +335,7 @@ export default function Styles({theme}){
     .btn{background:var(--bg2);border:1px solid var(--b2);border-radius:7px;padding:7px 12px;color:var(--t2);transition:all .15s}
     .btn:hover:not(:disabled){background:var(--bg3);color:var(--t1)}
     .btn:disabled{opacity:.5;cursor:not-allowed}
+    button{-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
     .btnp{background:var(--acc);border:1px solid var(--acc);border-radius:7px;padding:8px 16px;color:#fff;font-weight:500;transition:all .15s;display:inline-flex;align-items:center;gap:5px}
     .btnp:hover:not(:disabled){filter:brightness(1.1);transform:translateY(-1px)}
     .btnd{background:rgba(248,113,113,0.12);border:1px solid rgba(248,113,113,.25);border-radius:6px;padding:5px 10px;color:var(--red);font-size:12px;display:inline-flex;align-items:center;gap:4px}
@@ -1188,6 +1189,12 @@ export default function Styles({theme}){
     .dom-msg{display:flex;align-items:center;gap:8px;margin:8px 14px 16px;padding:12px;border-radius:12px;font-size:13px}
     .dom-msg.err{color:var(--red);background:color-mix(in srgb,var(--red) 8%,transparent)}
     @media(max-width:600px){.dom-overlay{align-items:flex-end;padding:0}.dom{border-radius:20px 20px 0 0;width:100%}}
+    /* phone menu: theme, server and app version (moved out of the top bar) */
+    .sb-phone-tools{display:none}
+    @media(max-width:768px){
+      .sb-phone-tools{display:block;margin:6px 10px 4px;padding:10px;border-radius:14px;background:var(--bg2);border:1px solid var(--b1)}
+      .sb-tools-t{font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);margin-bottom:6px}
+    }
     /* language picker */
     .lp-btn{display:inline-flex;align-items:center;gap:5px;flex-shrink:0;height:32px;padding:0 9px;border-radius:10px;cursor:pointer;
       border:1px solid var(--b2);background:var(--bg2);color:var(--t2);font-size:12px;font-weight:800;transition:background .15s,color .15s,border-color .15s}
@@ -1249,6 +1256,12 @@ export default function Styles({theme}){
     .cat-name{flex:1;min-width:0;font-size:11.5px;font-weight:800;letter-spacing:.04em;color:var(--t1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .cat-share{font-size:10.5px;font-weight:800;color:var(--tone);background:var(--bg1);padding:1px 7px;border-radius:10px}
     .cat-num{font-size:24px;font-weight:850;color:color-mix(in srgb,var(--tone) 85%,var(--t1));letter-spacing:-.02em;margin:6px 0 6px}
+    .cat-tgt{margin:-2px 0 7px}
+    .cat-tgt-t{display:flex;align-items:baseline;justify-content:space-between;gap:6px;font-size:11px;color:var(--t3)}
+    .cat-tgt-t b{color:var(--t2);font-weight:800}
+    .cat-tgt-t em{font-style:normal;font-weight:850;font-size:11.5px}
+    .cat-tgt-bar{height:5px;border-radius:3px;background:color-mix(in srgb,var(--tone) 14%,var(--bg2));overflow:hidden;margin-top:4px}
+    .cat-tgt-bar>div{height:100%;border-radius:3px;transform-origin:left;animation:barGrow .8s cubic-bezier(.2,.8,.2,1) both}
     .cat-subs{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:10.5px;color:var(--t3)}
     .cat-subs b{color:var(--t2)}
     .cl-grid{display:grid;gap:6px;grid-template-columns:repeat(auto-fill,minmax(270px,1fr))}
@@ -1310,6 +1323,7 @@ export default function Styles({theme}){
     .dl-card-fig span{display:block;font-size:9.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--t3);margin-bottom:2px}
     .dl-card-fig b{font-size:16px;font-weight:850;color:var(--t1);letter-spacing:-.01em}
     .dl-card-foot{display:flex;align-items:center;gap:8px}
+    .dl-card .pbar{width:100%;margin-left:0}
     .dl-od{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:800;color:var(--red);background:color-mix(in srgb,var(--red) 10%,transparent);padding:2px 7px;border-radius:10px}
     .dl-more{display:flex;align-items:center;justify-content:center;gap:8px;padding:16px;font-size:12px;color:var(--t3);flex-wrap:wrap}
     .dl-empty{display:flex;flex-direction:column;align-items:center;gap:8px;padding:44px 16px !important;color:var(--t3);text-align:center}
@@ -1447,7 +1461,7 @@ export default function Styles({theme}){
         box-shadow:4px 0 24px rgba(0,0,0,.4);
       }
       #sidebar.closed{transform:translateX(-100%);width:240px;min-width:240px;overflow:hidden;border-right:1px solid var(--b1)}
-      #sidebar.open{transform:translateX(0)}
+      #sidebar.open{transform:translateX(0);z-index:1200}   /* above the bottom tabs, so its foot (profile, Sign out) is reachable */
       #main{padding:12px}
       .stat-grid{grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
       .stat-card{padding:10px 12px}

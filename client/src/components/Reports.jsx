@@ -1271,7 +1271,7 @@ export default function Reports({ dealers, users, currentUser, monthConfig, outs
           </div>
           <div style={{flex:1}}/>
           {usesDates && (
-            <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+            <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap',flex:'1 1 280px',minWidth:0,maxWidth:'100%',justifyContent:'flex-end'}}>
               <input type="date" className="inp" value={fromDate} max={toDate||undefined}
                 onChange={e=>setFromDate(e.target.value)} style={{padding:'6px 10px',fontSize:12,width:'auto',flex:'1 1 140px',minWidth:0,maxWidth:'100%'}}/>
               <span style={{color:'var(--t3)'}}>→</span>

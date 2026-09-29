@@ -16385,6 +16385,7 @@ export default function App(){
     if (!screen || !currentUser) return;
     if (disabledFeatures.includes(screen)) { setScreen('overview'); return; }
     if (currentUser.role === 'superadmin') return;
+    if (screen === 'profile') return;              // everyone may open their own profile
     const own = Array.isArray(currentUser.permissions?.pages) ? currentUser.permissions.pages : [];
     const list = own.length ? own : (rolePerms[currentUser.role]?.pages || []);
     if (!list.length) return;                       // built-in defaults: nothing to enforce here
@@ -16569,7 +16570,7 @@ export default function App(){
                   {screen==='crm'        && <CRM            dealers={myDealers} users={users} currentUser={currentUser}/>}
                   {screen==='attendance' && <AttendancePage users={users} currentUser={currentUser}/>}
                   {screen==='visits'     && <VisitsPage     dealers={myDealers} users={users} currentUser={currentUser}/>}
-                  {screen==='profile'    && <ProfilePage currentUser={currentUser} onUpdated={onProfileUpdated}/>}
+                  {screen==='profile'    && <ProfilePage currentUser={currentUser} onUpdated={onProfileUpdated} onLogout={handleLogout} onReturn={impersonatingFrom?handleReturnToSelf:null} returnName={impersonatingFrom?.name}/>}
                   {screen==='calendar'   && <VisitCalendar  dealers={(currentUser?.role==='admin'||currentUser?.role==='superadmin'||currentUser?.role==='employee')?dealers:myDealers} users={users} currentUser={currentUser}/>}
                   {screen==='leads'      && <LeadsPage      users={users} currentUser={currentUser}/>}
                   {screen==='leaves'     && <LeavesPage     users={users} currentUser={currentUser}/>}
@@ -16677,7 +16678,7 @@ export default function App(){
 
             {/* ── Sync status dot — always visible ── */}
             {lastSync&&(
-              <div style={{display:'flex',alignItems:'center',gap:4,flexShrink:0}}>
+              <div className="tb-phone-hide" style={{display:'flex',alignItems:'center',gap:4,flexShrink:0}}>
                 <span style={{width:7,height:7,borderRadius:'50%',background:syncErrs.length?'var(--red)':'var(--grn)',flexShrink:0}}/>
                 <span className="hide-sm" style={{fontSize:10,color:'var(--t3)',whiteSpace:'nowrap'}}>{lastSync}</span>
               </div>
@@ -16698,7 +16699,7 @@ export default function App(){
             </button>
 
             {/* ── Backend URL settings (gear) — important for mobile/APK ── */}
-            <button onClick={() => setShowApiSettings(true)} className={'btn' + (isNativeApp() ? '' : ' tb-phone-hide')}
+            <button onClick={() => setShowApiSettings(true)} className={'btn tb-phone-hide'}
               title="Set the backend server URL (needed when using the APK or remote server)"
               style={{fontSize:11,display:'flex',alignItems:'center',gap:4,padding:'6px 8px',flexShrink:0,color:'var(--t3)'}}>
               <Settings size={13}/>
@@ -16797,7 +16798,7 @@ export default function App(){
             )}
 
             {/* ── Theme palette ▼ — visible on every screen ───────────── */}
-            <div ref={paletteRef} style={{flexShrink:0}}>
+            <div ref={paletteRef} className="tb-phone-hide" style={{flexShrink:0}}>
               <button ref={paletteBtnRef} className="btn"
                 onClick={()=>{
                   // Anchor the dropdown via viewport coords so #topbar's
@@ -16900,7 +16901,7 @@ export default function App(){
             </>)}
             {/* APK update check — only meaningful inside the Android shell,
                 where an APK can actually be installed. */}
-            {isNativeApp() && <UpdateButton compact/>}
+            {isNativeApp() && <UpdateButton compact onlyWhenAvailable={window.innerWidth<=600}/>}
             {useDB&&<span className="tb-phone-hide" style={{fontSize:10,background:'color-mix(in srgb, var(--grn) 15%, transparent)',color:'var(--grn)',padding:'2px 7px',borderRadius:4,fontWeight:600,flexShrink:0}}>🗄 DB</span>}
 
             {/* ── Divider ── */}
@@ -16922,14 +16923,15 @@ export default function App(){
             </div>
 
             {/* ── Sign out — computers; on a phone it lives at the foot of the menu ── */}
-            <button onClick={handleLogout} className="btn tb-phone-hide"
+            <button onClick={impersonatingFrom?handleReturnToSelf:handleLogout} className="btn tb-phone-hide"
+              title={impersonatingFrom?'Return to '+(impersonatingFrom.name||'my account'):'Sign out'}
               style={{padding:'6px 8px',fontSize:11,color:'var(--t3)',display:'flex',alignItems:'center',gap:4,flexShrink:0}}>
               <LogOut size={13}/>
-              <span className="hide-sm">Sign out</span>
+              <span className="hide-sm">{impersonatingFrom?'Return':'Sign out'}</span>
             </button>
           </div>
 
-          <MonthSelectorBar
+          {screen!=='profile'&&<MonthSelectorBar
             selectedMonthIdx={selectedMonthIdx}
             setSelectedMonthIdx={setSelectedMonthIdx}
             onRefreshMonth={async (m) => {
@@ -16967,7 +16969,7 @@ export default function App(){
                 console.warn('[Refresh ' + m + '] failed:', e.message);
               }
             }}
-          />
+          />}
 
           <div id="body">
             {sidebarOpen&&window.innerWidth<=768&&<div id="sb-overlay" className="open" onClick={()=>setSidebarOpen(false)}/>}
@@ -17097,6 +17099,19 @@ export default function App(){
                   })}
                 </div>
               </div>
+              {/* ── Phones: the settings that no longer fit the top bar ─────────── */}
+              <div className="sb-phone-tools">
+                <div className="sb-tools-t">{tr('Theme')}</div>
+                <div className="seg" style={{display:'flex'}}>
+                  {THEMES.map(th=>(
+                    <button key={th.id} className={'seg-b'+(paletteId===th.id?' on':'')} style={{'--tone':'var(--acc)',flex:1}} onClick={()=>setPaletteId(th.id)}>{tr(th.name)}</button>
+                  ))}
+                </div>
+                <div style={{display:'flex',gap:6,marginTop:8,flexWrap:'wrap'}}>
+                  {isNativeApp() && <button className="btn" onClick={()=>{ setShowApiSettings(true); setSidebarOpen(false); }} style={{display:'inline-flex',alignItems:'center',gap:5,fontSize:12}}><Settings size={13}/> {tr('Server')}</button>}
+                  {isNativeApp() && <UpdateButton showLabel/>}
+                </div>
+              </div>
               {/* ── Sidebar bottom: user identity + Sign out ─────────── */}
               <div style={{
                 padding:'10px 12px', borderTop:'1px solid var(--b1)',
@@ -17109,15 +17124,10 @@ export default function App(){
                   <div style={{fontSize:10, color:'var(--t3)'}}>{currentUser.role==='superadmin'?'Superadmin':currentUser.role==='admin'?'Admin':currentUser.role==='employee'?'Employee':'Sales'} · <span style={{color:'var(--acc)',fontWeight:700}}>{tr('My profile')}</span></div>
                 </div>
                 </div>
-                <button onClick={handleLogout} className="btn"
-                  title="Sign out"
-                  style={{
-                    padding:'6px 10px', fontSize:11, color:'#fca5a5',
-                    border:'1px solid color-mix(in srgb, var(--red) 35%, transparent)',
-                    background:'color-mix(in srgb, var(--red) 8%, transparent)',
-                    display:'inline-flex', alignItems:'center', gap:4,
-                  }}>
-                  <LogOut size={12}/> Sign out
+                <button onClick={impersonatingFrom?handleReturnToSelf:handleLogout} className={impersonatingFrom?'btnp':'btnd'}
+                  title={impersonatingFrom?'Return to '+(impersonatingFrom.name||'my account'):'Sign out'}
+                  style={{padding:'7px 11px', fontSize:12, fontWeight:800, display:'inline-flex', alignItems:'center', gap:5, flexShrink:0}}>
+                  <LogOut size={13}/> {impersonatingFrom?tr('Return'):tr('Sign out')}
                 </button>
               </div>
             </div>

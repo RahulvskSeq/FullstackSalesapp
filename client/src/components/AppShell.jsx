@@ -162,7 +162,8 @@ export function DailyQuote({ every = 9000 }) {
       el.classList.remove('wrap');
       let size = 14;
       el.style.fontSize = size + 'px';
-      while (size > 11 && txt.scrollWidth > txt.clientWidth + 1) { size -= 0.5; el.style.fontSize = size + 'px'; }
+      // shrink a little, but never below a size that reads easily — past that, use two lines
+      while (size > 12.5 && txt.scrollWidth > txt.clientWidth + 1) { size -= 0.5; el.style.fontSize = size + 'px'; }
       if (txt.scrollWidth > txt.clientWidth + 1) el.classList.add('wrap');
     };
     fit();

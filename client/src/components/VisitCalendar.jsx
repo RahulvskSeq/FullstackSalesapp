@@ -313,7 +313,7 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser })
                 return (
                 <div key={u._id} className="vc-unpl-row">
                   <span className="ini" style={{ '--h': hue(u.dealerName), width: 32, height: 32, borderRadius: 10, fontSize: 11 }}>{inits(u.dealerName)}</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="vc-unpl-info" style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 750, color: 'var(--t1)', overflowWrap: 'anywhere' }}>{u.dealerName}</div>
                     <div style={{ fontSize: 11, color: 'var(--t3)' }}>
                       {!sm && <>{u.salesmanName} · </>}{u.checkInTime ? 'in ' + new Date(u.checkInTime).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : ''}{u.checkOutTime ? ' · out ' + new Date(u.checkOutTime).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : ''}{u.city ? ' · ' + u.city : ''}
@@ -509,6 +509,10 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser })
         .vc-missed { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); }
         @media (max-width: 860px) { .vc-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } }
         @media (max-width: 600px) {
+          /* unplanned row: name gets the full first line, status + buttons wrap below */
+          .vc-unpl-row { flex-wrap: wrap; row-gap: 6px; }
+          .vc-unpl-row .vc-unpl-info { flex: 1 1 calc(100% - 42px) !important; }
+          .vc-unpl-row > .vc-lb:first-of-type { margin-left: auto; }
           .vc-kpi { padding: 11px 12px !important; gap: 10px !important; }
           .vc-kpi .ov-move-ico { width: 36px; height: 36px; border-radius: 11px; }
           .vc-kpi .ov-move-n { font-size: 20px; }

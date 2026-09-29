@@ -8736,10 +8736,18 @@ const DM_CSS=`
   .dm-name{font-size:19px}
   .dm-acts{padding-left:0}
   .dm-acts>button{flex:1 1 auto;justify-content:center}
-  .dm-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-  .dm-kpis>.dm-kpi:last-child:nth-child(odd){grid-column:1/-1}
-  .dm-kpi{padding:10px 12px}
-  .dm-kpi-v{font-size:19px}
+  /* phone: five small figure tiles (3 + 2) instead of a whole screen of cards */
+  .dm-kpis{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:12px}
+  .dm-kpi{padding:8px 9px;border-radius:11px}
+  .dm-kpi-top{margin-bottom:3px}
+  .dm-kpi-ico{display:none}
+  .dm-kpi-lbl{font-size:9px;letter-spacing:.04em}
+  .dm-kpi-v{font-size:16px}
+  .dm-kpi-sub{display:none}
+  .dm-kpi .pbar,.dm-kpi [class*="bar"]{margin-top:4px}
+  .dm-addr{display:none}
+  .dm-pills{margin-top:6px;gap:4px}
+  .dm-acts>button{padding:6px 10px!important;font-size:12px!important}
   .dm-tabbar{padding:8px 16px}
   .dm-body{padding:14px 16px calc(20px + env(safe-area-inset-bottom))}
   .dm-card{padding:14px}

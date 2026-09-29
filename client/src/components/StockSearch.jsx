@@ -30,7 +30,12 @@ export default function StockSearch({ open, onClose, mode = '' }) {
       const r = await api.stockSearch(query, { inStock, ...(disc ? { status: 'discontinued', limit: 200 } : {}), ...opts });
       if (my === seq.current) setData(r);
     } catch (e) {
-      if (my === seq.current) setErr(e?.message || 'Could not reach the stock service');
+      if (my === seq.current) {
+        const m = String(e?.message || '');
+        setErr(/failed to fetch|network|load failed/i.test(m) ? "Can't reach the server — check your internet and try again"
+          : /not found|404|cannot get/i.test(m) ? 'Stock search is not switched on for this server yet — ask your admin'
+          : m || 'Could not reach the stock service');
+      }
     } finally { if (my === seq.current) setBusy(false); }
   };
 

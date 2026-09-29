@@ -1883,6 +1883,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
       <div className="card" style={{marginBottom:16, padding:14}}>
         <CategorySalesPanel
           monthLabel={MO[selectedMonthIdx]}
+          targetFor={currentUser?.role==='salesman' ? currentUser.id : ''}
           excluded={catExcluded}
           onToggleExcluded={toggleCatExcluded}
           hideToggleChips

@@ -35,7 +35,7 @@ const APK_MIME = 'application/vnd.android.package-archive';
 const nativeFileOpener = () =>
   (typeof window !== 'undefined' && window.Capacitor?.Plugins?.FileOpener) || null;
 
-export default function UpdateButton({ compact = false }) {
+export default function UpdateButton({ compact = false, onlyWhenAvailable = false, showLabel = false }) {
   const [busy, setBusy]     = useState(false);
   const [latest, setLatest] = useState(null);   // newer build, once found
   const [pct, setPct]       = useState(null);   // download progress, 0-100
@@ -160,6 +160,8 @@ export default function UpdateButton({ compact = false }) {
 
   // Still asking the server on first open: a quiet "Loading…" so the bar is
   // not empty for a second. Up to date: nothing at all — there is nothing to do.
+  // phone top bar: show nothing unless there is an update to install
+  if (onlyWhenAvailable) return null;
   if (!checked) return (
     <span style={{ ...base, color:'var(--t3)' }}><RefreshCw size={13} className="spin"/><span className="hide-sm">Loading…</span></span>
   );
@@ -168,7 +170,9 @@ export default function UpdateButton({ compact = false }) {
     <button onClick={() => check(false)} disabled={busy} className="btn" title="You're on the latest version — tap to check again"
       style={{ ...base, color:'var(--t3)', background:'transparent', border:'1px solid transparent' }}>
       {busy ? <RefreshCw size={13} className="spin"/> : <Check size={13}/>}
-      <span className="hide-sm">{INSTALLED_NAME || 'latest'}</span>
+      {showLabel
+        ? <span>{INSTALLED_NAME ? `App ${INSTALLED_NAME} · up to date` : 'Up to date'}</span>
+        : <span className="hide-sm">{INSTALLED_NAME || 'latest'}</span>}
     </button>
   );
 }

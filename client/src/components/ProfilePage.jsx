@@ -3,7 +3,7 @@ import {
   Camera, Lock, Trash2, Phone, MessageCircle, Mail, User, Calendar, Droplet, Languages,
   MapPin, HeartPulse, Palette, ShieldCheck, KeyRound, Eye, EyeOff, Info, Check, RotateCcw,
   Save, AlertTriangle, RefreshCw, Loader2, AtSign, Briefcase, Home, UserCircle2, Contact,
-  CheckCircle2, Sparkles,
+  CheckCircle2, Sparkles, LogOut,
 } from 'lucide-react';
 import { api } from '../api';
 import { notify, confirmDialog } from './Toast';
@@ -208,6 +208,9 @@ const CSS = `
   color:var(--t1);background:color-mix(in srgb,var(--yel) 12%,var(--bg1));border:1px solid color-mix(in srgb,var(--yel) 40%,transparent)}
 .pf-banner svg{color:var(--yel);flex-shrink:0;margin-top:1px}
 
+.pf-out{display:flex;align-items:center;gap:12px;flex-wrap:wrap;border:1px solid color-mix(in srgb,var(--red) 22%,var(--b1))!important}
+.pf-out-btn{display:inline-flex!important;align-items:center;gap:7px;padding:9px 16px!important;font-size:13px!important;font-weight:800!important}
+@media(max-width:560px){.pf-out-btn{width:100%;justify-content:center}}
 .pf-bar{position:sticky;bottom:14px;z-index:40;margin-top:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px 10px 16px;border-radius:16px;
   background:var(--bg1);border:1px solid var(--acc);box-shadow:0 14px 40px color-mix(in srgb,var(--acc) 25%,transparent),0 2px 8px rgba(16,24,40,.08);
   animation:pfBar .32s cubic-bezier(.2,.8,.2,1) both}
@@ -221,7 +224,7 @@ const CSS = `
 .pf-err-ico{width:54px;height:54px;border-radius:16px;display:grid;place-items:center;color:var(--red);background:color-mix(in srgb,var(--red) 12%,transparent)}
 
 @media(max-width:768px){
-  .pf-bar{bottom:calc(76px + env(safe-area-inset-bottom))}
+  .pf-bar{bottom:6px}
 }
 @media(max-width:560px){
   .pf-cover,.pf-skel-cover{height:112px}
@@ -310,7 +313,7 @@ function Skeleton() {
 }
 
 // ── page ───────────────────────────────────────────────────────────────────
-export default function ProfilePage({ currentUser, onUpdated }) {
+export default function ProfilePage({ currentUser, onUpdated, onLogout, onReturn, returnName }) {
   const [me, setMe] = useState(null);
   const [loadErr, setLoadErr] = useState('');
   const [loading, setLoading] = useState(true);
@@ -760,6 +763,28 @@ export default function ProfilePage({ currentUser, onUpdated }) {
               </div>
             </div>
           </div>
+
+          {blocked && onReturn ? (
+            <div className="card pf-rise pf-out" style={{ '--i': 4 }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontWeight: 800, color: 'var(--t1)', fontSize: 14 }}>Viewing as {currentUser?.name}</div>
+                <div style={{ fontSize: 12, color: 'var(--t3)' }}>You opened this account with Login as. Go back to your own account — nobody is signed out.</div>
+              </div>
+              <button className="btnp pf-out-btn" onClick={onReturn}>
+                <LogOut size={15} /> Return to {returnName || 'my account'}
+              </button>
+            </div>
+          ) : onLogout && (
+            <div className="card pf-rise pf-out" style={{ '--i': 4 }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontWeight: 800, color: 'var(--t1)', fontSize: 14 }}>Sign out</div>
+                <div style={{ fontSize: 12, color: 'var(--t3)' }}>Leave this phone signed out. You'll need your password to come back in.</div>
+              </div>
+              <button className="btnd pf-out-btn" onClick={async () => { if (await confirmDialog({ title: 'Sign out?', message: 'You will need your username and password to sign in again.', confirmText: 'Sign out', danger: true })) onLogout(); }}>
+                <LogOut size={15} /> Sign out
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
