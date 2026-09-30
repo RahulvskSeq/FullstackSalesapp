@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { X, Search, Plus, Trash2, CalendarPlus, MapPin, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { api } from '../api';
 import { useT } from '../i18n';
+import RepeatHint from './RepeatHint';
 
 // "Plan a visit": every dealer on the right; tap + and the dealer drops into the day's
 // plan at the bottom. The day holds at most `maxPerDay` visits per salesman.
@@ -30,6 +31,14 @@ export default function PlanVisitDrawer({ dealers = [], plans = [], day, setDay,
     api.visitCoverage(day.slice(0, 7), salesmanId).then(r => setCov(Object.fromEntries((r.rows || []).map(x => [x.id, x.status])))).catch(() => setCov({}));
   }, [day.slice(0, 7), salesmanId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // this salesman's plans for each dealer in the month of the chosen day
+  const monthPlans = useMemo(() => {
+    const m = new Map(), ym = day.slice(0, 7);
+    for (const p of plans) if (p.salesmanId === salesmanId && p.date.slice(0, 7) === ym) (m.get(p.dealerId) || m.set(p.dealerId, []).get(p.dealerId)).push(p.date);
+    for (const v of m.values()) v.sort();
+    return m;
+  }, [plans, salesmanId, day]);
+  const monthName = new Date(day + 'T00:00:00').toLocaleDateString('en-IN', { month: 'short' });
   const past = day < todayYmd();
   const dayPlans = plans.filter(p => p.date === day && (!salesmanId || p.salesmanId === salesmanId));
   const full = !!salesmanId && dayPlans.length >= maxPerDay;
@@ -97,6 +106,7 @@ export default function PlanVisitDrawer({ dealers = [], plans = [], day, setDay,
               <span className="pv-tier" style={{ '--tone': TIER_TONE[d.status] || 'var(--t3)' }}>{TIERS.includes(d.status) ? (d.status === 'KEY ACCOUNT' ? 'KEY' : d.status) : '—'}</span>
               <span className="pv-main">
                 <b>{d.name}</b>
+                <RepeatHint dates={monthPlans.get(id) || []} month={monthName} />
                 <small><MapPin size={10} /> {[d.zone, d.city].filter(Boolean).join(' · ') || 'no zone'}{canPlan && d.salesman && d.salesman !== salesmanId ? ` · ${salesmen.find(s => s.id === d.salesman)?.name || d.salesman}'s dealer` : ''}{nm ? ' · not met this month' : ''}</small>
               </span>
               <button className="btnp pv-add" disabled={!mayPlan || full || !!busyId} onClick={() => add(d)}>{busyId === id ? '…' : <><Plus size={13} /> Add</>}</button>

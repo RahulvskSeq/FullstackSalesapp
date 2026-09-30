@@ -1244,7 +1244,7 @@ export default function Styles({theme}){
     .pv-chips button{padding:4px 10px;border-radius:999px;border:1px solid var(--b2);background:var(--bg1);color:var(--t2);font-size:11px;font-weight:700;cursor:pointer}
     .pv-chips button.on{background:var(--acc);border-color:var(--acc);color:#fff}
     .pv-chips button.nm.on{background:#ef4444;border-color:#ef4444}
-    .pv-list{flex:1;min-height:120px;overflow-y:auto;padding:0 14px 10px;display:grid;gap:6px;align-content:start}
+    .pv-list{flex:1;min-height:120px;overflow-y:auto;overflow-x:hidden;padding:0 14px 10px;display:grid;grid-template-columns:minmax(0,1fr);gap:6px;align-content:start}
     .pv-row{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:12px;border:1px solid var(--b1);background:var(--bg1)}
     .pv-tier{flex-shrink:0;min-width:52px;text-align:center;font-size:9.5px;font-weight:850;letter-spacing:.04em;padding:3px 5px;border-radius:7px;color:var(--tone);background:color-mix(in srgb,var(--tone) 13%,transparent)}
     .pv-main{display:flex;flex-direction:column;min-width:0;flex:1}
