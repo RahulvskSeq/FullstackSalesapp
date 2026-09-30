@@ -853,6 +853,34 @@ router.get('/months', protect, async (req, res) => {
 
 // Async because we may need to look up the user's permissions in Mongo and
 // resolve permitted-state dealer names before composing the filter.
+// Sale-row scope for one salesman: every month of his current dealers except months
+// stamped to someone else, plus the months other dealers were stamped to him.
+const _ownScope = new Map();   // uid → { at, v }
+async function ownedSaleScope(uid) {
+  const hit = _ownScope.get(uid);
+  if (hit && Date.now() - hit.at < 60e3) return hit.v;
+  const ds = await Dealer.aggregate([
+    { $project: { salesman: 1, md: { $objectToArray: { $ifNull: ['$monthlyData', {}] } } } },
+    { $project: { salesman: 1, st: { $filter: { input: '$md', cond: { $gt: [{ $strLenCP: { $ifNull: ['$$this.v.salesman', ''] } }, 0] } } } } },
+    { $match: { $or: [{ salesman: uid }, { 'st.v.salesman': uid }] } },
+    { $project: { salesman: 1, st: { $map: { input: '$st', in: { m: '$$this.k', s: '$$this.v.salesman' } } } } },
+  ]);
+  const clean = [], parts = [];
+  for (const d of ds) {
+    const months = want => d.st.filter(x => (x.s === uid) === want).map(x => normMonth(x.m)).filter(Boolean);
+    if (d.salesman === uid) {
+      const away = months(false);
+      if (away.length) parts.push({ dealerId: d._id, month: { $nin: away } }); else clean.push(d._id);
+    } else {
+      const mine = months(true);
+      if (mine.length) parts.push({ dealerId: d._id, month: { $in: mine } });
+    }
+  }
+  const v = [{ dealerId: { $in: clean } }, ...parts];
+  _ownScope.set(uid, { at: Date.now(), v });
+  return v;
+}
+
 async function monthFilter(req) {
   const f = {};
   if (req.query.month) f.month = req.query.month;
@@ -869,7 +897,10 @@ async function monthFilter(req) {
   // A salesman's scope is their own book, full stop — settled before any
   // permission lookup so no territory grant widens or narrows it.
   // See dealers.js dealerScope().
-  if (req.user?.role === 'salesman') { f.salesman = req.user.id; return f; }
+  // His rows are the ones on the dealers he owned in each month (a handover stamps
+  // monthlyData[month].salesman) — not the name on the bill — so these figures match
+  // his achieved card and the admin salesman cards.
+  if (req.user?.role === 'salesman') { f.$or = await ownedSaleScope(req.user.id); return f; }
 
   // Load the user's data-access permissions from the DB.
   const User = (await import('../models/User.js')).default;
@@ -1258,8 +1289,10 @@ router.get('/by-salesman', protect, async (req, res) => {
   ]);
   const out = {};
   let grandTotal = 0;
+  // a salesman's rows are all his (see monthFilter), whatever name is on the bill
+  const own = req.user?.role === 'salesman' ? req.user.id : null;
   for (const r of rows) {
-    const s = r._id.salesman || '(no salesman)';
+    const s = own || r._id.salesman || '(no salesman)';
     out[s] = out[s] || { salesman: s, byCategory: {}, total: 0 };
     out[s].byCategory[r._id.category] = out[s].byCategory[r._id.category] || {};
     out[s].byCategory[r._id.category][r._id.subCategory] = r.qty;
