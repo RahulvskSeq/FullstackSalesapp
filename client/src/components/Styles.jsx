@@ -1245,7 +1245,10 @@ export default function Styles({theme}){
     .pv-chips button.on{background:var(--acc);border-color:var(--acc);color:#fff}
     .pv-chips button.nm.on{background:#ef4444;border-color:#ef4444}
     .pv-list{flex:1;min-height:120px;overflow-y:auto;overflow-x:hidden;padding:0 14px 10px;display:grid;grid-template-columns:minmax(0,1fr);gap:6px;align-content:start}
-    .pv-row{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:12px;border:1px solid var(--b1);background:var(--bg1)}
+    .pv-row{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:12px;border:1px solid var(--b1);background:var(--bg1);cursor:pointer;transition:background .15s,border-color .15s}
+    .pv-row:hover:not(.off){border-color:color-mix(in srgb,var(--acc) 40%,transparent)}
+    .pv-row:active:not(.off){background:color-mix(in srgb,var(--acc) 8%,var(--bg1))}
+    .pv-row.off{cursor:default}
     .pv-tier{flex-shrink:0;min-width:52px;text-align:center;font-size:9.5px;font-weight:850;letter-spacing:.04em;padding:3px 5px;border-radius:7px;color:var(--tone);background:color-mix(in srgb,var(--tone) 13%,transparent)}
     .pv-main{display:flex;flex-direction:column;min-width:0;flex:1}
     .pv-main b{font-size:12.5px;font-weight:750;color:var(--t1);overflow-wrap:anywhere}

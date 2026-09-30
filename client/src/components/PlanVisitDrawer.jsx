@@ -102,14 +102,15 @@ export default function PlanVisitDrawer({ dealers = [], plans = [], day, setDay,
         <div className="pv-list">
           {mayPlan && typed.length >= 3 && !exact && <button className="pv-new" disabled={full || !!busyId} onClick={addNew}><Plus size={14} /> Plan “{typed}” as a new party</button>}
           {shown.map(d => { const id = d._id || d.id; const nm = cov && cov[id] === 'NOT_MET'; return (
-            <div key={id} className="pv-row">
+            <div key={id} className={'pv-row' + (!mayPlan || full || busyId ? ' off' : '')} role="button" tabIndex={0} title="Add to this day"
+              onClick={() => { if (mayPlan && !full && !busyId) add(d); }} onKeyDown={e => { if ((e.key === 'Enter' || e.key === ' ') && mayPlan && !full && !busyId) { e.preventDefault(); add(d); } }}>
               <span className="pv-tier" style={{ '--tone': TIER_TONE[d.status] || 'var(--t3)' }}>{TIERS.includes(d.status) ? (d.status === 'KEY ACCOUNT' ? 'KEY' : d.status) : '—'}</span>
               <span className="pv-main">
                 <b>{d.name}</b>
                 <RepeatHint dates={monthPlans.get(id) || []} month={monthName} />
                 <small><MapPin size={10} /> {[d.zone, d.city].filter(Boolean).join(' · ') || 'no zone'}{canPlan && d.salesman && d.salesman !== salesmanId ? ` · ${salesmen.find(s => s.id === d.salesman)?.name || d.salesman}'s dealer` : ''}{nm ? ' · not met this month' : ''}</small>
               </span>
-              <button className="btnp pv-add" disabled={!mayPlan || full || !!busyId} onClick={() => add(d)}>{busyId === id ? '…' : <><Plus size={13} /> Add</>}</button>
+              <button className="btnp pv-add" disabled={!mayPlan || full || !!busyId} onClick={e => { e.stopPropagation(); add(d); }}>{busyId === id ? '…' : <><Plus size={13} /> Add</>}</button>
             </div>); })}
           {!shown.length && <div className="pv-msg">{notMetOnly ? 'Every top dealer was met or planned this month.' : 'No dealer matches.'}</div>}
           {!more && pool.length > LIMIT && <button className="btn pv-more" onClick={() => setMore(true)}>Show all {pool.length} dealers</button>}

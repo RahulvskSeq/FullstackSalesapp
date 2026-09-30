@@ -2,7 +2,6 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { ChevronLeft, ChevronRight, Plus, Search, CheckCircle2, CalendarDays, Repeat, Pencil, Trash2, ArrowRight, AlertTriangle, ListChecks, Sun, MapPin, Wallet, X, Clock, Package, CalendarPlus } from 'lucide-react';
 import { api } from '../api';
 import DealerVisitModal from './DealerVisitModal';
-import DealerOutstandingModal from './DealerOutstandingModal';
 import SamplesCarryModal from './SamplesCarryModal';
 import PlanVisitDrawer from './PlanVisitDrawer';
 import RepeatHint from './RepeatHint';
@@ -41,7 +40,6 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
   const [view, setViewRaw] = useState(() => { try { return localStorage.getItem('stp_cal_view') || 'month'; } catch { return 'month'; } });
   const { t: tr } = useT();
   const [unplanned, setUnplanned] = useState([]);   // visits made without a plan
-  const [outFor, setOutFor] = useState(null);       // {id,name} — outstanding popup
   const [canPlan, setCanPlan] = useState(false);   // the server's answer: may this user plan for others
   const [maxPerDay, setMaxPerDay] = useState(8);
   const [busy, setBusy] = useState(false);
@@ -434,7 +432,6 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
                     </div>
                   </div>
                   <Badge tone={u.status === 'VISITED' ? 'var(--grn)' : 'var(--yel)'}>{u.status === 'VISITED' ? 'Visited' : 'In progress'}</Badge>
-                  {u.dealerId && <button className="btn vc-lb" title="See what this dealer owes" onClick={() => setOutFor({ id: u.dealerId, name: u.dealerName })}><Wallet size={13} /><span>{tr('Outstanding')}</span></button>}
                   {u.dealerId && <button className="btn vc-lb" title="Open the dealer: summary, check-in, MOM" onClick={() => setOpen(u.dealerId)}><ArrowRight size={13} /><span>{tr('Visit')}</span></button>}
                 </div>
                 );
@@ -465,14 +462,15 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
               </button>}
               {pool.length > 0 && <div style={{ marginTop: 8, display: 'grid', gap: 4, maxHeight: 260, overflowY: 'auto' }}>
                 {pool.map(d => (
-                  <div key={d._id || d.id} className="vc-pick">
+                  <div key={d._id || d.id} className={'vc-pick' + (busy ? ' off' : '')} role="button" tabIndex={0} title={replacing ? 'Use this dealer' : 'Add to the day'}
+                    onClick={() => { if (!busy) add(d); }} onKeyDown={e => { if ((e.key === 'Enter' || e.key === ' ') && !busy) { e.preventDefault(); add(d); } }}>
                     <span className="ini" style={{ '--h': hue(d.name), width: 28, height: 28, borderRadius: 9, fontSize: 10.5 }}>{inits(d.name)}</span>
                     <span style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--t1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name}</div>
                       <RepeatHint dates={repeatOf.get(daySm + '|' + (d._id || d.id)) || []} month={month.toLocaleDateString('en-IN', { month: 'short' })} />
                       <div style={{ color: 'var(--t3)', fontSize: 10.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{[d.zone, d.city].filter(Boolean).join(' · ')}{d.salesman && d.salesman !== daySm ? ` · ${smName(d.salesman)}'s dealer` : ''}</div>
                     </span>
-                    <button className="btnp" disabled={busy} style={{ fontSize: 11.5, padding: '4px 10px', display: 'inline-flex', gap: 3, alignItems: 'center', flexShrink: 0 }} onClick={() => add(d)}>{replacing ? <><Repeat size={12} /> Use</> : <><Plus size={12} /> Add</>}</button>
+                    <button className="btnp" disabled={busy} style={{ fontSize: 11.5, padding: '4px 10px', display: 'inline-flex', gap: 3, alignItems: 'center', flexShrink: 0 }} onClick={e => { e.stopPropagation(); add(d); }}>{replacing ? <><Repeat size={12} /> Use</> : <><Plus size={12} /> Add</>}</button>
                   </div>
                 ))}
               </div>}
@@ -652,7 +650,9 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
         .vc-note { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; font-weight: 600; padding: 9px 12px; border-radius: 12px; color: var(--tone); background: color-mix(in srgb, var(--tone) 10%, transparent); border: 1px solid color-mix(in srgb, var(--tone) 25%, transparent); margin-top: 4px; }
         .vc-note svg { flex-shrink: 0; margin-top: 1px; }
         .vc-add { margin-top: 4px; padding: 12px; border-radius: 14px; background: var(--bg2); border: 1px solid var(--b1); }
-        .vc-pick { display: flex; gap: 9px; align-items: center; padding: 6px 8px; border-radius: 10px; background: var(--bg1); border: 1px solid var(--b1); transition: border-color .15s; }
+        .vc-pick { display: flex; gap: 9px; align-items: center; padding: 6px 8px; border-radius: 10px; background: var(--bg1); border: 1px solid var(--b1); transition: border-color .15s, background .15s; cursor: pointer; }
+        .vc-pick:active:not(.off) { background: color-mix(in srgb, var(--acc) 8%, var(--bg1)); }
+        .vc-pick.off { cursor: default; }
         .vc-pick:hover { border-color: var(--acc); }
         .vc-table { width: 100%; min-width: 520px; border-collapse: collapse; font-size: 12.5px; }
         .vc-table th { color: var(--t3); font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--b1); white-space: nowrap; }
@@ -720,7 +720,6 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
         salesmanId={isStaff ? sm : (currentUser?.id || '')} setSalesmanId={setSm} salesmen={salesmen} isStaff={isStaff} canPlan={canPlan} maxPerDay={maxPerDay}
         onChanged={load} onClose={() => setPlanOpen(false)} />}
       {carryOpen && <SamplesCarryModal date={day} salesmanId={daySm || ''} onClose={() => setCarryOpen(false)} />}
-      {outFor && <DealerOutstandingModal dealerId={outFor.id} dealerName={outFor.name} onClose={() => setOutFor(null)} />}
       {open && <DealerVisitModal dealerId={open} dealerName={plansAll.find(p => p.dealerId === open)?.dealerName || ''} onClose={() => { setOpen(null); load(); }} />}
     </div>
   );
