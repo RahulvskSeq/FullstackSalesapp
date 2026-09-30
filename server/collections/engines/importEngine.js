@@ -27,7 +27,12 @@ export function parseSheet(buffer, { asOn }) {
   const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true });
   let hi = -1, partyCol = -1;
   for (let i = 0; i < Math.min(10, aoa.length); i++) {
-    const pc = aoa[i].findIndex(c => typeof c === 'string' && /dealer|party|customer|ledger|name/i.test(c));
+    // A clear party header wins over a bare "name": sheets that carry the salesman
+    // first ("EX NAMES", "Salesman") must still read the party from "Particulars".
+    const notParty = c => /\b(ex|exe|executive|sales\s*man|salesman|sales\s*person|employee|rep)\b/i.test(c);
+    const isStr = c => typeof c === 'string' && !notParty(c);
+    let pc = aoa[i].findIndex(c => isStr(c) && /dealer|party|customer|ledger|particulars/i.test(c));
+    if (pc < 0) pc = aoa[i].findIndex(c => isStr(c) && /name/i.test(c));
     if (pc >= 0) { hi = i; partyCol = pc; break; }
   }
   if (hi < 0) {
@@ -74,7 +79,7 @@ export function detectBalanceMode(rows) {
   return { mode, zeroRatio: +zeroRatio.toFixed(2), monotoneRatio: +monotoneRatio.toFixed(2) };
 }
 
-async function dealerMaps() {
+export async function dealerMaps() {
   const Dealer = mongoose.models.Dealer;
   const all = await Dealer.find({}, '_id name code aliases tallyGuid salesman').lean();
   const byCode = new Map(), byName = new Map(), byAlias = new Map(), byGuid = new Map();

@@ -19,7 +19,7 @@ export const TONE = {
   OPEN: 'var(--acc)', IN_PROGRESS: 'var(--yel)', DONE: 'var(--grn)', CANCELLED: 'var(--t3)', EXPIRED: 'var(--red)',
   RECORDED: 'var(--yel)', CONFIRMED: 'var(--grn)', BOUNCED: 'var(--red)',
   PENDING: 'var(--yel)', PARTIALLY_FULFILLED: '#f97316', FULFILLED: 'var(--grn)', BROKEN: 'var(--red)',
-  NIL: 'var(--t3)', DUE: 'var(--yel)', OVERDUE: 'var(--red)', HIGH_PRIORITY: '#f97316', PROMISED: 'var(--pur)', PARTIAL_PAYMENT: 'var(--yel)', FOLLOW_UP_REQUIRED: 'var(--acc)', CLOSED: 'var(--t3)',
+  NIL: 'var(--t3)', DUE: 'var(--yel)', OVERDUE: 'var(--red)', HIGH_PRIORITY: '#f97316', PROMISED: 'var(--pur)', COLLECT_CHEQUE: 'var(--grn)', PARTIAL_PAYMENT: 'var(--yel)', FOLLOW_UP_REQUIRED: 'var(--acc)', CLOSED: 'var(--t3)',
   APPLIED: 'var(--grn)', FAILED: 'var(--red)', APPLYING: 'var(--yel)', DUPLICATE: 'var(--t3)', PREVIEWED: 'var(--acc)', VALIDATED: 'var(--acc)', STAGED: 'var(--t3)',
   QUEUED: 'var(--yel)', RUNNING: 'var(--yel)', SENT: 'var(--acc)', DELIVERED: 'var(--grn)', READ: 'var(--grn)', OPTED_OUT: 'var(--t3)',
 };

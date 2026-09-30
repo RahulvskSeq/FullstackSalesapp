@@ -30,6 +30,7 @@ export async function recordFollowup(input, { by }) {
   if (!YMD.test(date)) throw bad('date must be YYYY-MM-DD');
   const channel = String(input.channel || 'CALL').toUpperCase(); if (!CHANNELS.includes(channel)) throw bad('bad channel');
   const outcome = String(input.outcome || 'OTHER').toUpperCase(); if (!OUTCOMES.includes(outcome)) throw bad('bad outcome');
+  if (outcome === 'COLLECT_CHEQUE' && !input.nextFollowupDate) throw bad('pick the date to collect the cheque');
   if (input.nextFollowupDate && !YMD.test(String(input.nextFollowupDate))) throw bad('nextFollowupDate must be YYYY-MM-DD');
   const balance = await ColBalance.findOne({ dealerId }).lean();
   const employeeId = String(input.employeeId || by);

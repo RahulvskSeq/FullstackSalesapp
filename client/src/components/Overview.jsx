@@ -1977,6 +1977,25 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
             </div>
           ))}
         </div>
+        {/* Account activity sits in the same section: four small boxes under the tiers */}
+        {(()=>{
+          const ACT=[['ACTIVE','1 – 49 units this month'],['RECENTLY INACTIVE','no order this month'],['INACTIVE','no order for 2 months'],['DEAD','no order in 3 months']];
+          const m={}; myD.forEach(x=>{const p=(x.perfStatus||'').trim(); if(p)(m[p] ||= []).push(x);});
+          const total=ACT.reduce((a,[k])=>a+(m[k]||[]).length,0)||1;
+          return(
+            <div className="act-boxes">
+              {ACT.map(([k,sub])=>{const list=m[k]||[];const clr=statusColorMap[k]||'#64748b';
+                return(
+                  <button key={k} className="act-box" style={{'--tone':clr}} disabled={!list.length}
+                    onClick={()=>{if(list.length)setTierPopup({label:k,sub,color:clr,icon:'●',list});}}>
+                    <span className="ab-lbl"><i/>{tr(k)}</span>
+                    <span className="ab-n"><CountUp value={list.length}/><small>{Math.round(list.length/total*100)}%</small></span>
+                    <span className="ab-sub">{sub}</span>
+                  </button>
+                );})}
+            </div>
+          );
+        })()}
       </div>
 
       {/* ── Status, split by KIND ─────────────────────────────────────────
@@ -2097,9 +2116,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
           </div>
         );
         return(<>
-          <Meter icon={<span className="sec-ico" style={{'--tone':'#ea580c'}}><Clock size={15}/></span>}
-            title={tr(mine?'Your dealers’ activity':'Account Activity')} note="calculated from sales · tap a part to view"
-            keys={activityKeys} map={perfMap}/>
+          {/* Account activity now lives inside Performance Tiers as small boxes */}
           <Rings icon={<span className="sec-ico" style={{'--tone':'var(--grn)'}}><Star size={15}/></span>}
             title={tr(mine?'Your selected status dealers':'Selected User')} note={mine?'the status you set · tap to view':'set by the salesman · tap to view'}
             keys={potentialKeys} map={potMap}/>

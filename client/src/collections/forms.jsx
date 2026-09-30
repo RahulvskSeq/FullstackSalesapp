@@ -9,7 +9,7 @@ import { fileToCompressedDataURL } from '../components/visitCapture';
  * optional pre-selected dealer so a row can open the form already filled in.
  */
 const CHANNELS = ['CALL', 'VISIT', 'WHATSAPP', 'EMAIL', 'SMS', 'OTHER'];
-const OUTCOMES = ['NO_ANSWER', 'CALLBACK', 'PROMISED', 'DISPUTED', 'PARTIAL', 'PAID', 'NOT_REACHABLE', 'OTHER'];
+const OUTCOMES = ['NO_ANSWER', 'CALLBACK', 'PROMISED', 'DISPUTED', 'PARTIAL', 'PAID', 'COLLECT_CHEQUE', 'NOT_REACHABLE', 'OTHER'];
 const MODES = ['CASH', 'CHEQUE', 'NEFT', 'RTGS', 'UPI', 'CARD', 'OTHER'];
 const TASK_TYPES = ['CALL', 'VISIT', 'PAYMENT_COLLECTION', 'WHATSAPP', 'SEND_STATEMENT', 'SEND_INVOICE', 'FOLLOW_UP', 'ESCALATION', 'VERIFICATION', 'PROMISE_FOLLOW_UP', 'CUSTOM'];
 const PRIORITY = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'];
@@ -56,7 +56,7 @@ export function FollowupForm({ dealer: preset, onClose, onDone, focusDate = fals
   const salesmen = (users || []).filter(u => u.role === 'salesman' || u.role === 'employee' || u.role === 'admin');
   const promising = f.outcome === 'PROMISED';
   const CH = [['CALL', 'Call'], ['VISIT', 'Visit'], ['WHATSAPP', 'WhatsApp']];
-  const OC = [['CALLBACK', 'Call back later'], ['PROMISED', 'Promised to pay'], ['PAID', 'Paid'], ['NO_ANSWER', 'No answer'], ['DISPUTED', 'Dispute']];
+  const OC = [['CALLBACK', 'Call back later'], ['PROMISED', 'Promised to pay'], ['COLLECT_CHEQUE', 'Collect cheque'], ['NO_ANSWER', 'No answer'], ['DISPUTED', 'Dispute']];
   return (
     <Modal title="Record follow-up" onClose={onClose}>
       <Field label="Dealer"><DealerPicker value={dealer} onChange={setDealer} /></Field>
@@ -68,12 +68,12 @@ export function FollowupForm({ dealer: preset, onClose, onDone, focusDate = fals
         <Field label="Promised amount (₹)"><input type="number" className="inp" value={f.promiseAmount} onChange={e => set('promiseAmount', e.target.value)} min={1} autoFocus /></Field>
         <Field label="Promised by"><input type="date" className="inp" value={f.promiseDate} onChange={e => set('promiseDate', e.target.value)} min={today()} /></Field>
       </div>}
-      <Field label="Next follow-up"><input type="date" className="inp" value={f.nextFollowupDate} onChange={e => set('nextFollowupDate', e.target.value)} min={today()} autoFocus={focusDate} /></Field>
+      <Field label={f.outcome === 'COLLECT_CHEQUE' ? 'Collect the cheque on' : 'Next follow-up'}><input type="date" className="inp" value={f.nextFollowupDate} onChange={e => set('nextFollowupDate', e.target.value)} min={today()} autoFocus={focusDate} required={f.outcome === 'COLLECT_CHEQUE'} /></Field>
       <Field label="Notes"><textarea className="inp" rows={2} value={f.notes} onChange={e => set('notes', e.target.value)} placeholder="Anything worth remembering (optional)" /></Field>
       <ErrorBox err={err} />
       <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
         <button className="btn" onClick={onClose}>Cancel</button>
-        <button className="btnp" disabled={busy || !dealer || (promising && !(Number(f.promiseAmount) > 0 && f.promiseDate))} onClick={() => run(() => col.recordFollowup({
+        <button className="btnp" disabled={busy || !dealer || (promising && !(Number(f.promiseAmount) > 0 && f.promiseDate)) || (f.outcome === 'COLLECT_CHEQUE' && !f.nextFollowupDate)} onClick={() => run(() => col.recordFollowup({
           dealerId: dealer.id, channel: f.channel, outcome: f.outcome, discussion: f.notes,
           nextFollowupDate: f.nextFollowupDate, employeeId: f.employeeId,
           promise: promising ? { amount: Number(f.promiseAmount), date: f.promiseDate } : undefined }))}>{busy ? 'Saving…' : 'Save'}</button>

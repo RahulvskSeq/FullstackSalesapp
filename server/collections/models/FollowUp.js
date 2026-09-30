@@ -1,7 +1,8 @@
 import mongoose from 'mongoose';
 import { opts } from './_common.js';
 export const CHANNELS = ['CALL', 'VISIT', 'WHATSAPP', 'EMAIL', 'SMS', 'OTHER'];
-export const OUTCOMES = ['NO_ANSWER', 'CALLBACK', 'PROMISED', 'DISPUTED', 'PARTIAL', 'PAID', 'NOT_REACHABLE', 'OTHER'];
+// PAID stays valid for older follow-ups; the form now offers COLLECT_CHEQUE instead (a cheque to pick up on the next date)
+export const OUTCOMES = ['NO_ANSWER', 'CALLBACK', 'PROMISED', 'DISPUTED', 'PARTIAL', 'PAID', 'COLLECT_CHEQUE', 'NOT_REACHABLE', 'OTHER'];
 /** Every interaction, permanent. */
 const S = new mongoose.Schema({
   dealerId:         { type: mongoose.Schema.Types.ObjectId, ref: 'Dealer', required: true },

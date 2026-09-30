@@ -23,6 +23,9 @@ const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())
 const todayYmd = () => ymd(new Date());
 const fmtDay = s => new Date(s + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const addDays = (s, n) => { const d = new Date(s + 'T00:00:00'); d.setDate(d.getDate() + n); return ymd(d); };
+const weekStartOf = s => { const d = new Date(s + 'T00:00:00'); return addDays(s, -((d.getDay() + 6) % 7)); };   // Monday
+const fmtShort = s => new Date(s + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 
 export default function VisitCalendar({ dealers = [], users = {}, currentUser, onNavigate }) {
   const isStaff = ['admin', 'superadmin', 'employee'].includes(currentUser?.role);
@@ -32,7 +35,9 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
   const [day, setDay] = useState(todayYmd());
   const [carryOpen, setCarryOpen] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
-  const [plans, setPlans] = useState([]);
+  const [plansAll, setPlans] = useState([]);   // the month, plus the edges of the week on show
+  // Month / Week / Day, like Google Calendar; remembered on this device
+  const [view, setViewRaw] = useState(() => { try { return localStorage.getItem('stp_cal_view') || 'month'; } catch { return 'month'; } });
   const { t: tr } = useT();
   const [unplanned, setUnplanned] = useState([]);   // visits made without a plan
   const [outFor, setOutFor] = useState(null);       // {id,name} — outstanding popup
@@ -49,17 +54,21 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
 
   const from = ymd(new Date(month.getFullYear(), month.getMonth(), 1));
   const to = ymd(new Date(month.getFullYear(), month.getMonth() + 1, 0));
+  // a week can run into the next or previous month — load those days too
+  const wk0 = weekStartOf(day), wk6 = addDays(wk0, 6);
+  const loadFrom = wk0 < from ? wk0 : from, loadTo = wk6 > to ? wk6 : to;
+  const plans = useMemo(() => plansAll.filter(p => p.date >= from && p.date <= to), [plansAll, from, to]);   // month figures count the month only
   // Each load gets a number; only the newest one may write state, so a slow
   // answer for the previous month/salesman can't overwrite the current one.
   const loadSeq = useRef(0);
   const load = async () => {
     const seq = ++loadSeq.current;
     setBusy(true); setErr('');
-    try { const r = await api.visitPlans({ from, to, ...(sm ? { salesmanId: sm } : {}) }); if (seq !== loadSeq.current) return; setPlans(r.items || []); setUnplanned(r.unplanned || []); setCanPlan(!!r.canPlan); setMaxPerDay(r.maxPerDay || 5); }
+    try { const r = await api.visitPlans({ from: loadFrom, to: loadTo, ...(sm ? { salesmanId: sm } : {}) }); if (seq !== loadSeq.current) return; setPlans(r.items || []); setUnplanned(r.unplanned || []); setCanPlan(!!r.canPlan); setMaxPerDay(r.maxPerDay || 5); }
     catch (e) { if (seq === loadSeq.current) setErr(e?.message || 'Could not load'); }
     finally { if (seq === loadSeq.current) setBusy(false); }
   };
-  useEffect(() => { load(); }, [from, to, sm]);
+  useEffect(() => { load(); }, [loadFrom, loadTo, sm]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // month grid
   const cells = useMemo(() => {
@@ -72,7 +81,7 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
     while (out.length % 7) out.push(null);
     return out;
   }, [month]);
-  const byDay = useMemo(() => { const m = {}; for (const p of plans) (m[p.date] ||= []).push(p); return m; }, [plans]);
+  const byDay = useMemo(() => { const m = {}; for (const p of plansAll) (m[p.date] ||= []).push(p); return m; }, [plansAll]);
   const dayPlans = (byDay[day] || []).filter(p => !sm || p.salesmanId === sm);
   const byDayU = useMemo(() => { const m = {}; for (const u of unplanned) (m[u.date] ||= []).push(u); return m; }, [unplanned]);
   const dayUnplanned = (byDayU[day] || []).filter(u => !sm || u.salesmanId === sm);
@@ -86,6 +95,13 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
     const m = {};
     for (const p of plans) { const r = (m[p.salesmanId] ||= { salesmanId: p.salesmanId, name: p.salesmanName, planned: 0, visited: 0, missed: 0, upcoming: 0 }); r.planned++; if (p.status === 'DONE') r.visited++; else if (p.missed) r.missed++; else if (p.status === 'PLANNED') r.upcoming++; }
     return Object.values(m).sort((a, b) => b.missed - a.missed || b.planned - a.planned);
+  }, [plans]);
+  // how often each dealer is on one salesman's calendar this month — shown beside "Planned"
+  const repeatOf = useMemo(() => {
+    const m = new Map();
+    for (const p of plans) { const k = p.salesmanId + '|' + p.dealerId; (m.get(k) || m.set(k, []).get(k)).push(p.date); }
+    for (const v of m.values()) v.sort();
+    return m;
   }, [plans]);
   const missedList = useMemo(() => plans.filter(p => p.missed).sort((a, b) => b.date.localeCompare(a.date)), [plans]);
 
@@ -145,6 +161,34 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
     };
   }, [plans, sm, tdy, from, to]);
   const closedPct = kpi.done + kpi.missed ? Math.round(kpi.done / (kpi.done + kpi.missed) * 100) : null;
+  // Tapping a day on a phone (calendar above, day below) brings that day's plan into view.
+  const dayRef = useRef(null);
+  const pickDay = (c) => {
+    setDay(c); setReplacing(null);
+    if (window.innerWidth < 980) setTimeout(() => scrollToDay(), 60);
+  };
+  // scroll whichever box actually scrolls (the app's #main on a phone, else the page) to just above the day
+  const scrollToDay = () => {
+    const el = dayRef.current; if (!el) return;
+    let box = el.parentElement;
+    while (box && box !== document.body && !(box.scrollHeight > box.clientHeight + 4 && /(auto|scroll)/.test(getComputedStyle(box).overflowY))) box = box.parentElement;
+    const scroller = box && box !== document.body ? box : (document.scrollingElement || document.documentElement);
+    const top = el.getBoundingClientRect().top - (scroller === document.scrollingElement ? 0 : scroller.getBoundingClientRect().top) + scroller.scrollTop - 12;
+    try { scroller.scrollTo({ top, behavior: 'smooth' }); } catch { scroller.scrollTop = top; }
+    setTimeout(() => { if (Math.abs(scroller.scrollTop - top) > 40) scroller.scrollTop = top; }, 500);   // no smooth scrolling here: jump
+  };
+  const setView = v => {
+    setViewRaw(v); try { localStorage.setItem('stp_cal_view', v); } catch { /* storage blocked */ }
+    // week/day follow the selected day; keep it inside the month on show
+    if (v !== 'month' && (day < from || day > to)) setDay(tdy >= from && tdy <= to ? tdy : from);
+  };
+  const step = dir => {
+    if (view === 'month') { setMonth(m => new Date(m.getFullYear(), m.getMonth() + dir, 1)); return; }
+    const d = addDays(day, dir * (view === 'week' ? 7 : 1)); setDay(d);
+    const x = new Date(d + 'T00:00:00'); if (x.getMonth() !== month.getMonth() || x.getFullYear() !== month.getFullYear()) setMonth(new Date(x.getFullYear(), x.getMonth(), 1));
+  };
+  const navLabel = view === 'week' ? `${fmtShort(wk0)} – ${fmtShort(wk6)}` : view === 'day' ? fmtDay(day)
+    : month.toLocaleDateString('en-IN', { month: 'long' }) + (month.getFullYear() !== new Date().getFullYear() ? ' ' + month.getFullYear() : '');
   const goToday = () => { const d = new Date(); setMonth(new Date(d.getFullYear(), d.getMonth(), 1)); setDay(todayYmd()); };
   const tiles = [
     { k: 'planned', n: kpi.planned, label: 'planned', rule: `${kpi.upcoming} still to go this month`, tone: 'var(--acc)', Icon: CalendarDays },
@@ -188,15 +232,18 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
         ))}
       </div>
 
-      <div className="vc-grid">
+      <div className={'vc-grid' + (view !== 'month' ? ' dayview' : '')}>
         {/* month */}
         <div className="card vc-month">
           <div className="vc-month-top">
             <div className="sec-title" style={{ margin: 0 }}>
               <span className="sec-ico" style={{ '--tone': 'var(--acc)' }}><CalendarDays size={15} /></span>
-              <button className="vc-chev vc-mchev" title="Previous month" onClick={() => setMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1))}><ChevronLeft size={16} /></button>
-              <span className="vc-mname">{month.toLocaleDateString('en-IN', { month: 'long' })}{month.getFullYear() !== new Date().getFullYear() ? ' ' + month.getFullYear() : ''}</span>
-              <button className="vc-chev vc-mchev" title="Next month" onClick={() => setMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1))}><ChevronRight size={16} /></button>
+              <button className="vc-chev vc-mchev" title={'Previous ' + view} onClick={() => step(-1)}><ChevronLeft size={16} /></button>
+              <span className="vc-mname">{navLabel}</span>
+              <button className="vc-chev vc-mchev" title={'Next ' + view} onClick={() => step(1)}><ChevronRight size={16} /></button>
+              <div className="vc-views" role="tablist" aria-label="Calendar view">
+                {[['month', 'Month'], ['week', 'Week'], ['day', 'Day']].map(([k, l]) => <button key={k} role="tab" aria-selected={view === k} className={view === k ? 'on' : ''} onClick={() => setView(k)}>{tr(l)}</button>)}
+              </div>
               {busy && <span className="sec-note">loading…</span>}
               {(canPlan || !isStaff) && <button className="btnp vc-planbtn" onClick={() => setPlanOpen(true)}><CalendarPlus size={15} /> {tr('Plan a visit')}</button>}
             </div>
@@ -204,7 +251,7 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
               {[['Visited', 'var(--grn)'], ['Planned', 'var(--acc)'], ['Self-added', '#06b6d4'], ['Unplanned visit', '#8b5cf6'], ['Not visited', 'var(--red)']].map(([l, c]) => <span key={l}><i style={{ background: c }} />{tr(l)}</span>)}
             </div>
           </div>
-          <div className="vc-month-grid">
+          {view === 'month' && <div className="vc-month-grid">
             {DOW.map((d, i) => <div key={d} className={'vc-dow' + (i >= 5 ? ' we' : '')}>{d}</div>)}
             {cells.map((c, i) => {
               if (!c) return <div key={i} className="vc-blank" />;
@@ -222,7 +269,7 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
               return (
                 <div key={c} role="button" tabIndex={0} className={'vc-cell' + (sel ? ' sel' : '') + (tod ? ' tod' : '') + (we ? ' we' : '') + (c < tdy ? ' past' : '')}
                   title={`${fmtDay(c)}${ps.length ? ` · ${ps.length} planned · ${done} visited` : ''}`}
-                  onClick={() => { setDay(c); setReplacing(null); }} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDay(c); setReplacing(null); } }}>
+                  onClick={() => pickDay(c)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickDay(c); } }}>
                   <div className="vc-head">
                     <span className="vc-num">{Number(c.slice(-2))}</span>
                     {ps.length > 0 && <span className={'vc-cap' + (cellFull ? ' full' : done === ps.length ? ' ok' : '')} title={sm ? `${ps.length} of ${maxPerDay} a day` : `${ps.length} planned`}>{sm ? `${ps.length}/${maxPerDay}` : ps.length}</span>}
@@ -240,11 +287,35 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
                 </div>
               );
             })}
-          </div>
+          </div>}
+          {view === 'week' && <div className="vc-week">
+            {Array.from({ length: 7 }, (_, i) => addDays(wk0, i)).map((c, i) => {
+              const ps = (byDay[c] || []).filter(p => !sm || p.salesmanId === sm);
+              const us = (byDayU[c] || []).filter(u => !sm || u.salesmanId === sm);
+              return (
+                <div key={c} role="button" tabIndex={0} className={'vc-wcol' + (c === day ? ' sel' : '') + (c === tdy ? ' tod' : '') + (i >= 5 ? ' we' : '') + (c < from || c > to ? ' out' : '')}
+                  onClick={() => pickDay(c)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickDay(c); } }}>
+                  <div className="vc-whead"><span>{DOW[i]}</span><b>{Number(c.slice(-2))}</b>{ps.length > 0 && <em>{ps.length}</em>}</div>
+                  <div className="vc-wlist">
+                    {ps.map(p => <div key={p._id} className="vc-wit" style={{ '--tone': toneOf(p) }} title={`${p.dealerName} · ${labelOf(p)}`}><i /><span>{p.dealerName}</span>{!sm && <small>{firstName(p.salesmanId)}</small>}</div>)}
+                    {us.length > 0 && <div className="vc-wit" style={{ '--tone': '#8b5cf6' }}><i /><span>✱ {us.length} unplanned</span></div>}
+                    {!ps.length && !us.length && <div className="vc-wnone">—</div>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>}
+          {view === 'day' && <div className="vc-strip">
+            {Array.from({ length: 7 }, (_, i) => addDays(wk0, i)).map((c, i) => {
+              const n = (byDay[c] || []).filter(p => !sm || p.salesmanId === sm).length;
+              return <button key={c} className={'vc-sday' + (c === day ? ' sel' : '') + (c === tdy ? ' tod' : '') + (i >= 5 ? ' we' : '')} onClick={() => pickDay(c)}>
+                <span>{DOW[i]}</span><b>{Number(c.slice(-2))}</b><em>{n ? n + ' planned' : '—'}</em></button>;
+            })}
+          </div>}
         </div>
 
         {/* the day */}
-        <div className="card vc-day">
+        <div className="card vc-day" ref={dayRef}>
           <div className="vc-dayhead">
             <div className={'vc-datebox' + (isToday ? ' tod' : '')}>
               <span>{dayDate.toLocaleDateString('en-IN', { weekday: 'short' })}</span>
@@ -262,7 +333,7 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
               </div>
             </div>
             {dayPlans.length > 0 && <button className="btn vc-carry" onClick={() => setCarryOpen(true)} title="Every sample to show on this day's visits — each one listed once">
-              <Package size={15} /><span>{tr('Samples for visits')}</span>
+              <Package size={15} /><span className="vc-carry-l">{tr('Samples for visits')}</span><span className="vc-carry-s">{tr('Samples')}</span>
             </button>}
           </div>
           <div className="vc-daystats">
@@ -297,6 +368,14 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
                       {p.newParty ? <span style={{ fontSize: 13.5, fontWeight: 750, color: 'var(--t1)', minWidth: 0, overflowWrap: 'anywhere' }}>{p.dealerName}</span>
                         : <a href="#" onClick={e => { e.preventDefault(); setOpen(p.dealerId); }} style={{ fontSize: 13.5, fontWeight: 750, color: 'var(--t1)', textDecoration: 'none', minWidth: 0, overflowWrap: 'anywhere' }}>{p.dealerName}</a>}
                       <Badge tone={toneOf(p)}>{labelOf(p)}</Badge>
+                      {(() => {
+                        const dates = repeatOf.get(p.salesmanId + '|' + p.dealerId) || [];
+                        if (dates.length < 2) return null;
+                        const nth = dates.indexOf(p.date) + 1, ord = n => n + (['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 < 14) ? 0 : Math.min(n % 10, 4) % 4] || 'th');
+                        return <span className="vc-rep" title={'Planned on ' + dates.map(d => new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })).join(', ')}>
+                          <Repeat size={11} /> {ord(nth)} time · {dates.length}× in {month.toLocaleDateString('en-IN', { month: 'short' })}
+                        </span>;
+                      })()}
                       {p.newParty && <Badge tone="#d97706">New party</Badge>}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 2, display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -478,7 +557,40 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
         .vc-month-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
         .vc-mname { min-width: 92px; text-align: center; }
         .vc-mchev { width: 30px; height: 30px; }
+        .vc-rep { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 800; padding: 2px 8px; border-radius: 999px; color: #b45309; background: color-mix(in srgb, #f59e0b 16%, transparent); border: 1px solid color-mix(in srgb, #f59e0b 35%, transparent); white-space: nowrap; cursor: help; }
+        .vc-views { display: inline-flex; gap: 2px; padding: 3px; border-radius: 11px; background: var(--bg2); border: 1px solid var(--b1); margin-left: 6px; }
+        .vc-views button { border: 0; background: transparent; color: var(--t2); font-size: 12px; font-weight: 700; padding: 5px 11px; border-radius: 8px; cursor: pointer; }
+        .vc-views button.on { background: var(--bg1); color: var(--acc); box-shadow: 0 1px 4px rgba(16,24,40,.12); }
+        .vc-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+        .vc-wcol { min-width: 0; min-height: 220px; border: 1px solid var(--b1); border-radius: 12px; background: var(--bg1); padding: 7px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; transition: border-color .15s, background .15s; outline: none; }
+        .vc-wcol:hover { border-color: var(--b2); background: var(--bg2); }
+        .vc-wcol.we { background: color-mix(in srgb, var(--bg2) 70%, transparent); }
+        .vc-wcol.out { opacity: .7; }
+        .vc-wcol.sel { border-color: var(--acc); box-shadow: 0 0 0 1px var(--acc); }
+        .vc-whead { display: flex; align-items: baseline; gap: 5px; }
+        .vc-whead span { font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--t3); }
+        .vc-whead b { font-size: 18px; font-weight: 850; color: var(--t1); }
+        .vc-wcol.tod .vc-whead b { color: #fff; background: var(--acc); border-radius: 99px; min-width: 26px; height: 26px; display: inline-grid; place-items: center; font-size: 13px; }
+        .vc-whead em { margin-left: auto; font-style: normal; font-size: 10.5px; font-weight: 800; color: var(--acc); background: color-mix(in srgb, var(--acc) 12%, transparent); padding: 0 7px; border-radius: 99px; }
+        .vc-wlist { display: grid; gap: 4px; }
+        .vc-wit { display: flex; align-items: center; gap: 5px; min-width: 0; padding: 4px 6px; border-radius: 7px; font-size: 11px; font-weight: 650; color: var(--t1); background: color-mix(in srgb, var(--tone) 11%, var(--bg1)); border-left: 3px solid var(--tone); }
+        .vc-wit i { display: none; }
+        .vc-wit span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .vc-wit small { flex-shrink: 0; font-size: 9.5px; color: var(--t3); }
+        .vc-wnone { font-size: 11px; color: var(--t3); text-align: center; padding-top: 6px; }
+        .vc-strip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+        .vc-sday { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 8px 2px; border-radius: 12px; border: 1px solid var(--b1); background: var(--bg1); cursor: pointer; color: var(--t1); min-width: 0; }
+        .vc-sday span { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--t3); }
+        .vc-sday b { font-size: 18px; font-weight: 850; }
+        .vc-sday em { font-style: normal; font-size: 9.5px; color: var(--t3); white-space: nowrap; }
+        .vc-sday.we { background: color-mix(in srgb, var(--bg2) 70%, transparent); }
+        .vc-sday.tod b { color: var(--acc); }
+        .vc-sday.sel { background: var(--acc); border-color: var(--acc); color: #fff; }
+        .vc-sday.sel span, .vc-sday.sel em, .vc-sday.sel b { color: #fff; }
+        .vc-grid.dayview { grid-template-columns: 1fr !important; }
+        .vc-grid.dayview .vc-day { position: static !important; }
         .vc-planbtn { margin-left: 10px; display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; padding: 7px 13px; border-radius: 11px; }
+        .vc-carry-s { display: none; }
         .vc-carry { align-self: flex-start; flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 750; padding: 8px 12px; border-radius: 12px; color: #6d28d9; border-color: color-mix(in srgb, #8b5cf6 45%, transparent); background: color-mix(in srgb, #8b5cf6 8%, var(--bg1)); }
         .vc-unpl { margin: 0 0 12px; padding: 10px 12px; border-radius: 14px; border: 1px dashed color-mix(in srgb, #8b5cf6 45%, transparent); background: color-mix(in srgb, #8b5cf6 6%, var(--bg1)); display: grid; gap: 8px; }
         .vc-unpl-t { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12.5px; font-weight: 800; color: #7c3aed; }
@@ -550,7 +662,31 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
         .vc-missed { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); }
         @media (max-width: 860px) { .vc-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } }
         @media (max-width: 600px) {
+          .vc-views { margin-left: 0; }
+          .vc-views button { padding: 4px 9px; font-size: 11.5px; }
+          .vc-week { grid-template-columns: 1fr; gap: 5px; }
+          .vc-wcol { min-height: 0; flex-direction: row; align-items: flex-start; gap: 10px; padding: 8px 10px; }
+          .vc-whead { flex-direction: column; align-items: center; gap: 0; width: 38px; flex-shrink: 0; }
+          .vc-whead em { margin: 2px 0 0; }
+          .vc-wlist { flex: 1; min-width: 0; }
+          .vc-strip { gap: 3px; }
+          .vc-sday { padding: 6px 0; }
+          .vc-sday b { font-size: 15px; }
+          .vc-sday em { font-size: 8.5px; }
+          .vc-dayhead { gap: 10px; }
+          .vc-datebox { width: 44px; height: 46px; border-radius: 12px; }
+          .vc-datebox span { font-size: 9px; }
+          .vc-datebox b { font-size: 18px; }
+          .vc-dayhead > div:nth-child(2) > div:first-child > span:first-child { font-size: 14.5px !important; }
+          .vc-daystats { margin: 8px 0 !important; gap: 6px; }
+          .vc-daystats .kpi-pill { font-size: 11px; padding: 3px 9px; }
+          .vc-empty { flex-direction: row; justify-content: center; gap: 8px; padding: 10px; margin-bottom: 10px; }
+          .vc-empty .sec-ico { width: 28px !important; height: 28px !important; border-radius: 9px !important; }
+          .vc-empty .sec-ico svg { width: 14px; height: 14px; }
+          .vc-empty > div { font-size: 12px !important; }
           .vc-carry { padding: 7px 10px; font-size: 11.5px; }
+          .vc-carry-l { display: none; }
+          .vc-carry-s { display: inline; }
           /* unplanned row: name gets the full first line, status + buttons wrap below */
           .vc-unpl-row { flex-wrap: wrap; row-gap: 6px; }
           .vc-unpl-row .vc-unpl-info { flex: 1 1 calc(100% - 42px) !important; }
@@ -576,13 +712,13 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
           .vc-nav > b { min-width: 96px; font-size: 12.5px; }
         }
       `}</style>
-      {planOpen && <PlanVisitDrawer dealers={dealers} plans={plans} day={day}
+      {planOpen && <PlanVisitDrawer dealers={dealers} plans={plansAll} day={day}
         setDay={d => { setDay(d); const x = new Date(d + 'T00:00:00'); if (x.getFullYear() !== month.getFullYear() || x.getMonth() !== month.getMonth()) setMonth(new Date(x.getFullYear(), x.getMonth(), 1)); }}
         salesmanId={isStaff ? sm : (currentUser?.id || '')} setSalesmanId={setSm} salesmen={salesmen} isStaff={isStaff} canPlan={canPlan} maxPerDay={maxPerDay}
         onChanged={load} onClose={() => setPlanOpen(false)} />}
       {carryOpen && <SamplesCarryModal date={day} salesmanId={daySm || ''} onClose={() => setCarryOpen(false)} />}
       {outFor && <DealerOutstandingModal dealerId={outFor.id} dealerName={outFor.name} onClose={() => setOutFor(null)} />}
-      {open && <DealerVisitModal dealerId={open} dealerName={plans.find(p => p.dealerId === open)?.dealerName || ''} onClose={() => { setOpen(null); load(); }} />}
+      {open && <DealerVisitModal dealerId={open} dealerName={plansAll.find(p => p.dealerId === open)?.dealerName || ''} onClose={() => { setOpen(null); load(); }} />}
     </div>
   );
 }
