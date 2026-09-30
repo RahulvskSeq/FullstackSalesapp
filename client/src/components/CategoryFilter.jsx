@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ChevronDown, Filter, X as XIcon } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { ChevronDown, Filter, X as XIcon, Check, RotateCcw, Save } from 'lucide-react';
 
 /**
  * CategoryFilter — single compact button + dropdown with one checkbox per
@@ -49,6 +50,8 @@ const CategoryFilter = ({
   compact = false,
 }) => {
   const [open, setOpen] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const sheetRef = useRef(null);   // the phone sheet lives in <body>, outside `ref`   // brief "Saved" on the phone sheet
   const ref = useRef(null);
   const isMobile = useIsMobile();
 
@@ -60,6 +63,7 @@ const CategoryFilter = ({
   useEffect(() => {
     if (!open) return;
     const onDoc = (e) => {
+      if (sheetRef.current && sheetRef.current.contains(e.target)) return;   // a tap inside the phone sheet
       if (ref.current && !ref.current.contains(e.target)) setOpen(false);
     };
     document.addEventListener('mousedown', onDoc);
@@ -320,37 +324,49 @@ const CategoryFilter = ({
         </div>
       )}
 
-      {open && isMobile && (
-        /* Mobile bottom-sheet — full width, no off-screen clipping */
-        <>
-          <div
-            onClick={()=>setOpen(false)}
-            style={{
-              position:'fixed', inset:0,
-              background:'rgba(0,0,0,0.5)',
-              zIndex:1000,
-            }}
-          />
-          <div
-            style={{
-              position:'fixed',
-              left:0, right:0, bottom:0,
-              maxHeight:'80vh', overflowY:'auto',
-              background:'var(--bg2)', border:'1px solid var(--b2)',
-              borderTopLeftRadius:14, borderTopRightRadius:14,
-              boxShadow:'0 -8px 30px rgba(0,0,0,0.55)',
-              zIndex:1001,
-              padding:8,
-              paddingBottom:'max(12px, env(safe-area-inset-bottom))',
-            }}>
-            {/* drag handle hint */}
-            <div style={{
-              width:36, height:4, borderRadius:2,
-              background:'var(--b2)', margin:'6px auto 8px',
-            }}/>
-            {panelInner}
+      {open && isMobile && createPortal(
+        /* Phone: a bottom sheet ABOVE the tab bar and the + button (portalled to <body>, so no
+           page transform or stacking context can trap it) — header, its own scrolling list,
+           and a fixed footer with Reset / Save as default / Done. */
+        <div className="cf-wrap" onClick={() => setOpen(false)}>
+          <div className="cf-sheet" ref={sheetRef} role="dialog" aria-label="Categories" onClick={e => e.stopPropagation()}>
+            <div className="cf-grip" />
+            <div className="cf-head">
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <b>Categories</b>
+                <small>{isAll ? `All ${totalCount} included` : `${includedCount} of ${totalCount} included`}</small>
+              </div>
+              <button type="button" className="cf-x" onClick={() => setOpen(false)} aria-label="Close"><XIcon size={16} /></button>
+            </div>
+            <div className="cf-quick">
+              <button type="button" disabled={isAll} onClick={() => setAll(true)}>All</button>
+              <button type="button" disabled={isNone} onClick={() => setAll(false)}>None</button>
+              <span>tap a row to include or leave out · "only" keeps just that one</span>
+            </div>
+            <div className="cf-list">
+              {items.length === 0 ? <div className="cf-empty">No categories yet for this month.</div>
+              : items.map(({ category, total }) => {
+                const off = excluded.has(category);
+                return (
+                  <div key={category} className={'cf-row' + (off ? ' off' : '')} role="checkbox" aria-checked={!off} tabIndex={0}
+                    onClick={() => onToggle && onToggle(category)} onKeyDown={e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onToggle && onToggle(category); } }}>
+                    <span className="cf-tick">{!off && <Check size={13} strokeWidth={3} />}</span>
+                    <span className="cf-name">{category}</span>
+                    {total > 0 && <span className="cf-n">{fmt(total)}</span>}
+                    {onSelectOnly && items.length > 1 && <button type="button" className="cf-only" onClick={e => { e.stopPropagation(); onSelectOnly(category); }}>only</button>}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="cf-foot">
+              <button type="button" className="cf-reset" onClick={() => { if (onClear) onClear(); }} title="Back to the saved default (or all categories)"><RotateCcw size={14} /> Reset</button>
+              {onSaveAsDefault && <button type="button" className="cf-save" onClick={() => { onSaveAsDefault(); setSaved(true); setTimeout(() => setSaved(false), 1500); }} title="Use this set every time the app opens">
+                {saved ? <><Check size={14} /> Saved</> : <><Save size={14} /> Save as default</>}</button>}
+              <button type="button" className="cf-done" onClick={() => setOpen(false)}>Done</button>
+            </div>
           </div>
-        </>
+        </div>,
+        document.body
       )}
     </div>
   );

@@ -370,9 +370,9 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
                       {(() => {
                         const dates = repeatOf.get(p.salesmanId + '|' + p.dealerId) || [];
                         if (dates.length < 2) return null;
-                        const nth = dates.indexOf(p.date) + 1, ord = n => n + (['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 < 14) ? 0 : Math.min(n % 10, 4) % 4] || 'th');
+                        const days = dates.map(d => Number(d.slice(-2)));
                         return <span className="vc-rep" title={'Planned on ' + dates.map(d => new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })).join(', ')}>
-                          <Repeat size={11} /> {ord(nth)} time · {dates.length}× in {month.toLocaleDateString('en-IN', { month: 'short' })}
+                          <Repeat size={11} /> {dates.length}× in {month.toLocaleDateString('en-IN', { month: 'short' })} <span>· {days.map((d, x) => <React.Fragment key={x}>{x ? ', ' : ''}{dates[x] === p.date ? <u>{d}</u> : d}</React.Fragment>)}</span>
                         </span>;
                       })()}
                       {p.newParty && <Badge tone="#d97706">New party</Badge>}
@@ -470,7 +470,7 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
                       <RepeatHint dates={repeatOf.get(daySm + '|' + (d._id || d.id)) || []} month={month.toLocaleDateString('en-IN', { month: 'short' })} />
                       <div style={{ color: 'var(--t3)', fontSize: 10.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{[d.zone, d.city].filter(Boolean).join(' · ')}{d.salesman && d.salesman !== daySm ? ` · ${smName(d.salesman)}'s dealer` : ''}</div>
                     </span>
-                    <button className="btnp" disabled={busy} style={{ fontSize: 11.5, padding: '4px 10px', display: 'inline-flex', gap: 3, alignItems: 'center', flexShrink: 0 }} onClick={e => { e.stopPropagation(); add(d); }}>{replacing ? <><Repeat size={12} /> Use</> : <><Plus size={12} /> Add</>}</button>
+                    {replacing && <span className="vc-use"><Repeat size={12} /> Use</span>}
                   </div>
                 ))}
               </div>}
@@ -590,6 +590,8 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
         .vc-grid.dayview { grid-template-columns: 1fr !important; }
         .vc-grid.dayview .vc-day { position: static !important; }
         .vc-rep.sm { font-size: 10px; padding: 1px 7px; margin: 2px 0; align-self: flex-start; display: inline-block; max-width: 100%; white-space: normal; line-height: 1.35; }
+        .vc-use { flex-shrink: 0; display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 800; color: var(--acc); }
+        .vc-rep u { text-decoration: none; background: color-mix(in srgb, #f59e0b 30%, transparent); border-radius: 4px; padding: 0 3px; }
         .vc-planbtn { margin-left: 10px; display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; padding: 7px 13px; border-radius: 11px; }
         .vc-carry-s { display: none; }
         .vc-carry { align-self: flex-start; flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 750; padding: 8px 12px; border-radius: 12px; color: #6d28d9; border-color: color-mix(in srgb, #8b5cf6 45%, transparent); background: color-mix(in srgb, #8b5cf6 8%, var(--bg1)); }

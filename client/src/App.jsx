@@ -15779,7 +15779,7 @@ export default function App(){
       if (s.sidebarOpen && window.innerWidth <= 768) { setSidebarOpen(false); return true; }
       // popups owned by a page (visit, outstanding, samples, plan a visit …): they close on Escape
       // or on a tap outside — do both on the top-most one
-      const ov = [...document.querySelectorAll('.overlay')].filter(e => e.getClientRects().length);
+      const ov = [...document.querySelectorAll('.overlay, .cf-wrap')].filter(e => e.getClientRects().length);
       if (ov.length) {
         const top = ov[ov.length - 1];
         const esc = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true });

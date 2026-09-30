@@ -1188,6 +1188,35 @@ export default function Styles({theme}){
     .dom-pay b{color:#059669;font-weight:800}
     .dom-msg{display:flex;align-items:center;gap:8px;margin:8px 14px 16px;padding:12px;border-radius:12px;font-size:13px}
     .dom-msg.err{color:var(--red);background:color-mix(in srgb,var(--red) 8%,transparent)}
+    /* category filter — phone bottom sheet (portalled above the tab bar) */
+    .cf-wrap{position:fixed;inset:0;z-index:2200;background:rgba(15,23,42,.5);display:flex;align-items:flex-end;animation:cfFade .18s ease}
+    @keyframes cfFade{from{opacity:0}to{opacity:1}}
+    .cf-sheet{width:100%;max-height:86vh;display:flex;flex-direction:column;background:var(--bg1);border-radius:18px 18px 0 0;box-shadow:0 -12px 36px rgba(0,0,0,.35);animation:cfUp .24s cubic-bezier(.2,.8,.2,1)}
+    @keyframes cfUp{from{transform:translateY(40px)}to{transform:none}}
+    .cf-grip{width:38px;height:4px;border-radius:3px;background:var(--b2);margin:8px auto 2px}
+    .cf-head{display:flex;align-items:center;gap:10px;padding:8px 16px 4px}
+    .cf-head b{display:block;font-size:16px;font-weight:850;color:var(--t1)}
+    .cf-head small{display:block;font-size:11.5px;color:var(--t3);margin-top:1px}
+    .cf-x{width:34px;height:34px;border-radius:10px;border:1px solid var(--b1);background:var(--bg2);color:var(--t2);display:grid;place-items:center;cursor:pointer;flex-shrink:0}
+    .cf-quick{display:flex;align-items:center;gap:6px;padding:6px 16px 8px;border-bottom:1px solid var(--b1)}
+    .cf-quick button{padding:4px 12px;border-radius:999px;border:1px solid var(--b2);background:var(--bg2);color:var(--t1);font-size:12px;font-weight:700;cursor:pointer}
+    .cf-quick button:disabled{opacity:.45;cursor:default}
+    .cf-quick span{font-size:10.5px;color:var(--t3);margin-left:4px;line-height:1.25}
+    .cf-list{flex:1;min-height:0;overflow-y:auto;padding:6px 10px;display:grid;gap:4px;align-content:start}
+    .cf-row{display:flex;align-items:center;gap:10px;min-height:44px;padding:6px 10px;border-radius:12px;cursor:pointer;background:color-mix(in srgb,var(--acc) 7%,var(--bg1));border:1px solid color-mix(in srgb,var(--acc) 16%,transparent);transition:background .15s}
+    .cf-row.off{background:var(--bg1);border-color:var(--b1)}
+    .cf-tick{width:22px;height:22px;border-radius:7px;display:grid;place-items:center;flex-shrink:0;background:var(--acc);color:#fff;border:2px solid var(--acc)}
+    .cf-row.off .cf-tick{background:transparent;border-color:var(--b2)}
+    .cf-name{flex:1;min-width:0;font-size:13.5px;font-weight:750;color:var(--t1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .cf-row.off .cf-name{color:var(--t3);text-decoration:line-through}
+    .cf-n{font-size:12px;font-weight:650;color:var(--t3);flex-shrink:0}
+    .cf-only{flex-shrink:0;padding:4px 10px;border-radius:8px;border:1px solid var(--b2);background:var(--bg1);color:var(--t2);font-size:11px;font-weight:700;cursor:pointer}
+    .cf-empty{padding:18px;text-align:center;font-size:12px;color:var(--t3)}
+    .cf-foot{display:flex;gap:8px;padding:10px 14px calc(12px + env(safe-area-inset-bottom));border-top:1px solid var(--b1);background:var(--bg1)}
+    .cf-foot button{display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:10px 12px;border-radius:12px;font-size:13px;font-weight:750;cursor:pointer}
+    .cf-reset{border:1px solid var(--b2);background:var(--bg2);color:var(--t1)}
+    .cf-save{border:1px solid color-mix(in srgb,#10b981 50%,transparent);background:color-mix(in srgb,#10b981 10%,var(--bg1));color:#047857}
+    .cf-done{flex:1;border:0;background:var(--acc);color:#fff}
     /* activity boxes under the performance tiers */
     .act-boxes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:10px}
     .act-box{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:0;padding:9px 11px;border-radius:12px;cursor:pointer;text-align:left;border:1px solid color-mix(in srgb,var(--tone) 28%,transparent);background:color-mix(in srgb,var(--tone) 8%,var(--bg1));transition:transform .15s,box-shadow .15s}
