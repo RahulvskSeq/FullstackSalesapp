@@ -1366,6 +1366,49 @@ router.get('/targets', protect, async (req, res) => {
   res.json(rows);
 });
 
+// GET /api/sales/month-totals?month=YYYY-MM&exclude=cat1,cat2
+// One salesman's month = the dealers he owned THAT month (monthlyData[label].salesman,
+// else the current owner) — the same rule as the admin salesman cards, so his own
+// Home and the admin view agree. Per salesman:
+//   dealerTarget / dealerAchieved  the dealer-level figures (all categories)
+//   catAchieved                    Sale qty of the included categories on those dealers
+// A salesman gets his own row only.
+router.get('/month-totals', protect, async (req, res) => {
+  try {
+    const ym = normMonth(req.query.month);
+    if (!ym) return res.status(400).json({ error: 'month required (YYYY-MM)' });
+    const [y, mo] = ym.split('-').map(Number);
+    const label = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][mo - 1] + '-' + String(y).slice(-2);
+    const exclude = String(req.query.exclude || '').split(',').map(s => s.trim()).filter(Boolean);
+    const own = req.user?.role === 'salesman' ? req.user.id : null;
+    const dq = own ? { $or: [{ salesman: own }, { ['monthlyData.' + label + '.salesman']: own }] } : {};
+    const ds = await Dealer.find(dq, 'name salesman monthlyData.' + label).lean();
+    const byId = new Map(), byName = new Map(), rows = {};
+    const row = id => rows[id] = rows[id] || { salesmanId: id, dealers: 0, dealerTarget: 0, dealerAchieved: 0, catAchieved: 0 };
+    for (const d of ds) {
+      const m = (d.monthlyData instanceof Map ? d.monthlyData.get(label) : d.monthlyData?.[label]) || {};
+      const owner = m.salesman || d.salesman;
+      if (!owner || (own && owner !== own)) continue;
+      byId.set(String(d._id), owner);
+      byName.set(String(d.name || '').toLowerCase().trim(), owner);
+      const r = row(owner);
+      r.dealers++; r.dealerTarget += Number(m.target) || 0; r.dealerAchieved += Number(m.achieved) || 0;
+    }
+    const match = { month: ym, ...(exclude.length ? { category: { $nin: exclude } } : {}) };
+    if (own) match.$or = [{ dealerId: { $in: ds.map(d => d._id) } }, { dealerName: { $in: ds.map(d => d.name) } }];
+    const sales = await Sale.aggregate([{ $match: match }, { $group: { _id: { id: '$dealerId', n: '$dealerName' }, qty: { $sum: '$qty' } } }]);
+    for (const s of sales) {
+      const owner = byId.get(String(s._id.id)) || byName.get(String(s._id.n || '').toLowerCase().trim());
+      if (owner) row(owner).catAchieved += s.qty || 0;
+    }
+    const hasSales = !!(await Sale.exists({ month: ym }));
+    res.json({ month: ym, hasSales, rows: Object.values(rows) });
+  } catch (e) {
+    console.error('[SALES/month-totals]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.post('/targets', protect, adminOnly, async (req, res) => {
   const { salesmanId, category, target } = req.body || {};
   const month = normMonth(req.body?.month) || String(req.body?.month || '');

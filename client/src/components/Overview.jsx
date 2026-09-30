@@ -1295,6 +1295,7 @@ import CategorySalesPanel from './CategorySalesPanel';
 import SalesByBrand from './SalesByBrand';
 import CategoryFilter from './CategoryFilter';
 import { useGlobalCategoryFilter } from '../hooks/useGlobalCategoryFilter';
+import { useMonthTotals, pickTotals } from '../hooks/useMonthTotals';
 import { api } from '../api';
 import { DealerVisitSearch } from './DealerVisitModal';
 import { notify } from './Toast';
@@ -1676,6 +1677,15 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
   const catSourced = catExcluded.size > 0 && !rangeActive && allCatTotals.length > 0 && !ovActive;
   const taAdj = catSourced ? includedCatQty : ta;
   const apAdj = catSourced ? pct(tt, taAdj) : ap;
+  // One month, a salesman's own page or one salesman picked: the server's figures,
+  // counted on the dealers owned THAT month (same as the admin salesman cards).
+  const smOnly = !!ovF.sm && Object.entries(ovF).every(([k, v]) => k === 'sm' || !v);
+  const { data: mtData, filterOn: mtOn } = useMonthTotals(rangeActive ? '' : _moLabelToYM(selMoFull));
+  const mt = rangeActive || (ovActive && !smOnly) ? null
+    : pickTotals(mtData, mtOn, { user: currentUser, isStaff: !mine, sm: ovActive ? ovF.sm : '' });
+  const ttShow = mt?.target ?? tt;
+  const taShow = mt?.achieved ?? taAdj;
+  const apShow = mt ? pct(ttShow, taShow) : apAdj;
 
   return(
     <div className="fade ov-home">
@@ -1863,19 +1873,19 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
 
       <div className={"stat-grid"+(!ovActive&&!rangeActive&&catExcluded.size===0?" ov-dup":"")}>
         <StatCard label="Total Dealers" value={myD.length} sub={`${active} active · ${inactive} inactive · ${dead} dead`} icon={Users}/>
-        <StatCard label={`${periodLabel} Target`} value={tt} sub={rangeActive?`${rangeIdxs.length} months · total units`:"total units"} icon={Target}/>
+        <StatCard label={`${periodLabel} Target`} value={ttShow} sub={rangeActive?`${rangeIdxs.length} months · total units`:"total units"} icon={Target}/>
         <StatCard
           label={`${periodLabel} Achieved${catExcluded.size>0 ? ' (excl.)' : ''}`}
-          value={taAdj}
+          value={taShow}
           sub={catExcluded.size>0
             ? `excludes ${[...catExcluded].join(', ')} (−${Number(catSourced ? excludedQty : filteredDelta).toLocaleString('en-IN')})`
             : `${periodFull} total`}
           valueColor="#10b981" icon={Award}/>
         <StatCard
           label={`Achievement${catExcluded.size>0 ? ' (excl.)' : ''}`}
-          value={spct(tt, taAdj)}
-          valueColor={pclr(apAdj)}
-          progress={apAdj}
+          value={spct(ttShow, taShow)}
+          valueColor={pclr(apShow)}
+          progress={apShow}
           icon={Activity}/>
       </div>
 
@@ -1902,7 +1912,8 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
       </InView>
 
       {/* Dealer quick search + Going to meet (visit summary & MOM), side by side */}
-      <div className="card ov-search-row" style={{marginBottom:16,padding:'12px 16px',display:'flex',gap:12,alignItems:'flex-start'}}>
+      {/* Find a dealer + Going to meet: hidden on Home (the quick action and the dealer card cover both) */}
+      {false && <div className="card ov-search-row" style={{marginBottom:16,padding:'12px 16px',display:'flex',gap:12,alignItems:'flex-start'}}>
         <div style={{flex:'1 1 0',minWidth:0}}>
         <div style={{fontSize:10.5,fontWeight:700,letterSpacing:'.06em',textTransform:'uppercase',color:'var(--t3)',marginBottom:5}}>Find a dealer</div>
         <div style={{position:'relative'}}>
@@ -1946,7 +1957,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
           <div style={{fontSize:10.5,fontWeight:700,letterSpacing:'.06em',textTransform:'uppercase',color:'var(--acc)',marginBottom:5}}>Going to meet a dealer? · summary before you go</div>
           <DealerVisitSearch dealers={dealers} compact />
         </div>
-      </div>
+      </div>}
 
       {/* Performance Tiers */}
       <div className="card ov-tiers" style={{marginBottom:12}}>

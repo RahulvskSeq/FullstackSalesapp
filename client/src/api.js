@@ -2280,6 +2280,7 @@ export const api = {
     method:'PUT', headers:{...authHeaders(),'Content-Type':'application/json'},
     body:JSON.stringify({disabled}),
   }).then(handle),
+  salesMonthTotals:(month,exclude=[]) => fetch(`${BASE}/sales/month-totals?month=${encodeURIComponent(month)}&exclude=${encodeURIComponent((exclude||[]).join(','))}`,{headers:authHeaders()}).then(handle),
   salesByDealerMonths:(exclude=[]) => fetch(`${BASE}/sales/by-dealer-months?exclude=${encodeURIComponent((exclude||[]).join(','))}`,{headers:authHeaders()}).then(handle),
   salesBySalesman:   (q={})     => fetch(`${BASE}/sales/by-salesman?${new URLSearchParams(q)}`,{headers:authHeaders()}).then(handle),
   salesForDealer:    (name)     => fetch(`${BASE}/sales/dealer/${encodeURIComponent(name)}`,{headers:authHeaders()}).then(handle),

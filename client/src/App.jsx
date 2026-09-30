@@ -15410,6 +15410,7 @@ import { SHEET_SYNC_ENABLED } from './featureFlags';
 import ApiUrlSettings   from './components/ApiUrlSettings';
 import SalesByCategory  from './components/SalesByCategory';
 import { useAllMonthsCategoryFilteredDealers, moToYM } from './hooks/useAllMonthsCategoryFilter';
+import { useMonthTotals, pickTotals } from './hooks/useMonthTotals';
 
 // Screens load when first opened (then everything is prefetched once the app is idle),
 // so a phone parses a small start-up bundle instead of every page at once.
@@ -16376,7 +16377,7 @@ export default function App(){
 
   // ── Derived values (MUST be before any early return) ────────
   // Topbar snapshot: only count dealers with data for selected month
-  const ttSnap=myDealers
+  const _ttSnap=myDealers
     // monthsWithData arrives from the API as an ARRAY of month indexes (see
     // fmt() in routes/dealers.js), so calling Set.has() on it threw as soon
     // as dealers were actually present. Accept either shape: a cached copy
@@ -16395,9 +16396,15 @@ export default function App(){
   // short; this figure is exactly what the Category-wise Sales panel shows.
   const _snapYM = moToYM(activeMO?.[selectedMonthIdx]);
   const _catSnap = (catTotalByMonth && _snapYM) ? catTotalByMonth[_snapYM] : undefined;
-  const taSnap = _catSnap != null
+  const _taSnap = _catSnap != null
     ? _catSnap
     : myDealers.reduce((s,x)=>s+(x.months?.[selectedMonthIdx]||0),0);
+  // Server month totals (dealers owned that month) for a salesman's own Home —
+  // the same figures the Overview cards and the admin salesman cards show.
+  const { data: _mtData, filterOn: _mtOn } = useMonthTotals(_snapYM || '');
+  const homeTotals = useMemo(() => pickTotals(_mtData, _mtOn, { user: currentUser, isStaff }), [_mtData, _mtOn, currentUser, isStaff]);
+  const ttSnap = homeTotals?.target ?? _ttSnap;
+  const taSnap = homeTotals?.achieved ?? _taSnap;
   const sbP=pct(ttSnap,taSnap);
   const overdueCount=myNotes.filter(n=>n.type==='followup'&&!n.completed&&n.dueDate&&new Date(n.dueDate)<new Date()).length;
   // Dealer popup gets the RAW dealer. Its own "Show data for" picker opens
@@ -16645,7 +16652,7 @@ export default function App(){
   // console renders the same pages inside its own section rail.
   const pageEl = (screen) => (
                 <>
-                  {screen==='overview'  && <HomeHero user={currentUser} dealers={myDealers} monthLabel={activeMO?.[selectedMonthIdx]} monthIdx={selectedMonthIdx} actions={actions} onPlus={()=>setQuickOpen(true)}/>}
+                  {screen==='overview'  && <HomeHero user={currentUser} dealers={myDealers} totals={homeTotals} monthLabel={activeMO?.[selectedMonthIdx]} monthIdx={selectedMonthIdx} actions={actions} onPlus={()=>setQuickOpen(true)}/>}
                   {screen==='overview'  &&<Overview dealers={myDealers} currentUser={currentUser} users={users} notes={myNotes} onOpenDealer={setEditingId} onNavigate={navigate} onUpdateDealer={updateDealerFields}/>}
                   {screen==='dealers'   &&<DealersList dealers={myDealers} currentUser={currentUser} users={users} onEdit={setEditingId} onDelete={deleteDealer} onAdd={()=>setShowAdd(true)} selected={selected} setSelected={setSelected} onBulkAction={setBulkAction} notes={myNotes} pendingFilters={pendingFilters} clearPending={()=>setPendingFilters(null)} onUpdateDealer={updateDealerFields}/>}
                   {screen==='monthly'   &&<MonthlyTrend dealers={myDealersCatAllMonths} currentUser={currentUser} users={users} onOpenDealer={setEditingId}/>}

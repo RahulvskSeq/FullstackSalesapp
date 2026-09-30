@@ -190,7 +190,7 @@ const num = n => Math.round(Number(n) || 0).toLocaleString('en-IN');
  * Top of Home: who you are, the month at a glance, and the everyday actions.
  * The figures come from the dealers already loaded for the Overview.
  */
-export function HomeHero({ user, dealers = [], monthLabel, monthIdx, actions, onPlus }) {
+export function HomeHero({ user, dealers = [], totals, monthLabel, monthIdx, actions, onPlus }) {
   const { t: tr } = useT();
   const stats = useMemo(() => {
     let target = 0, achieved = 0, active = 0;
@@ -200,8 +200,11 @@ export function HomeHero({ user, dealers = [], monthLabel, monthIdx, actions, on
       const a = Number(Array.isArray(d.months) ? d.months[monthIdx] : 0) || 0;
       target += t; achieved += a; if (a > 0) active++;
     }
+    // a salesman's own month totals from the server (dealers owned that month)
+    if (totals?.target != null) target = totals.target;
+    if (totals?.achieved != null) achieved = totals.achieved;
     return { target, achieved, active, total: dealers.length, pct: target > 0 ? Math.round(achieved / target * 100) : null };
-  }, [dealers, monthLabel, monthIdx]);
+  }, [dealers, totals, monthLabel, monthIdx]);
   const first = String(user?.name || '').split(' ')[0] || 'there';
   const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });
   const ring = Math.max(0, Math.min(100, stats.pct ?? 0));
