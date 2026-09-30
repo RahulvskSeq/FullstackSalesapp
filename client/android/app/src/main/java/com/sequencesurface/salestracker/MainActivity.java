@@ -4,6 +4,9 @@ import android.os.Bundle;
 import android.view.View;
 import android.view.ViewGroup;
 
+import android.webkit.WebView;
+
+import androidx.activity.OnBackPressedCallback;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -57,4 +60,30 @@ public class MainActivity extends BridgeActivity {
         // this the listener sits idle until a rotation or the keyboard.
         target.post(() -> ViewCompat.requestApplyInsets(target));
     }
+
+    /**
+     * Back goes back inside the app, one step at a time: the page decides
+     * (window.__stpBack closes a popup, the menu, or returns to the previous
+     * screen). Only when the page has nothing left to go back to does the app
+     * leave — to the background, like other apps, so it opens where it was.
+     * Without this, Android's default Back simply closed the app.
+     */
+    @Override
+    public void onStart() {
+        super.onStart();
+        if (backHooked) return;
+        backHooked = true;
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                WebView web = (getBridge() != null) ? getBridge().getWebView() : null;
+                if (web == null) { moveTaskToBack(true); return; }
+                web.evaluateJavascript(
+                    "(function(){try{return window.__stpBack?!!window.__stpBack():false}catch(e){return false}})()",
+                    handled -> { if (!"true".equals(handled)) moveTaskToBack(true); });
+            }
+        });
+    }
+
+    private boolean backHooked = false;
 }

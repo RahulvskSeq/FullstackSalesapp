@@ -15395,7 +15395,9 @@ import { THEMES, applyTheme, loadSavedTheme, saveTheme, themeById } from './them
 // we keep it out of the initial bundle and only fetch it when Sheets is opened.
 const Sheets = lazy(() => import('./components/Sheets'));
 import LoginPage         from './components/LoginPage';
-import Overview          from './components/Overview';
+import OverviewPage      from './components/Overview';
+// Home skips re-rendering when its props are unchanged (menu, popups, sheets opening)
+const Overview = React.memo(OverviewPage);
 import AdminPanel, { buildAdminRail } from './components/AdminPanel';
 import StockSearch from './components/StockSearch';
 import { LangContext, translate, loadLang, saveLang } from './i18n';
@@ -15413,56 +15415,56 @@ import { useAllMonthsCategoryFilteredDealers, moToYM } from './hooks/useAllMonth
 // so a phone parses a small start-up bundle instead of every page at once.
 const loadCRM = () => import('./components/CRM');
 const loadReports = () => import('./components/Reports');
-const Reports = lazy(loadReports);
+const Reports = lazy(() => loadReports().then(m => ({ default: React.memo(m.default) })));
 const loadTasksPage = () => import('./components/TasksPage');
-const TasksPage = lazy(loadTasksPage);
+const TasksPage = lazy(() => loadTasksPage().then(m => ({ default: React.memo(m.default) })));
 const loadTicketsPage = () => import('./components/TicketsPage');
-const TicketsPage = lazy(loadTicketsPage);
+const TicketsPage = lazy(() => loadTicketsPage().then(m => ({ default: React.memo(m.default) })));
 const loadDealersList = () => import('./components/DealersList');
-const DealersList = lazy(loadDealersList);
+const DealersList = lazy(() => loadDealersList().then(m => ({ default: React.memo(m.default) })));
 const loadDealerModal = () => import('./components/DealerModal');
-const DealerModal = lazy(loadDealerModal);
+const DealerModal = lazy(() => loadDealerModal().then(m => ({ default: React.memo(m.default) })));
 const loadMonthlyTrend = () => import('./components/MonthlyTrend');
-const MonthlyTrend = lazy(loadMonthlyTrend);
+const MonthlyTrend = lazy(() => loadMonthlyTrend().then(m => ({ default: React.memo(m.default) })));
 const loadCompare = () => import('./components/Compare');
-const Compare = lazy(loadCompare);
+const Compare = lazy(() => loadCompare().then(m => ({ default: React.memo(m.default) })));
 const loadFollowupsHub = () => import('./components/FollowupsHub');
-const FollowupsHub = lazy(loadFollowupsHub);
+const FollowupsHub = lazy(() => loadFollowupsHub().then(m => ({ default: React.memo(m.default) })));
 const loadProfilePage = () => import('./components/ProfilePage');
-const ProfilePage = lazy(loadProfilePage);
+const ProfilePage = lazy(() => loadProfilePage().then(m => ({ default: React.memo(m.default) })));
 const loadIncentive = () => import('./components/Incentive');
-const Incentive = lazy(loadIncentive);
+const Incentive = lazy(() => loadIncentive().then(m => ({ default: React.memo(m.default) })));
 const loadSalesIncentive = () => import('./components/SalesIncentive');
-const SalesIncentive = lazy(loadSalesIncentive);
+const SalesIncentive = lazy(() => loadSalesIncentive().then(m => ({ default: React.memo(m.default) })));
 const loadSalesIncentiveRule = () => import('./components/SalesIncentiveRule');
-const SalesIncentiveRule = lazy(loadSalesIncentiveRule);
+const SalesIncentiveRule = lazy(() => loadSalesIncentiveRule().then(m => ({ default: React.memo(m.default) })));
 const loadVisitCalendar = () => import('./components/VisitCalendar');
-const VisitCalendar = lazy(loadVisitCalendar);
+const VisitCalendar = lazy(() => loadVisitCalendar().then(m => ({ default: React.memo(m.default) })));
 const loadAddDealerModal = () => import('./components/AddDealerModal');
-const AddDealerModal = lazy(loadAddDealerModal);
+const AddDealerModal = lazy(() => loadAddDealerModal().then(m => ({ default: React.memo(m.default) })));
 const loadBulkActionModal = () => import('./components/BulkActionModal');
-const BulkActionModal = lazy(loadBulkActionModal);
+const BulkActionModal = lazy(() => loadBulkActionModal().then(m => ({ default: React.memo(m.default) })));
 const loadIndiaMap = () => import('./components/IndiaMap');
-const IndiaMap = lazy(loadIndiaMap);
+const IndiaMap = lazy(() => loadIndiaMap().then(m => ({ default: React.memo(m.default) })));
 const loadUploadMonth = () => import('./components/UploadMonth');
-const UploadMonth = lazy(loadUploadMonth);
+const UploadMonth = lazy(() => loadUploadMonth().then(m => ({ default: React.memo(m.default) })));
 const loadMonthlyEntry = () => import('./components/Monthlyentry');
-const MonthlyEntry = lazy(loadMonthlyEntry);
+const MonthlyEntry = lazy(() => loadMonthlyEntry().then(m => ({ default: React.memo(m.default) })));
 const loadOutstanding = () => import('./components/Outstanding');
-const Outstanding = lazy(loadOutstanding);
+const Outstanding = lazy(() => loadOutstanding().then(m => ({ default: React.memo(m.default) })));
 const loadManageMonths = () => import('./components/ManageMonths');
-const ManageMonths = lazy(loadManageMonths);
+const ManageMonths = lazy(() => loadManageMonths().then(m => ({ default: React.memo(m.default) })));
 const loadSalesUpload = () => import('./components/SalesUpload');
-const SalesUpload = lazy(loadSalesUpload);
+const SalesUpload = lazy(() => loadSalesUpload().then(m => ({ default: React.memo(m.default) })));
 const loadProductTxn = () => import('./components/ProductTxn');
-const ProductTxn = lazy(loadProductTxn);
-const CRM            = lazy(loadCRM);
-const AttendancePage = lazy(() => loadCRM().then(m => ({ default: m.AttendancePage })));
-const VisitsPage     = lazy(() => loadCRM().then(m => ({ default: m.VisitsPage })));
-const LeadsPage      = lazy(() => loadCRM().then(m => ({ default: m.LeadsPage })));
-const LeavesPage     = lazy(() => loadCRM().then(m => ({ default: m.LeavesPage })));
+const ProductTxn = lazy(() => loadProductTxn().then(m => ({ default: React.memo(m.default) })));
+const CRM            = lazy(() => loadCRM().then(m => ({ default: React.memo(m.default) })));
+const AttendancePage = lazy(() => loadCRM().then(m => ({ default: React.memo(m.AttendancePage) })));
+const VisitsPage     = lazy(() => loadCRM().then(m => ({ default: React.memo(m.VisitsPage) })));
+const LeadsPage      = lazy(() => loadCRM().then(m => ({ default: React.memo(m.LeadsPage) })));
+const LeavesPage     = lazy(() => loadCRM().then(m => ({ default: React.memo(m.LeavesPage) })));
 const loadTierCoverage = () => import('./components/TierCoverage');
-const TierCoverage = lazy(loadTierCoverage);
+const TierCoverage = lazy(() => loadTierCoverage().then(m => ({ default: React.memo(m.default) })));
 const PREFETCH_SCREENS = [loadTierCoverage, loadCRM, loadReports, loadTasksPage, loadTicketsPage, loadDealersList, loadDealerModal, loadMonthlyTrend, loadCompare, loadFollowupsHub, loadProfilePage, loadIncentive, loadSalesIncentive, loadSalesIncentiveRule, loadVisitCalendar, loadAddDealerModal, loadBulkActionModal, loadIndiaMap, loadUploadMonth, loadMonthlyEntry, loadOutstanding, loadManageMonths, loadSalesUpload, loadProductTxn];
 
 
@@ -15495,7 +15497,9 @@ const pushScreen = (screen, filterPatch=null) => {
     const params = new URLSearchParams(filterPatch).toString();
     url += `?${params}`;
   }
-  window.history.pushState({screen, filterPatch}, '', url);
+  const here = window.history.state || {};
+  if (here.screen === screen && !filterPatch) return;          // same screen again: no extra Back step
+  window.history.pushState({screen, filterPatch, depth: (here.depth || 0) + 1}, '', url);
 };
 
 export default function App(){
@@ -15591,6 +15595,10 @@ export default function App(){
   const tr=useCallback(s=>translate(lang,s),[lang]);
   useEffect(()=>{ try{ document.documentElement.lang=lang; }catch{} },[lang]);
   const langCtx=useMemo(()=>({lang,setLang,t:tr}),[lang,tr]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Every page and chart reads the month context. Built inline, it was a new object on every
+  // render, so opening the menu or any popup re-rendered the whole app — seconds on a phone.
+  const monthCtx=useMemo(()=>({selectedMonthIdx,setSelectedMonthIdx,MO:activeMO,currentMonthIdx:activeMonthIdx,currentMonthLabel:activeMonthLabel,viewIdx,cycle,setCycle,cycles}),
+    [selectedMonthIdx,activeMO,activeMonthIdx,activeMonthLabel,viewIdx,cycle,cycles]); // eslint-disable-line react-hooks/exhaustive-deps
   const [stockMode,setStockMode]=useState('');      // '' | 'discontinued'
   const [adminKey,setAdminKeyState]=useState(()=>{ try{ return sessionStorage.getItem('stp_admin_sec')||'summary'; }catch{ return 'summary'; } });
   const setAdminKey=k=>{ setAdminKeyState(k); try{ sessionStorage.setItem('stp_admin_sec',k); }catch{} };
@@ -15751,6 +15759,40 @@ export default function App(){
     window.addEventListener('resize',onResize);
     return()=>window.removeEventListener('resize',onResize);
   },[]);
+
+  // ── Android Back button ─────────────────────────────────────
+  // MainActivity asks the page first (window.__stpBack). One press closes what is open on top
+  // (menu, + sheet, a popup, the dealer card); otherwise it goes back one screen; on the first
+  // screen it goes to Home; on Home it answers false and Android puts the app in the background.
+  const backRef = useRef({});
+  backRef.current = { sidebarOpen, quickOpen, editingId, stockOpen, showAdd, showUM, bulkAction, showApiSettings, screen };
+  useEffect(() => {
+    window.__stpBack = () => {
+      const s = backRef.current;
+      if (s.editingId) { setEditingId(null); return true; }
+      if (s.quickOpen) { setQuickOpen(false); return true; }
+      if (s.stockOpen) { setStockOpen(false); return true; }
+      if (s.showAdd) { setShowAdd(false); return true; }
+      if (s.showUM) { setShowUM(false); return true; }
+      if (s.bulkAction) { setBulkAction(null); return true; }
+      if (s.showApiSettings) { setShowApiSettings(false); return true; }
+      if (s.sidebarOpen && window.innerWidth <= 768) { setSidebarOpen(false); return true; }
+      // popups owned by a page (visit, outstanding, samples, plan a visit …): they close on Escape
+      // or on a tap outside — do both on the top-most one
+      const ov = [...document.querySelectorAll('.overlay')].filter(e => e.getClientRects().length);
+      if (ov.length) {
+        const top = ov[ov.length - 1];
+        const esc = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true });
+        window.dispatchEvent(esc); document.dispatchEvent(esc);
+        if (top.isConnected) { top.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); top.dispatchEvent(new MouseEvent('click', { bubbles: true })); }
+        return true;
+      }
+      if ((window.history.state?.depth || 0) > 0) { window.history.back(); return true; }
+      if (s.screen !== 'overview') { setScreen('overview'); try { window.history.replaceState({ screen: 'overview' }, '', '#/overview'); } catch { /* ignore */ } return true; }
+      return false;
+    };
+    return () => { delete window.__stpBack; };
+  }, []);
 
   // ── Browser back/forward ──────────────────────────────────
   useEffect(()=>{
@@ -16249,7 +16291,7 @@ export default function App(){
     // The modal edits the RAW dealer object, so a plain replace is safe.
     setDealers(ds=>ds.map(x=>x.id===d.id?d:x));
   };
-  const updateDealerFields = (id,patch)=>setDealers(ds=>ds.map(x=>x.id===id?{...x,...patch}:x));
+  const updateDealerFields = useCallback((id,patch)=>setDealers(ds=>ds.map(x=>x.id===id?{...x,...patch}:x)),[]);
   const deleteDealer = async (id) => {
     const ok = await confirmDialog({
       title: 'Delete dealer?',
@@ -16654,7 +16696,7 @@ export default function App(){
   );
 
   return(
-    <MonthContext.Provider value={{selectedMonthIdx,setSelectedMonthIdx,MO:activeMO,currentMonthIdx:activeMonthIdx,currentMonthLabel:activeMonthLabel,viewIdx,cycle,setCycle,cycles}}>
+    <MonthContext.Provider value={monthCtx}>
     <LangContext.Provider value={langCtx}>
       <>
         <Styles theme={theme}/>

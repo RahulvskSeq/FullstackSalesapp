@@ -950,3 +950,24 @@ export const MonthSelectorBar = ({selectedMonthIdx,setSelectedMonthIdx,onRefresh
   </div>
   );
 };
+
+/**
+ * Render children only once they scroll near the screen. Charts measure their text when they
+ * mount, which forces a full page layout — on a phone, charts far down Home made every visit to
+ * Home seconds slower. Until then a same-height placeholder keeps the page from jumping.
+ */
+export function InView({ h = 200, children, margin = '300px' }) {
+  const ref = React.useRef(null);
+  const [on, setOn] = React.useState(typeof IntersectionObserver === 'undefined');
+  React.useEffect(() => {
+    if (on || !ref.current) return;
+    const el = ref.current;
+    const io = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) { setOn(true); io.disconnect(); } }, { rootMargin: margin });
+    // start watching once the page has settled: while the sections above are still empty on the
+    // first frame, a chart far down the page briefly looks "near the screen" and would draw at once
+    const t = setTimeout(() => io.observe(el), 800);
+    return () => { clearTimeout(t); io.disconnect(); };
+  }, [on, margin]);
+  return on ? children : <div ref={ref} style={{ height: h }} aria-hidden="true" />;
+}
+

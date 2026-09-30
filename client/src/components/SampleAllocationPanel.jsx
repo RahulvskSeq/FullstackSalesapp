@@ -16,6 +16,13 @@ import DealerVisitModal from './DealerVisitModal';
 const num = v => Number(v || 0).toLocaleString('en-IN');
 const ZONES = ['ZONE 1', 'ZONE 2', 'ZONE 3', 'ZONE 4', 'ZONE 5', 'ZONE 6', 'ZONE 7'];
 const SPECIAL = ['All Zones', 'NEW DEALERS ONLY', 'ARCHITECTS', 'SPECIAL REQUIRMENT'];
+// the zone groups the office hands samples to — one choice at a time
+const ZONE_GROUPS = [
+  { label: 'All zones', zones: ['All Zones'], tone: 'var(--grn)' },
+  { label: 'Zone 1 & 3', zones: ['ZONE 1', 'ZONE 3'] }, { label: 'Zone 2 & 5', zones: ['ZONE 2', 'ZONE 5'] }, { label: 'Zone 4 & 6', zones: ['ZONE 4', 'ZONE 6'] },
+  { label: 'Zone 1, 3, 4', zones: ['ZONE 1', 'ZONE 3', 'ZONE 4'] }, { label: 'Zone 2, 5, 6', zones: ['ZONE 2', 'ZONE 5', 'ZONE 6'] },
+];
+const sameZones = (a, b) => a.length === b.length && [...a].sort().join('|') === [...b].sort().join('|');
 const isRealZone = z => /^(all\s*zones?|zone\s*\d+)$/i.test(String(z || '').trim());
 const initials = n => (n || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase() || '?';
 const hue = n => (n || '?').charCodeAt(0) * 37 % 360;
@@ -266,12 +273,8 @@ export default function SampleAllocationPanel({ view = 'master', onDelete, onCou
   const specialRows = data.summary.filter(x => (x.stock || x.allocated || x.given) && !isRealZone(x.zone)).length;
   // the section switch above shows these (only numbers this panel already has)
   useEffect(() => { if (loaded && onCounts) onCounts({ samples: samplesCount, ...(requests !== null ? { requests } : {}) }); }, [loaded, samplesCount, requests]);
-  const toggleZone = z => setNf(f => {
-    const special = SPECIAL.includes(z);
-    if (special) return { ...f, zones: f.zones.includes(z) ? [] : [z] };           // a special tag stands alone
-    const zs = f.zones.filter(x => !SPECIAL.includes(x));
-    return { ...f, zones: zs.includes(z) ? zs.filter(x => x !== z) : [...zs, z] };
-  });
+  // one choice at a time: a group, a single zone or a by-hand tag — picking one clears the other
+  const pickZones = zones => setNf(f => ({ ...f, zones: sameZones(f.zones, zones) ? [] : zones }));
 
   const statusBadge = a => a.status === 'GIVEN' ? <span className="smp-st" style={{ '--tone': 'var(--grn)' }}><i />given {a.givenDate}</span>
     : a.status === 'RETURNED' ? <span className="smp-st" style={{ '--tone': 'var(--t2)' }}><i />taken back {a.returnedDate}</span>
@@ -359,13 +362,16 @@ export default function SampleAllocationPanel({ view = 'master', onDelete, onCou
             </div>
             <div>
               <span className="smp-fl">Who gets it</span>
-              <div className="smp-zones">
-                <button type="button" className={'thr' + (nf.zones.includes('All Zones') ? ' on' : '')} style={{ '--tone': 'var(--grn)' }} onClick={() => toggleZone('All Zones')}>All zones</button>
-                {ZONES.map(z => <button type="button" key={z} className={'thr' + (nf.zones.includes(z) ? ' on' : '')} style={{ '--tone': 'var(--acc)' }} onClick={() => toggleZone(z)}>{z.replace('ZONE ', 'Zone ')}</button>)}
+              <div className="smp-zones" role="radiogroup" aria-label="Zone group">
+                {ZONE_GROUPS.map(g => { const on = sameZones(nf.zones, g.zones); return <button type="button" role="radio" aria-checked={on} key={g.label} className={'thr' + (on ? ' on' : '')} style={{ '--tone': g.tone || 'var(--acc)' }} onClick={() => pickZones(g.zones)}>{g.label}</button>; })}
+              </div>
+              <span className="smp-fl" style={{ marginTop: 10, color: 'var(--t3)' }}>Or one zone</span>
+              <div className="smp-zones" role="radiogroup" aria-label="Single zone">
+                {ZONES.map(z => { const on = sameZones(nf.zones, [z]); return <button type="button" role="radio" aria-checked={on} key={z} className={'thr' + (on ? ' on' : '')} style={{ '--tone': 'var(--acc)' }} onClick={() => pickZones([z])}>{z.replace('ZONE ', 'Zone ')}</button>; })}
               </div>
               <span className="smp-fl" style={{ marginTop: 10, color: 'var(--t3)' }}>Or by hand only</span>
               <div className="smp-zones">
-                {SPECIAL.slice(1).map(z => <button type="button" key={z} className={'thr' + (nf.zones.includes(z) ? ' on' : '')} style={{ '--tone': 'var(--yel)' }} onClick={() => toggleZone(z)}>{z === 'SPECIAL REQUIRMENT' ? 'Special requirement' : z === 'NEW DEALERS ONLY' ? 'New dealers only' : 'Architects'}</button>)}
+                {SPECIAL.slice(1).map(z => <button type="button" role="radio" aria-checked={sameZones(nf.zones, [z])} key={z} className={'thr' + (sameZones(nf.zones, [z]) ? ' on' : '')} style={{ '--tone': 'var(--yel)' }} onClick={() => pickZones([z])}>{z === 'SPECIAL REQUIRMENT' ? 'Special requirement' : z === 'NEW DEALERS ONLY' ? 'New dealers only' : 'Architects'}</button>)}
               </div>
             </div>
             {/* who will get it, live */}

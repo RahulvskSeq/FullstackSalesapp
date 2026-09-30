@@ -1287,7 +1287,7 @@ import { ChevronDown, Calendar, Users, Target, Award, Activity, TrendingUp, Cloc
 import { MO as MO_CONST, CURRENT_MONTH_IDX, DEALER_TYPES } from '../constants';
 import { pct, spct, pclr, trendPct, forecast, monthTarget, readableOn } from '../utils';
 import { useMonth } from '../context';
-import { StatusBadge, Avatar, MiniBars, StatCard, MultiSelect, CountUp } from './UI';
+import { StatusBadge, Avatar, MiniBars, StatCard, MultiSelect, CountUp, InView } from './UI';
 import MapView from './MapView';
 import CategoryDrillChart from './CategoryDrillChart';
 import SalesByCategory from './SalesByCategory';
@@ -1880,6 +1880,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
       </div>
 
       {/* ── Category-wise Sales overview (live from /api/sales) ────────────── */}
+      <InView h={560}>
       <div className="card" style={{marginBottom:16, padding:14}}>
         <CategorySalesPanel
           monthLabel={MO[selectedMonthIdx]}
@@ -1898,6 +1899,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
         monthLabel={MO[selectedMonthIdx]}
         salesman={currentUser?.role === 'salesman' ? currentUser.id : ''}
       />
+      </InView>
 
       {/* Dealer quick search + Going to meet (visit summary & MOM), side by side */}
       <div className="card ov-search-row" style={{marginBottom:16,padding:'12px 16px',display:'flex',gap:12,alignItems:'flex-start'}}>
@@ -2128,6 +2130,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
       {/* MTD Sales Summary — the same table as Category-wise Sales, embedded.
           Its data is scoped server-side, so a salesman sees only their own
           row here while an admin sees every region. */}
+      <InView h={380}>
       <div style={{marginBottom:16}}>
         <SalesByCategory
           currentUser={currentUser}
@@ -2137,14 +2140,20 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
           onlyMtd
         />
       </div>
+      </InView>
 
+      <InView h={440}>
       <MapView dealers={dealers} selectedMonthIdx={selectedMonthIdx}/>
+      </InView>
 
       {/* Category drill chart */}
+      <InView h={380}>
       <CategoryDrillChart dealers={dealers} selectedMonthIdx={selectedMonthIdx} onNavigate={onNavigate}/>
+      </InView>
 
       {/* (the old geography chips live in the filter bar at the top now) */}
 
+      <InView h={520}>
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(320px,1fr))',gap:16,marginBottom:16}}>
         <div className="card">
           <div className="sec-title">
@@ -2156,7 +2165,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
             <div style={{flex:1}}/>
             <span className="kpi-pill" title="Where this month is heading at the current pace">Forecast <b>{Math.round(projected).toLocaleString('en-IN')}</b></span>
           </div>
-          <ResponsiveContainer width="100%" height={220}>
+          <InView h={220}><ResponsiveContainer width="100%" height={220}>
             <AreaChart data={trendData} margin={{top:18,right:8,left:-12,bottom:0}}>
               <defs>
                 <linearGradient id="grad1" x1="0" y1="0" x2="0" y2="1">
@@ -2173,7 +2182,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
                 dot={{r:3,fill:'#3b82f6',strokeWidth:0}} activeDot={{r:6}} label={{position:'top',fill:'var(--t2)',fontSize:10,fontWeight:700}}/>
               <ReferenceLine x={MO[selectedMonthIdx].slice(0,3)} stroke="#f59e0b" strokeWidth={2} strokeDasharray="3 3"/>
             </AreaChart>
-          </ResponsiveContainer>
+          </ResponsiveContainer></InView>
         </div>
         <div className="card">
           <div className="sec-title">
@@ -2181,7 +2190,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
             <span className="sec-note">tap a slice to open those dealers</span>
           </div>
           <div style={{position:'relative'}}>
-            <ResponsiveContainer width="100%" height={220}>
+            <InView h={220}><ResponsiveContainer width="100%" height={220}>
               <PieChart>
                 <Pie data={statusCounts} cx="50%" cy="45%" innerRadius={62} outerRadius={88} paddingAngle={3} cornerRadius={6} dataKey="value" stroke="none"
                   onClick={d=>onNavigate('dealers',{status:d.name})} style={{cursor:'pointer'}}>
@@ -2190,7 +2199,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
                 <Tooltip/>
                 <Legend wrapperStyle={{fontSize:11}} iconType="circle" iconSize={8}/>
               </PieChart>
-            </ResponsiveContainer>
+            </ResponsiveContainer></InView>
             <div className="donut-center" style={{top:'45%'}}>
               <b>{statusCounts.reduce((a,d)=>a+(d.value||0),0).toLocaleString('en-IN')}</b>
               <span>dealers</span>
@@ -2198,7 +2207,9 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
           </div>
         </div>
       </div>
+      </InView>
 
+      <InView h={460}>
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))',gap:14,marginBottom:14}}>
         <div className="card">
           <div className="sec-title">
@@ -2239,7 +2250,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
             const colors={'0%':'#ef4444','1-50%':'#f97316','51-99%':'#f59e0b','100%+':'#10b981'};
             const data=Object.entries(buckets).map(([k,v])=>({name:k,value:v,fill:colors[k]}));
             return(
-              <ResponsiveContainer width="100%" height={180}>
+              <InView h={180}><ResponsiveContainer width="100%" height={180}>
                 <BarChart data={data} margin={{top:20,right:6,left:-18,bottom:0}}>
                   <defs>{data.map((d,i)=><linearGradient key={i} id={'ad'+i} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={d.fill} stopOpacity={1}/><stop offset="100%" stopColor={d.fill} stopOpacity={0.55}/></linearGradient>)}</defs>
                   <CartesianGrid vertical={false}/>
@@ -2250,13 +2261,15 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
                     {data.map((d,i)=><Cell key={i} fill={`url(#ad${i})`}/>)}
                   </Bar>
                 </BarChart>
-              </ResponsiveContainer>
+              </ResponsiveContainer></InView>
             );
           })()}
         </div>
       </div>
+      </InView>
 
       {/* Needs Attention */}
+      <InView h={440}>
       <div className="card">
         <div className="row" style={{marginBottom:14,flexWrap:'wrap',gap:10}}>
           <div className="sec-title" style={{marginBottom:0}}>
@@ -2301,8 +2314,10 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
           </>
         ):<div style={{color:'var(--t3)',textAlign:'center',padding:20,fontSize:13}}>🎉 No dealers {attentionDirection==='lt'?'below':'above'} {attentionThreshold}%</div>}
       </div>
+      </InView>
 
       {/* All dealers table */}
+      <InView h={720}>
       <div className="card" style={{marginTop:14}}>
         <div className="row" style={{marginBottom:14,flexWrap:'wrap',gap:8}}>
           <div className="sec-title" style={{marginBottom:0}}><span className="sec-ico" style={{'--tone':'#6366f1'}}><Users size={15}/></span> All dealers <span className="count-pill">{myD.length.toLocaleString('en-IN')}</span></div>
@@ -2399,6 +2414,7 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
           </table>
         </div>
       </div>
+      </InView>
 
       {/* Popup */}
       {(tierPopup||insightPopup)&&(()=>{

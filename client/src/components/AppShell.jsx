@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Home, CalendarCheck, CalendarDays, Plus, Menu, X, MapPin, HandCoins, PhoneCall, UserPlus, Search,
   UploadCloud, Plane, LifeBuoy, Target, Landmark, Users, Sparkles, ClipboardList, Package, TrendingUp, Boxes, PackageX, Zap, Languages,
@@ -144,6 +144,10 @@ const QUOTES = [
   'Har visit ek naya order.',
   'Target bada, aap usse bade.',
 ];
+// width of a line of text in a given CSS font, without touching the page layout
+let _tw;
+const textWidth = (text, font) => { _tw ||= document.createElement('canvas').getContext('2d'); _tw.font = font; return _tw.measureText(text).width; };
+
 export function DailyQuote({ every = 9000 }) {
   const { t: tr, lang } = useT();
   const start = useMemo(() => Math.floor(Date.now() / 86400000) % QUOTES.length, []);
@@ -153,22 +157,27 @@ export function DailyQuote({ every = 9000 }) {
     const t = setInterval(() => setI(x => (x + 1) % QUOTES.length), every);
     return () => clearInterval(t);
   }, [every]);
-  // Shrink the text until it sits on one line (14px down to 11px); only the
-  // narrowest phones fall back to two lines.
-  useLayoutEffect(() => {
-    const el = ref.current; if (!el) return;
+  // Fit the quote on one line: 14px, shrinking to 12.5px at most, else two lines. Measured on a
+  // canvas and sized once — the old shrink-and-remeasure loop forced a full page layout on every
+  // step, which cost seconds on a phone whenever Home was on screen.
+  useEffect(() => {
+    const el = ref.current; const txt = el?.querySelector('.tb-quote-t'); if (!el || !txt) return;
+    let avail = 0, font = '';
     const fit = () => {
-      const txt = el.querySelector('.tb-quote-t'); if (!txt) return;
-      el.classList.remove('wrap');
-      let size = 14;
+      if (!avail) return;
+      if (!font) { const cs = getComputedStyle(txt); font = `${cs.fontWeight} 14px ${cs.fontFamily}`; }
+      const w14 = textWidth(txt.textContent || '', font);
+      const size = w14 <= avail ? 14 : Math.max(12.5, Math.floor((14 * avail / w14) * 2) / 2);
       el.style.fontSize = size + 'px';
-      // shrink a little, but never below a size that reads easily — past that, use two lines
-      while (size > 12.5 && txt.scrollWidth > txt.clientWidth + 1) { size -= 0.5; el.style.fontSize = size + 'px'; }
-      if (txt.scrollWidth > txt.clientWidth + 1) el.classList.add('wrap');
+      el.classList.toggle('wrap', (w14 * size) / 14 > avail + 1);
     };
-    fit();
-    window.addEventListener('resize', fit);
-    return () => window.removeEventListener('resize', fit);
+    // the title slot fills the rest of the top bar, so its width does not depend on the quote;
+    // the text gets that minus the pill's padding + border (20), icon (14) and gap (6)
+    const box = el.parentElement || el, CHROME = 40;
+    if (typeof ResizeObserver === 'undefined') { avail = box.clientWidth - CHROME; fit(); return; }
+    const ro = new ResizeObserver(([e]) => { const w = Math.floor(e.contentRect.width) - CHROME; if (w > 0 && Math.abs(w - avail) > 1) { avail = w; fit(); } });
+    ro.observe(box);
+    return () => ro.disconnect();
   }, [i, lang]);
   return <span ref={ref} className="tb-quote" key={i + lang} title={tr(QUOTES[i])}><Sparkles size={14} className="tb-quote-ico"/><span className="tb-quote-t">{tr(QUOTES[i])}</span></span>;
 }
