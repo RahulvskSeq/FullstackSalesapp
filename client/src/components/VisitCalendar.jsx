@@ -37,7 +37,8 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
   const [planOpen, setPlanOpen] = useState(false);
   const [plansAll, setPlans] = useState([]);   // the month, plus the edges of the week on show
   // Month / Week / Day, like Google Calendar; remembered on this device
-  const [view, setViewRaw] = useState(() => { try { return localStorage.getItem('stp_cal_view') || 'month'; } catch { return 'month'; } });
+  // opens on today's Day view every time; Week / Month are a tap away
+  const [view, setViewRaw] = useState('day');
   const { t: tr } = useT();
   const [unplanned, setUnplanned] = useState([]);   // visits made without a plan
   const [canPlan, setCanPlan] = useState(false);   // the server's answer: may this user plan for others
@@ -91,7 +92,7 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
   // plans are for tomorrow onwards; today a salesman checks in an unplanned visit instead
   const futureDay = day > todayYmd();
   const mayAdd = futureDay && (canPlan || !isStaff) && !full;
-  const walkIn = isToday && !isStaff;
+  const walkIn = isToday && !replacing;
   // the month, by salesman: planned, visited, not visited — the report
   const report = useMemo(() => {
     const m = {};
@@ -186,7 +187,7 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
     setTimeout(() => { if (Math.abs(scroller.scrollTop - top) > 40) scroller.scrollTop = top; }, 500);   // no smooth scrolling here: jump
   };
   const setView = v => {
-    setViewRaw(v); try { localStorage.setItem('stp_cal_view', v); } catch { /* storage blocked */ }
+    setViewRaw(v);
     // week/day follow the selected day; keep it inside the month on show
     if (v !== 'month' && (day < from || day > to)) setDay(tdy >= from && tdy <= to ? tdy : from);
   };
@@ -253,7 +254,7 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
                 {[['month', 'Month'], ['week', 'Week'], ['day', 'Day']].map(([k, l]) => <button key={k} role="tab" aria-selected={view === k} className={view === k ? 'on' : ''} onClick={() => setView(k)}>{tr(l)}</button>)}
               </div>
               {busy && <span className="sec-note">loading…</span>}
-              {(canPlan || !isStaff) && <button className="btnp vc-planbtn" onClick={() => { if (day <= tdy) { const t = addDays(tdy, 1), x = new Date(t + 'T00:00:00'); setDay(t); setReplacing(null); setMonth(new Date(x.getFullYear(), x.getMonth(), 1)); } setPlanOpen(true); }}><CalendarPlus size={15} /> {tr('Plan a visit')}</button>}
+              {(canPlan || !isStaff) && <button className="btnp vc-planbtn" onClick={() => setPlanOpen(true)}><CalendarPlus size={15} /> {tr('Plan a visit')}</button>}
             </div>
             <div className="vc-legend">
               {[['Visited', 'var(--grn)'], ['Planned', 'var(--acc)'], ['Self-added', '#06b6d4'], ['Unplanned visit', '#8b5cf6'], ['Not visited', 'var(--red)']].map(([l, c]) => <span key={l}><i style={{ background: c }} />{tr(l)}</span>)}
@@ -450,7 +451,6 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
 
           {full && (canPlan || !isStaff) && <div className="vc-note" style={{ '--tone': 'var(--red)' }}><AlertTriangle size={14} /> <span>Day full: {maxPerDay} dealers is the limit. {canPlan ? 'Replace one, or plan the next day.' : 'Pick another day.'}</span></div>}
           {pastDay && (canPlan || !isStaff) && <div className="vc-note" style={{ '--tone': 'var(--t3)' }}><Clock size={14} /> <span>This day is over. Plans start from tomorrow.</span></div>}
-          {isToday && isStaff && canPlan && <div className="vc-note" style={{ '--tone': 'var(--t3)' }}><Clock size={14} /> <span>Plans start from tomorrow — pick a later day. A visit today is checked in by the salesman as an unplanned visit.</span></div>}
           {(mayAdd || walkIn) && (
             <div className="vc-add" style={replacing ? { borderColor: 'var(--acc)', background: 'color-mix(in srgb, var(--acc) 6%, var(--bg2))' } : undefined}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, fontWeight: 800, color: replacing ? 'var(--acc)' : 'var(--t1)', marginBottom: 8, flexWrap: 'wrap' }}>
@@ -461,13 +461,13 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
               </div>
               <div className="inp" style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 11px', background: 'var(--bg1)' }}>
                 <Search size={14} color="var(--t3)" />
-                <input value={q} onChange={e => setQ(e.target.value)} placeholder="dealer name — or type a new party's name" disabled={!daySm} style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', color: 'var(--t1)', fontSize: 13, outline: 'none', padding: 0 }} />
+                <input value={q} onChange={e => setQ(e.target.value)} placeholder="dealer name — or type a new party's name" disabled={!daySm && !walkIn} style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', color: 'var(--t1)', fontSize: 13, outline: 'none', padding: 0 }} />
               </div>
-              {!replacing && canPlan && <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+              {!replacing && canPlan && !walkIn && <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                 <input className="inp" value={note} onChange={e => setNote(e.target.value)} placeholder="note for this visit — e.g. show Candid folder" disabled={!daySm} style={{ flex: 1, minWidth: 0, fontSize: 12.5, padding: '7px 10px', background: 'var(--bg1)' }} />
                 {canPlan && <input className="inp" type="number" min="0" value={collect} onChange={e => setCollect(e.target.value)} placeholder="collect ₹" disabled={!daySm} title="Amount to collect on this visit" style={{ width: 110, flexShrink: 0, fontSize: 12.5, padding: '7px 10px', background: 'var(--bg1)' }} />}
               </div>}
-              {canNewParty && daySm && walkIn && <button type="button" className="vc-new" onClick={visitUnplannedNew} style={{ marginTop: 8 }}>
+              {canNewParty && walkIn && <button type="button" className="vc-new" onClick={visitUnplannedNew} style={{ marginTop: 8 }}>
                 <span className="sec-ico" style={{ '--tone': '#8b5cf6', width: 28, height: 28, borderRadius: 9 }}><ArrowRight size={14} /></span>
                 <span style={{ flex: 1, minWidth: 0 }}><b>Visit “{typed}” — new party</b><small>check in now as an unplanned visit; name, GST, city and state are taken at check-out</small></span>
               </button>}

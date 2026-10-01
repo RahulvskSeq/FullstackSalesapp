@@ -92,7 +92,10 @@ export default function PlanVisitDrawer({ dealers = [], plans = [], day, setDay,
           <div className="pv-bar"><i style={{ width: Math.min(100, dayPlans.length / maxPerDay * 100) + '%' }} /></div>
         </div>}
         {!salesmanId && <div className="pv-msg">Pick a salesman to plan his day.</div>}
-        {salesmanId && closed && <div className="pv-msg">Plans start from tomorrow — pick a later day. For a visit today, use <b>Unplanned visit</b> on the calendar.</div>}
+        {closed && <div className="pv-msg" style={{ display: 'block' }}>
+          <div>Plans start from tomorrow — a same-day visit is done from <b>Unplanned visit</b> on the calendar.</div>
+          <button className="btnp" style={{ fontSize: 12, padding: '5px 12px', marginTop: 8 }} onClick={() => setDay(tomorrow)}>Plan for tomorrow</button>
+        </div>}
         {err && <div className="pv-msg bad"><AlertTriangle size={13} /> {err}</div>}
 
         <div className="pv-search"><Search size={14} /><input value={q} onChange={e => setQ(e.target.value)} placeholder="dealer, city or zone…" /></div>
@@ -104,7 +107,7 @@ export default function PlanVisitDrawer({ dealers = [], plans = [], day, setDay,
         <div className="pv-list">
           {mayPlan && typed.length >= 3 && !exact && <button className="pv-new" disabled={full || !!busyId} onClick={addNew}><Plus size={14} /> Plan “{typed}” as a new party</button>}
           {shown.map(d => { const id = d._id || d.id; const nm = cov && cov[id] === 'NOT_MET'; return (
-            <div key={id} className={'pv-row' + (!mayPlan || full || busyId ? ' off' : '')} role="button" tabIndex={0} title="Add to this day"
+            <div key={id} className={'pv-row' + (!mayPlan || full || busyId ? ' off' : '') + (!mayPlan || full ? ' na' : '') + (busyId === id ? ' busy' : '')} role="button" tabIndex={0} title="Add to this day"
               onClick={() => { if (mayPlan && !full && !busyId) add(d); }} onKeyDown={e => { if ((e.key === 'Enter' || e.key === ' ') && mayPlan && !full && !busyId) { e.preventDefault(); add(d); } }}>
               <span className="pv-tier" style={{ '--tone': TIER_TONE[d.status] || 'var(--t3)' }}>{TIERS.includes(d.status) ? (d.status === 'KEY ACCOUNT' ? 'KEY' : d.status) : '—'}</span>
               <span className="pv-main">
@@ -112,7 +115,7 @@ export default function PlanVisitDrawer({ dealers = [], plans = [], day, setDay,
                 <RepeatHint dates={monthPlans.get(id) || []} month={monthName} />
                 <small><MapPin size={10} /> {[d.zone, d.city].filter(Boolean).join(' · ') || 'no zone'}{canPlan && d.salesman && d.salesman !== salesmanId ? ` · ${salesmen.find(s => s.id === d.salesman)?.name || d.salesman}'s dealer` : ''}{nm ? ' · not met this month' : ''}</small>
               </span>
-              <button className="btnp pv-add" disabled={!mayPlan || full || !!busyId} onClick={e => { e.stopPropagation(); add(d); }}>{busyId === id ? '…' : <><Plus size={13} /> Add</>}</button>
+              {busyId === id && <span className="pv-adding">Adding…</span>}
             </div>); })}
           {!shown.length && <div className="pv-msg">{notMetOnly ? 'Every top dealer was met or planned this month.' : 'No dealer matches.'}</div>}
           {!more && pool.length > LIMIT && <button className="btn pv-more" onClick={() => setMore(true)}>Show all {pool.length} dealers</button>}
@@ -126,7 +129,7 @@ export default function PlanVisitDrawer({ dealers = [], plans = [], day, setDay,
               <span className="pv-main"><b>{p.dealerName}</b><small>{p.newParty ? 'new party' : [p.zone, p.city].filter(Boolean).join(' · ')}{p.status === 'DONE' ? ' · visited' : ''}</small></span>
               {p.canRemove && p.status !== 'DONE' && <button className="pv-rm" disabled={!!busyId} onClick={() => remove(p)} title="Take off this day"><Trash2 size={14} /></button>}
             </div>
-          )) : <div className="pv-msg">Nothing planned yet — tap Add on a dealer above.</div>}
+          )) : <div className="pv-msg">Nothing planned yet — tap a dealer above to add it.</div>}
         </div>
       </aside>
     </div>

@@ -1278,6 +1278,9 @@ export default function Styles({theme}){
     .pv-row:hover:not(.off){border-color:color-mix(in srgb,var(--acc) 40%,transparent)}
     .pv-row:active:not(.off){background:color-mix(in srgb,var(--acc) 8%,var(--bg1))}
     .pv-row.off{cursor:default}
+    .pv-row.na{opacity:.55}
+    .pv-row.busy{border-color:var(--acc);background:color-mix(in srgb,var(--acc) 8%,var(--bg1))}
+    .pv-adding{flex-shrink:0;font-size:11.5px;font-weight:700;color:var(--acc)}
     .pv-tier{flex-shrink:0;min-width:52px;text-align:center;font-size:9.5px;font-weight:850;letter-spacing:.04em;padding:3px 5px;border-radius:7px;color:var(--tone);background:color-mix(in srgb,var(--tone) 13%,transparent)}
     .pv-main{display:flex;flex-direction:column;min-width:0;flex:1}
     .pv-main b{font-size:12.5px;font-weight:750;color:var(--t1);overflow-wrap:anywhere}
