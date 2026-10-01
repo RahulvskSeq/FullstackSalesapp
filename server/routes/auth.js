@@ -473,9 +473,11 @@ const canLoginAs = async (user) => {
   const u = await User.findOne({ id: user?.id }, 'permissions role').lean();
   const own = Array.isArray(u?.permissions?.features) ? u.permissions.features : [];
   if (own.length) return own.includes('loginAs');
-  // no list of their own → the role's list (Settings → Permissions → By role)
+  // no list of their own → the role's list (Settings → Permissions → By role);
+  // an empty role list is the built-in default, which gives admins Login as
   const { loadRolePermissions } = await import('../lib/rolePermissions.js');
-  return ((await loadRolePermissions())[u?.role]?.features || []).includes('loginAs');
+  const rl = (await loadRolePermissions())[u?.role]?.features || [];
+  return rl.length ? rl.includes('loginAs') : u?.role === 'admin';
 };
 router.post('/impersonate/:id', protect, async (req, res) => {
   if(!(await canLoginAs(req.user))) return res.status(403).json({ error:'Login as is not granted to you' });

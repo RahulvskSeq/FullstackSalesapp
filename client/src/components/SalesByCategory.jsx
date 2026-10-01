@@ -7,6 +7,8 @@ import CategoryFilter from './CategoryFilter';
 import { PageHead } from '../collections/ui';
 import { useGlobalCategoryFilter } from '../hooks/useGlobalCategoryFilter';
 import { useT } from '../i18n';
+import { useMonth } from '../context';
+import { moToYM } from '../hooks/useAllMonthsCategoryFilter';
 
 /**
  * SalesByCategory — three views over uploaded category-wise sales:
@@ -24,6 +26,7 @@ const fmt = n => (n == null ? '—' : Number(n).toLocaleString('en-IN'));
 // scoped server-side, so a salesman opening Overview sees only their own row.
 const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[], onOpenDealer, onlyMtd=false } = {}) => {
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
+  const { MO: ctxMO } = useMonth() || {};
   const { t: tr } = useT();
   // MTD summary on Home opens as salesman cards; the table (where targets are typed) is one tap away
   const [mtdView, setMtdView] = useState(onlyMtd ? 'summary' : 'table');
@@ -357,12 +360,19 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
   const mtdSummary = useMemo(() => {
     // Build a map salesmanId → { dealers[], stateCounts, target, dealersWithSales:Set, outstanding }
     const out = new Map();
+    // A dealer belongs to whoever owned it IN THE VIEWED MONTH (handover stamps), the
+    // same rule as the Achieved card and the admin salesman cards. A salesman's sales
+    // rows already come scoped that way from the server, so all of them are his.
+    const mIdx = (ctxMO || []).findIndex(l => moToYM(l) === month);
+    const ownerOf = d => (mIdx >= 0 && d.monthSalesman?.[mIdx]) || d.salesman || '_none';
+    const own = currentUser?.role === 'salesman' ? currentUser.id : '';
     const lookupDealerOut = new Map();
     for (const o of (outstandingData || [])) {
       lookupDealerOut.set(String(o.name||'').toLowerCase().trim(), Number(o.latestOutstanding) || 0);
     }
     for (const d of dealers) {
-      const sm = d.salesman || '_none';
+      const sm = ownerOf(d);
+      if (own && sm !== own) continue;
       if (!out.has(sm)) {
         out.set(sm, {
           smId: sm,
@@ -380,7 +390,7 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
       const st = (d.state || '').trim() || '(no region)';
       e.stateCounts[st] = (e.stateCounts[st] || 0) + 1;
       // Use the per-month target if set, else dealer's global target
-      const tgt = Number(d.monthTargets?.[/*current viewing*/ d._mtdIdx] || d.target || 0);
+      const tgt = Number((mIdx >= 0 ? d.monthTargets?.[mIdx] : undefined) ?? d.target ?? 0) || 0;
       e.target += tgt;
       const outAmt = lookupDealerOut.get(String(d.name||'').toLowerCase().trim()) || 0;
       e.outstanding += outAmt;
@@ -389,7 +399,7 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
     for (const row of (byDealer.rows || [])) {
       // Find the matching dealer record so we can attribute to a salesman
       const d = dealers.find(x => String(x.name||'').toLowerCase().trim() === String(row.dealer||'').toLowerCase().trim());
-      const sm = d?.salesman || '_unknown';
+      const sm = own || (d ? ownerOf(d) : '_unknown');
       if (!out.has(sm)) {
         out.set(sm, {
           smId: sm, smName: users[sm]?.name || sm,
@@ -449,7 +459,7 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
     }).filter(e => e.smName !== '_none' && e.smName !== '_unknown')
       .sort((a,b) => (a.region || '').localeCompare(b.region || '') || (b.totalAch - a.totalAch));
     return rows;
-  }, [dealers, users, byDealer, outstandingData, catTargets, mtdCategories]);
+  }, [dealers, users, byDealer, outstandingData, catTargets, mtdCategories, month, ctxMO, currentUser]);
 
   // Group MTD rows by region for sub-totals
   const mtdByRegion = useMemo(() => {

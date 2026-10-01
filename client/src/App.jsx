@@ -15766,7 +15766,7 @@ export default function App(){
   // (menu, + sheet, a popup, the dealer card); otherwise it goes back one screen; on the first
   // screen it goes to Home; on Home it answers false and Android puts the app in the background.
   const backRef = useRef({});
-  backRef.current = { sidebarOpen, quickOpen, editingId, stockOpen, showAdd, showUM, bulkAction, showApiSettings, screen };
+  backRef.current = { sidebarOpen, quickOpen, editingId, stockOpen, showAdd, showUM, bulkAction, showApiSettings, loginAsOpen, screen };
   useEffect(() => {
     window.__stpBack = () => {
       const s = backRef.current;
@@ -15777,6 +15777,7 @@ export default function App(){
       if (s.showUM) { setShowUM(false); return true; }
       if (s.bulkAction) { setBulkAction(null); return true; }
       if (s.showApiSettings) { setShowApiSettings(false); return true; }
+      if (s.loginAsOpen) { setLoginAsOpen(false); return true; }
       if (s.sidebarOpen && window.innerWidth <= 768) { setSidebarOpen(false); return true; }
       // popups owned by a page (visit, outstanding, samples, plan a visit …): they close on Escape
       // or on a tap outside — do both on the top-most one
@@ -16514,7 +16515,8 @@ export default function App(){
   const rolePages    = rolePerms[currentUser?.role]?.pages || [];
   // "Login as" is never implied by being an admin — it needs an explicit tick,
   // on the user or on their role.
-  const canLoginAs = isSuperAdmin || userFeatures.has('loginAs') || (userFeatures.size === 0 && roleFeatures.includes('loginAs'));
+  // admins have it by default (no per-user list, role list untouched) — same rule as the server
+  const canLoginAs = isSuperAdmin || userFeatures.has('loginAs') || (userFeatures.size === 0 && (roleFeatures.length ? roleFeatures.includes('loginAs') : currentUser?.role === 'admin'));
   const hasFeature = (key) => {
     if (!key) return true;                // no feature gate
     if (isSuperAdmin) return true;
@@ -17207,6 +17209,7 @@ export default function App(){
                   ))}
                 </div>
                 <div style={{display:'flex',gap:6,marginTop:8,flexWrap:'wrap'}}>
+                  {canLoginAs && <button className="btn" onClick={()=>{ setLoginAsQ(''); setLoginAsErr(null); setLoginAsOpen(true); setSidebarOpen(false); }} style={{display:'inline-flex',alignItems:'center',gap:5,fontSize:12,fontWeight:700,color:'var(--yel)',background:'color-mix(in srgb, var(--yel) 10%, transparent)',borderColor:'color-mix(in srgb, var(--yel) 35%, transparent)'}}><LogIn size={13}/> {tr('Login as')}</button>}
                   {isNativeApp() && <button className="btn" onClick={()=>{ setShowApiSettings(true); setSidebarOpen(false); }} style={{display:'inline-flex',alignItems:'center',gap:5,fontSize:12}}><Settings size={13}/> {tr('Server')}</button>}
                   {isNativeApp() && <UpdateButton showLabel/>}
                 </div>
