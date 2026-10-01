@@ -1279,6 +1279,13 @@ export default function Styles({theme}){
     .pv-row:active:not(.off){background:color-mix(in srgb,var(--acc) 8%,var(--bg1))}
     .pv-row.off{cursor:default}
     .pv-row.na{opacity:.55}
+    .vc-ci-ov{z-index:2100;display:flex;align-items:center;justify-content:center;padding:16px}
+    .vc-ci{width:min(860px,100%);max-height:calc(100dvh - 32px);display:flex;flex-direction:column;background:var(--bg0,var(--bg1));border:1px solid var(--b1);border-radius:18px;box-shadow:0 24px 60px rgba(15,23,42,.28);overflow:hidden}
+    .vc-ci-h{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--b1);background:var(--bg1)}
+    .vc-ci-h b{font-size:14.5px;color:var(--t1);display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .vc-ci-e{font-size:10.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#8b5cf6}
+    .vc-ci-b{overflow:auto;padding:12px 14px;-webkit-overflow-scrolling:touch}
+    @media (max-width:640px){.vc-ci-ov{padding:0;align-items:flex-end}.vc-ci{max-height:94dvh;border-radius:18px 18px 0 0}}
     .pv-row.busy{border-color:var(--acc);background:color-mix(in srgb,var(--acc) 8%,var(--bg1))}
     .pv-adding{flex-shrink:0;font-size:11.5px;font-weight:700;color:var(--acc)}
     .pv-tier{flex-shrink:0;min-width:52px;text-align:center;font-size:9.5px;font-weight:850;letter-spacing:.04em;padding:3px 5px;border-radius:7px;color:var(--tone);background:color-mix(in srgb,var(--tone) 13%,transparent)}

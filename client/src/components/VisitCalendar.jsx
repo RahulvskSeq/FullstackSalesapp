@@ -5,6 +5,8 @@ import DealerVisitModal from './DealerVisitModal';
 import SamplesCarryModal from './SamplesCarryModal';
 import PlanVisitDrawer from './PlanVisitDrawer';
 import RepeatHint from './RepeatHint';
+// the Unplanned visit screen (check-in / check-out), opened over the calendar for a walk-in party
+const VisitsPage = React.lazy(() => import('./CRM').then(m => ({ default: m.VisitsPage })));
 import { useT } from '../i18n';
 import { PageHead } from '../collections/ui';
 
@@ -137,10 +139,14 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
   };
   // today, off the plan: open the dealer (check in there) — it is recorded as an unplanned visit
   const visitUnplanned = (d) => { setQ(''); setOpen(d._id || d.id); };
-  const visitUnplannedNew = () => {
-    try { localStorage.setItem('stp_plan_checkin', JSON.stringify({ unplanned: true, name: typed, t: Date.now() })); } catch { /* storage blocked */ }
-    if (onNavigate) onNavigate('visits'); else window.location.hash = '#/visits';
+  // a new party today: put it on today's unplanned visits first, then Visit opens the check-in
+  const visitUnplannedNew = () => act(async () => { await api.addVisitPlan({ date: day, salesmanId: currentUser?.id, newPartyName: typed, walkIn: true }); setQ(''); });
+  const [ciOpen, setCiOpen] = useState(null);   // the walk-in being checked in / out
+  const openCheckIn = (u) => {
+    if (u.status === 'ADDED') { try { localStorage.setItem('stp_plan_checkin', JSON.stringify({ planId: u.walkInId, name: u.dealerName, date: u.date, walkIn: true, t: Date.now() })); } catch { /* storage blocked */ } }
+    setCiOpen(u);
   };
+  const closeCheckIn = () => { setCiOpen(null); load(); };
   // Visit on a new party: hand the plan to the check-in screen (name prefilled, correctable there)
   const visitNewParty = (p) => {
     try { localStorage.setItem('stp_plan_checkin', JSON.stringify({ planId: p._id, name: p.dealerName, date: p.date, t: Date.now() })); } catch { /* storage blocked */ }
@@ -441,8 +447,11 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
                       {!sm && <>{u.salesmanName} · </>}{u.checkInTime ? 'in ' + new Date(u.checkInTime).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : ''}{u.checkOutTime ? ' · out ' + new Date(u.checkOutTime).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : ''}{u.city ? ' · ' + u.city : ''}
                     </div>
                   </div>
-                  <Badge tone={u.status === 'VISITED' ? 'var(--grn)' : 'var(--yel)'}>{u.status === 'VISITED' ? 'Visited' : 'In progress'}</Badge>
-                  {u.dealerId && <button className="btn vc-lb" title="Open the dealer: summary, check-in, MOM" onClick={() => setOpen(u.dealerId)}><ArrowRight size={13} /><span>{tr('Visit')}</span></button>}
+                  <Badge tone={u.status === 'VISITED' ? 'var(--grn)' : u.status === 'ADDED' ? 'var(--t3)' : 'var(--yel)'}>{u.status === 'VISITED' ? 'Visited' : u.status === 'ADDED' ? (u.newParty ? 'New party' : 'Added') : 'In progress'}</Badge>
+                  {u.walkInId && u.status !== 'VISITED' && u.salesmanId === currentUser?.id
+                    ? <button className="btnp" title={u.status === 'ADDED' ? 'Check in — an unplanned visit' : 'Check out — fill the party details'} style={{ fontSize: 12, padding: '5px 12px', display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0, marginLeft: 'auto' }} onClick={() => openCheckIn(u)}>{tr(u.status === 'ADDED' ? 'Visit' : 'Check out')} <ArrowRight size={13} /></button>
+                    : u.dealerId && <button className="btn vc-lb" title="Open the dealer: summary, check-in, MOM" onClick={() => setOpen(u.dealerId)}><ArrowRight size={13} /><span>{tr('Visit')}</span></button>}
+                  {u.status === 'ADDED' && u.canRemove && <button className="btn vc-ib" title="Take it off today's list" style={{ color: 'var(--red)' }} disabled={busy} onClick={() => act(() => api.deleteVisitPlan(u.walkInId))}><Trash2 size={13} /></button>}
                 </div>
                 );
               })}
@@ -467,9 +476,9 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
                 <input className="inp" value={note} onChange={e => setNote(e.target.value)} placeholder="note for this visit — e.g. show Candid folder" disabled={!daySm} style={{ flex: 1, minWidth: 0, fontSize: 12.5, padding: '7px 10px', background: 'var(--bg1)' }} />
                 {canPlan && <input className="inp" type="number" min="0" value={collect} onChange={e => setCollect(e.target.value)} placeholder="collect ₹" disabled={!daySm} title="Amount to collect on this visit" style={{ width: 110, flexShrink: 0, fontSize: 12.5, padding: '7px 10px', background: 'var(--bg1)' }} />}
               </div>}
-              {canNewParty && walkIn && <button type="button" className="vc-new" onClick={visitUnplannedNew} style={{ marginTop: 8 }}>
-                <span className="sec-ico" style={{ '--tone': '#8b5cf6', width: 28, height: 28, borderRadius: 9 }}><ArrowRight size={14} /></span>
-                <span style={{ flex: 1, minWidth: 0 }}><b>Visit “{typed}” — new party</b><small>check in now as an unplanned visit; name, GST, city and state are taken at check-out</small></span>
+              {canNewParty && walkIn && <button type="button" className="vc-new" disabled={busy} onClick={visitUnplannedNew} style={{ marginTop: 8 }}>
+                <span className="sec-ico" style={{ '--tone': '#8b5cf6', width: 28, height: 28, borderRadius: 9 }}><Plus size={14} /></span>
+                <span style={{ flex: 1, minWidth: 0 }}><b>Add “{typed}” — new party</b><small>goes on today's unplanned visits; tap Visit there to check in — name, GST, city and state are taken at check-out</small></span>
               </button>}
               {canNewParty && daySm && !walkIn && <button type="button" className="vc-new" disabled={busy} onClick={addNewParty} style={{ marginTop: 8 }}>
                 <span className="sec-ico" style={{ '--tone': '#d97706', width: 28, height: 28, borderRadius: 9 }}><Plus size={14} /></span>
@@ -738,6 +747,22 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
         salesmanId={isStaff ? sm : (currentUser?.id || '')} setSalesmanId={setSm} salesmen={salesmen} isStaff={isStaff} canPlan={canPlan} maxPerDay={maxPerDay}
         onChanged={load} onClose={() => setPlanOpen(false)} />}
       {carryOpen && <SamplesCarryModal date={day} salesmanId={daySm || ''} onClose={() => setCarryOpen(false)} />}
+      {ciOpen && (
+        <div className="overlay vc-ci-ov" onMouseDown={e => { if (e.target === e.currentTarget) closeCheckIn(); }}>
+          <div className="vc-ci" role="dialog" aria-label={tr('Unplanned visit')}>
+            <div className="vc-ci-h">
+              <span className="sec-ico" style={{ '--tone': '#8b5cf6', width: 30, height: 30, borderRadius: 9 }}><ArrowRight size={15} /></span>
+              <div style={{ flex: 1, minWidth: 0 }}><div className="vc-ci-e">{tr('Unplanned visit')}</div><b>{ciOpen.dealerName}</b></div>
+              <button className="pv-x" onClick={closeCheckIn} aria-label="Close"><X size={16} /></button>
+            </div>
+            <div className="vc-ci-b">
+              <React.Suspense fallback={<div className="pv-msg" style={{ padding: 20 }}>Loading…</div>}>
+                <VisitsPage dealers={dealers} users={users} currentUser={currentUser} />
+              </React.Suspense>
+            </div>
+          </div>
+        </div>
+      )}
       {open && <DealerVisitModal dealerId={open} dealerName={plansAll.find(p => p.dealerId === open)?.dealerName || dealers.find(d => (d._id || d.id) === open)?.name || ''} onClose={() => { setOpen(null); load(); }} />}
     </div>
   );

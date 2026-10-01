@@ -39,7 +39,10 @@ router.get('/', protect, async (req, res) => {
     if (from || to) f.date = { ...(from ? { $gte: from } : {}), ...(to ? { $lte: to } : {}) };
     if (!isStaff(req)) f.salesmanId = req.user.id;
     else if (req.query.salesmanId) f.salesmanId = String(req.query.salesmanId);
-    const items = await VisitPlan.find(f).sort({ date: 1, salesmanId: 1, order: 1, createdAt: 1 }).lean();
+    const all = await VisitPlan.find(f).sort({ date: 1, salesmanId: 1, order: 1, createdAt: 1 }).lean();
+    // same-day new parties added from the Unplanned visit box are unplanned visits, not plans
+    const items = all.filter(i => !i.walkIn), walkIns = all.filter(i => i.walkIn);
+    const walkInIds = new Set(walkIns.map(w => String(w._id)));
     const ids = [...new Set(items.map(i => i.dealerId))];
     const dealers = new Map((await Dealer.find({ _id: { $in: ids.filter(i => mongoose.isValidObjectId(i)) } }, 'name zone city status perfStatus phone').lean()).map(d => [String(d._id), d]));
     const users = new Map((await User.find({}, 'id name').lean()).map(u => [u.id, u.name]));
@@ -61,13 +64,21 @@ router.get('/', protect, async (req, res) => {
     const seen = new Set();
     const unplanned = [];
     for (const v of visits) {
-      if (!v.dateStr || v.planId) continue;                       // a visit made from a plan is planned
+      if (!v.dateStr || (v.planId && !walkInIds.has(String(v.planId)))) continue;   // a visit made from a plan is planned
       const k1 = v.dateStr + '|' + v.userId + '|' + (v.dealerId || '-'), k2 = v.dateStr + '|' + v.userId + '|n:' + nm(v.dealerName);
       if (planned.has(k1) || planned.has(k2) || seen.has(k2)) continue;
       seen.add(k2);
       unplanned.push({ _id: String(v._id), date: v.dateStr, salesmanId: v.userId, salesmanName: users.get(v.userId) || v.userId,
         dealerId: v.dealerId || '', dealerName: v.dealerName, city: v.checkInCity || '',
-        status: v.status === 'completed' ? 'VISITED' : 'IN_PROGRESS', checkInTime: v.checkInTime, checkOutTime: v.checkOutTime });
+        status: v.status === 'completed' ? 'VISITED' : 'IN_PROGRESS', checkInTime: v.checkInTime, checkOutTime: v.checkOutTime,
+        ...(v.planId ? { walkInId: String(v.planId), newParty: true } : {}) });
+    }
+    // added, not checked in yet
+    const started = new Set(visits.filter(v => v.planId).map(v => String(v.planId)));
+    for (const w of walkIns) {
+      if (w.status !== 'PLANNED' || started.has(String(w._id))) continue;
+      unplanned.push({ _id: 'w' + w._id, walkInId: String(w._id), newParty: true, date: w.date, salesmanId: w.salesmanId, salesmanName: users.get(w.salesmanId) || w.salesmanId,
+        dealerId: '', dealerName: w.dealerName, city: '', status: 'ADDED', canRemove: w.salesmanId === req.user.id || planner });
     }
     res.json({
       unplanned,
@@ -201,7 +212,7 @@ export async function coverage({ month, salesmanId = '' }) {
 export async function carryList({ date, salesmanId = '' }) {
     const f = { date, status: { $ne: 'SKIPPED' } };
     if (salesmanId) f.salesmanId = salesmanId;
-    const plans = await VisitPlan.find(f).sort({ salesmanId: 1, order: 1, createdAt: 1 }).lean();
+    const plans = await VisitPlan.find({ ...f, walkIn: { $ne: true } }).sort({ salesmanId: 1, order: 1, createdAt: 1 }).lean();
     const ids = [...new Set(plans.map(p => String(p.dealerId)).filter(Boolean))];
     const Sample = mongoose.models.Sample, SampleGiven = mongoose.models.SampleGiven;
     const oids = ids.filter(i => mongoose.isValidObjectId(i));
@@ -259,6 +270,19 @@ router.post('/', protect, async (req, res) => {
     const { date, salesmanId, dealerId, note, collectTarget } = req.body || {};
     const newPartyName = String(req.body?.newPartyName || '').replace(/\s+/g, ' ').trim().slice(0, 150);
     if (!YMD.test(date || '') || !salesmanId || (!dealerId && !newPartyName)) return res.status(400).json({ error: 'date, salesmanId and a dealer (or a new party name) are required' });
+    if (req.body?.walkIn) {
+      // today's unplanned visit on a new party: added to the visitor's own day, checked in from the calendar
+      if (date !== todayYmd()) return res.status(400).json({ error: 'an unplanned visit is for today only' });
+      if (newPartyName.length < 3) return res.status(400).json({ error: 'type the party name (at least 3 letters)' });
+      const esc = newPartyName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const known = await Dealer.findOne({ name: new RegExp(`^\\s*${esc}\\s*$`, 'i') }, 'name').lean();
+      if (known) return res.status(400).json({ error: `${known.name} is already in the dealer list — pick it from the list instead` });
+      if (await VisitPlan.exists({ date, salesmanId: req.user.id, dealerName: new RegExp(`^\\s*${esc}\\s*$`, 'i') })) return res.status(400).json({ error: `${newPartyName} is already on today's list` });
+      const me = await User.findOne({ id: req.user.id }, 'name').lean();
+      const p = await VisitPlan.create({ date, salesmanId: req.user.id, dealerId: 'new:' + new mongoose.Types.ObjectId().toString(), dealerName: newPartyName,
+        newParty: true, walkIn: true, order: 99, plannedBy: req.user.id, plannedByName: me?.name || req.user.id });
+      return res.json(p);
+    }
     const planner = await canPlan(req);
     const self = !planner && salesmanId === req.user.id && !isStaff(req);
     if (!planner && !self) return res.status(403).json({ error: 'you can add dealers to your own day only' });
@@ -271,7 +295,7 @@ router.post('/', protect, async (req, res) => {
       if (await VisitPlan.exists({ date, salesmanId, dealerName: new RegExp(`^\\s*${esc}\\s*$`, 'i') })) return res.status(400).json({ error: `${newPartyName} is already on the list for ${date}` });
       const known = await Dealer.findOne({ name: new RegExp(`^\\s*${esc}\\s*$`, 'i') }, 'name').lean();
       if (known) return res.status(400).json({ error: `${known.name} is already in the dealer list — pick it from the list instead` });
-      const count = await VisitPlan.countDocuments({ date, salesmanId });
+      const count = await VisitPlan.countDocuments({ date, salesmanId, walkIn: { $ne: true } });
       if (count >= MAX_PER_DAY) return res.status(400).json({ error: `${MAX_PER_DAY} dealers a day is the limit — ${date} is full` });
       const me = await User.findOne({ id: req.user.id }, 'name').lean();
       const text = String(note || '').slice(0, 1000);
@@ -285,7 +309,7 @@ router.post('/', protect, async (req, res) => {
     const me = await User.findOne({ id: req.user.id }, 'name').lean();
     const dup = await VisitPlan.findOne({ date, salesmanId, dealerId }).lean();
     if (dup) return res.status(400).json({ error: `${d.name} is already on the list for ${date}` });
-    const order = await VisitPlan.countDocuments({ date, salesmanId });
+    const order = await VisitPlan.countDocuments({ date, salesmanId, walkIn: { $ne: true } });
     if (order >= MAX_PER_DAY) return res.status(400).json({ error: `${MAX_PER_DAY} dealers a day is the limit — ${date} is full` });
     const text = String(note || '').slice(0, 1000);
     const p = await VisitPlan.create({ date, salesmanId, dealerId: String(d._id), dealerName: d.name, order,

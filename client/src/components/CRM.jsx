@@ -1250,7 +1250,7 @@ export function VisitsPage({ dealers, users, currentUser }){
             )}
             {ciPlan && (
               <div className="np-box" style={{ gap:4 }}>
-                <div className="np-h"><span>Planned · new party</span> From your visit calendar{ciPlan.date ? ' · ' + ciPlan.date : ''}</div>
+                <div className="np-h"><span>{ciPlan.walkIn ? 'Unplanned · new party' : 'Planned · new party'}</span> From your visit calendar{ciPlan.date ? ' · ' + ciPlan.date : ''}</div>
                 <div style={{ fontSize:12, color:'var(--t2)' }}>Check in below — correct the name if it was typed wrong. At check-out you will fill GST, city and state.</div>
                 <button type="button" className="btn" style={{ justifySelf:'start', fontSize:11, padding:'3px 9px' }} onClick={() => setCiPlan(null)}>Not this plan</button>
               </div>
