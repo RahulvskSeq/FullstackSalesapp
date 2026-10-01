@@ -712,7 +712,7 @@ export const KPI = ({label,value,color='var(--t1)',sub}) => (
   </div>
 );
 
-export const StatCard = ({label,value,sub,valueColor='var(--t1)',progress,icon:Icon}) => (
+export const StatCard = ({label,value,sub,valueColor='var(--t1)',progress,icon:Icon,extra}) => (
   <div className="stat-card">
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8,marginBottom:10}}>
       <div style={{fontSize:10.5,color:'var(--t3)',fontWeight:700,textTransform:'uppercase',letterSpacing:'0.08em',paddingTop:2}}>{label}</div>
@@ -720,6 +720,7 @@ export const StatCard = ({label,value,sub,valueColor='var(--t1)',progress,icon:I
     </div>
     <div style={{fontSize:26,fontWeight:850,color:valueColor,lineHeight:1.05,letterSpacing:'-.02em'}}>{value}</div>
     {sub&&<div style={{fontSize:11,color:'var(--t3)',marginTop:4}}>{sub}</div>}
+    {extra}
     {progress!==undefined&&(<div style={{height:6,background:'var(--b1)',borderRadius:3,marginTop:10,overflow:'hidden'}}><div style={{height:'100%',width:`${Math.min(progress||0,100)}%`,background:pclr(progress),borderRadius:3,transition:'width 1s ease'}}/></div>)}
   </div>
 );

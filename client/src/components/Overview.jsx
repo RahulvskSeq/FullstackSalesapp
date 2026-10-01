@@ -1686,6 +1686,26 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
   const ttShow = mt?.target ?? tt;
   const taShow = mt?.achieved ?? taAdj;
   const apShow = mt ? pct(ttShow, taShow) : apAdj;
+  // Basic target = the category targets (Sales targets) for the categories shown,
+  // for whoever this page is about — the same targets as the MTD Sales Summary below.
+  const [catT, setCatT] = useState([]);
+  useEffect(() => {
+    const ym = _moLabelToYM(selMoFull);
+    if (!ym) { setCatT([]); return; }
+    let dead = false;
+    api.salesTargetsList(ym).then(r => { if (!dead) setCatT(Array.isArray(r) ? r : []); }).catch(() => { if (!dead) setCatT([]); });
+    return () => { dead = true; };
+  }, [selMoFull]);
+  const basicTarget = useMemo(() => {
+    if (rangeActive || (ovActive && !smOnly)) return 0;
+    const who = mine ? currentUser?.id : (smOnly ? ovF.sm : '');
+    const ex = new Set([...catExcluded].map(c => String(c).trim().toUpperCase()));
+    return catT.filter(t => (!who || t.salesmanId === who) && !ex.has(String(t.category || '').trim().toUpperCase()))
+      .reduce((s, t) => s + (Number(t.target) || 0), 0);
+  }, [catT, catExcluded, rangeActive, ovActive, smOnly, mine, currentUser, ovF.sm]);
+  const basicPct = basicTarget ? Math.round(taShow / basicTarget * 100) : 0;
+  const [mtdOpen, setMtdOpen] = useState(false);
+  useEffect(() => { if (!mtdOpen) return; const k = e => { if (e.key === 'Escape') setMtdOpen(false); }; window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k); }, [mtdOpen]);
 
   return(
     <div className="fade ov-home">
@@ -1873,7 +1893,8 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
 
       <div className={"stat-grid"+(!ovActive&&!rangeActive&&catExcluded.size===0?" ov-dup":"")}>
         <StatCard label="Total Dealers" value={myD.length} sub={`${active} active · ${inactive} inactive · ${dead} dead`} icon={Users}/>
-        <StatCard label={`${periodLabel} Target`} value={ttShow} sub={rangeActive?`${rangeIdxs.length} months · total units`:"total units"} icon={Target}/>
+        <StatCard label={`${periodLabel} Target`} value={ttShow} sub={rangeActive?`${rangeIdxs.length} months · total units`:"total units"} icon={Target}
+          extra={basicTarget > 0 && <button type="button" className="sc-basic" title="Category targets, salesman by salesman" onClick={() => setMtdOpen(true)}>Basic target <b>{Number(basicTarget).toLocaleString('en-IN')}</b> <span>›</span></button>}/>
         <StatCard
           label={`${periodLabel} Achieved${catExcluded.size>0 ? ' (excl.)' : ''}`}
           value={taShow}
@@ -1886,8 +1907,17 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
           value={spct(ttShow, taShow)}
           valueColor={pclr(apShow)}
           progress={apShow}
-          icon={Activity}/>
+          icon={Activity}
+          extra={basicTarget > 0 && <button type="button" className="sc-basic" title="Achieved against the basic (category) target, salesman by salesman" onClick={() => setMtdOpen(true)}>of basic <b style={{ color: pclr(basicPct) }}>{basicPct}%</b> <span>›</span></button>}/>
       </div>
+
+      {mtdOpen && createPortal(
+        <div className="overlay sc-mtd-ov" onMouseDown={e => { if (e.target === e.currentTarget) setMtdOpen(false); }}>
+          <div className="sc-mtd" role="dialog" aria-label="MTD Sales Summary">
+            <button className="sc-mtd-x" onClick={() => setMtdOpen(false)} aria-label="Close">✕</button>
+            <SalesByCategory currentUser={currentUser} users={users} dealers={dealers} onOpenDealer={id => { setMtdOpen(false); onOpenDealer && onOpenDealer(id); }} onlyMtd />
+          </div>
+        </div>, document.body)}
 
       {/* ── Category-wise Sales overview (live from /api/sales) ────────────── */}
       <InView h={560}>

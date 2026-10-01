@@ -1279,6 +1279,15 @@ export default function Styles({theme}){
     .pv-row:active:not(.off){background:color-mix(in srgb,var(--acc) 8%,var(--bg1))}
     .pv-row.off{cursor:default}
     .pv-row.na{opacity:.55}
+    .sc-basic{display:inline-flex;align-items:center;gap:4px;margin-top:6px;padding:3px 9px;border:1px solid color-mix(in srgb,var(--acc) 25%,transparent);border-radius:999px;background:color-mix(in srgb,var(--acc) 7%,transparent);color:var(--t2);font-size:11px;font-weight:600;cursor:pointer;transition:background .15s,border-color .15s}
+    .sc-basic:hover{background:color-mix(in srgb,var(--acc) 14%,transparent);border-color:var(--acc)}
+    .sc-basic b{color:var(--t1)}
+    .sc-basic span{color:var(--acc);font-weight:800}
+    .sc-mtd-ov{z-index:2100;display:flex;align-items:flex-start;justify-content:center;padding:24px 16px;overflow:auto}
+    .sc-mtd{position:relative;width:min(1180px,100%);margin:auto 0}
+    .sc-mtd > .card{margin:0;max-height:calc(100dvh - 48px);overflow:auto}
+    .sc-mtd-x{position:absolute;top:-12px;right:-8px;z-index:2;width:30px;height:30px;border-radius:50%;border:1px solid var(--b2);background:var(--bg1);color:var(--t1);font-size:13px;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,.2)}
+    @media (max-width:640px){.sc-mtd-ov{padding:12px 8px}.sc-mtd-x{top:-8px;right:-4px}}
     .vc-ci-ov{z-index:2100;display:flex;align-items:center;justify-content:center;padding:16px}
     .vc-ci{width:min(860px,100%);max-height:calc(100dvh - 32px);display:flex;flex-direction:column;background:var(--bg0,var(--bg1));border:1px solid var(--b1);border-radius:18px;box-shadow:0 24px 60px rgba(15,23,42,.28);overflow:hidden}
     .vc-ci-h{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--b1);background:var(--bg1)}
