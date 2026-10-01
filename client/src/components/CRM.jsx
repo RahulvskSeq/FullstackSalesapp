@@ -754,6 +754,8 @@ export function VisitsPage({ dealers, users, currentUser }){
       const h = JSON.parse(localStorage.getItem('stp_plan_checkin') || 'null');
       localStorage.removeItem('stp_plan_checkin');
       if (h?.planId && Date.now() - (h.t || 0) < 12 * 3600e3) { setCiPlan(h); setCiNewDealerMode(true); setCiDealer(h.name || ''); }
+      // an unplanned visit on a new party, started from the calendar: name prefilled, no plan
+      else if (h?.unplanned && Date.now() - (h.t || 0) < 12 * 3600e3) { setCiNewDealerMode(true); setCiDealer(h.name || ''); }
     } catch { /* storage blocked */ }
   }, []);
 

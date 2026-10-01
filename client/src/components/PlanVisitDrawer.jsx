@@ -39,10 +39,12 @@ export default function PlanVisitDrawer({ dealers = [], plans = [], day, setDay,
     return m;
   }, [plans, salesmanId, day]);
   const monthName = new Date(day + 'T00:00:00').toLocaleDateString('en-IN', { month: 'short' });
-  const past = day < todayYmd();
+  // plans are for tomorrow onwards; a visit today is an unplanned visit
+  const closed = day <= todayYmd();
+  const tomorrow = (() => { const d = new Date(todayYmd() + 'T00:00:00'); d.setDate(d.getDate() + 1); return d.toLocaleDateString('en-CA'); })();
   const dayPlans = plans.filter(p => p.date === day && (!salesmanId || p.salesmanId === salesmanId));
   const full = !!salesmanId && dayPlans.length >= maxPerDay;
-  const mayPlan = !!salesmanId && (canPlan || !past);
+  const mayPlan = !!salesmanId && !closed;
   const onDay = new Set(dayPlans.map(p => p.dealerId));
 
   const pool = useMemo(() => {
@@ -82,7 +84,7 @@ export default function PlanVisitDrawer({ dealers = [], plans = [], day, setDay,
         </div>
 
         <div className="pv-ctl">
-          <input type="date" className="inp" value={day} onChange={e => e.target.value && setDay(e.target.value)} />
+          <input type="date" className="inp" value={day} min={tomorrow} onChange={e => e.target.value && setDay(e.target.value)} />
           {isStaff && <select className="sel" value={salesmanId} onChange={e => setSalesmanId(e.target.value)}><option value="">Pick a salesman…</option>{salesmen.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select>}
         </div>
         {salesmanId && <div className={'pv-cap' + (full ? ' full' : '')}>
@@ -90,7 +92,7 @@ export default function PlanVisitDrawer({ dealers = [], plans = [], day, setDay,
           <div className="pv-bar"><i style={{ width: Math.min(100, dayPlans.length / maxPerDay * 100) + '%' }} /></div>
         </div>}
         {!salesmanId && <div className="pv-msg">Pick a salesman to plan his day.</div>}
-        {salesmanId && past && !canPlan && <div className="pv-msg">This day is over — pick today or a later day.</div>}
+        {salesmanId && closed && <div className="pv-msg">Plans start from tomorrow — pick a later day. For a visit today, use <b>Unplanned visit</b> on the calendar.</div>}
         {err && <div className="pv-msg bad"><AlertTriangle size={13} /> {err}</div>}
 
         <div className="pv-search"><Search size={14} /><input value={q} onChange={e => setQ(e.target.value)} placeholder="dealer, city or zone…" /></div>

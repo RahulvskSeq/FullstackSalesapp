@@ -88,7 +88,10 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
   const isToday = day === todayYmd(), pastDay = day < todayYmd();
   // who may add to this day: a planner for anyone, a salesman for himself (today or later)
   const full = !!daySm && dayPlans.length >= maxPerDay;
-  const mayAdd = (canPlan || (!isStaff && !pastDay)) && !full;
+  // plans are for tomorrow onwards; today a salesman checks in an unplanned visit instead
+  const futureDay = day > todayYmd();
+  const mayAdd = futureDay && (canPlan || !isStaff) && !full;
+  const walkIn = isToday && !isStaff;
   // the month, by salesman: planned, visited, not visited — the report
   const report = useMemo(() => {
     const m = {};
@@ -130,6 +133,12 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
       await api.addVisitPlan({ date: day, salesmanId: daySm, newPartyName: typed, note, collectTarget: Number(collect) || 0 });
       setQ(''); setNote(''); setCollect('');
     });
+  };
+  // today, off the plan: open the dealer (check in there) — it is recorded as an unplanned visit
+  const visitUnplanned = (d) => { setQ(''); setOpen(d._id || d.id); };
+  const visitUnplannedNew = () => {
+    try { localStorage.setItem('stp_plan_checkin', JSON.stringify({ unplanned: true, name: typed, t: Date.now() })); } catch { /* storage blocked */ }
+    if (onNavigate) onNavigate('visits'); else window.location.hash = '#/visits';
   };
   // Visit on a new party: hand the plan to the check-in screen (name prefilled, correctable there)
   const visitNewParty = (p) => {
@@ -244,7 +253,7 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
                 {[['month', 'Month'], ['week', 'Week'], ['day', 'Day']].map(([k, l]) => <button key={k} role="tab" aria-selected={view === k} className={view === k ? 'on' : ''} onClick={() => setView(k)}>{tr(l)}</button>)}
               </div>
               {busy && <span className="sec-note">loading…</span>}
-              {(canPlan || !isStaff) && <button className="btnp vc-planbtn" onClick={() => setPlanOpen(true)}><CalendarPlus size={15} /> {tr('Plan a visit')}</button>}
+              {(canPlan || !isStaff) && <button className="btnp vc-planbtn" onClick={() => { if (day <= tdy) { const t = addDays(tdy, 1), x = new Date(t + 'T00:00:00'); setDay(t); setReplacing(null); setMonth(new Date(x.getFullYear(), x.getMonth(), 1)); } setPlanOpen(true); }}><CalendarPlus size={15} /> {tr('Plan a visit')}</button>}
             </div>
             <div className="vc-legend">
               {[['Visited', 'var(--grn)'], ['Planned', 'var(--acc)'], ['Self-added', '#06b6d4'], ['Unplanned visit', '#8b5cf6'], ['Not visited', 'var(--red)']].map(([l, c]) => <span key={l}><i style={{ background: c }} />{tr(l)}</span>)}
@@ -406,7 +415,7 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
                       <button className={p.status === 'DONE' ? 'btn' : 'btnp'} title="Open the dealer: summary, check-in, MOM" style={{ fontSize: 12, padding: '5px 12px', display: 'inline-flex', alignItems: 'center', gap: 5 }} onClick={() => setOpen(p.dealerId)}>{tr(p.status === 'DONE' ? 'Open' : 'Visit')} <ArrowRight size={13} /></button>
                       </>}
                       {canPlan && editing[p._id] === undefined && <button className="btn vc-ib" title="Edit the office note" onClick={() => setEditing(x => ({ ...x, [p._id]: p.note }))}><Pencil size={13} /></button>}
-                      {canPlan && p.status !== 'DONE' && <button className="btn vc-ib" title="Replace with another dealer" style={replacing?._id === p._id ? { color: 'var(--acc)', borderColor: 'var(--acc)', background: 'var(--accL)' } : undefined} onClick={() => { setReplacing(r => r?._id === p._id ? null : p); setQ(''); }}><Repeat size={13} /></button>}
+                      {canPlan && p.status !== 'DONE' && p.date > tdy && <button className="btn vc-ib" title="Replace with another dealer" style={replacing?._id === p._id ? { color: 'var(--acc)', borderColor: 'var(--acc)', background: 'var(--accL)' } : undefined} onClick={() => { setReplacing(r => r?._id === p._id ? null : p); setQ(''); }}><Repeat size={13} /></button>}
                       {canPlan && p.status !== 'DONE' && <button className="btn vc-ib" title="Mark visited" style={{ color: 'var(--grn)' }} onClick={() => act(() => api.updateVisitPlan(p._id, { status: 'DONE' }))}><CheckCircle2 size={13} /></button>}
                       {p.canRemove && <button className="btn vc-ib" title={canPlan ? 'Cancel this visit' : 'Remove (you added it)'} style={{ color: 'var(--red)' }} onClick={() => { if (window.confirm(`Remove ${p.dealerName} from ${fmtDay(day)}?`)) act(() => api.deleteVisitPlan(p._id)); }}><Trash2 size={13} /></button>}
                     </div>
@@ -440,12 +449,14 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
           )}
 
           {full && (canPlan || !isStaff) && <div className="vc-note" style={{ '--tone': 'var(--red)' }}><AlertTriangle size={14} /> <span>Day full: {maxPerDay} dealers is the limit. {canPlan ? 'Replace one, or plan the next day.' : 'Pick another day.'}</span></div>}
-          {!mayAdd && !full && !isStaff && pastDay && <div className="vc-note" style={{ '--tone': 'var(--t3)' }}><Clock size={14} /> <span>This day is over. Pick today or a later day to add a dealer.</span></div>}
-          {mayAdd && (
+          {pastDay && (canPlan || !isStaff) && <div className="vc-note" style={{ '--tone': 'var(--t3)' }}><Clock size={14} /> <span>This day is over. Plans start from tomorrow.</span></div>}
+          {isToday && isStaff && canPlan && <div className="vc-note" style={{ '--tone': 'var(--t3)' }}><Clock size={14} /> <span>Plans start from tomorrow — pick a later day. A visit today is checked in by the salesman as an unplanned visit.</span></div>}
+          {(mayAdd || walkIn) && (
             <div className="vc-add" style={replacing ? { borderColor: 'var(--acc)', background: 'color-mix(in srgb, var(--acc) 6%, var(--bg2))' } : undefined}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, fontWeight: 800, color: replacing ? 'var(--acc)' : 'var(--t1)', marginBottom: 8, flexWrap: 'wrap' }}>
                 <span className="sec-ico" style={{ '--tone': 'var(--acc)', width: 24, height: 24, borderRadius: 8 }}>{replacing ? <Repeat size={13} /> : <Plus size={13} />}</span>
                 {replacing ? <>Replace {replacing.dealerName} with… <button className="btn" onClick={() => setReplacing(null)} style={{ fontSize: 11, padding: '2px 9px', marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 3 }}><X size={11} /> cancel</button></>
+                  : walkIn ? <>{tr('Unplanned visit')}<span style={{ fontWeight: 600, color: 'var(--t3)' }}> — today is not for planning; a dealer you visit now is recorded as an unplanned visit</span></>
                   : <>Add a dealer to {daySm ? (daySm === currentUser?.id ? 'your' : firstName(daySm) + "'s") : 'the'} day{!daySm && canPlan ? <span style={{ fontWeight: 600, color: 'var(--t3)' }}> — pick a salesman above first</span> : ''}</>}
               </div>
               <div className="inp" style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 11px', background: 'var(--bg1)' }}>
@@ -456,14 +467,18 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
                 <input className="inp" value={note} onChange={e => setNote(e.target.value)} placeholder="note for this visit — e.g. show Candid folder" disabled={!daySm} style={{ flex: 1, minWidth: 0, fontSize: 12.5, padding: '7px 10px', background: 'var(--bg1)' }} />
                 {canPlan && <input className="inp" type="number" min="0" value={collect} onChange={e => setCollect(e.target.value)} placeholder="collect ₹" disabled={!daySm} title="Amount to collect on this visit" style={{ width: 110, flexShrink: 0, fontSize: 12.5, padding: '7px 10px', background: 'var(--bg1)' }} />}
               </div>}
-              {canNewParty && daySm && <button type="button" className="vc-new" disabled={busy} onClick={addNewParty} style={{ marginTop: 8 }}>
+              {canNewParty && daySm && walkIn && <button type="button" className="vc-new" onClick={visitUnplannedNew} style={{ marginTop: 8 }}>
+                <span className="sec-ico" style={{ '--tone': '#8b5cf6', width: 28, height: 28, borderRadius: 9 }}><ArrowRight size={14} /></span>
+                <span style={{ flex: 1, minWidth: 0 }}><b>Visit “{typed}” — new party</b><small>check in now as an unplanned visit; name, GST, city and state are taken at check-out</small></span>
+              </button>}
+              {canNewParty && daySm && !walkIn && <button type="button" className="vc-new" disabled={busy} onClick={addNewParty} style={{ marginTop: 8 }}>
                 <span className="sec-ico" style={{ '--tone': '#d97706', width: 28, height: 28, borderRadius: 9 }}><Plus size={14} /></span>
                 <span style={{ flex: 1, minWidth: 0 }}><b>Plan “{typed}” as a new party</b><small>not in the dealer list — correct name, GST, city and state are taken at check-out</small></span>
               </button>}
               {pool.length > 0 && <div style={{ marginTop: 8, display: 'grid', gap: 4, maxHeight: 260, overflowY: 'auto' }}>
                 {pool.map(d => (
-                  <div key={d._id || d.id} className={'vc-pick' + (busy ? ' off' : '')} role="button" tabIndex={0} title={replacing ? 'Use this dealer' : 'Add to the day'}
-                    onClick={() => { if (!busy) add(d); }} onKeyDown={e => { if ((e.key === 'Enter' || e.key === ' ') && !busy) { e.preventDefault(); add(d); } }}>
+                  <div key={d._id || d.id} className={'vc-pick' + (busy ? ' off' : '')} role="button" tabIndex={0} title={walkIn ? 'Open and check in — an unplanned visit' : replacing ? 'Use this dealer' : 'Add to the day'}
+                    onClick={() => { if (!busy) (walkIn ? visitUnplanned : add)(d); }} onKeyDown={e => { if ((e.key === 'Enter' || e.key === ' ') && !busy) { e.preventDefault(); (walkIn ? visitUnplanned : add)(d); } }}>
                     <span className="ini" style={{ '--h': hue(d.name), width: 28, height: 28, borderRadius: 9, fontSize: 10.5 }}>{inits(d.name)}</span>
                     <span style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--t1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name}</div>
@@ -471,6 +486,7 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
                       <div style={{ color: 'var(--t3)', fontSize: 10.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{[d.zone, d.city].filter(Boolean).join(' · ')}{d.salesman && d.salesman !== daySm ? ` · ${smName(d.salesman)}'s dealer` : ''}</div>
                     </span>
                     {replacing && <span className="vc-use"><Repeat size={12} /> Use</span>}
+                    {walkIn && <span className="vc-use" style={{ color: '#8b5cf6' }}>{tr('Visit')} <ArrowRight size={12} /></span>}
                   </div>
                 ))}
               </div>}
@@ -532,7 +548,7 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
                         {p.note && <span style={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>· {p.note}</span>}
                       </div>
                     </div>
-                    {canPlan && <button className="btne" title="Move to the selected day" style={{ fontSize: 11.5, padding: '4px 10px', flexShrink: 0, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 4 }} onClick={() => act(() => api.updateVisitPlan(p._id, { date: day }))}><ArrowRight size={12} /> {fmtDay(day)}</button>}
+                    {canPlan && futureDay && <button className="btne" title="Move to the selected day" style={{ fontSize: 11.5, padding: '4px 10px', flexShrink: 0, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 4 }} onClick={() => act(() => api.updateVisitPlan(p._id, { date: day }))}><ArrowRight size={12} /> {fmtDay(day)}</button>}
                   </div>
                 ))}
               </div>
@@ -722,7 +738,7 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
         salesmanId={isStaff ? sm : (currentUser?.id || '')} setSalesmanId={setSm} salesmen={salesmen} isStaff={isStaff} canPlan={canPlan} maxPerDay={maxPerDay}
         onChanged={load} onClose={() => setPlanOpen(false)} />}
       {carryOpen && <SamplesCarryModal date={day} salesmanId={daySm || ''} onClose={() => setCarryOpen(false)} />}
-      {open && <DealerVisitModal dealerId={open} dealerName={plansAll.find(p => p.dealerId === open)?.dealerName || ''} onClose={() => { setOpen(null); load(); }} />}
+      {open && <DealerVisitModal dealerId={open} dealerName={plansAll.find(p => p.dealerId === open)?.dealerName || dealers.find(d => (d._id || d.id) === open)?.name || ''} onClose={() => { setOpen(null); load(); }} />}
     </div>
   );
 }

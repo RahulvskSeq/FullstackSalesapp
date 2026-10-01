@@ -262,7 +262,8 @@ router.post('/', protect, async (req, res) => {
     const planner = await canPlan(req);
     const self = !planner && salesmanId === req.user.id && !isStaff(req);
     if (!planner && !self) return res.status(403).json({ error: 'you can add dealers to your own day only' });
-    if (self && date < todayYmd()) return res.status(400).json({ error: 'that day is over' });
+    // a plan is for tomorrow onwards — a visit today is checked in as an unplanned visit
+    if (date <= todayYmd()) return res.status(400).json({ error: 'Plans start from tomorrow — for a visit today, use Unplanned visit' });
     if (!dealerId) {
       // a party that is not in the dealer list yet — its real details are taken at check-out
       if (newPartyName.length < 3) return res.status(400).json({ error: 'type the party name (at least 3 letters)' });
@@ -310,13 +311,14 @@ router.put('/:id', protect, async (req, res) => {
       if (b.order !== undefined) p.order = Number(b.order) || 0;
       if (YMD.test(b.date || '') && b.date !== p.date) {
         // moving to another day follows the same rules as adding to it
-        if (!planner && b.date < todayYmd()) return res.status(400).json({ error: 'that day is over' });
+        if (b.date <= todayYmd()) return res.status(400).json({ error: 'Plans start from tomorrow — pick a later day' });
         if (await VisitPlan.exists({ date: b.date, salesmanId: p.salesmanId, dealerId: p.dealerId, _id: { $ne: p._id } })) return res.status(400).json({ error: `${p.dealerName} is already on ${b.date}` });
         if (await VisitPlan.countDocuments({ date: b.date, salesmanId: p.salesmanId, _id: { $ne: p._id } }) >= MAX_PER_DAY) return res.status(400).json({ error: `${MAX_PER_DAY} dealers a day is the limit — ${b.date} is full` });
         p.date = b.date;
       }
       // replace the dealer, keeping the note and the slot
       if (b.dealerId && String(b.dealerId) !== p.dealerId) {
+        if (p.date <= todayYmd()) return res.status(400).json({ error: 'Plans start from tomorrow — a visit today is an unplanned visit' });
         const d = await Dealer.findById(b.dealerId, 'name').lean(); if (!d) return res.status(404).json({ error: 'dealer not found' });
         const dup = await VisitPlan.findOne({ date: p.date, salesmanId: p.salesmanId, dealerId: String(d._id), _id: { $ne: p._id } }).lean();
         if (dup) return res.status(400).json({ error: `${d.name} is already on that day` });
