@@ -15382,7 +15382,7 @@ import { createPortal } from 'react-dom';
 // }
 
 import React, { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
-import { Sun, Moon, LayoutDashboard, Users, TrendingUp, Settings, LogOut, Bell, GitCompare, Menu, RefreshCw, Map, AlertTriangle, Upload, Edit3, Calendar, LogIn, ChevronDown, ShieldCheck, Shield, Palette, Check, Briefcase, Camera, ClipboardList, UserCheck, Plane, FileSpreadsheet, LifeBuoy, CheckSquare, BarChart3, Table, Package, IndianRupee, Trophy, UploadCloud, Landmark, Wallet, Scale, CalendarCheck, PhoneCall, ClipboardCheck, FileBarChart2, Gauge, BadgeIndianRupee, HandCoins, SlidersHorizontal , UserX } from 'lucide-react';
+import { Sun, Moon, LayoutDashboard, Users, TrendingUp, Settings, LogOut, Bell, GitCompare, Menu, RefreshCw, Map, AlertTriangle, Upload, Edit3, Calendar, LogIn, ChevronDown, ShieldCheck, Shield, Palette, Check, Briefcase, Camera, ClipboardList, UserCheck, Plane, FileSpreadsheet, LifeBuoy, CheckSquare, BarChart3, Table, Package, IndianRupee, Trophy, UploadCloud, Landmark, Wallet, Scale, CalendarCheck, PhoneCall, ClipboardCheck, FileBarChart2, Gauge, BadgeIndianRupee, HandCoins, SlidersHorizontal , UserX , ChevronRight } from 'lucide-react';
 import { DEFAULT_USERS, MO as MO_DEFAULT, CURRENT_MONTH_IDX as CURRENT_MONTH_IDX_DEFAULT, CURRENT_MONTH_LABEL as CURRENT_MONTH_LABEL_DEFAULT, CURRENT_MONTH_SHORT as CURRENT_MONTH_SHORT_DEFAULT } from './constants';
 import { pct, spct, pclr, uid, isoNow, storage, parseCSV, fetchCSV, parseOutstandingCSV } from './utils';
 import { api, dbDealerToApp, dbOutstandingToApp, saveToken, getToken, getApiBase } from './api';
@@ -17088,6 +17088,12 @@ export default function App(){
                 onDoubleClick={()=>setSbWidth(240)} />
             )}
             <div id="sidebar" className={sidebarOpen?'open':'closed'} style={window.innerWidth>768 ? {'--sbw': sbWidth+'px'} : undefined}>
+              {/* phones: Login as sits first in the menu (the top-bar button is hidden there) */}
+              {canLoginAs && <button className="sb-loginas" onClick={()=>{ setLoginAsQ(''); setLoginAsErr(null); setLoginAsOpen(true); setSidebarOpen(false); }}>
+                <span className="nav-ico" style={{'--tone':'var(--yel)'}}><LogIn size={15} strokeWidth={2.2}/></span>
+                <span style={{flex:1,minWidth:0}}><b>{tr('Login as')}</b><small>{tr('open the app as another user')}</small></span>
+                <ChevronRight size={15}/>
+              </button>}
               <div className="nav-sec">{tr('Menu')}</div>
               {navItems.filter(n=>!n.adminOnly||isStaff).map((n, idx)=>{
                 // Render a collapsible group (parent header + children)
@@ -17209,7 +17215,6 @@ export default function App(){
                   ))}
                 </div>
                 <div style={{display:'flex',gap:6,marginTop:8,flexWrap:'wrap'}}>
-                  {canLoginAs && <button className="btn" onClick={()=>{ setLoginAsQ(''); setLoginAsErr(null); setLoginAsOpen(true); setSidebarOpen(false); }} style={{display:'inline-flex',alignItems:'center',gap:5,fontSize:12,fontWeight:700,color:'var(--yel)',background:'color-mix(in srgb, var(--yel) 10%, transparent)',borderColor:'color-mix(in srgb, var(--yel) 35%, transparent)'}}><LogIn size={13}/> {tr('Login as')}</button>}
                   {isNativeApp() && <button className="btn" onClick={()=>{ setShowApiSettings(true); setSidebarOpen(false); }} style={{display:'inline-flex',alignItems:'center',gap:5,fontSize:12}}><Settings size={13}/> {tr('Server')}</button>}
                   {isNativeApp() && <UpdateButton showLabel/>}
                 </div>

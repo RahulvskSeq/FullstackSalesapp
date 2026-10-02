@@ -289,9 +289,9 @@ export default function Sheets({ currentUser, users = {} }) {
 
   // ── Render ──────────────────────────────────────────────────────────
   return (
-    <div className="fade" style={{ display:'flex', flexDirection:'column', height:'calc(100vh - 130px)', minHeight:480 }}>
-    <PageHead icon={Table} tone="var(--acc)" eyebrow="Workspace" title="Sheets" />
-    <div className="sh-wrap" style={{ display:'flex', gap:14, flex:1, minHeight:0 }}>
+    <div className="fade sh-root" style={{ display:'flex', flexDirection:'column', height:'calc(100vh - 130px)', minHeight:480 }}>
+    <div className="sh-head"><PageHead icon={Table} tone="var(--acc)" eyebrow="Workspace" title="Sheets" /></div>
+    <div className="sh-wrap" style={{ display:'flex', gap:8, flex:1, minHeight:0 }}>
       {/* ── Sidebar: sheet list ─────────────────────────────────────── */}
       <div ref={sideRef} className={'card sh-side' + (sideOpen ? ' open' : '')}>
         <button type="button" className="sh-toggle" onClick={() => setSideOpen(o => !o)}>

@@ -1277,11 +1277,13 @@ export default function Styles({theme}){
     /* Sheets: fixed Dealers target item + its pane */
     .sh-fixed{display:flex;align-items:center;gap:9px;padding:11px 12px;cursor:pointer;border-bottom:1px solid var(--b1);border-left:3px solid transparent;background:color-mix(in srgb,#f59e0b 5%,transparent)}
     .sh-fixed.on{background:var(--bg2);border-left-color:#f59e0b}
+    .card.sh-dt{padding:0 !important}
     .sh-dt{position:absolute;inset:0;z-index:10;margin:0;padding:0;overflow:hidden;display:flex;flex-direction:column}
     /* the sheet list: one bar on top, the list drops down over the page */
     .sh-wrap{flex-direction:column;gap:10px}
     .sh-side{position:relative;z-index:30;width:100%;flex-shrink:0;padding:0;overflow:visible;margin:0}
-    .sh-toggle{display:flex;align-items:center;gap:8px;width:100%;padding:10px 14px;border:none;background:none;color:var(--t1);font-size:14px;cursor:pointer;text-align:left;border-radius:inherit}
+    .card.sh-side{padding:0 !important;border-radius:10px}
+    .sh-toggle{display:flex;align-items:center;gap:8px;width:100%;padding:6px 12px;min-height:34px;border:none;background:none;color:var(--t1);font-size:13.5px;cursor:pointer;text-align:left;border-radius:inherit}
     .sh-toggle:hover{background:var(--bg2)}
     .sh-toggle b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .sh-toggle span{font-size:11px;color:var(--t3);font-weight:600}
@@ -1299,17 +1301,19 @@ export default function Styles({theme}){
     .dt-search{display:flex;align-items:center;gap:6px;padding:5px 9px;border:1px solid var(--b2);border-radius:9px;background:var(--bg1);color:var(--t3);min-width:180px}
     .dt-search input{border:none;background:transparent;outline:none;color:var(--t1);font-size:12.5px;width:100%}
     .dt-search svg:last-child{cursor:pointer}
-    .dt-b{display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:6px 11px;white-space:nowrap}
+    .dt-b{display:inline-flex;align-items:center;justify-content:center;gap:5px;font-size:12px;padding:6px 11px;white-space:nowrap}
     .dt-chips{display:flex;align-items:center;gap:5px;flex-wrap:wrap;padding:8px 12px;border-bottom:1px solid var(--b1)}
     .dt-chips button{padding:4px 10px;border-radius:999px;border:1px solid var(--b2);background:var(--bg1);color:var(--t2);font-size:11px;font-weight:700;cursor:pointer}
     .dt-chips button.on{background:var(--acc);border-color:var(--acc);color:#fff}
-    .dt-sum{margin-left:auto;font-size:11.5px;color:var(--t3)}
+    .dt-sum{padding:5px 12px;font-size:11.5px;color:var(--t3);border-bottom:1px solid var(--b1)}
+    .dt-act{display:flex;align-items:center;gap:8px;flex:1;min-width:280px}
+    .dt-gap{flex:1}
     .dt-sum b{color:var(--t1)}
     .dt-note{display:flex;align-items:center;gap:6px;padding:7px 12px;font-size:12px;color:var(--t2);background:color-mix(in srgb,var(--yel) 9%,transparent);border-bottom:1px solid var(--b1)}
     .dt-note.bad{color:var(--red);background:color-mix(in srgb,var(--red) 8%,transparent)}
     .dt-grid{flex:1;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch}
     .dt-load{display:flex;align-items:center;justify-content:center;gap:8px;padding:30px;color:var(--t3);font-size:13px}
-    .dt-grid table{border-collapse:separate;border-spacing:0;width:100%;font-size:12px}
+    .dt-grid table{border-collapse:separate;border-spacing:0;width:100%;font-size:12px;display:table !important;overflow:visible !important}  /* the grid scrolls, not the table — or the header can't stick */
     .dt-grid th{position:sticky;top:0;z-index:2;background:var(--bg2);color:var(--t3);font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;padding:8px;border-bottom:1px solid var(--b2);white-space:nowrap;text-align:left}
     .dt-grid td{padding:5px 8px;border-bottom:1px solid var(--b1);white-space:nowrap;color:var(--t2);background:var(--bg1)}
     .dt-grid .num{text-align:right;font-variant-numeric:tabular-nums}
@@ -1323,7 +1327,7 @@ export default function Styles({theme}){
     .dt-grid th.dt-auto{background:color-mix(in srgb,var(--grn) 12%,var(--bg2))}
     .dt-grid th.dt-ed{background:color-mix(in srgb,var(--acc) 12%,var(--bg2));color:var(--acc)}
     .dt-grid td.dt-ed{background:color-mix(in srgb,var(--acc) 4%,var(--bg1));position:relative}
-    .dt-grid td.dt-ed.num,.dt-grid th.dt-ed.num{border-right:2px solid color-mix(in srgb,var(--acc) 25%,transparent)}
+    .dt-grid td.dt-pf,.dt-grid th.dt-pf{border-right:2px solid color-mix(in srgb,var(--acc) 25%,transparent)}
     .dt-grid td.chc{background:color-mix(in srgb,var(--yel) 18%,var(--bg1))}
     .dt-grid tr.ns td{background:color-mix(in srgb,var(--t3) 4%,var(--bg1))}
     .dt-st{font-size:10px;font-weight:800;color:var(--tone);background:color-mix(in srgb,var(--tone) 12%,transparent);padding:2px 7px;border-radius:999px}
@@ -1332,10 +1336,31 @@ export default function Styles({theme}){
     .dt-grid input.dt-tg:focus{outline:2px solid var(--acc);outline-offset:-1px}
     .dt-grid select:disabled,.dt-grid input.dt-tg:disabled{opacity:.75;cursor:not-allowed}
     .dt-lock{display:inline-block;font-size:10.5px;font-weight:700;color:var(--t3);border:1px dashed var(--b2);border-radius:7px;padding:3px 7px}
+    .dt-grid .dt-3m{background:color-mix(in srgb,var(--yel) 7%,var(--bg1))}
+    .dt-grid th.dt-3m{background:color-mix(in srgb,var(--yel) 14%,var(--bg2))}
     .dt-was{display:block;font-size:9.5px;color:var(--t3);margin-top:2px}
     .dt-saved{position:absolute;right:2px;top:2px;font-style:normal;font-size:9px;color:var(--grn);font-weight:900}
     .dt-more{display:block;margin:10px auto;font-size:12px}
-    @media (max-width:640px){.dt-grid .dt-d{min-width:132px;max-width:150px}.dt-grid td.dt-d b{white-space:normal;font-size:12px}.dt-grid .dt-n{display:none}.dt-search{min-width:0;flex:1 1 100%;order:9}.dt-month,.dt-sm{flex:1;width:auto}}
+    @media (max-width:640px){
+      .sh-head{display:none}
+      .sh-root{height:calc(100dvh - 76px) !important}
+      .sh-toggle{padding:6px 10px;font-size:13px}
+      .dt-bar{padding:6px;gap:5px}
+      .dt-title{display:none}
+      .dt-month,.dt-sm{flex:1 1 0;width:auto;min-width:0;padding:3px 7px;font-size:12px;height:30px;border-radius:8px}
+      .dt-act{flex:1 1 100%;min-width:0;gap:5px}
+      .dt-gap{display:none}
+      .dt-search{flex:1;min-width:0;padding:3px 8px;height:30px;border-radius:8px}
+      .dt-search input{font-size:12px}
+      .dt-b{padding:0 9px;height:30px;font-size:11.5px;border-radius:8px}
+      .dt-bl{display:none}
+      .dt-chips{flex-wrap:nowrap;overflow-x:auto;padding:6px 8px;scrollbar-width:none}
+      .dt-chips::-webkit-scrollbar{display:none}
+      .dt-chips button{flex-shrink:0;padding:3px 9px;font-size:10.5px}
+      .dt-sum{padding:4px 8px;font-size:10.5px}
+      .dt-note{padding:5px 8px;font-size:11px}
+      .dt-grid .dt-d{min-width:132px;max-width:150px}.dt-grid td.dt-d b{white-space:normal;font-size:12px}.dt-grid .dt-n{display:none}
+    }
     .pv-city{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;border:1px solid var(--b2);background:var(--bg1);color:var(--t2);font-size:11px;font-weight:700;cursor:pointer;max-width:200px;height:26px}
     .pv-city span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .pv-city.on{background:var(--acc);border-color:var(--acc);color:#fff}
@@ -1516,6 +1541,13 @@ export default function Styles({theme}){
     @media(max-width:600px){.dom-overlay{align-items:flex-end;padding:0}.dom{border-radius:20px 20px 0 0;width:100%}}
     /* phone menu: theme, server and app version (moved out of the top bar) */
     .sb-phone-tools{display:none}
+    .sb-loginas{display:none}
+    @media(max-width:768px){
+      .sb-loginas{display:flex;align-items:center;gap:10px;width:calc(100% - 20px);margin:8px 10px 4px;padding:10px 12px;border-radius:14px;border:1px solid color-mix(in srgb,var(--yel) 40%,transparent);background:color-mix(in srgb,var(--yel) 10%,var(--bg1));color:var(--t1);text-align:left;cursor:pointer}
+      .sb-loginas b{display:block;font-size:13.5px}
+      .sb-loginas small{display:block;font-size:11px;color:var(--t3)}
+      .sb-loginas > svg{color:var(--t3);flex-shrink:0}
+    }
     @media(max-width:768px){
       .sb-phone-tools{display:block;margin:6px 10px 4px;padding:10px;border-radius:14px;background:var(--bg2);border:1px solid var(--b1)}
       .sb-tools-t{font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);margin-bottom:6px}

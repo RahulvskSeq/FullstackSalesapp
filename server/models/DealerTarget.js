@@ -19,7 +19,8 @@ const S = new mongoose.Schema({
   auto:        { type: Number, default: 0 },                    // suggested: 3-month average + 10%
   avg3:        { type: Number, default: 0 },
   avg6:        { type: Number, default: 0 },
-  sales:       { type: [Number], default: [] },                 // the 6 months before, oldest first
+  basis:       { type: String, default: 'LAMINATE' },           // which sales the figures count
+  sales:       { type: [Number], default: [] },                 // the 6 months before, oldest first (null = no data that month)
   salesMonths: { type: [String], default: [] },                 // their labels, e.g. 'Apr-26'
   changedBy:   { type: String, default: '' },
   changedByName: { type: String, default: '' },
