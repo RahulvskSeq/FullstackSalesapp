@@ -1278,18 +1278,17 @@ export default function Styles({theme}){
     .sh-fixed{display:flex;align-items:center;gap:9px;padding:11px 12px;cursor:pointer;border-bottom:1px solid var(--b1);border-left:3px solid transparent;background:color-mix(in srgb,#f59e0b 5%,transparent)}
     .sh-fixed.on{background:var(--bg2);border-left-color:#f59e0b}
     .sh-dt{position:absolute;inset:0;z-index:10;margin:0;padding:0;overflow:hidden;display:flex;flex-direction:column}
-    .sh-toggle{display:none}
-    .sh-side-body{display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden}
-    @media (max-width:760px){
-      .sh-wrap{flex-direction:column;gap:10px}
-      .sh-side{width:100% !important;flex-shrink:0}
-      .sh-toggle{display:flex;align-items:center;gap:8px;width:100%;padding:11px 14px;border:none;background:none;color:var(--t1);font-size:14px;cursor:pointer;text-align:left}
-      .sh-toggle b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-      .sh-toggle span{font-size:11px;color:var(--t3);font-weight:600}
-      .sh-side .sh-side-body{display:none}
-      .sh-side.open .sh-side-body{display:flex;max-height:300px;border-top:1px solid var(--b1)}
-      .sh-main{min-height:560px}
-    }
+    /* the sheet list: one bar on top, the list drops down over the page */
+    .sh-wrap{flex-direction:column;gap:10px}
+    .sh-side{position:relative;z-index:30;width:100%;flex-shrink:0;padding:0;overflow:visible;margin:0}
+    .sh-toggle{display:flex;align-items:center;gap:8px;width:100%;padding:10px 14px;border:none;background:none;color:var(--t1);font-size:14px;cursor:pointer;text-align:left;border-radius:inherit}
+    .sh-toggle:hover{background:var(--bg2)}
+    .sh-toggle b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .sh-toggle span{font-size:11px;color:var(--t3);font-weight:600}
+    .sh-side-body{display:none}
+    .sh-side.open .sh-side-body{display:flex;flex-direction:column;position:absolute;top:calc(100% + 6px);left:0;width:min(360px,100%);max-height:min(60vh,460px);overflow:hidden;background:var(--bg1);border:1px solid var(--b2);border-radius:14px;box-shadow:0 18px 40px rgba(15,23,42,.22)}
+    .sh-side-body > div:last-child{overflow-y:auto}
+    .sh-main{min-height:520px}
     .dt{display:flex;flex-direction:column;height:100%;min-height:0}
     .dt-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid var(--b1)}
     .dt-title{display:flex;flex-direction:column;margin-right:6px}

@@ -38,7 +38,15 @@ export default function Sheets({ currentUser, users = {} }) {
   const [univerReady, setUniverReady] = useState(false);
   // 'targets' = the built-in Dealers target tab; 'sheet' = the user's own workbook
   const [view, setView] = useState('targets');
-  const [sideOpen, setSideOpen] = useState(false);   // phones: the sheet list folds into one bar
+  const [sideOpen, setSideOpen] = useState(false);   // the sheet list is a dropdown under one bar
+  const sideRef = useRef(null);
+  useEffect(() => {
+    if (!sideOpen) return;
+    const h = e => { if (sideRef.current && !sideRef.current.contains(e.target)) setSideOpen(false); };
+    const k = e => { if (e.key === 'Escape') setSideOpen(false); };
+    document.addEventListener('mousedown', h); document.addEventListener('touchstart', h); window.addEventListener('keydown', k);
+    return () => { document.removeEventListener('mousedown', h); document.removeEventListener('touchstart', h); window.removeEventListener('keydown', k); };
+  }, [sideOpen]);
 
   const containerRef  = useRef(null);   // div Univer renders its whole UI into
   const univerRef     = useRef(null);   // { univer, univerAPI }
@@ -285,8 +293,7 @@ export default function Sheets({ currentUser, users = {} }) {
     <PageHead icon={Table} tone="var(--acc)" eyebrow="Workspace" title="Sheets" />
     <div className="sh-wrap" style={{ display:'flex', gap:14, flex:1, minHeight:0 }}>
       {/* ── Sidebar: sheet list ─────────────────────────────────────── */}
-      <div className={'card sh-side' + (sideOpen ? ' open' : '')} style={{ width:240, flexShrink:0, display:'flex', flexDirection:'column',
-        padding:0, overflow:'hidden' }}>
+      <div ref={sideRef} className={'card sh-side' + (sideOpen ? ' open' : '')}>
         <button type="button" className="sh-toggle" onClick={() => setSideOpen(o => !o)}>
           {view === 'targets' ? <Target size={15} style={{ color:'#f59e0b' }}/> : <FileSpreadsheet size={15} style={{ color:'var(--acc)' }}/>}
           <b>{view === 'targets' ? 'Dealers target' : (activeMeta?.name || 'Sheet')}</b>
