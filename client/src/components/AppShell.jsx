@@ -190,6 +190,7 @@ const num = n => Math.round(Number(n) || 0).toLocaleString('en-IN');
  * Top of Home: who you are, the month at a glance, and the everyday actions.
  * The figures come from the dealers already loaded for the Overview.
  */
+const ACTIVE_TIERS = ['TOP PERFORMER', 'PRIORITY ACCOUNT', 'RISING STAR', 'ACTIVE'];
 export function HomeHero({ user, dealers = [], totals, monthLabel, monthIdx, actions, onPlus }) {
   const { t: tr } = useT();
   const stats = useMemo(() => {
@@ -198,7 +199,8 @@ export function HomeHero({ user, dealers = [], totals, monthLabel, monthIdx, act
       // the same figures the Overview adds up
       const t = Number(monthTarget(d, monthIdx)) || 0;
       const a = Number(Array.isArray(d.months) ? d.months[monthIdx] : 0) || 0;
-      target += t; achieved += a; if (a > 0) active++;
+      // 'active' is the performance tier, the same rule as the Total Dealers card below
+      target += t; achieved += a; if (ACTIVE_TIERS.includes(String(d.perfStatus || '').trim().toUpperCase())) active++;
     }
     // a salesman's own month totals from the server (dealers owned that month)
     if (totals?.target != null) target = totals.target;

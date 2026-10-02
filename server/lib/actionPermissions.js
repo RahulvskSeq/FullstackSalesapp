@@ -35,6 +35,7 @@ export const ACTION_PERMISSIONS = [
   { key:'collections.reviews',  group:'Collections', label:'Employee reviews',     desc:'Generate and finalise employee review scores' },
 
   { key:'deleteDealers',     group:'Dealers',     label:'Delete dealers',       desc:'Remove dealer records' },
+  { key:'editDealerTargets', group:'Dealers',     label:'Edit dealer targets',  desc:'Change status and target in Sheets → Dealers target. A salesman edits only his own dealers; without it the tab is read-only.' },
 
   { key:'manageCategories',  group:'Setup',       label:'Manage categories',    desc:'Add, edit and delete categories and sub-categories' },
   { key:'manageMonths',      group:'Setup',       label:'Manage months',        desc:'Change which months the app shows' },

@@ -10,7 +10,8 @@ import { createUniver, LocaleType, merge } from '@univerjs/presets';
 import { UniverSheetsCorePreset } from '@univerjs/presets/preset-sheets-core';
 import sheetsCoreEnUS from '@univerjs/presets/preset-sheets-core/locales/en-US';
 import '@univerjs/presets/lib/styles/preset-sheets-core.css';
-import { Plus, Trash2, FileSpreadsheet, Pencil, Check, Cloud, CloudOff, Loader2, Table } from 'lucide-react';
+import { Plus, Trash2, FileSpreadsheet, Pencil, Check, Cloud, CloudOff, Loader2, Table, Target } from 'lucide-react';
+import DealerTargetsTab from './DealerTargetsTab';
 import { PageHead } from '../collections/ui';
 import { api } from '../api';
 
@@ -35,6 +36,8 @@ export default function Sheets({ currentUser, users = {} }) {
   const [renameVal, setRenameVal] = useState('');
   const [err, setErr]             = useState('');
   const [univerReady, setUniverReady] = useState(false);
+  // 'targets' = the built-in Dealers target tab; 'sheet' = the user's own workbook
+  const [view, setView] = useState('targets');
 
   const containerRef  = useRef(null);   // div Univer renders its whole UI into
   const univerRef     = useRef(null);   // { univer, univerAPI }
@@ -245,6 +248,7 @@ export default function Sheets({ currentUser, users = {} }) {
       const doc = await api.sheetCreate({ name: name || 'Untitled sheet', worksheets: {} });
       await refreshList(doc.id);
       setActiveId(doc.id);
+      setView('sheet');
     } catch (e) { setErr(e.message || 'Could not create sheet'); }
   };
 
@@ -278,10 +282,17 @@ export default function Sheets({ currentUser, users = {} }) {
   return (
     <div className="fade" style={{ display:'flex', flexDirection:'column', height:'calc(100vh - 130px)', minHeight:480 }}>
     <PageHead icon={Table} tone="var(--acc)" eyebrow="Workspace" title="Sheets" />
-    <div style={{ display:'flex', gap:14, flex:1, minHeight:0 }}>
+    <div className="sh-wrap" style={{ display:'flex', gap:14, flex:1, minHeight:0 }}>
       {/* ── Sidebar: sheet list ─────────────────────────────────────── */}
-      <div className="card" style={{ width:240, flexShrink:0, display:'flex', flexDirection:'column',
+      <div className="card sh-side" style={{ width:240, flexShrink:0, display:'flex', flexDirection:'column',
         padding:0, overflow:'hidden' }}>
+        <div onClick={() => setView('targets')} className={'sh-fixed' + (view === 'targets' ? ' on' : '')}>
+          <span className="sec-ico" style={{'--tone':'#f59e0b', width:28, height:28, borderRadius:8}}><Target size={14}/></span>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontSize:13, fontWeight:700, color:'var(--t1)' }}>Dealers target</div>
+            <div style={{ fontSize:10.5, color:'var(--t3)', marginTop:1 }}>status & target · auto 3M avg +10%</div>
+          </div>
+        </div>
         <div style={{ padding:'12px 14px', borderBottom:'1px solid var(--b1)', display:'flex', alignItems:'center', gap:8 }}>
           <div className="sec-title" style={{ marginBottom:0, flex:1 }}>
             <span className="sec-ico" style={{'--tone':'var(--acc)'}}><FileSpreadsheet size={15}/></span> My Sheets
@@ -300,11 +311,11 @@ export default function Sheets({ currentUser, users = {} }) {
               No sheets yet.<br/>Click <b>New</b> to create one.
             </div>
           ) : sheets.map(s => (
-            <div key={s.id} onClick={() => setActiveId(s.id)}
+            <div key={s.id} onClick={() => { setActiveId(s.id); setView('sheet'); }}
               style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 12px', cursor:'pointer',
                 borderBottom:'1px solid var(--b1)',
-                background: s.id === activeId ? 'var(--bg2)' : 'transparent',
-                borderLeft: s.id === activeId ? '3px solid var(--acc)' : '3px solid transparent' }}>
+                background: view === 'sheet' && s.id === activeId ? 'var(--bg2)' : 'transparent',
+                borderLeft: view === 'sheet' && s.id === activeId ? '3px solid var(--acc)' : '3px solid transparent' }}>
               <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ fontSize:13, fontWeight:600, color:'var(--t1)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{s.name}</div>
                 <div style={{ fontSize:10.5, color:'var(--t3)', marginTop:2 }}>
@@ -322,9 +333,12 @@ export default function Sheets({ currentUser, users = {} }) {
         </div>
       </div>
 
-      {/* ── Main: header + Univer editor ────────────────────────────── */}
+      {/* ── Main: header + Univer editor (the Dealers target tab lies over it, so Univer stays laid out) ── */}
+      <div className="sh-main" style={{ flex:1, minWidth:0, position:'relative', display:'flex' }}>
+      {view === 'targets' && <div className="card sh-dt"><DealerTargetsTab currentUser={currentUser} users={users} /></div>}
+      {/* isolation keeps Univer's own layers (toolbar, tabs) inside this card; hidden while Dealers target is open */}
       <div className="card" style={{ flex:1, minWidth:0, display:'flex', flexDirection:'column',
-        padding:0, overflow:'hidden' }}>
+        padding:0, overflow:'hidden', isolation:'isolate', visibility: view === 'targets' ? 'hidden' : 'visible' }}>
         {/* Header bar: name + save status */}
         <div style={{ padding:'10px 14px', borderBottom:'1px solid var(--b1)', display:'flex', alignItems:'center', gap:10, flexShrink:0 }}>
           {activeId ? (
@@ -380,6 +394,7 @@ export default function Sheets({ currentUser, users = {} }) {
           )}
           <div ref={containerRef} style={{ position:'absolute', inset:0 }}/>
         </div>
+      </div>
       </div>
     </div>
 

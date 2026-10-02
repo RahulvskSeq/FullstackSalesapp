@@ -161,6 +161,7 @@ import followupRoutes    from './routes/Followups.js';
 import sampleRoutes      from './routes/samples.js';
 import dealerVisitRoutes from './routes/dealerVisit.js';
 import visitPlanRoutes   from './routes/visitPlan.js';
+import dealerTargetRoutes from './routes/dealerTargets.js';
 import crmRoutes         from './routes/crm.js';
 import categoryRoutes    from './routes/categories.js';
 import salesRoutes       from './routes/sales.js';
@@ -211,6 +212,7 @@ app.use('/api/followups',   followupRoutes);
 app.use('/api/samples',     sampleRoutes);
 app.use('/api/dealer-visit', dealerVisitRoutes);   // pre-visit summary + MOM
 app.use('/api/visit-plan',   visitPlanRoutes);     // visit calendar
+app.use('/api/dealer-targets', dealerTargetRoutes); // Sheets → Dealers target
 app.use('/api/crm',         crmRoutes);
 app.use('/api/categories',  categoryRoutes);
 app.use('/api/sales-incentive', salesIncentiveRoutes);

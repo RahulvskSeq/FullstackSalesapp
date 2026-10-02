@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { X, Search, Plus, Trash2, CalendarPlus, MapPin, CheckCircle2, AlertTriangle } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { X, Search, Plus, Trash2, CalendarPlus, MapPin, CheckCircle2, AlertTriangle, ChevronDown } from 'lucide-react';
 import { api } from '../api';
 import { useT } from '../i18n';
 import RepeatHint from './RepeatHint';
@@ -12,10 +12,46 @@ const todayYmd = () => new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0
 const fmtDay = ymd => new Date(ymd + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
 const LIMIT = 80;
 
+// City filter: type to narrow the list, tap to pick
+function CityPick({ cities, value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const box = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const h = e => { if (box.current && !box.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', h); document.addEventListener('touchstart', h);
+    return () => { document.removeEventListener('mousedown', h); document.removeEventListener('touchstart', h); };
+  }, [open]);
+  const cur = cities.find(c => c.k === value);
+  const s = q.trim().toLowerCase();
+  const list = s ? cities.filter(c => c.k.includes(s)) : cities;
+  const pick = k => { onChange(k); setOpen(false); setQ(''); };
+  return (
+    <div className="pv-cp" ref={box}>
+      {open
+        ? <input className="pv-city on-type" autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Type a city…"
+            onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); setQ(''); } else if (e.key === 'Enter' && list.length) { e.preventDefault(); pick(list[0].k); } }} />
+        : <button type="button" className={'pv-city' + (value ? ' on' : '')} onClick={() => setOpen(true)} title="Only dealers in this city">
+            <span>{cur ? cur.name : 'All cities'}</span>
+            {value ? <X size={12} onClick={e => { e.stopPropagation(); pick(''); }} /> : <ChevronDown size={12} />}
+          </button>}
+      {open && (
+        <div className="pv-cp-list" role="listbox">
+          {!s && <button type="button" className={!value ? 'on' : ''} onClick={() => pick('')}>All cities</button>}
+          {list.map(c => <button type="button" key={c.k} className={c.k === value ? 'on' : ''} onClick={() => pick(c.k)}><span>{c.name}</span><em>{c.n}</em></button>)}
+          {!list.length && <div className="pv-cp-none">No city matches “{q.trim()}”</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function PlanVisitDrawer({ dealers = [], plans = [], day, setDay, salesmanId, setSalesmanId, salesmen = [], isStaff, canPlan, maxPerDay = 8, onChanged, onClose }) {
   const { t: tr } = useT();
   const [q, setQ] = useState('');
   const [tier, setTier] = useState('');
+  const [city, setCity] = useState('');
   const [notMetOnly, setNotMetOnly] = useState(false);
   const [cov, setCov] = useState(null);          // dealerId -> 'MET' | 'PLANNED_ONLY' | 'NOT_MET'
   const [busyId, setBusyId] = useState('');
@@ -47,6 +83,17 @@ export default function PlanVisitDrawer({ dealers = [], plans = [], day, setDay,
   const mayPlan = !!salesmanId && !closed;
   const onDay = new Set(dayPlans.map(p => p.dealerId));
 
+  // cities of the dealers this person can plan, busiest first in the list
+  const cityKey = c => String(c || '').trim().toLowerCase();
+  const cities = useMemo(() => {
+    const m = new Map();
+    for (const d of dealers) {
+      if (!(canPlan || d.salesman === salesmanId)) continue;
+      const k = cityKey(d.city); if (!k) continue;
+      const e = m.get(k) || m.set(k, { name: String(d.city).trim(), n: 0 }).get(k); e.n++;
+    }
+    return [...m.entries()].map(([k, e]) => ({ k, ...e })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [dealers, canPlan, salesmanId]);
   const pool = useMemo(() => {
     const s = q.trim().toLowerCase();
     const rank = d => { const i = TIERS.indexOf(d.status); return i >= 0 ? i : 3; };
@@ -55,10 +102,11 @@ export default function PlanVisitDrawer({ dealers = [], plans = [], day, setDay,
       .filter(d => (canPlan || d.salesman === salesmanId))
       .filter(d => !onDay.has(d._id || d.id))
       .filter(d => !tier || d.status === tier)
+      .filter(d => !city || cityKey(d.city) === city)
       .filter(d => !notMetOnly || (cov && cov[d._id || d.id] === 'NOT_MET'))
       .filter(d => !s || (d.name || '').toLowerCase().includes(s) || (d.city || '').toLowerCase().includes(s) || (d.zone || '').toLowerCase().includes(s))
       .sort((a, b) => ((a.salesman === salesmanId ? 0 : 1) - (b.salesman === salesmanId ? 0 : 1)) || rank(a) - rank(b) || (a.name || '').localeCompare(b.name || ''));
-  }, [dealers, q, tier, notMetOnly, cov, salesmanId, canPlan, dayPlans.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [dealers, q, tier, city, notMetOnly, cov, salesmanId, canPlan, dayPlans.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const shown = more ? pool : pool.slice(0, LIMIT);
 
   const run = async (id, fn) => { setBusyId(id); setErr(''); try { await fn(); await onChanged?.(); } catch (e) { setErr(e?.message || 'Could not do that'); } finally { setBusyId(''); } };
@@ -102,6 +150,7 @@ export default function PlanVisitDrawer({ dealers = [], plans = [], day, setDay,
         <div className="pv-chips">
           {['', ...TIERS].map(t => <button key={t || 'all'} className={tier === t ? 'on' : ''} onClick={() => setTier(t)}>{t || 'All'}</button>)}
           <button className={'nm' + (notMetOnly ? ' on' : '')} disabled={!cov} onClick={() => setNotMetOnly(v => !v)} title="Top dealers nobody met this month">Not met this month</button>
+          <CityPick cities={cities} value={city} onChange={k => { setCity(k); setMore(false); }} />
         </div>
 
         <div className="pv-list">
