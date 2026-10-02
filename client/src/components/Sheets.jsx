@@ -10,7 +10,7 @@ import { createUniver, LocaleType, merge } from '@univerjs/presets';
 import { UniverSheetsCorePreset } from '@univerjs/presets/preset-sheets-core';
 import sheetsCoreEnUS from '@univerjs/presets/preset-sheets-core/locales/en-US';
 import '@univerjs/presets/lib/styles/preset-sheets-core.css';
-import { Plus, Trash2, FileSpreadsheet, Pencil, Check, Cloud, CloudOff, Loader2, Table, Target } from 'lucide-react';
+import { Plus, Trash2, FileSpreadsheet, Pencil, Check, Cloud, CloudOff, Loader2, Table, Target, ChevronDown } from 'lucide-react';
 import DealerTargetsTab from './DealerTargetsTab';
 import { PageHead } from '../collections/ui';
 import { api } from '../api';
@@ -38,6 +38,7 @@ export default function Sheets({ currentUser, users = {} }) {
   const [univerReady, setUniverReady] = useState(false);
   // 'targets' = the built-in Dealers target tab; 'sheet' = the user's own workbook
   const [view, setView] = useState('targets');
+  const [sideOpen, setSideOpen] = useState(false);   // phones: the sheet list folds into one bar
 
   const containerRef  = useRef(null);   // div Univer renders its whole UI into
   const univerRef     = useRef(null);   // { univer, univerAPI }
@@ -284,9 +285,16 @@ export default function Sheets({ currentUser, users = {} }) {
     <PageHead icon={Table} tone="var(--acc)" eyebrow="Workspace" title="Sheets" />
     <div className="sh-wrap" style={{ display:'flex', gap:14, flex:1, minHeight:0 }}>
       {/* ── Sidebar: sheet list ─────────────────────────────────────── */}
-      <div className="card sh-side" style={{ width:240, flexShrink:0, display:'flex', flexDirection:'column',
+      <div className={'card sh-side' + (sideOpen ? ' open' : '')} style={{ width:240, flexShrink:0, display:'flex', flexDirection:'column',
         padding:0, overflow:'hidden' }}>
-        <div onClick={() => setView('targets')} className={'sh-fixed' + (view === 'targets' ? ' on' : '')}>
+        <button type="button" className="sh-toggle" onClick={() => setSideOpen(o => !o)}>
+          {view === 'targets' ? <Target size={15} style={{ color:'#f59e0b' }}/> : <FileSpreadsheet size={15} style={{ color:'var(--acc)' }}/>}
+          <b>{view === 'targets' ? 'Dealers target' : (activeMeta?.name || 'Sheet')}</b>
+          <span>{sideOpen ? 'close' : 'sheets'}</span>
+          <ChevronDown size={15} style={{ transform: sideOpen ? 'rotate(180deg)' : 'none', transition:'transform .15s' }}/>
+        </button>
+        <div className="sh-side-body">
+        <div onClick={() => { setView('targets'); setSideOpen(false); }} className={'sh-fixed' + (view === 'targets' ? ' on' : '')}>
           <span className="sec-ico" style={{'--tone':'#f59e0b', width:28, height:28, borderRadius:8}}><Target size={14}/></span>
           <div style={{ flex:1, minWidth:0 }}>
             <div style={{ fontSize:13, fontWeight:700, color:'var(--t1)' }}>Dealers target</div>
@@ -311,7 +319,7 @@ export default function Sheets({ currentUser, users = {} }) {
               No sheets yet.<br/>Click <b>New</b> to create one.
             </div>
           ) : sheets.map(s => (
-            <div key={s.id} onClick={() => { setActiveId(s.id); setView('sheet'); }}
+            <div key={s.id} onClick={() => { setActiveId(s.id); setView('sheet'); setSideOpen(false); }}
               style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 12px', cursor:'pointer',
                 borderBottom:'1px solid var(--b1)',
                 background: view === 'sheet' && s.id === activeId ? 'var(--bg2)' : 'transparent',
@@ -330,6 +338,7 @@ export default function Sheets({ currentUser, users = {} }) {
               )}
             </div>
           ))}
+        </div>
         </div>
       </div>
 

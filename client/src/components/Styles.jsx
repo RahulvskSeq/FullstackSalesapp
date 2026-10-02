@@ -1278,7 +1278,18 @@ export default function Styles({theme}){
     .sh-fixed{display:flex;align-items:center;gap:9px;padding:11px 12px;cursor:pointer;border-bottom:1px solid var(--b1);border-left:3px solid transparent;background:color-mix(in srgb,#f59e0b 5%,transparent)}
     .sh-fixed.on{background:var(--bg2);border-left-color:#f59e0b}
     .sh-dt{position:absolute;inset:0;z-index:10;margin:0;padding:0;overflow:hidden;display:flex;flex-direction:column}
-    @media (max-width:760px){.sh-wrap{flex-direction:column}.sh-side{width:100% !important;max-height:190px}.sh-main{min-height:520px}}
+    .sh-toggle{display:none}
+    .sh-side-body{display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden}
+    @media (max-width:760px){
+      .sh-wrap{flex-direction:column;gap:10px}
+      .sh-side{width:100% !important;flex-shrink:0}
+      .sh-toggle{display:flex;align-items:center;gap:8px;width:100%;padding:11px 14px;border:none;background:none;color:var(--t1);font-size:14px;cursor:pointer;text-align:left}
+      .sh-toggle b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .sh-toggle span{font-size:11px;color:var(--t3);font-weight:600}
+      .sh-side .sh-side-body{display:none}
+      .sh-side.open .sh-side-body{display:flex;max-height:300px;border-top:1px solid var(--b1)}
+      .sh-main{min-height:560px}
+    }
     .dt{display:flex;flex-direction:column;height:100%;min-height:0}
     .dt-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid var(--b1)}
     .dt-title{display:flex;flex-direction:column;margin-right:6px}
@@ -1325,7 +1336,7 @@ export default function Styles({theme}){
     .dt-was{display:block;font-size:9.5px;color:var(--t3);margin-top:2px}
     .dt-saved{position:absolute;right:2px;top:2px;font-style:normal;font-size:9px;color:var(--grn);font-weight:900}
     .dt-more{display:block;margin:10px auto;font-size:12px}
-    @media (max-width:640px){.dt-grid .dt-d{min-width:132px;max-width:150px}.dt-grid td.dt-d b{white-space:normal;font-size:12px}.dt-grid .dt-n{display:none}.dt-search{min-width:0;flex:1}.dt-month,.dt-sm{flex:1;width:auto}}
+    @media (max-width:640px){.dt-grid .dt-d{min-width:132px;max-width:150px}.dt-grid td.dt-d b{white-space:normal;font-size:12px}.dt-grid .dt-n{display:none}.dt-search{min-width:0;flex:1 1 100%;order:9}.dt-month,.dt-sm{flex:1;width:auto}}
     .pv-city{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;border:1px solid var(--b2);background:var(--bg1);color:var(--t2);font-size:11px;font-weight:700;cursor:pointer;max-width:200px;height:26px}
     .pv-city span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .pv-city.on{background:var(--acc);border-color:var(--acc);color:#fff}
