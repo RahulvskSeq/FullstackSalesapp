@@ -51,6 +51,7 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
   const [note, setNote] = useState('');
   const [collect, setCollect] = useState('');
   const [open, setOpen] = useState(null);           // dealerId for the visit modal
+  const [kList, setKList] = useState(null);         // the summary card whose dealers are listed: { kind, tier }
   const [editing, setEditing] = useState({});       // planId → note text being edited
   const [replacing, setReplacing] = useState(null); // plan being swapped for another dealer
 
@@ -191,8 +192,15 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
       const list = mine.filter(d => String(d.status || '').trim().toUpperCase() === k);
       return { k, short, total: list.length, planned: list.filter(d => planned.has(String(d._id || d.id))).length };
     });
-    return { unique: planned.size, of: mine.length, tiers, topTotal: tiers.reduce((a, t) => a + t.total, 0), topPlanned: tiers.reduce((a, t) => a + t.planned, 0) };
+    return { unique: planned.size, of: mine.length, tiers, topTotal: tiers.reduce((a, t) => a + t.total, 0), topPlanned: tiers.reduce((a, t) => a + t.planned, 0), mine, planned };
   }, [plans, sm, dealers, isStaff, currentUser]);
+  // dates each dealer is planned this month (for the summary pop-ups)
+  const datesOf = useMemo(() => {
+    const m = new Map();
+    for (const p of plans) if (!sm || p.salesmanId === sm) (m.get(String(p.dealerId)) || m.set(String(p.dealerId), []).get(String(p.dealerId))).push(p);
+    for (const v of m.values()) v.sort((a, b) => a.date.localeCompare(b.date));
+    return m;
+  }, [plans, sm]);
   // Tapping a day on a phone (calendar above, day below) brings that day's plan into view.
   const dayRef = useRef(null);
   // the swipeable day strip: its days, keeping the chosen one in view, and the month following the day
@@ -236,10 +244,10 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
     : month.toLocaleDateString('en-IN', { month: 'long' }) + (month.getFullYear() !== new Date().getFullYear() ? ' ' + month.getFullYear() : '');
   const goToday = () => { const d = new Date(); setMonth(new Date(d.getFullYear(), d.getMonth(), 1)); setDay(todayYmd()); };
   const tiles = [
-    { k: 'planned', n: kpi.planned, label: 'planned', rule: `${kpi.upcoming} still to go this month`, tone: 'var(--acc)', Icon: CalendarDays },
-    { k: 'unique', n: reach.unique, label: 'parties', rule: reach.of ? `of ${reach.of.toLocaleString('en-IN')} dealers` : 'different dealers', tone: '#8b5cf6', Icon: MapPin },
+    { k: 'planned', n: kpi.planned, label: 'planned', rule: `${kpi.upcoming} still to go this month`, tone: 'var(--acc)', Icon: CalendarDays, onClick: () => setKList({ kind: 'planned' }) },
+    { k: 'unique', n: reach.unique, label: 'parties', rule: reach.of ? `of ${reach.of.toLocaleString('en-IN')} dealers` : 'different dealers', tone: '#8b5cf6', Icon: MapPin, onClick: () => setKList({ kind: 'parties' }) },
     { k: 'top', top: true, tone: '#f59e0b', Icon: ListChecks },
-    { k: 'done', n: kpi.done, label: 'visited', rule: closedPct == null ? 'none closed yet' : `${closedPct}% of closed visits`, tone: 'var(--grn)', Icon: CheckCircle2 },
+    { k: 'done', n: kpi.done, label: 'visited', rule: closedPct == null ? 'none closed yet' : `${closedPct}% of closed visits`, tone: 'var(--grn)', Icon: CheckCircle2, onClick: () => setKList({ kind: 'visited' }) },
     { k: 'today', n: kpi.todayIn ? kpi.today : '—', label: 'today', rule: kpi.todayIn ? `${kpi.todayDone} of ${kpi.today} visited` : 'tap to jump to today', tone: '#06b6d4', Icon: Sun, onClick: goToday },
   ];
   const dayDate = new Date(day + 'T00:00:00');
@@ -267,7 +275,7 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
       <div className="vc-kpis">
         {tiles.map(t => t.top ? (
           // top dealers: how many of the STAR / KEY / ACHIEVER / REACTIVE dealers are on this month's plan
-          <div key={t.k} className="vck vck-top" style={{ '--tone': t.tone }}>
+          <div key={t.k} className="vck vck-top tap" style={{ '--tone': t.tone }} onClick={() => setKList({ kind: 'top', tier: '' })}>
             <div className="vck-ico"><t.Icon size={18} /></div>
             <div className="vck-main">
               <div className="vck-head"><b className="vck-n">{reach.topPlanned}</b><span className="vck-of">/ {reach.topTotal}</span><span className="vck-pct">{reach.topTotal ? Math.round(reach.topPlanned / reach.topTotal * 100) : 0}%</span></div>
@@ -276,7 +284,7 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
             </div>
             <div className="vck-tiers">
               {reach.tiers.map(x => (
-                <div key={x.k} className="vck-tier" title={`${x.k}: ${x.planned} of ${x.total} planned this month`}>
+                <div key={x.k} className="vck-tier" title={`${x.k}: ${x.planned} of ${x.total} planned this month`} onClick={e => { e.stopPropagation(); setKList({ kind: 'top', tier: x.k }); }}>
                   <span>{x.short}</span><b>{x.planned}<em>/{x.total}</em></b>
                   <div className="vck-bar sm"><i style={{ width: (x.total ? Math.round(x.planned / x.total * 100) : 0) + '%' }} /></div>
                 </div>
@@ -650,6 +658,30 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
         .vck-tier b { justify-self: end; color: var(--t1); font-variant-numeric: tabular-nums; }
         .vck-tier em { font-style: normal; font-weight: 600; color: var(--t3); }
         .vck-tier .vck-bar { grid-column: 1 / -1; }
+        .vck-tier { cursor: pointer; border-radius: 6px; }
+        .vck-tier:hover span { color: var(--tone); }
+        .vckl-ov { z-index: 2100; display: flex; align-items: center; justify-content: center; padding: 16px; }
+        .vckl { width: min(640px, 100%); max-height: min(80vh, 720px); display: flex; flex-direction: column; background: var(--bg1); border: 1px solid var(--b2); border-radius: 18px; box-shadow: 0 24px 60px rgba(15,23,42,.28); overflow: hidden; }
+        .vckl-h { display: flex; align-items: center; gap: 8px; padding: 14px 16px; border-bottom: 1px solid var(--b1); background: linear-gradient(135deg, color-mix(in srgb, var(--tone) 12%, var(--bg1)), var(--bg1)); }
+        .vckl-h b { font-size: 15px; color: var(--t1); }
+        .vckl-n { font-size: 11px; font-weight: 800; color: var(--tone); background: color-mix(in srgb, var(--tone) 14%, transparent); padding: 1px 8px; border-radius: 99px; }
+        .vckl-x { margin-left: auto; width: 30px; height: 30px; border-radius: 9px; border: 1px solid var(--b2); background: var(--bg1); color: var(--t2); display: grid; place-items: center; cursor: pointer; }
+        .vckl-tabs { display: flex; flex-wrap: wrap; gap: 5px; padding: 8px 14px; border-bottom: 1px solid var(--b1); }
+        .vckl-tabs button { padding: 3px 10px; border-radius: 99px; border: 1px solid var(--b2); background: var(--bg1); color: var(--t2); font-size: 11px; font-weight: 700; cursor: pointer; }
+        .vckl-tabs button.on { background: var(--tone); border-color: var(--tone); color: #fff; }
+        .vckl-s { display: flex; align-items: center; gap: 7px; margin: 10px 14px 6px; padding: 7px 10px; border: 1px solid var(--b2); border-radius: 10px; color: var(--t3); }
+        .vckl-s input { flex: 1; min-width: 0; border: none; background: transparent; outline: none; color: var(--t1); font-size: 13px; }
+        .vckl-list { overflow: auto; padding: 4px 8px 10px; }
+        .vckl-row { display: flex; align-items: center; gap: 10px; padding: 9px 8px; border-radius: 10px; cursor: pointer; border-bottom: 1px solid var(--b1); }
+        .vckl-row:hover { background: var(--bg2); }
+        .vckl-t { flex-shrink: 0; font-size: 9.5px; font-weight: 800; color: var(--t); background: color-mix(in srgb, var(--t) 14%, transparent); padding: 2px 6px; border-radius: 6px; }
+        .vckl-m { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+        .vckl-m b { font-size: 13px; color: var(--t1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .vckl-m small { font-size: 11px; color: var(--t3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .vckl-d { flex-shrink: 0; font-size: 11px; font-weight: 700; color: var(--t2); max-width: 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .vckl-c { flex-shrink: 0; font-size: 10.5px; font-weight: 800; color: var(--c); background: color-mix(in srgb, var(--c) 12%, transparent); padding: 2px 8px; border-radius: 99px; }
+        .vckl-none { padding: 24px; text-align: center; color: var(--t3); font-size: 13px; }
+        @media (max-width: 600px) { .vckl-ov { padding: 0; align-items: flex-end; } .vckl { border-radius: 18px 18px 0 0; max-height: 88vh; } }
         .vc-kpi { min-width: 0; }
         .vc-grid { display: grid; grid-template-columns: 1fr; gap: 14px; min-width: 0; }
         .vc-grid > .card { min-width: 0; }
@@ -847,7 +879,70 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
           </div>
         </div>
       )}
+      {kList && <KpiList kList={kList} setKList={setKList} plans={plans} sm={sm} reach={reach} datesOf={datesOf} monthName={month.toLocaleDateString('en-IN', { month: 'long' })}
+        onOpen={id => { setKList(null); setOpen(id); }} />}
       {open && <DealerVisitModal dealerId={open} dealerName={plansAll.find(p => p.dealerId === open)?.dealerName || dealers.find(d => (d._id || d.id) === open)?.name || ''} onClose={() => { setOpen(null); load(); }} />}
+    </div>
+  );
+}
+
+// The dealers behind a summary card, in a pop-up: tap one to open it.
+const TIER_TONE = { STAR: '#f59e0b', 'KEY ACCOUNT': '#8b5cf6', ACHIEVER: '#10b981', REACTIVE: '#0ea5e9' };
+const STATUS_TONE = { DONE: 'var(--grn)', PLANNED: 'var(--acc)', SKIPPED: 'var(--t3)' };
+function KpiList({ kList, setKList, plans, sm, reach, datesOf, monthName, onOpen }) {
+  const [q, setQ] = useState('');
+  const [only, setOnly] = useState('all');          // top dealers: all | planned | not
+  useEffect(() => { const k = e => { if (e.key === 'Escape') setKList(null); }; window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k); }, [setKList]);
+  const vis = plans.filter(p => !sm || p.salesmanId === sm);
+  const short = d => new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  let title = '', tone = 'var(--acc)', rows = [];
+  if (kList.kind === 'planned' || kList.kind === 'visited') {
+    const list = kList.kind === 'visited' ? vis.filter(p => p.status === 'DONE') : vis;
+    title = kList.kind === 'visited' ? `Visited in ${monthName}` : `Planned visits in ${monthName}`; tone = kList.kind === 'visited' ? 'var(--grn)' : 'var(--acc)';
+    rows = [...list].sort((a, b) => a.date.localeCompare(b.date) || (a.dealerName || '').localeCompare(b.dealerName || '')).map(p => ({
+      key: p._id, id: p.dealerId, name: p.dealerName, sub: [p.city, p.zone].filter(Boolean).join(' · '), date: short(p.date),
+      chip: p.status === 'DONE' ? 'Visited' : p.missed ? 'Not visited' : 'Planned', chipTone: p.missed ? 'var(--red)' : STATUS_TONE[p.status] || 'var(--acc)' }));
+  } else if (kList.kind === 'parties') {
+    title = `Parties planned in ${monthName}`; tone = '#8b5cf6';
+    rows = [...datesOf.entries()].map(([id, ps]) => ({ key: id, id, name: ps[0].dealerName, sub: [ps[0].city, ps[0].zone].filter(Boolean).join(' · '),
+      date: ps.map(p => Number(p.date.slice(-2))).join(', '), chip: ps.length > 1 ? ps.length + '×' : '1×', chipTone: '#8b5cf6' })).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  } else {
+    title = (kList.tier || 'Top dealers') + ` · ${monthName}`; tone = TIER_TONE[kList.tier] || '#f59e0b';
+    rows = reach.mine.filter(d => { const st = String(d.status || '').trim().toUpperCase(); return kList.tier ? st === kList.tier : TIER_TONE[st]; })
+      .map(d => { const id = String(d._id || d.id), ps = datesOf.get(id) || []; const st = String(d.status || '').trim().toUpperCase();
+        return { key: id, id, name: d.name, sub: [d.city, d.zone].filter(Boolean).join(' · '), tier: st, planned: ps.length > 0,
+          date: ps.length ? ps.map(p => Number(p.date.slice(-2))).join(', ') : '', chip: ps.length ? ps.length + '× planned' : 'Not planned', chipTone: ps.length ? 'var(--grn)' : 'var(--red)' }; })
+      .filter(r => only === 'all' || (only === 'planned' ? r.planned : !r.planned))
+      .sort((a, b) => (a.planned - b.planned) || (a.name || '').localeCompare(b.name || ''));
+  }
+  const s = q.trim().toLowerCase();
+  const shown = s ? rows.filter(r => (r.name || '').toLowerCase().includes(s) || (r.sub || '').toLowerCase().includes(s)) : rows;
+  return (
+    <div className="overlay vckl-ov" onMouseDown={e => { if (e.target === e.currentTarget) setKList(null); }}>
+      <div className="vckl" style={{ '--tone': tone }} role="dialog" aria-label={title}>
+        <div className="vckl-h">
+          <b>{title}</b><span className="vckl-n">{shown.length}</span>
+          <button className="vckl-x" onClick={() => setKList(null)} aria-label="Close"><X size={16} /></button>
+        </div>
+        {kList.kind === 'top' && <div className="vckl-tabs">
+          {[['', 'All'], ...Object.keys(TIER_TONE).map(k => [k, k === 'KEY ACCOUNT' ? 'KEY' : k])].map(([k, l]) =>
+            <button key={k || 'all'} className={kList.tier === k ? 'on' : ''} onClick={() => setKList({ kind: 'top', tier: k })}>{l}</button>)}
+          <span style={{ flex: 1 }} />
+          {[['all', 'All'], ['planned', 'Planned'], ['not', 'Not planned']].map(([k, l]) => <button key={k} className={only === k ? 'on' : ''} onClick={() => setOnly(k)}>{l}</button>)}
+        </div>}
+        <div className="vckl-s"><Search size={14} /><input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="dealer, city or zone…" /></div>
+        <div className="vckl-list">
+          {shown.map(r => (
+            <div key={r.key} className="vckl-row" role="button" tabIndex={0} onClick={() => { if (r.id && !String(r.id).startsWith('new:')) onOpen(r.id); }}>
+              {r.tier && <span className="vckl-t" style={{ '--t': TIER_TONE[r.tier] }}>{r.tier === 'KEY ACCOUNT' ? 'KEY' : r.tier}</span>}
+              <span className="vckl-m"><b>{r.name}</b>{r.sub && <small>{r.sub}</small>}</span>
+              {r.date && <span className="vckl-d">{r.date}</span>}
+              <span className="vckl-c" style={{ '--c': r.chipTone }}>{r.chip}</span>
+            </div>
+          ))}
+          {!shown.length && <div className="vckl-none">Nothing here.</div>}
+        </div>
+      </div>
     </div>
   );
 }
