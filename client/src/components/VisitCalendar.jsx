@@ -181,6 +181,18 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
     };
   }, [plans, sm, tdy, from, to]);
   const closedPct = kpi.done + kpi.missed ? Math.round(kpi.done / (kpi.done + kpi.missed) * 100) : null;
+  // different dealers on the month's plan, and how many of the top dealers (STAR / KEY / ACHIEVER / REACTIVE) are among them
+  const reach = useMemo(() => {
+    const vis = plans.filter(p => !sm || p.salesmanId === sm);
+    const planned = new Set(vis.map(p => String(p.dealerId)));
+    const mine = dealers.filter(d => (isStaff ? (!sm || d.salesman === sm) : d.salesman === currentUser?.id));
+    const TOP = [['STAR', 'STAR'], ['KEY ACCOUNT', 'KEY'], ['ACHIEVER', 'ACH'], ['REACTIVE', 'REA']];
+    const tiers = TOP.map(([k, short]) => {
+      const list = mine.filter(d => String(d.status || '').trim().toUpperCase() === k);
+      return { k, short, total: list.length, planned: list.filter(d => planned.has(String(d._id || d.id))).length };
+    });
+    return { unique: planned.size, of: mine.length, tiers, topTotal: tiers.reduce((a, t) => a + t.total, 0), topPlanned: tiers.reduce((a, t) => a + t.planned, 0) };
+  }, [plans, sm, dealers, isStaff, currentUser]);
   // Tapping a day on a phone (calendar above, day below) brings that day's plan into view.
   const dayRef = useRef(null);
   // the swipeable day strip: its days, keeping the chosen one in view, and the month following the day
@@ -225,8 +237,10 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
   const goToday = () => { const d = new Date(); setMonth(new Date(d.getFullYear(), d.getMonth(), 1)); setDay(todayYmd()); };
   const tiles = [
     { k: 'planned', n: kpi.planned, label: 'planned', rule: `${kpi.upcoming} still to go this month`, tone: 'var(--acc)', Icon: CalendarDays },
+    { k: 'unique', n: reach.unique, label: 'parties', rule: `different dealers planned${reach.of ? ` · of ${reach.of}` : ''}`, tone: '#8b5cf6', Icon: MapPin },
+    { k: 'top', n: <>{reach.topPlanned}<small className="vc-kof">/{reach.topTotal}</small></>, label: 'top dealers planned', tone: '#f59e0b', Icon: ListChecks,
+      rule: <span className="vc-tiers">{reach.tiers.map(t => <i key={t.k} title={`${t.k}: ${t.planned} of ${t.total} planned this month`}>{t.short} <b>{t.planned}</b>/{t.total}</i>)}</span> },
     { k: 'done', n: kpi.done, label: 'visited', rule: closedPct == null ? 'none closed yet' : `${closedPct}% of closed visits`, tone: 'var(--grn)', Icon: CheckCircle2 },
-    { k: 'missed', n: kpi.missed, label: 'not visited', rule: kpi.missed ? 'planned day passed, no check-out' : 'nothing missed', tone: 'var(--red)', Icon: AlertTriangle },
     { k: 'today', n: kpi.todayIn ? kpi.today : '—', label: 'today', rule: kpi.todayIn ? `${kpi.todayDone} of ${kpi.today} visited` : 'tap to jump to today', tone: '#06b6d4', Icon: Sun, onClick: goToday },
   ];
   const dayDate = new Date(day + 'T00:00:00');
@@ -594,7 +608,11 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
         .vc-chev:hover { background: var(--bg2); color: var(--acc); }
         .vc-today { border: none; background: var(--accL); color: var(--acc); font-weight: 800; font-size: 12px; padding: 6px 13px; border-radius: 999px; cursor: pointer; margin-left: 2px; }
         .vc-today:hover { filter: brightness(.97); }
-        .vc-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
+        .vc-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
+        .vc-kof { font-size: 13px; font-weight: 700; color: var(--t3); margin-left: 1px; }
+        .vc-tiers { display: flex; flex-wrap: wrap; gap: 3px 8px; }
+        .vc-tiers i { font-style: normal; white-space: nowrap; }
+        .vc-tiers b { color: var(--t1); }
         .vc-kpi { min-width: 0; }
         .vc-grid { display: grid; grid-template-columns: 1fr; gap: 14px; min-width: 0; }
         .vc-grid > .card { min-width: 0; }
@@ -716,7 +734,8 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
         .vc-n { --tone: var(--t1); display: inline-block; min-width: 28px; text-align: center; font-weight: 800; padding: 2px 8px; border-radius: 20px; color: var(--tone); background: color-mix(in srgb, var(--tone) 10%, transparent); }
         .vc-stack { display: flex; height: 4px; width: 90px; border-radius: 3px; overflow: hidden; background: var(--bg3); margin-top: 4px; gap: 1px; }
         .vc-missed { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); }
-        @media (max-width: 860px) { .vc-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } }
+        @media (max-width: 1180px) { .vc-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+        @media (max-width: 860px) { .vc-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } .vc-kpi:nth-child(3) { grid-column: 1 / -1; } }
         @media (max-width: 600px) {
           .vc-views { margin-left: 0; }
           .vc-views button { padding: 4px 9px; font-size: 11.5px; }
