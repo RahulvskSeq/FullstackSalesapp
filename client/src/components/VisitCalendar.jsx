@@ -237,9 +237,8 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
   const goToday = () => { const d = new Date(); setMonth(new Date(d.getFullYear(), d.getMonth(), 1)); setDay(todayYmd()); };
   const tiles = [
     { k: 'planned', n: kpi.planned, label: 'planned', rule: `${kpi.upcoming} still to go this month`, tone: 'var(--acc)', Icon: CalendarDays },
-    { k: 'unique', n: reach.unique, label: 'parties', rule: `different dealers planned${reach.of ? ` · of ${reach.of}` : ''}`, tone: '#8b5cf6', Icon: MapPin },
-    { k: 'top', n: <>{reach.topPlanned}<small className="vc-kof">/{reach.topTotal}</small></>, label: 'top dealers planned', tone: '#f59e0b', Icon: ListChecks,
-      rule: <span className="vc-tiers">{reach.tiers.map(t => <i key={t.k} title={`${t.k}: ${t.planned} of ${t.total} planned this month`}>{t.short} <b>{t.planned}</b>/{t.total}</i>)}</span> },
+    { k: 'unique', n: reach.unique, label: 'parties', rule: reach.of ? `of ${reach.of.toLocaleString('en-IN')} dealers` : 'different dealers', tone: '#8b5cf6', Icon: MapPin },
+    { k: 'top', top: true, tone: '#f59e0b', Icon: ListChecks },
     { k: 'done', n: kpi.done, label: 'visited', rule: closedPct == null ? 'none closed yet' : `${closedPct}% of closed visits`, tone: 'var(--grn)', Icon: CheckCircle2 },
     { k: 'today', n: kpi.todayIn ? kpi.today : '—', label: 'today', rule: kpi.todayIn ? `${kpi.todayDone} of ${kpi.today} visited` : 'tap to jump to today', tone: '#06b6d4', Icon: Sun, onClick: goToday },
   ];
@@ -266,15 +265,32 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
 
       {/* the month at a glance */}
       <div className="vc-kpis">
-        {tiles.map(t => (
-          <div key={t.k} className="ov-move vc-kpi" onClick={t.onClick} style={{ '--tone': t.tone, cursor: t.onClick ? 'pointer' : 'default' }}>
-            <div className="ov-move-ico"><t.Icon size={19} /></div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
-                <span className="ov-move-n">{t.n}</span><span className="ov-move-lbl">{t.label}</span>
-              </div>
-              <span className="ov-move-rule">{t.rule}</span>
+        {tiles.map(t => t.top ? (
+          // top dealers: how many of the STAR / KEY / ACHIEVER / REACTIVE dealers are on this month's plan
+          <div key={t.k} className="vck vck-top" style={{ '--tone': t.tone }}>
+            <div className="vck-ico"><t.Icon size={18} /></div>
+            <div className="vck-main">
+              <div className="vck-head"><b className="vck-n">{reach.topPlanned}</b><span className="vck-of">/ {reach.topTotal}</span><span className="vck-pct">{reach.topTotal ? Math.round(reach.topPlanned / reach.topTotal * 100) : 0}%</span></div>
+              <span className="vck-lbl">top dealers planned</span>
+              <div className="vck-bar"><i style={{ width: (reach.topTotal ? Math.round(reach.topPlanned / reach.topTotal * 100) : 0) + '%' }} /></div>
             </div>
+            <div className="vck-tiers">
+              {reach.tiers.map(x => (
+                <div key={x.k} className="vck-tier" title={`${x.k}: ${x.planned} of ${x.total} planned this month`}>
+                  <span>{x.short}</span><b>{x.planned}<em>/{x.total}</em></b>
+                  <div className="vck-bar sm"><i style={{ width: (x.total ? Math.round(x.planned / x.total * 100) : 0) + '%' }} /></div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div key={t.k} className={'vck' + (t.onClick ? ' tap' : '')} onClick={t.onClick} style={{ '--tone': t.tone }}>
+            <div className="vck-ico"><t.Icon size={18} /></div>
+            <div className="vck-main">
+              <div className="vck-head"><b className="vck-n">{t.n}</b><span className="vck-lbl">{t.label}</span></div>
+              <span className="vck-sub">{t.rule}</span>
+            </div>
+            {t.onClick && <ChevronRight size={16} className="vck-go" />}
           </div>
         ))}
       </div>
@@ -608,11 +624,32 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
         .vc-chev:hover { background: var(--bg2); color: var(--acc); }
         .vc-today { border: none; background: var(--accL); color: var(--acc); font-weight: 800; font-size: 12px; padding: 6px 13px; border-radius: 999px; cursor: pointer; margin-left: 2px; }
         .vc-today:hover { filter: brightness(.97); }
-        .vc-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
-        .vc-kof { font-size: 13px; font-weight: 700; color: var(--t3); margin-left: 1px; }
-        .vc-tiers { display: flex; flex-wrap: wrap; gap: 3px 8px; }
-        .vc-tiers i { font-style: normal; white-space: nowrap; }
-        .vc-tiers b { color: var(--t1); }
+        .vc-kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
+        .vck { position: relative; display: flex; align-items: center; gap: 12px; min-width: 0; padding: 14px 16px; border-radius: 16px; border: 1px solid color-mix(in srgb, var(--tone) 22%, var(--b1)); background: linear-gradient(135deg, color-mix(in srgb, var(--tone) 9%, var(--bg1)), var(--bg1) 70%); box-shadow: 0 1px 2px rgba(15,23,42,.04); }
+        .vck.tap { cursor: pointer; transition: transform .12s, box-shadow .12s; }
+        .vck.tap:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(15,23,42,.08); }
+        .vck-ico { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; flex-shrink: 0; color: #fff; background: var(--tone); box-shadow: 0 4px 10px color-mix(in srgb, var(--tone) 35%, transparent); }
+        .vck-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+        .vck-head { display: flex; align-items: baseline; gap: 6px; min-width: 0; white-space: nowrap; }
+        .vck-n { font-size: 24px; font-weight: 850; line-height: 1; letter-spacing: -.02em; color: var(--tone); }
+        .vck-of { font-size: 14px; font-weight: 700; color: var(--t3); }
+        .vck-lbl { font-size: 13px; font-weight: 700; color: var(--t1); overflow: hidden; text-overflow: ellipsis; }
+        .vck-sub { font-size: 11px; color: var(--t3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .vck-go { color: var(--tone); opacity: .6; flex-shrink: 0; }
+        .vck-pct { margin-left: auto; font-size: 11px; font-weight: 800; color: var(--tone); background: color-mix(in srgb, var(--tone) 14%, transparent); padding: 1px 7px; border-radius: 99px; }
+        .vck-top .vck-lbl { white-space: nowrap; }
+        .vck-top { grid-column: span 2; align-items: stretch; }
+        .vck-top .vck-ico { align-self: center; }
+        .vck-top .vck-main { justify-content: center; }
+        .vck-bar { height: 6px; border-radius: 99px; background: color-mix(in srgb, var(--tone) 14%, var(--b1)); overflow: hidden; }
+        .vck-bar i { display: block; height: 100%; border-radius: 99px; background: var(--tone); }
+        .vck-bar.sm { height: 4px; }
+        .vck-tiers { display: grid; grid-template-columns: repeat(2, minmax(84px, 1fr)); gap: 6px 12px; padding-left: 12px; border-left: 1px dashed color-mix(in srgb, var(--tone) 30%, var(--b1)); align-content: center; }
+        .vck-tier { display: grid; grid-template-columns: auto 1fr; align-items: baseline; gap: 2px 6px; font-size: 11px; }
+        .vck-tier span { font-weight: 800; color: var(--t3); letter-spacing: .04em; }
+        .vck-tier b { justify-self: end; color: var(--t1); font-variant-numeric: tabular-nums; }
+        .vck-tier em { font-style: normal; font-weight: 600; color: var(--t3); }
+        .vck-tier .vck-bar { grid-column: 1 / -1; }
         .vc-kpi { min-width: 0; }
         .vc-grid { display: grid; grid-template-columns: 1fr; gap: 14px; min-width: 0; }
         .vc-grid > .card { min-width: 0; }
@@ -734,8 +771,9 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
         .vc-n { --tone: var(--t1); display: inline-block; min-width: 28px; text-align: center; font-weight: 800; padding: 2px 8px; border-radius: 20px; color: var(--tone); background: color-mix(in srgb, var(--tone) 10%, transparent); }
         .vc-stack { display: flex; height: 4px; width: 90px; border-radius: 3px; overflow: hidden; background: var(--bg3); margin-top: 4px; gap: 1px; }
         .vc-missed { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); }
-        @media (max-width: 1180px) { .vc-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-        @media (max-width: 860px) { .vc-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } .vc-kpi:nth-child(3) { grid-column: 1 / -1; } }
+        @media (max-width: 1180px) { .vc-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+        @media (max-width: 860px) { .vc-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } .vck-top { grid-column: 1 / -1; } }
+        @media (max-width: 600px) { .vck { padding: 11px 12px; gap: 10px; } .vck-ico { width: 34px; height: 34px; border-radius: 10px; } .vck-n { font-size: 20px; } .vck-lbl { font-size: 12px; } .vck-sub { font-size: 10.5px; } .vck-top { flex-wrap: wrap; } .vck-tiers { flex-basis: 100%; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 8px 0 0; border-left: 0; border-top: 1px dashed color-mix(in srgb, var(--tone) 30%, var(--b1)); gap: 4px 10px; } }
         @media (max-width: 600px) {
           .vc-views { margin-left: 0; }
           .vc-views button { padding: 4px 9px; font-size: 11.5px; }
