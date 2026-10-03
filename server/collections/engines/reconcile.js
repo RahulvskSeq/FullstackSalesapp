@@ -157,14 +157,21 @@ const toObj = m => m instanceof Map ? Object.fromEntries(m) : (m || {});
  * each column stands alone, so every column's drop is payment.
  * `trustColumns: false` falls back to the total (a file whose columns moved
  * for everyone is on a different basis, not a day of payments).
+ *
+ * Only months that are in BOTH statements are compared. When a new month
+ * starts, the oldest column drops off the file (Jul/Aug/Sep → Aug/Sep/Oct);
+ * a column that is simply gone is not money that came — reading it as 0 once
+ * booked crores that never arrived.
  */
 export function observedPayment(prevBuckets, curBuckets, prevTotal, curTotal, mode, { trustColumns = true } = {}) {
   const net = Math.max(0, (Number(prevTotal) || 0) - (Number(curTotal) || 0));
   if (!trustColumns) return { observed: net, hidden: 0 };
   const pb = toObj(prevBuckets), cb = toObj(curBuckets);
-  const periods = [...new Set([...Object.keys(pb), ...Object.keys(cb)])].sort();
+  const curLast = Object.keys(cb).sort().at(-1);
+  const common = Object.keys(pb).filter(p => Object.prototype.hasOwnProperty.call(cb, p)).sort();
   const drop = p => Math.max(0, (Number(pb[p]) || 0) - (Number(cb[p]) || 0));
-  const cols = mode === 'buckets' ? periods.reduce((s, p) => s + drop(p), 0) : Math.max(0, ...periods.slice(0, -1).map(drop));
+  // snapshot: cumulative columns, so the newest one also takes new bills — only the older common months show payment
+  const cols = mode === 'buckets' ? common.reduce((s, p) => s + drop(p), 0) : Math.max(0, ...common.filter(p => p !== curLast).map(drop));
   const observed = Math.max(net, cols);
   return { observed, hidden: observed - net };
 }
@@ -183,7 +190,9 @@ export async function columnShift(imp) {
   for (const r of rows) {
     const b = bals.get(String(r.matchedDealerId)); if (!b) continue; compared++;
     const pb = toObj(b.buckets), cb = toObj(r.buckets);
-    const older = [...new Set([...Object.keys(pb), ...Object.keys(cb)])].sort().slice(0, -1);
+    // months in both statements, not the newest — a column that dropped off the file did not 'move'
+    const curLast = Object.keys(cb).sort().at(-1);
+    const older = Object.keys(pb).filter(p => Object.prototype.hasOwnProperty.call(cb, p) && p !== curLast).sort();
     const rise = Math.max(0, ...older.map(p => (Number(cb[p]) || 0) - (Number(pb[p]) || 0)));
     const { hidden } = observedPayment(pb, cb, b.total, computeTotal(cb, imp.balanceMode), imp.balanceMode);
     if (rise > 0 || hidden > 0) { n++; if (examples.length < 5) examples.push(b.dealerName); }

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { classify, computeTotal, oldestPeriodOf, derivePriority, deriveStatus } from '../engines/reconcile.js';
+import { classify, computeTotal, oldestPeriodOf, derivePriority, deriveStatus, observedPayment } from '../engines/reconcile.js';
 
 test('classification table', () => {
   const c = (prevExists, prevTotal, curTotal, prior) => classify({ prevExists, prevTotal, curTotal, priorCycleStatus: prior });
@@ -55,4 +55,24 @@ test('status precedence', () => {
   assert.equal(deriveStatus({ total: 100, ageDays: 120 }, cyc, cfg, T), 'OVERDUE');
   assert.equal(deriveStatus({ total: 100, ageDays: 10 }, cyc, cfg, T), 'DUE');
   assert.equal(deriveStatus({ total: 100, ageDays: 10, lastFollowupAt: new Date('2026-07-01') }, cyc, cfg, T), 'DUE');
+});
+
+test('payment under new billing is read from the older columns', () => {
+  // M.A.PLY, 29 Sep → 3 Oct: paid 50,000, billed 12,600 in October, total only 37,400 lower
+  const prev = { '2026-07': 0, '2026-08': 250296, '2026-09': 702117 };
+  const cur  = { '2026-08': 200296, '2026-09': 652117, '2026-10': 664717 };
+  assert.deepEqual(observedPayment(prev, cur, 702117, 664717, 'snapshot'), { observed: 50000, hidden: 12600 });
+});
+
+test('a month column that drops off the file is not a payment', () => {
+  // Jul/Aug/Sep → Aug/Sep/Oct with nothing paid: July's 300,000 must not read as money that came
+  const prev = { '2026-07': 300000, '2026-08': 400000, '2026-09': 500000 };
+  const cur  = { '2026-08': 400000, '2026-09': 500000, '2026-10': 520000 };
+  assert.deepEqual(observedPayment(prev, cur, 500000, 520000, 'snapshot'), { observed: 0, hidden: 0 });
+  const bprev = { '2026-07': 300000, '2026-08': 100000 }, bcur = { '2026-08': 100000, '2026-09': 20000 };
+  assert.deepEqual(observedPayment(bprev, bcur, 400000, 120000, 'buckets'), { observed: 280000, hidden: 0 });
+});
+
+test('trustColumns off measures from the total only', () => {
+  assert.deepEqual(observedPayment({ '2026-08': 100 }, { '2026-08': 50, '2026-09': 70 }, 100, 70, 'snapshot', { trustColumns: false }), { observed: 30, hidden: 0 });
 });
