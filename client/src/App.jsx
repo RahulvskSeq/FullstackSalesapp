@@ -16566,8 +16566,8 @@ export default function App(){
     {id:'attendance',label:'Attendance',icon:Camera},
     // CRM is a collapsible group with Visits + Leads + Tasks as children.
     { group:'crm', label:'CRM', icon:Briefcase, children:[
-        // Visits is where a check-in outside the calendar happens — hence "Unplanned visit"
-        {id:'visits', label:'Unplanned visit', icon:ClipboardList},
+        // "Unplanned visit" is off the menu: visits are done from the calendar (its Unplanned
+        // visit box opens this screen in a pop-up). The screen itself stays — #/visits still works.
         {id:'calendar', label:'My visit calendar', icon:Calendar},
         {id:'tasks',  label:'Tasks',  icon:CheckSquare},
     ]},
