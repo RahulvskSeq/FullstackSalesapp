@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { X, ChevronRight, ChevronDown, Globe, Layers, Hash, Type, TrendingUp, Award, ArrowLeft, MapPin, Sun, Map as MapIcon } from 'lucide-react';
-import { MO, DEALER_TYPES } from '../constants';
+import { X, ChevronRight, ChevronDown, Globe, Layers, Hash, Type, TrendingUp, Award, ArrowLeft, MapPin, Sun, Map as MapIcon, CalendarRange, GitCompare, Shapes, Search } from 'lucide-react';
+import { MO as MO_CONST, DEALER_TYPES } from '../constants';
 import { StatusBadge } from './UI';   // per-status colours + palette-aware solid fill
 import { pct, spct, pclr, monthTarget } from '../utils';
 import { useMonth } from '../context';
@@ -41,7 +41,7 @@ const STATE_ALIASES = {
   'dadra and nagar haveli':'Dadra and Nagar Haveli and Daman and Diu','daman and diu':'Dadra and Nagar Haveli and Daman and Diu',
 };
 
-const normalizeState = s => {
+export const normalizeState = s => {
   if(!s) return null;
   const l = String(s).toLowerCase().trim();
   return STATE_ALIASES[l] || String(s).trim();
@@ -57,7 +57,7 @@ const HUBS = {
 };
 const hubStateSet = (hub) => new Set((HUBS[hub] || []).map(s => String(s).toLowerCase().trim()));
 
-const getFeatureStateName = feature => {
+export const getFeatureStateName = feature => {
   const p = feature?.properties || {};
   const raw = p.ST_NM || p.st_nm || p.NAME_1 || p.name || p.NAME || p.state || p.State || p.STATE || p.DISTRICT;
   return normalizeState(raw);
@@ -272,7 +272,7 @@ function themeIsLight(){
 // Diverging RED → GREEN heatmap (BI style): low/zero sales = red/salmon,
 // high sales = green, with a neutral light band in the middle.
 const GREEN_SCALE = ['#e79a9a','#ecb3ad','#e7d7bf','#dbe8cf','#bcdcb0','#95cc8c','#6fbf6f'];
-const colorForRatio = ratio => {
+export const colorForRatio = ratio => {
   if(!ratio || ratio <= 0) return '#e79a9a';   // no sales → red / salmon
   if(ratio <= 0.15) return '#ecb3ad';          // very low → light red
   if(ratio <= 0.35) return '#e7d7bf';          // low-mid → neutral
@@ -282,14 +282,14 @@ const colorForRatio = ratio => {
   return '#6fbf6f';                            // top → strong green
 };
 
-const fmtIN = n => {
+export const fmtIN = n => {
   if(n === null || n === undefined || isNaN(n)) return '0';
   const num = Number(n);
   if(num === 0) return '0';
   return num.toLocaleString('en-IN');
 };
 
-const shortName = name => {
+export const shortName = name => {
   if(!name) return '';
   const shorts = {
     'Jammu and Kashmir':'J&K','Himachal Pradesh':'H.P.','Uttar Pradesh':'U.P.',
@@ -301,6 +301,63 @@ const shortName = name => {
   return shorts[name] || name;
 };
 
+// ── Period (duration) ────────────────────────────────────────────────────
+// Every figure on the map is a sum over a run of months. The presets count
+// back from the month chosen at the top of the app; Trend compares the
+// period with the same number of months just before it.
+export const PERIODS = [
+  ['month','Selected month'], ['prev','Previous month'], ['3m','Last 3 months'], ['6m','Last 6 months'],
+  ['quarter','This quarter'], ['fy','Financial year to date'], ['custom','Custom range…'],
+];
+const MON3 = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+const monthNum = lbl => MON3.indexOf(String(lbl||'').slice(0,3).toLowerCase()) + 1;   // 1–12, 0 = unknown
+const spanLabel = (MO, idx) => !idx.length ? '' : idx.length === 1 ? MO[idx[0]] : MO[idx[0]] + ' – ' + MO[idx[idx.length-1]];
+export function periodRange(key, sel, MO, from, to){
+  const n = MO.length;
+  sel = Math.max(0, Math.min(n - 1, sel));
+  let a = sel, b = sel;
+  const m = monthNum(MO[sel]);
+  if(key === 'prev')          { a = b = sel - 1; }
+  else if(key === '3m')       { a = sel - 2; }
+  else if(key === '6m')       { a = sel - 5; }
+  else if(key === 'quarter')  { a = m ? sel - ((m - 1) % 3) : sel; }
+  else if(key === 'fy')       { a = m ? sel - ((m + 12 - 4) % 12) : sel; }   // April starts the year
+  else if(key === 'custom')   { a = from ?? sel; b = to ?? sel; if(a > b) [a, b] = [b, a]; }
+  a = Math.max(0, Math.min(n - 1, a)); b = Math.max(a, Math.min(n - 1, b));
+  const idx = []; for(let i = a; i <= b; i++) idx.push(i);
+  const prev = []; for(let i = a - idx.length; i < a; i++) if(i >= 0) prev.push(i);
+  return { idx, prev, prevFull: prev.length === idx.length, label: spanLabel(MO, idx), prevLabel: spanLabel(MO, prev), sig: a + ':' + b };
+}
+// Sum one dealer's months over a period. With a salesman chosen, only the
+// months that salesman owned the dealer count (a handed-over dealer's older
+// months were someone else's sales).
+export const sumMonths = (d, idx, sm) => {
+  let t = 0;
+  for(const i of idx){
+    if(sm && (d.monthSalesman?.[i] || d.salesman) !== sm) continue;
+    t += Number(d.months?.[i]) || 0;
+  }
+  return t;
+};
+// Trend colours: red = down, green = up, grey = no change.
+const UP_SCALE   = ['#dbe8cf','#bcdcb0','#95cc8c','#6fbf6f','#4ea65a'];
+const DOWN_SCALE = ['#f3d6d2','#ecb3ad','#e79a9a','#de7b7b','#cf5b5b'];
+export const colorForGrowth = (diff, maxAbs) => {
+  if(!diff) return '#e5e7eb';
+  const r = Math.min(1, Math.abs(diff) / Math.max(1, maxAbs));
+  const k = Math.min(4, Math.floor(r * 5));
+  return diff > 0 ? UP_SCALE[k] : DOWN_SCALE[k];
+};
+export const signed = n => (n > 0 ? '+' : n < 0 ? '−' : '') + fmtIN(Math.abs(n));
+// Which KPI bucket a dealer falls in (from the calculated tier).
+const bucketOf = d => {
+  const s = (d.perfStatus || '').toUpperCase();
+  if(s === 'TOP PERFORMER' || s === 'PRIORITY ACCOUNT') return 'star';
+  if(s === 'DEAD')               return 'lost';
+  if(s.includes('INACTIVE'))     return 'inactive';
+  return 'active';
+};
+
 // CSS for map labels + tooltips (DARK theme)
 const MAP_CSS = `
   .stp-mapview { font-family: Inter, system-ui, sans-serif; }
@@ -310,6 +367,50 @@ const MAP_CSS = `
   @media (min-width: 1000px) {
     .stp-split { grid-template-columns: minmax(0,1fr) 400px; }
     /* Right column flows to its full height (no cropping) — the page scrolls. */
+  }
+  .stp-period { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .stp-kpi-click { transition: border-color .15s, transform .15s; }
+  .stp-kpi-click:hover { border-color: var(--acc) !important; transform: translateY(-1px); }
+  .stp-legend-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:10px 14px; border-top:1px solid var(--b1); }
+  .stp-legend { display:flex; align-items:center; gap:3px; flex-wrap:wrap; font-size:11px; color:var(--t3); font-weight:700; flex:1; min-width:0; }
+  .stp-legend i { width:22px; height:10px; border-radius:2px; display:inline-block; }
+  .stp-legend span { margin:0 4px; }
+  .stp-legend em { font-style:normal; font-weight:500; margin-left:8px; }
+  .stp-compare-btn { display:inline-flex; align-items:center; gap:6px; font-size:12px; }
+  .stp-terr { padding:12px !important; }
+  .stp-terr-empty { font-size:12px; color:var(--t3); line-height:1.5; padding:4px 2px; }
+  .stp-terr-chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .stp-terr-chip { display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:700; color:var(--t1);
+    padding:3px 4px 3px 10px; border-radius:20px; border:1.5px dashed #2563eb; background:color-mix(in srgb,#2563eb 8%,transparent); }
+  .stp-terr-chip small { font-size:9.5px; color:var(--t3); font-weight:600; }
+  .stp-terr-chip b { color:var(--grn); }
+  .stp-terr-chip button { background:none; border:none; color:var(--t3); cursor:pointer; display:flex; padding:2px; }
+  .stp-terr-kpis { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-top:10px; }
+  .stp-terr-kpis div { background:var(--bg2); border:1px solid var(--b1); border-radius:8px; padding:6px 8px; min-width:0; }
+  .stp-terr-kpis span { display:block; font-size:9.5px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--t3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .stp-terr-kpis b { font-size:14px; color:var(--t1); }
+  .stp-list-ov { position:fixed; inset:0; background:rgba(6,6,16,.6); backdrop-filter:blur(3px); z-index:1900; display:flex; align-items:center; justify-content:center; padding:16px; }
+  .stp-list { background:var(--bg1); border:1px solid var(--b1); border-radius:16px; width:900px; max-width:100%; max-height:88vh; display:flex; flex-direction:column; box-shadow:0 24px 60px rgba(0,0,0,.4); }
+  .stp-list-head { display:flex; align-items:flex-start; gap:10px; padding:14px 16px 8px; }
+  .stp-list-title { font-size:15px; font-weight:800; color:var(--t1); }
+  .stp-list-sub { font-size:11.5px; color:var(--t3); margin-top:2px; }
+  .stp-x { background:none; border:none; color:var(--t3); cursor:pointer; }
+  .stp-list-search { display:flex; align-items:center; gap:8px; margin:0 16px 8px; padding:7px 10px; border:1px solid var(--b2); border-radius:10px; background:var(--bg2); color:var(--t3); }
+  .stp-list-search input { flex:1; border:none; outline:none; background:transparent; color:var(--t1); font-size:13px; }
+  .stp-list-body { overflow:auto; border-top:1px solid var(--b1); }
+  .stp-list-body table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  .stp-list-body th { position:sticky; top:0; background:var(--bg2); text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--t3); padding:8px 10px; z-index:1; }
+  .stp-list-body td { padding:8px 10px; border-bottom:1px solid var(--b1); color:var(--t2); white-space:nowrap; }
+  .stp-list-body tr { cursor:pointer; }
+  .stp-list-body tbody tr:hover { background:var(--bg2); }
+  .stp-list-body .r { text-align:right; }
+  .stp-list-body .nm { font-weight:700; color:var(--t1); white-space:normal; }
+  .stp-list-body .stpl-narrow { display:none; font-size:10.5px; color:var(--t3); }
+  @media (max-width: 640px) {
+    .stp-list-body .stpl-wide { display:none; }
+    .stp-list-body .stpl-narrow { display:block; }
+    .stp-terr-kpis { grid-template-columns:repeat(2,1fr); }
+    .stp-compare-btn { width:100%; justify-content:center; }
   }
   .stp-state-label, .stp-city-label {
     background: transparent !important;
@@ -377,10 +478,10 @@ const MAP_CSS = `
 // ────────────────────────────────────────────────────────────────────────────
 // Reusable UI bits (dark)
 // ────────────────────────────────────────────────────────────────────────────
-const KpiCell = ({label, value, color=T.acc, sub}) => (
-  <div style={{
+const KpiCell = ({label, value, color=T.acc, sub, onClick}) => (
+  <div onClick={onClick} title={onClick ? 'Tap to see the dealers' : undefined} className={onClick ? 'stp-kpi-click' : undefined} style={{
     background:T.bg3, borderRadius:6, padding:'8px 10px',
-    border:'1px solid '+T.bd1, minWidth:0, textAlign:'center'
+    border:'1px solid '+T.bd1, minWidth:0, textAlign:'center', cursor:onClick ? 'pointer' : undefined,
   }}>
     <div style={{fontSize:10, color:T.blue, fontWeight:700, marginBottom:4, letterSpacing:'.02em'}}>{label}</div>
     <div style={{fontSize:18, fontWeight:800, color, lineHeight:1.1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{value}</div>
@@ -421,8 +522,11 @@ const Ini = ({ name, size }) => (
   </span>
 );
 
+const MapCompare = React.lazy(() => import('./MapCompare'));
+
 export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDealer }) {
-  const { selectedMonthIdx } = useMonth();
+  const { selectedMonthIdx, MO: ctxMO } = useMonth();
+  const MO = ctxMO || MO_CONST;
 
   const mapRef     = useRef(null);
   const mapObjRef  = useRef(null);
@@ -510,6 +614,41 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
   const [cityPickOpen, setCityPickOpen] = useState(false);
   const [citySearch, setCitySearch] = useState('');
 
+  // ── Period, salesman, trend, territory, lists, compare ─────────────────
+  const [periodKey, setPeriodKey]   = useState('month');
+  const [customFrom, setCustomFrom] = useState(null);
+  const [customTo, setCustomTo]     = useState(null);
+  const [smFilter, setSmFilter]     = useState('');      // '' = every salesman
+  const [trendOn, setTrendOn]       = useState(false);   // colour by growth vs the previous period
+  const [territoryMode, setTerritoryMode] = useState(false); // tap regions to collect them
+  const [territory, setTerritory]   = useState([]);      // [{ key, type:'state'|'district', name, ids:[] }]
+  const [listView, setListView]     = useState(null);    // { title, dealers } — the "List customers" popup
+  const [listQ, setListQ]           = useState('');
+  const [compareOpen, setCompareOpen] = useState(false);
+  const period = useMemo(() => periodRange(periodKey, selectedMonthIdx, MO, customFrom, customTo),
+    [periodKey, selectedMonthIdx, MO, customFrom, customTo]);
+  const trendLive = trendOn && period.prevFull;
+  // One signature for every memo/effect that sums months.
+  const periodSig = period.sig + '|' + smFilter;
+  const achOf  = d => sumMonths(d, period.idx, smFilter);
+  const prevOf = d => sumMonths(d, period.prev, smFilter);
+  const tgtOf  = d => period.idx.reduce((t, i) => (smFilter && (d.monthSalesman?.[i] || d.salesman) !== smFilter) ? t : t + (Number(monthTarget(d, i)) || 0), 0);
+  // Last month (up to the period's end) the dealer bought anything.
+  const lastBilled = d => { for(let i = period.idx[period.idx.length-1]; i >= 0; i--) if((Number(d.months?.[i]) || 0) > 0) return MO[i]; return ''; };
+  const salesmanOptions = useMemo(() => {
+    const ids = new Set();
+    (allDealers || []).forEach(d => { if(d.salesman) ids.add(d.salesman); });
+    return [...ids].map(id => ({ id, name: users?.[id]?.name || id })).sort((a,b) => a.name.localeCompare(b.name));
+  }, [allDealers, users]);
+  const territoryModeRef = useRef(false); territoryModeRef.current = territoryMode;
+  const toggleTerritory = (type, name, list) => {
+    const key = type + ':' + String(name).toLowerCase();
+    setTerritory(t => t.some(r => r.key === key) ? t.filter(r => r.key !== key)
+      : [...t, { key, type, name, ids: (list || []).map(d => d.id) }]);
+  };
+  const toggleTerritoryRef = useRef(toggleTerritory); toggleTerritoryRef.current = toggleTerritory;
+  const territorySig = territory.map(r => r.key).join(',');
+
   // Distinct legacy "category" values present in the data (for the category dropdown).
   const categoryOptions = useMemo(() => {
     const s = new Set();
@@ -532,8 +671,13 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
     if(categoryFilter){
       list = list.filter(d => (d.category || '').trim() === categoryFilter);
     }
+    if(smFilter){
+      // his dealers now, plus any he owned during the period (or the trend period)
+      const own = [...period.idx, ...period.prev];
+      list = list.filter(d => d.salesman === smFilter || own.some(i => d.monthSalesman?.[i] === smFilter));
+    }
     return list;
-  }, [allDealers, hub, dealerTypeFilter, categoryFilter]);
+  }, [allDealers, hub, dealerTypeFilter, categoryFilter, smFilter, period]);
 
   // Reset the drill-down whenever any top-level filter changes.
   useEffect(() => { setSelected(null); setSelectedCity(null); setFocusArea(null); }, [hub, dealerTypeFilter, categoryFilter]);
@@ -553,10 +697,11 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
       const norm = normalizeState(d.state);
       if(!norm) return;
       const key = norm.toLowerCase();
-      if(!map[key]) map[key] = { name:norm, dealers:[], total:0, target:0, bySM:{} };
-      const ach = Number(d.months?.[selectedMonthIdx] || 0);
-      const tgt = monthTarget(d, selectedMonthIdx);
+      if(!map[key]) map[key] = { name:norm, dealers:[], total:0, target:0, prev:0, bySM:{} };
+      const ach = achOf(d);
+      const tgt = tgtOf(d);
       map[key].dealers.push(d);
+      map[key].prev   += prevOf(d);
       map[key].total  += ach;
       map[key].target += tgt;
       const smKey = d.salesman || 'Unassigned';
@@ -565,16 +710,17 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
       map[key].bySM[smKey].n += 1;
     });
     return map;
-  }, [dealers, selectedMonthIdx]);
+  }, [dealers, periodSig]);
 
   const maxStateVal = useMemo(() => {
     const vals = Object.values(stateData).map(d => {
+      if(trendLive)                  return Math.abs(d.total - d.prev);
       if(viewMode === 'dealers')     return d.dealers.length;
       if(viewMode === 'achievement') return d.target ? Math.round((d.total/d.target)*100) : 0;
       return d.total;
     });
     return Math.max(...vals, 1);
-  }, [stateData, viewMode]);
+  }, [stateData, viewMode, trendLive]);
 
   // ── Aggregate cities for the SELECTED state ──────────────────────────────
   const cityData = useMemo(() => {
@@ -587,15 +733,15 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
       if(!city) return;
       const key = city.toLowerCase();
       if(!map[key]) map[key] = { name:city, dealers:[], total:0, target:0, qty:0 };
-      const ach = Number(d.months?.[selectedMonthIdx] || 0);
-      const tgt = monthTarget(d, selectedMonthIdx);
+      const ach = achOf(d);
+      const tgt = tgtOf(d);
       map[key].dealers.push(d);
       map[key].total  += ach;
       map[key].target += tgt;
       if(ach > 0) map[key].qty++;
     });
     return Object.values(map).sort((a,b) => b.total - a.total);
-  }, [selected, stateData, selectedMonthIdx]);
+  }, [selected, stateData, periodSig]);
 
   const maxCityVal = useMemo(() => Math.max(1, ...cityData.map(c => c.total)), [cityData]);
 
@@ -603,18 +749,15 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
   const kpis = useMemo(() => {
     const det  = selected ? stateData[selected.toLowerCase()] : null;
     const list = det ? det.dealers : dealers;
-    const k = { active:0, star:0, inactive:0, lost:0, total:list.length, sales:0, target:0, qty:0 };
+    const k = { active:0, star:0, inactive:0, lost:0, total:list.length, sales:0, target:0, qty:0, prev:0 };
     list.forEach(d => {
       // Activity buckets come from the calculated tier, not the rep's Potential
       // label. 'RISING STAR' is a performance tier and must not fall into the
       // star bucket, so match it before the generic STAR test.
-      const s = (d.perfStatus || '').toUpperCase();
-      if(s === 'TOP PERFORMER' || s === 'PRIORITY ACCOUNT') k.star++;
-      else if(s === 'DEAD')                                 k.lost++;
-      else if(s.includes('INACTIVE'))                       k.inactive++;
-      else                                                  k.active++;
-      const ach = Number(d.months?.[selectedMonthIdx] || 0);
-      const tgt = monthTarget(d, selectedMonthIdx);
+      k[bucketOf(d)]++;
+      k.prev += prevOf(d);
+      const ach = achOf(d);
+      const tgt = tgtOf(d);
       k.sales  += ach;
       k.target += tgt;
       if(ach > 0) k.qty++;
@@ -622,7 +765,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
     k.ach = k.target ? Math.round((k.sales / k.target) * 100) : 0;
     k.avgSales = k.total ? Math.round(k.sales / k.total) : 0;
     return k;
-  }, [dealers, stateData, selected, selectedMonthIdx]);
+  }, [dealers, stateData, selected, periodSig]);
 
   const topStates = useMemo(
     () => Object.values(stateData).sort((a,b) => b.total - a.total).slice(0, 12),
@@ -702,14 +845,14 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
     map.createPane('districtPane'); map.getPane('districtPane').style.zIndex = 550;
 
     // Base — dark land with no text labels
-    baseTileRef.current = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
-      attribution:'© CartoDB', subdomains:'abcd', maxZoom:19,
+    baseTileRef.current = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+      attribution:'© Esri', maxZoom:16,
     }).addTo(map);
 
     // Overlay — only the place labels (cities, towns, roads, water features)
     placeLayerRef.current = L.tileLayer(
-      'https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png',
-      { attribution:'', subdomains:'abcd', maxZoom:19, pane:'placesPane' }
+      'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
+      { attribution:'', maxZoom:16, pane:'placesPane' }
     ).addTo(map);
 
     mapObjRef.current = map;
@@ -841,7 +984,8 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
   }, [showPlaces]);
 
   // ── Light ("clear") vs dark basemap ─────────────────────────────────────
-  // Swaps the CartoDB tile set so districts + green fills stand out on a
+  // Swaps the Esri tile set (Carto's free tiles now demand an API key and
+  // draw an "API KEY REQUIRED" watermark instead of the map) so districts + green fills stand out on a
   // clean white background (like a BI dashboard), without re-creating the map.
   useEffect(() => {
     if(!leafletReady || !mapObjRef.current) return;
@@ -853,14 +997,14 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
           // the region polygons + green fills on a clean flat background.
           if(map.hasLayer(baseTileRef.current)) map.removeLayer(baseTileRef.current);
         } else {
-          baseTileRef.current.setUrl('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png');
+          baseTileRef.current.setUrl('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}');
           if(!map.hasLayer(baseTileRef.current)) baseTileRef.current.addTo(map);
         }
       }
       if(placeLayerRef.current){
         placeLayerRef.current.setUrl(lightMap
-          ? 'https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png'
-          : 'https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png');
+          ? 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}'
+          : 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}');
       }
       if(mapRef.current) mapRef.current.style.background = lightMap ? '#eef2f0' : T.bg0;
     } catch {}
@@ -910,6 +1054,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
 
     const getVal = key => {
       const d = stateData[key]; if(!d) return 0;
+      if(trendLive)                  return d.total - d.prev;
       if(viewMode === 'dealers')     return d.dealers.length;
       if(viewMode === 'achievement') return d.target ? Math.round((d.total/d.target)*100) : 0;
       return d.total;
@@ -935,13 +1080,15 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
         if(drillLevel === 'state' && !isSel){
           return { color:'transparent', weight:0, fillOpacity:0, opacity:0 };
         }
+        const inTerr = key && territory.some(r => r.key === 'state:' + key);
         return {
           // BI style → thin black borders between states, thick black on the
-          // selected one.
-          color: isSel ? '#111827' : (lightMap ? '#333333' : T.bd2),
-          weight: isSel ? 3 : (lightMap ? 0.9 : 0.8),
+          // selected one; territory states get a blue dashed edge.
+          color: inTerr ? '#2563eb' : isSel ? '#111827' : (lightMap ? '#333333' : T.bd2),
+          weight: inTerr ? 3 : isSel ? 3 : (lightMap ? 0.9 : 0.8),
+          dashArray: inTerr ? '6 4' : '',
           // selected state: light fill so the districts show through clearly
-          fillColor: isSel ? colorForRatio(ratio || 0.4) : colorForRatio(ratio),
+          fillColor: isSel ? colorForRatio(ratio || 0.4) : trendLive ? colorForGrowth(value, maxStateVal) : colorForRatio(ratio),
           fillOpacity: isSel ? 0.35 : (lightMap ? 0.92 : 0.82),
           opacity: 1,
         };
@@ -952,9 +1099,15 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
         const d    = key ? stateData[key] : null;
         const sales       = d?.total || 0;
         const dealerCount = d?.dealers?.length || 0;
-        const qty         = (d?.dealers || []).filter(x => Number(x.months?.[selectedMonthIdx]||0) > 0).length;
+        const qty         = (d?.dealers || []).filter(x => achOf(x) > 0).length;
         const target      = d?.target || 0;
         const achPct      = target ? Math.round((sales/target)*100) : 0;
+        const diff        = sales - (d?.prev || 0);
+        const diffPct     = d?.prev ? Math.round((diff / d.prev) * 100) : null;
+        const trendLine   = period.prevFull
+          ? '<div style="font-size:11px;color:#a5a4b8;margin-top:3px"><span style="font-weight:700;color:#e2e0f0">vs ' + period.prevLabel + ' :</span> ' +
+            '<span style="font-weight:800;color:' + (diff > 0 ? '#4ade80' : diff < 0 ? '#f87171' : '#a5a4b8') + '">' + signed(diff) + (diffPct !== null ? ' (' + (diffPct > 0 ? '+' : '') + diffPct + '%)' : '') + '</span></div>'
+          : '';
 
         layer.bindTooltip(
           '<div style="font-family:Inter,system-ui;background:#0c0c1e;border-radius:8px;padding:10px 12px;min-width:170px;color:#e2e0f0">' +
@@ -966,7 +1119,8 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
             '<span style="color:#f59e0b;font-weight:700">Q : ' + qty + '</span>' +
           '</div>' +
           '<div style="font-size:11px;color:#a5a4b8"><span style="font-weight:700;color:#e2e0f0">Count :</span> ' + dealerCount + (target ? ' | ' + achPct + '%' : '') + '</div>' +
-          (drillLevel === 'india' ? '<div style="font-size:10px;color:#6c6b85;margin-top:6px;padding-top:5px;border-top:1px dashed #1e1e38">Click to see city-wise sales →</div>' : '') +
+          trendLine +
+          (drillLevel === 'india' ? '<div style="font-size:10px;color:#6c6b85;margin-top:6px;padding-top:5px;border-top:1px dashed #1e1e38">' + (territoryModeRef.current ? 'Tap to add to / remove from the territory' : 'Click to see city-wise sales →') + '</div>' : '') +
           '</div>',
           { sticky:true, opacity:1, className:'stp-tooltip', direction:'top' }
         );
@@ -980,6 +1134,10 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
           mouseout: e => { if(stateLyrRef.current) stateLyrRef.current.resetStyle(e.target); },
           click: e => {
             if(drillLevel === 'state' && (!d || d.name.toLowerCase() !== selected.toLowerCase())) return;
+            if(territoryModeRef.current && drillLevel === 'india'){
+              if(name) toggleTerritoryRef.current('state', d?.name || name, d?.dealers || []);
+              return;
+            }
             const target = d?.name || name;
             if(target){
               setSelected(target);
@@ -1017,7 +1175,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
           const tmp    = L.geoJSON(feature);
           const center = tmp.getBounds().getCenter();
           const sn     = shortName(name || '?');
-          const showVal = showCount && val > 0;
+          const showVal = showCount && (trendLive ? val !== 0 : val > 0);
           const showNm  = showNames;
           if(!showVal && !showNm) return;
           const label = L.tooltip({
@@ -1027,7 +1185,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
           .setContent(
             '<div class="stp-state-label-inner">' +
               (showNm ? sn : '') +
-              (showVal ? '<span class="lbl-val">' + fmtIN(val) + '</span>' : '') +
+              (showVal ? '<span class="lbl-val"' + (trendLive && val < 0 ? ' style="color:#dc2626"' : '') + '>' + (trendLive ? signed(val) : fmtIN(val)) + '</span>' : '') +
             '</div>'
           )
           .setLatLng(center);
@@ -1036,7 +1194,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
         } catch {}
       });
     }
-  }, [tokenVer, leafletReady, geoReady, stateData, viewMode, maxStateVal, selected, showLabels, showCount, showNames, drillLevel, selectedMonthIdx, focusArea, lightMap]);
+  }, [tokenVer, leafletReady, geoReady, stateData, viewMode, maxStateVal, selected, showLabels, showCount, showNames, drillLevel, periodSig, focusArea, lightMap, trendLive, territorySig]);
 
   // ── Render CITY markers when drilled in ──────────────────────────────────
   useEffect(() => {
@@ -1179,8 +1337,8 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
       if (!groups.has(pin)) groups.set(pin, { pin, dealers: [], total: 0, target: 0, latSum: 0, lngSum: 0, geoCount: 0, city: d.city || '' });
       const g = groups.get(pin);
       g.dealers.push(d);
-      g.total  += Number(d.months?.[selectedMonthIdx] || 0);
-      g.target += Number(monthTarget(d, selectedMonthIdx) || 0);
+      g.total  += achOf(d);
+      g.target += tgtOf(d);
       if (Number.isFinite(d.locLat) && Number.isFinite(d.locLng)) {
         g.latSum += d.locLat;
         g.lngSum += d.locLng;
@@ -1310,7 +1468,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
     // later in the component, so listing it here would hit a temporal-dead-zone
     // ReferenceError during render. focusArea + selectedMonthIdx already cover
     // the cases where the district's dealers change.
-  }, [leafletReady, drillLevel, selectedCity, cityData, selectedMonthIdx, mapZoom, dealers, focusArea]);
+  }, [leafletReady, drillLevel, selectedCity, cityData, periodSig, mapZoom, dealers, focusArea]);
 
   // ── Lazy-load India DISTRICT GeoJSON (only when first drill-down) ────────
   useEffect(() => {
@@ -1467,18 +1625,23 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
           cityMap[c].forEach(d => { if(!matched.includes(d)) matched.push(d); });
         }
       });
-      let total = 0, target = 0;
+      let total = 0, target = 0, prev = 0;
       matched.forEach(d => {
-        total  += Number(d.months?.[selectedMonthIdx] || 0);
-        target += monthTarget(d, selectedMonthIdx);
+        total  += achOf(d);
+        target += tgtOf(d);
+        prev   += prevOf(d);
       });
-      out[key] = { name:dname, dealers:matched, total, target };
+      out[key] = { name:dname, dealers:matched, total, target, prev };
     });
     return out;
-  }, [selected, districtsReady, stateData, selectedMonthIdx]);
+  }, [selected, districtsReady, stateData, periodSig]);
 
   const maxDistrictVal = useMemo(
     () => Math.max(1, ...Object.values(districtData).map(d => d.total)),
+    [districtData]
+  );
+  const maxDistrictDiff = useMemo(
+    () => Math.max(1, ...Object.values(districtData).map(d => Math.abs(d.total - (d.prev || 0)))),
     [districtData]
   );
 
@@ -1513,13 +1676,15 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
         }
         const d     = districtData[dname];
         const ratio = d && maxDistrictVal ? d.total / maxDistrictVal : 0;
+        const inTerr = territory.some(r => r.key === 'district:' + dname);
         return {
           // BI style: solid thin black borders + red↔green diverging fill
           // (low/zero = red, high = green) so every district reads as a heat cell.
-          color: '#333333',
-          weight: 0.9,
-          dashArray: '',
-          fillColor: colorForRatio(d && d.total > 0 ? ratio : 0),
+          // Trend: red = fell, green = grew vs the previous period.
+          color: inTerr ? '#2563eb' : '#333333',
+          weight: inTerr ? 3 : 0.9,
+          dashArray: inTerr ? '6 4' : '',
+          fillColor: trendLive ? colorForGrowth(d ? d.total - (d.prev || 0) : 0, maxDistrictDiff) : colorForRatio(d && d.total > 0 ? ratio : 0),
           fillOpacity: 0.9,
           opacity: 1,
         };
@@ -1532,11 +1697,14 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
         const cnt   = d?.dealers?.length || 0;
         const tgt   = d?.target || 0;
         const pctv  = tgt ? Math.round((total/tgt)*100) : 0;
+        const diff  = total - (d?.prev || 0);
         layer.bindTooltip(
           '<div style="font-family:Inter,system-ui;background:#0c0c1e;border-radius:8px;padding:9px 12px;min-width:160px;color:#e2e0f0">' +
           '<div style="font-size:12px;font-weight:800;color:'+T.acc+';margin-bottom:5px;padding-bottom:4px;border-bottom:1px solid #1e1e38">' + dname + ' District</div>' +
           '<div style="font-size:11px;color:#a5a4b8;margin-bottom:2px"><b style="color:#f59e0b">Sales :</b> V : ' + fmtIN(total) + '</div>' +
           '<div style="font-size:11px;color:#a5a4b8"><b style="color:#f59e0b">Dealers :</b> ' + cnt + (tgt ? ' | ' + pctv + '% of target' : '') + '</div>' +
+          (period.prevFull ? '<div style="font-size:11px;color:#a5a4b8;margin-top:2px"><b style="color:#e2e0f0">vs ' + period.prevLabel + ' :</b> <b style="color:' + (diff > 0 ? '#4ade80' : diff < 0 ? '#f87171' : '#a5a4b8') + '">' + signed(diff) + '</b></div>' : '') +
+          (territoryModeRef.current ? '<div style="font-size:10px;color:#93c5fd;margin-top:5px">Tap to add to / remove from the territory</div>' : '') +
           (cnt === 0 ? '<div style="font-size:10px;color:#6c6b85;margin-top:5px;padding-top:4px;border-top:1px dashed #1e1e38">No dealers in this district yet</div>' : '') +
           '</div>',
           { sticky:true, opacity:1, className:'stp-tooltip', direction:'top' }
@@ -1544,8 +1712,13 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
         layer.on({
           mouseover: e => { e.target.setStyle({ weight:2.5, fillOpacity:0.75, dashArray:'' }); setHoverDistrict(dname); },
           mouseout:  e => { if(districtLyrRef.current) districtLyrRef.current.resetStyle(e.target); setHoverDistrict(null); },
-          // Open (isolate) the clicked district as its own map view.
+          // Open (isolate) the clicked district as its own map view —
+          // or, in Territory mode, add/remove it from the territory.
           click:     e => {
+            if(territoryModeRef.current && focusArea?.type !== 'district'){
+              toggleTerritoryRef.current('district', dname, d?.dealers || []);
+              return;
+            }
             const geom = feature.geometry, holes = [];
             if(geom?.type === 'Polygon')           geom.coordinates.forEach((r,i)=>{ if(i===0) holes.push(r); });
             else if(geom?.type === 'MultiPolygon') geom.coordinates.forEach(p=>holes.push(p[0]));
@@ -1579,7 +1752,9 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
         })
         .setContent(
           '<div class="stp-state-label-inner" style="font-size:10px">' + dname +
-          (d && d.total > 0 ? '<span class="lbl-val" style="font-size:9px">' + fmtIN(d.total) + '</span>' : '') +
+          (trendLive
+            ? (d && d.total - (d.prev || 0) !== 0 ? '<span class="lbl-val" style="font-size:9px' + (d.total < (d.prev || 0) ? ';color:#dc2626' : '') + '">' + signed(d.total - (d.prev || 0)) + '</span>' : '')
+            : (d && d.total > 0 ? '<span class="lbl-val" style="font-size:9px">' + fmtIN(d.total) + '</span>' : '')) +
           '</div>'
         )
         .setLatLng(center);
@@ -1587,7 +1762,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
         districtLblRef.current.push(label);
       } catch {}
     });
-  }, [leafletReady, drillLevel, selected, showDistricts, districtsReady, districtData, maxDistrictVal, focusArea]);
+  }, [leafletReady, drillLevel, selected, showDistricts, districtsReady, districtData, maxDistrictVal, maxDistrictDiff, focusArea, trendLive, territorySig]);
 
   // ── Render SUB-DISTRICT (taluka) AREAS when a district is opened ──────────
   // Shows each taluka's border + name, heat-colored by the sales of dealers
@@ -1621,7 +1796,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
     dealersInDist.forEach(d => {
       const c = (d.city || '').trim().toLowerCase();
       if(!c) return;
-      salesBySub[c] = (salesBySub[c] || 0) + Number(d.months?.[selectedMonthIdx] || 0);
+      salesBySub[c] = (salesBySub[c] || 0) + achOf(d);
     });
     const maxSub = Math.max(1, ...Object.values(salesBySub));
 
@@ -1666,7 +1841,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
         subLblRef.current.push(lbl);
       } catch {}
     });
-  }, [leafletReady, focusArea, subReady, districtData, selectedMonthIdx]);
+  }, [leafletReady, focusArea, subReady, districtData, periodSig]);
 
   const districtList = useMemo(
     () => Object.values(districtData).sort((a,b) => b.total - a.total),
@@ -1706,6 +1881,18 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
   // The opened district's aggregated data ({ name, dealers, total, target }).
   const districtObj = focusArea?.type === 'district' ? districtData[focusArea.name.toLowerCase()] : null;
 
+  // KPI tiles → "List customers" popup, same dealers the KPI counted.
+  const kpiList = selected ? (stateData[selected.toLowerCase()]?.dealers || []) : dealers;
+  const openList = (bucket) => {
+    const where = selected || 'All India';
+    const names = { active:'Active', star:'Star', inactive:'Inactive', lost:'Lost', billed:'Billed', all:'All dealers' };
+    const rows = bucket === 'all'    ? kpiList
+               : bucket === 'billed' ? kpiList.filter(d => achOf(d) > 0)
+               :                       kpiList.filter(d => bucketOf(d) === bucket);
+    setListQ('');
+    setListView({ title: names[bucket] + ' · ' + where, dealers: rows });
+  };
+
   // ── Summary box data — scoped to the CURRENT view (district → city → state → India)
   const viewDealers =
       focusArea?.type === 'district' ? (districtObj?.dealers || [])
@@ -1717,8 +1904,8 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
     : selectedCity                   ? selectedCity
     : selected                       ? selected
     :                                  'All India';
-  const viewSales   = viewDealers.reduce((s,d)=>s+Number(d.months?.[selectedMonthIdx]||0),0);
-  const viewBilled  = viewDealers.filter(d=>Number(d.months?.[selectedMonthIdx]||0)>0).length;
+  const viewSales   = viewDealers.reduce((s,d)=>s+achOf(d),0);
+  const viewBilled  = viewDealers.filter(d=>achOf(d)>0).length;
   const viewSalesmen= [...new Set(viewDealers.map(d=>d.salesman).filter(Boolean))];
   const viewZones   = [...new Set(viewDealers.map(d=>(d.zone||'').trim()).filter(Boolean))];
 
@@ -1780,7 +1967,27 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
           }}><ArrowLeft size={11}/>Back to India</button>
         )}
         <div style={{flex:1}}/>
-        <span style={{fontSize:11, color:T.t2}}>Period: <b style={{color:T.acc}}>{MO[selectedMonthIdx]}</b></span>
+        {/* ── Duration: preset or custom month range ── */}
+        <div className="stp-period">
+          <CalendarRange size={14} color={T.acc}/>
+          <select value={periodKey} onChange={e => {
+              const k = e.target.value;
+              if(k === 'custom' && customFrom === null){ setCustomFrom(period.idx[0]); setCustomTo(period.idx[period.idx.length-1]); }
+              setPeriodKey(k);
+            }} title="Period" style={{background:T.bg1, color:T.t1, border:'1px solid '+T.bd2, borderRadius:8, padding:'6px 10px', fontSize:12, fontWeight:700, cursor:'pointer'}}>
+            {PERIODS.map(([k,l]) => <option key={k} value={k}>{l}</option>)}
+          </select>
+          {periodKey === 'custom' && (<>
+            <select value={customFrom ?? period.idx[0]} onChange={e => setCustomFrom(+e.target.value)} style={{background:T.bg1, color:T.t1, border:'1px solid '+T.bd2, borderRadius:8, padding:'6px 10px', fontSize:12, fontWeight:700, cursor:'pointer'}}>
+              {MO.map((m,i) => <option key={m} value={i}>{m}</option>)}
+            </select>
+            <span style={{color:T.t3, fontSize:12}}>to</span>
+            <select value={customTo ?? period.idx[period.idx.length-1]} onChange={e => setCustomTo(+e.target.value)} style={{background:T.bg1, color:T.t1, border:'1px solid '+T.bd2, borderRadius:8, padding:'6px 10px', fontSize:12, fontWeight:700, cursor:'pointer'}}>
+              {MO.map((m,i) => <option key={m} value={i}>{m}</option>)}
+            </select>
+          </>)}
+          <b style={{color:T.acc, fontSize:12, whiteSpace:'nowrap'}}>{period.label}</b>
+        </div>
       </div>
 
       {/* ── KPI Cards Row ─────────────────────────────────────────────── */}
@@ -1791,17 +1998,18 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
       }}>
         <KpiGroup title={selected ? (selected + ' — Dealers') : 'Dealers'} accent={T.blue}>
           <div style={{display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:6}}>
-            <KpiCell label="Active"   value={kpis.active}   color="var(--grn)"/>
-            <KpiCell label="Star"     value={kpis.star}     color={T.hot2}/>
-            <KpiCell label="Inactive" value={kpis.inactive} color={T.t2}/>
-            <KpiCell label="Lost"     value={kpis.lost}     color={T.hot}/>
+            <KpiCell label="Active"   value={kpis.active}   color="var(--grn)" onClick={() => openList('active')}/>
+            <KpiCell label="Star"     value={kpis.star}     color={T.hot2}      onClick={() => openList('star')}/>
+            <KpiCell label="Inactive" value={kpis.inactive} color={T.t2}        onClick={() => openList('inactive')}/>
+            <KpiCell label="Lost"     value={kpis.lost}     color={T.hot}       onClick={() => openList('lost')}/>
           </div>
         </KpiGroup>
 
         <KpiGroup title={selected ? 'In ' + selected : 'Selected'} accent={T.hot2}>
           <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:6}}>
-            <KpiCell label="Qty"   value={fmtIN(kpis.qty)} color="var(--grn)"/>
-            <KpiCell label="Value" value={fmtIN(kpis.sales)} color="var(--grn)"/>
+            <KpiCell label="Billed" value={fmtIN(kpis.qty)} color="var(--grn)" onClick={() => openList('billed')} sub="dealers who bought"/>
+            <KpiCell label="Value"  value={fmtIN(kpis.sales)} color="var(--grn)" onClick={() => openList('all')}
+              sub={period.prevFull ? <span style={{color:kpis.sales>=kpis.prev?'var(--grn)':'var(--red)',fontWeight:700}}>{signed(kpis.sales-kpis.prev)} vs {period.prevLabel}</span> : null}/>
           </div>
         </KpiGroup>
 
@@ -1926,7 +2134,9 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
             <option value="achievement">Achievement %</option>
           </select>
 
-          <ToolBtn active={false}     icon={TrendingUp} label="Trend"  onClick={() => {}}/>
+          <ToolBtn active={trendLive} icon={TrendingUp} label="Trend" disabled={!period.prevFull}
+            onClick={() => setTrendOn(t => !t)}/>
+          <ToolBtn active={territoryMode} icon={Shapes} label="Territory" onClick={() => setTerritoryMode(t => !t)}/>
           <ToolBtn active={showNames}  icon={Type}      label="Name"   onClick={() => setShowNames(s => !s)}/>
           <ToolBtn active={showCount}  icon={Hash}      label="Count"  onClick={() => setShowCount(s => !s)}/>
           <ToolBtn active={showLabels} icon={Layers}    label="Labels" onClick={() => setShowLabels(s => !s)}/>
@@ -1937,6 +2147,16 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
           <ToolBtn active={lightMap} icon={Sun} label="Light" onClick={() => setLightMap(s => !s)}/>
 
           <div style={{flex:1}}/>
+
+          {/* Salesman filter — only his months count (month ownership) */}
+          {salesmanOptions.length > 1 && (
+            <select value={smFilter} onChange={e => setSmFilter(e.target.value)} title="Filter by salesman"
+              style={{background: smFilter ? T.acc : T.bg1, color: smFilter ? '#fff' : T.t1,
+                border:'1px solid '+(smFilter ? T.acc : T.bd2), borderRadius:8, padding:'6px 10px', fontSize:12, fontWeight:700, cursor:'pointer'}}>
+              <option value="">👤 All Salesmen</option>
+              {salesmanOptions.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </select>
+          )}
 
           {/* ── Category filters (top-right): Dealer Type + legacy Category ── */}
           {/* Dealer Type filter — scopes map/summary/lists/heat to one dealer type */}
@@ -2006,8 +2226,8 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
                 .sort((a,b) => a._dist - b._dist)
                 .slice(0, 8);
             })();
-            const ach = d.months?.[selectedMonthIdx] || 0;
-            const tgt = monthTarget(d, selectedMonthIdx);
+            const ach = achOf(d);
+            const tgt = tgtOf(d);
             return (
               <div style={{
                 position:'absolute', top:12, right:12, bottom:12, width:360, maxWidth:'92%',
@@ -2221,10 +2441,10 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
           ) : (
             <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(220px, 1fr))', gap:8}}>
               {[...viewDealers]
-                .sort((a,b)=>(b.months?.[selectedMonthIdx]||0)-(a.months?.[selectedMonthIdx]||0))
+                .sort((a,b)=>achOf(b)-achOf(a))
                 .slice(0, 8)
                 .map(d => {
-                  const ach = Number(d.months?.[selectedMonthIdx]||0);
+                  const ach = achOf(d);
                   return (
                     <div key={d.id} onClick={()=>onOpenDealer?.(d.id)}
                       style={{display:'flex', alignItems:'center', gap:10, padding:'8px 10px', borderRadius:10,
@@ -2261,8 +2481,8 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
                       </tr>
                     </thead>
                     <tbody>
-                      {[...viewDealers].sort((a,b)=>(b.months?.[selectedMonthIdx]||0)-(a.months?.[selectedMonthIdx]||0)).map(d=>{
-                        const ach=Number(d.months?.[selectedMonthIdx]||0);
+                      {[...viewDealers].sort((a,b)=>achOf(b)-achOf(a)).map(d=>{
+                        const ach=achOf(d);
                         return (
                           <tr key={d.id} onClick={()=>onOpenDealer?.(d.id)} style={{cursor:'pointer', borderBottom:'1px solid '+T.bd1}}
                             onMouseEnter={e=>e.currentTarget.style.background=T.bg2}
@@ -2290,10 +2510,81 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
             </div>
           )}
         </div>
+        {/* Legend + compare (as in the BI map view) */}
+        <div className="stp-legend-row">
+          {trendLive ? (
+            <div className="stp-legend">
+              <span>▼ Down</span>
+              {[...DOWN_SCALE].reverse().map(c => <i key={c} style={{background:c}}/>)}
+              <i style={{background:'#e5e7eb'}}/>
+              {UP_SCALE.map(c => <i key={c} style={{background:c}}/>)}
+              <span>Up ▲</span>
+              <em>{period.label} vs {period.prevLabel}</em>
+            </div>
+          ) : (
+            <div className="stp-legend">
+              <span>Low</span>
+              {GREEN_SCALE.map(c => <i key={c} style={{background:c}}/>)}
+              <span>High</span>
+              {period.prevFull && <em>Tip: tap Trend to see growth vs {period.prevLabel}</em>}
+            </div>
+          )}
+          <button className="btnp stp-compare-btn" onClick={() => setCompareOpen(true)}>
+            <GitCompare size={14}/> Compare Multiple Timelines
+          </button>
+        </div>
       </div>
 
       {/* ── Right column: data panels (drill: state → city → district) ──── */}
       <div className="stp-right-col">
+        {/* ── Territory — regions collected by tapping them in Territory mode ── */}
+        {(territoryMode || territory.length > 0) && (() => {
+          const byId = new Map(dealers.map(d => [d.id, d]));
+          const seen = new Set(), list = [];
+          territory.forEach(r => r.ids.forEach(id => { if(!seen.has(id) && byId.has(id)){ seen.add(id); list.push(byId.get(id)); } }));
+          const val = list.reduce((t,d) => t + achOf(d), 0);
+          const prv = list.reduce((t,d) => t + prevOf(d), 0);
+          const tgt = list.reduce((t,d) => t + tgtOf(d), 0);
+          const billed = list.filter(d => achOf(d) > 0).length;
+          const regionVal = r => r.ids.reduce((t,id) => t + (byId.has(id) ? achOf(byId.get(id)) : 0), 0);
+          return (
+            <div className="card stp-terr">
+              <div className="sec-title" style={{marginBottom:6}}>
+                <span className="sec-ico" style={{'--tone':'#2563eb'}}><Shapes size={15}/></span>
+                <span>Territory</span>
+                {territory.length > 0 && <span className="count-pill">{territory.length}</span>}
+                <div style={{flex:1}}/>
+                <button className={'btn'+(territoryMode?' on':'')} style={{fontSize:11,padding:'4px 10px'}} onClick={() => setTerritoryMode(t => !t)}>
+                  {territoryMode ? 'Done adding' : 'Add regions'}
+                </button>
+              </div>
+              {territory.length === 0 ? (
+                <div className="stp-terr-empty">Tap states{drillLevel === 'state' ? ' or districts' : ''} on the map to add them here. Their dealers and sales add up below.</div>
+              ) : (<>
+                <div className="stp-terr-chips">
+                  {territory.map(r => (
+                    <span key={r.key} className="stp-terr-chip">
+                      {r.name}<small>{r.type === 'district' ? 'dist.' : 'state'}</small><b>{fmtIN(regionVal(r))}</b>
+                      <button onClick={() => setTerritory(t => t.filter(x => x.key !== r.key))} title="Remove"><X size={11}/></button>
+                    </span>
+                  ))}
+                </div>
+                <div className="stp-terr-kpis">
+                  <div><span>Dealers</span><b>{list.length}</b></div>
+                  <div><span>Billed</span><b>{billed}</b></div>
+                  <div><span>Value</span><b style={{color:'var(--grn)'}}>{fmtIN(val)}</b></div>
+                  <div><span>Target</span><b>{tgt ? fmtIN(tgt) : '—'}</b></div>
+                  <div><span>Ach %</span><b style={{color:pclr(tgt ? pct(tgt,val) : null)}}>{tgt ? spct(tgt,val) : 'N/T'}</b></div>
+                  <div><span>vs {period.prevFull ? period.prevLabel : 'prev'}</span><b style={{color:val>=prv?'var(--grn)':'var(--red)'}}>{period.prevFull ? signed(val-prv) : '—'}</b></div>
+                </div>
+                <div style={{display:'flex', gap:8, marginTop:8}}>
+                  <button className="btn" style={{flex:1, fontSize:12}} onClick={() => { setListQ(''); setListView({ title:'Territory · ' + territory.map(r => r.name).join(', '), dealers:list }); }}>View dealers</button>
+                  <button className="btn" style={{fontSize:12}} onClick={() => setTerritory([])}>Clear</button>
+                </div>
+              </>)}
+            </div>
+          );
+        })()}
         {/* ── Summary box — Total Customers / Sales / Salesmen / Zones ──────
             Scoped to the current view. Click a tile to see the full list. */}
         <div className="card" style={{padding:0, overflow:'hidden'}}>
@@ -2337,7 +2628,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
               </span>
               <span className="count-pill">{cityData.length}</span>
               <div style={{flex:1}}/>
-              <span className="sec-note">— {MO[selectedMonthIdx]}</span>
+              <span className="sec-note">— {period.label}</span>
             </div>
             <div style={{padding:'4px 0', maxHeight:320, overflowY:'auto'}}>
               {cityData.length === 0
@@ -2415,8 +2706,8 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
                   }
                   const g = areaMap.get(key);
                   g.dealers.push(d);
-                  g.total  += Number(d.months?.[selectedMonthIdx] || 0);
-                  g.target += Number(monthTarget(d, selectedMonthIdx) || 0);
+                  g.total  += achOf(d);
+                  g.target += tgtOf(d);
                 }
                 const areas = [...areaMap.values()].sort((a,b) => b.total - a.total);
                 if (areas.length <= 1) return null;   // no benefit if everyone shares one pin
@@ -2456,9 +2747,9 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
                             {open && (
                               <div style={{background:T.bg2, borderTop:'1px solid '+T.bd1}}>
                                 {a.dealers
-                                  .sort((x,y) => (y.months?.[selectedMonthIdx]||0) - (x.months?.[selectedMonthIdx]||0))
+                                  .sort((x,y) => achOf(y) - achOf(x))
                                   .map(d => {
-                                    const ach = d.months?.[selectedMonthIdx] || 0;
+                                    const ach = achOf(d);
                                     return (
                                       <div key={d.id}
                                         onClick={(e) => { e.stopPropagation(); setDetailDealer(d); }}
@@ -2519,10 +2810,10 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
                   </thead>
                   <tbody>
                     {[...selectedCityObj.dealers]
-                      .sort((a,b) => (b.months?.[selectedMonthIdx]||0) - (a.months?.[selectedMonthIdx]||0))
+                      .sort((a,b) => achOf(b) - achOf(a))
                       .map(d => {
-                        const ach = d.months?.[selectedMonthIdx] || 0;
-                        const tgt = monthTarget(d, selectedMonthIdx);  // per-month only
+                        const ach = achOf(d);
+                        const tgt = tgtOf(d);  // per-month only
                         const dp  = pct(tgt, ach);
                         return (
                           <tr key={d.id}
@@ -2579,8 +2870,8 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
                 const dealers = panelSalesman ? all.filter(d => (d.salesman||'') === panelSalesman) : all;
                 const salesmen = [...new Set(all.map(d => d.salesman).filter(Boolean))]
                   .sort((a,b) => (users?.[a]?.name||a).localeCompare(users?.[b]?.name||b));
-                const totalSales = dealers.reduce((s,d) => s + Number(d.months?.[selectedMonthIdx]||0), 0);
-                const qty = dealers.filter(d => Number(d.months?.[selectedMonthIdx]||0) > 0).length;
+                const totalSales = dealers.reduce((s,d) => s + achOf(d), 0);
+                const qty = dealers.filter(d => achOf(d) > 0).length;
 
                 // Aggregate by salesman for the "By salesman" view.
                 const bySm = {};
@@ -2588,7 +2879,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
                   const k = d.salesman || '__none__';
                   if(!bySm[k]) bySm[k] = { salesman:k, dealers:0, sales:0, qty:0 };
                   bySm[k].dealers++;
-                  const a = Number(d.months?.[selectedMonthIdx]||0);
+                  const a = achOf(d);
                   bySm[k].sales += a;
                   if(a > 0) bySm[k].qty++;
                 });
@@ -2654,8 +2945,8 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
                                   <td style={{padding:'5px 8px', textAlign:'right', color:'var(--yel)'}}>{r.qty}</td>
                                 </tr>
                               ))
-                            : [...dealers].sort((a,b)=>(b.months?.[selectedMonthIdx]||0)-(a.months?.[selectedMonthIdx]||0)).map(d => {
-                                const ach = d.months?.[selectedMonthIdx] || 0;
+                            : [...dealers].sort((a,b)=>achOf(b)-achOf(a)).map(d => {
+                                const ach = achOf(d);
                                 return (
                                   <tr key={d.id} onClick={() => onOpenDealer?.(d.id)} style={{borderBottom:'1px solid '+T.bd1, cursor:'pointer'}}
                                     onMouseEnter={e => e.currentTarget.style.background = T.bg2}
@@ -2692,7 +2983,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
             <div className="sec-title" style={{padding:'10px 12px', borderBottom:'1px solid '+T.bd1, background:T.bg2, marginBottom:0}}>
               <span className="sec-ico" style={{'--tone':'#0891b2'}}><Award size={15}/></span>
               <span>Top States</span>
-              <span className="sec-note">— {MO[selectedMonthIdx]}</span>
+              <span className="sec-note">— {period.label}</span>
             </div>
             <div style={{padding:'4px 0', maxHeight:320, overflowY:'auto'}}>
               {topStates.length === 0
@@ -2769,14 +3060,14 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
       {summaryView && (() => {
         const close = () => setSummaryView(null);
         const title = ({customers:'Customers', sales:'Customers · by sales', salesmen:'Salesmen', zones:'Zones'})[summaryView] || 'Details';
-        const dealerRows = [...viewDealers].sort((a,b)=>(b.months?.[selectedMonthIdx]||0)-(a.months?.[selectedMonthIdx]||0));
+        const dealerRows = [...viewDealers].sort((a,b)=>achOf(b)-achOf(a));
         const group = (keyFn) => {
           const m = {};
           viewDealers.forEach(d => {
             const k = keyFn(d) || '__none__';
             if(!m[k]) m[k] = { key:k, dealers:0, sales:0, billed:0 };
             m[k].dealers++;
-            const a = Number(d.months?.[selectedMonthIdx]||0);
+            const a = achOf(d);
             m[k].sales += a; if(a>0) m[k].billed++;
           });
           return Object.values(m).sort((a,b)=>b.sales-a.sales);
@@ -2796,7 +3087,7 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
               </div>
               <div style={{overflowY:'auto', padding:'4px 0'}}>
                 {(summaryView==='customers' || summaryView==='sales') && dealerRows.map(d => {
-                  const ach = Number(d.months?.[selectedMonthIdx]||0);
+                  const ach = achOf(d);
                   return (
                     <div key={d.id} onClick={()=>{ onOpenDealer?.(d.id); close(); }}
                       style={{display:'flex', alignItems:'center', gap:10, padding:'9px 16px', borderBottom:'1px solid '+T.bd1, cursor:'pointer'}}
@@ -2836,6 +3127,61 @@ export default function IndiaMap({ dealers: allDealers=[], users={}, onOpenDeale
           </div>
         );
       })()}
+
+      {/* "List customers" — opened from the KPI tiles and the territory box */}
+      {listView && (() => {
+        const close = () => setListView(null);
+        const q = listQ.trim().toLowerCase();
+        const rows = listView.dealers
+          .filter(d => !q || (d.name||'').toLowerCase().includes(q) || (d.city||'').toLowerCase().includes(q))
+          .map(d => ({ d, ach: achOf(d), prev: prevOf(d), tgt: tgtOf(d), last: lastBilled(d) }))
+          .sort((a,b) => b.ach - a.ach || a.d.name.localeCompare(b.d.name));
+        const tot = rows.reduce((t,r) => t + r.ach, 0);
+        return (
+          <div className="stp-list-ov" onClick={close}>
+            <div className="stp-list" onClick={e => e.stopPropagation()}>
+              <div className="stp-list-head">
+                <div style={{flex:1, minWidth:0}}>
+                  <div className="stp-list-title">{listView.title}</div>
+                  <div className="stp-list-sub">{rows.length} dealers · {period.label} · value {fmtIN(tot)}{smFilter ? ' · ' + (users?.[smFilter]?.name || smFilter) : ''}</div>
+                </div>
+                <button onClick={close} className="stp-x"><X size={18}/></button>
+              </div>
+              <div className="stp-list-search"><Search size={14}/><input value={listQ} onChange={e => setListQ(e.target.value)} placeholder="Search dealer or city…"/></div>
+              <div className="stp-list-body">
+                <table>
+                  <thead><tr>
+                    <th>Dealer</th><th className="stpl-wide">City</th><th className="stpl-wide">Salesman</th><th>Last billed</th>
+                    <th className="r">Value</th><th className="r stpl-wide">Target</th>{period.prevFull && <th className="r">vs prev</th>}
+                  </tr></thead>
+                  <tbody>
+                    {rows.map(({d, ach, prev, tgt, last}) => (
+                      <tr key={d.id} onClick={() => { onOpenDealer?.(d.id); }}>
+                        <td><div className="nm">{d.name}</div><div className="stpl-narrow">{[d.city, users?.[d.salesman]?.name].filter(Boolean).join(' · ')}</div></td>
+                        <td className="stpl-wide">{d.city || '—'}</td>
+                        <td className="stpl-wide">{users?.[d.salesman]?.name || d.salesman || '—'}</td>
+                        <td>{last || <span style={{color:'var(--red)'}}>never</span>}</td>
+                        <td className="r" style={{fontWeight:800, color: ach > 0 ? 'var(--grn)' : 'var(--t3)'}}>{ach ? fmtIN(ach) : '—'}</td>
+                        <td className="r stpl-wide">{tgt ? fmtIN(tgt) : '—'}</td>
+                        {period.prevFull && <td className="r" style={{fontWeight:700, color: ach > prev ? 'var(--grn)' : ach < prev ? 'var(--red)' : 'var(--t3)'}}>{ach - prev ? signed(ach - prev) : '—'}</td>}
+                      </tr>
+                    ))}
+                    {rows.length === 0 && <tr><td colSpan={7} style={{textAlign:'center', padding:20, color:'var(--t3)'}}>No dealers.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {compareOpen && (
+        <React.Suspense fallback={null}>
+          <MapCompare dealers={dealers} users={users} MO={MO} selectedMonthIdx={selectedMonthIdx} smFilter={smFilter}
+            stateGeo={geoRef.current} districtGeoRef={districtGeoRef} initialState={selected}
+            onOpenDealer={onOpenDealer} onClose={() => setCompareOpen(false)}/>
+        </React.Suspense>
+      )}
     </div>
   );
 }

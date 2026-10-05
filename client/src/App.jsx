@@ -15446,7 +15446,7 @@ const loadAddDealerModal = () => import('./components/AddDealerModal');
 const AddDealerModal = lazy(() => loadAddDealerModal().then(m => ({ default: React.memo(m.default) })));
 const loadBulkActionModal = () => import('./components/BulkActionModal');
 const BulkActionModal = lazy(() => loadBulkActionModal().then(m => ({ default: React.memo(m.default) })));
-const loadIndiaMap = () => import('./components/IndiaMap');
+const loadIndiaMap = () => import('./components/BiMapView');   // BI-style map (the older ./components/IndiaMap is kept, unused)
 const IndiaMap = lazy(() => loadIndiaMap().then(m => ({ default: React.memo(m.default) })));
 const loadUploadMonth = () => import('./components/UploadMonth');
 const UploadMonth = lazy(() => loadUploadMonth().then(m => ({ default: React.memo(m.default) })));

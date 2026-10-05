@@ -9,6 +9,7 @@ import RepeatHint from './RepeatHint';
 const VisitsPage = React.lazy(() => import('./CRM').then(m => ({ default: m.VisitsPage })));
 import { useT } from '../i18n';
 import { PageHead } from '../collections/ui';
+import { holidayOn, HOLIDAY_LABEL, HOLIDAY_TONE } from '../lib/holidays';
 
 /**
  * Visit calendar.
@@ -56,6 +57,10 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
   const [kList, setKList] = useState(null);         // the summary card whose dealers are listed: { kind, tier }
   const [editing, setEditing] = useState({});       // planId → note text being edited
   const [replacing, setReplacing] = useState(null); // plan being swapped for another dealer
+  const [dayFilter, setDayFilter] = useState('all');  // the day's list: all | open | done | missed | skipped
+  const [dayFilterSm, setDayFilterSm] = useState(''); // the day's list: one salesman ('' = all)
+  const [dayQ, setDayQ] = useState('');               // the day's list: party / city / salesman search
+  useEffect(() => { setDayFilter('all'); setDayQ(''); }, [day]);    // a new day opens on everything
 
   const from = ymd(new Date(month.getFullYear(), month.getMonth(), 1));
   const to = ymd(new Date(month.getFullYear(), month.getMonth() + 1, 0));
@@ -98,6 +103,7 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
   const dayUnplanned = (byDayU[day] || []).filter(u => !sm || u.salesmanId === sm);
   const daySm = sm || (isStaff ? '' : currentUser?.id);
   const isToday = day === todayYmd(), pastDay = day < todayYmd();
+  const dayHol = holidayOn(day);
   // who may add to this day: a planner for anyone, a salesman for himself (today or later)
   const full = !!daySm && dayPlans.length >= maxPerDay;
   // plans are for tomorrow onwards; today a salesman checks in an unplanned visit instead
@@ -107,7 +113,8 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
   // the month, by salesman: planned, visited, not visited — the report
   const report = useMemo(() => {
     const m = {};
-    for (const p of plans) { const r = (m[p.salesmanId] ||= { salesmanId: p.salesmanId, name: p.salesmanName, planned: 0, visited: 0, missed: 0, upcoming: 0 }); r.planned++; if (p.status === 'DONE') r.visited++; else if (p.missed) r.missed++; else if (p.status === 'PLANNED') r.upcoming++; }
+    const td = todayYmd();
+    for (const p of plans) { const r = (m[p.salesmanId] ||= { salesmanId: p.salesmanId, name: p.salesmanName, planned: 0, visited: 0, missed: 0, today: 0, upcoming: 0 }); r.planned++; if (p.status === 'DONE') r.visited++; else if (p.missed) r.missed++; else if (p.status === 'PLANNED') { if (p.date === td) r.today++; else r.upcoming++; } }
     return Object.values(m).sort((a, b) => b.missed - a.missed || b.planned - a.planned);
   }, [plans]);
   // how often each dealer is on one salesman's calendar this month — shown beside "Planned"
@@ -118,6 +125,9 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
     return m;
   }, [plans]);
   const missedList = useMemo(() => plans.filter(p => p.missed).sort((a, b) => b.date.localeCompare(a.date)), [plans]);
+  // today's plans with no check-out yet — still open, they turn "not visited" tonight
+  const todayOpen = useMemo(() => { const td = todayYmd(); return plans.filter(p => p.date === td && p.status === 'PLANNED' && !p.missed).sort((a, b) => (a.salesmanName || '').localeCompare(b.salesmanName || '') || (a.dealerName || '').localeCompare(b.dealerName || '')); }, [plans]);
+  const todayListRef = useRef(null);
 
   // dealers to pick from: the salesman's own first, then everyone else's
   const pool = useMemo(() => {
@@ -169,8 +179,8 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
   // ── presentation helpers (display only) ──
   const inits = s => (s || '?').replace(/[^A-Za-z0-9 ]/g, '').split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
   const hue = s => (s || '?').charCodeAt(0) * 37 % 360;
-  const toneOf = p => p.status === 'DONE' ? 'var(--grn)' : p.missed ? 'var(--red)' : p.status === 'SKIPPED' ? 'var(--t3)' : p.selfAdded ? '#06b6d4' : 'var(--acc)';
-  const labelOf = p => p.status === 'DONE' ? 'Visited' : p.missed ? 'Not visited' : p.status === 'SKIPPED' ? 'Skipped' : p.selfAdded ? 'Self-added' : 'Planned';
+  const toneOf = p => p.status === 'DONE' ? 'var(--grn)' : p.missed ? 'var(--red)' : p.status === 'SKIPPED' ? 'var(--t3)' : 'var(--acc)';   // self-added plans are just planned
+  const labelOf = p => p.status === 'DONE' ? 'Visited' : p.missed ? 'Not visited' : p.status === 'SKIPPED' ? 'Skipped' : 'Planned';
   const Badge = ({ tone, children }) => <span className="status-badge" style={{ '--c': tone, '--fg': '#fff', background: `color-mix(in srgb, ${tone} 14%, transparent)`, color: tone, padding: '2px 9px', fontSize: 10.5, fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap', borderRadius: 20 }}><span className="sb-dot" style={{ width: 6, height: 6, borderRadius: '50%', background: tone }} />{children}</span>;
 
   // the visible month at a glance — counted from the plans already loaded
@@ -266,7 +276,30 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
     { k: 'today', n: kpi.todayIn ? kpi.today : '—', label: 'today', rule: kpi.todayIn ? `${kpi.todayDone} of ${kpi.today} visited` : 'tap to jump to today', tone: '#06b6d4', Icon: Sun, onClick: goToday },
   ];
   const dayDate = new Date(day + 'T00:00:00');
-  const dayDone = dayPlans.filter(p => p.status === 'DONE').length, dayMissed = dayPlans.filter(p => p.missed).length;
+  // the day's list can be narrowed: by result and, with every salesman on show, by salesman
+  // "Not visited" = no check-out: a past day's miss, or today's visit not done yet.
+  // "Planned" only means something for days still to come.
+  const isOpen = p => p.status === 'PLANNED' && !p.missed;
+  const DAY_FILTERS = [
+    ['all', 'All', () => true, 'var(--t1)'],
+    ...(futureDay ? [['open', 'Planned', isOpen, 'var(--acc)']] : []),
+    ['done', 'Visited', p => p.status === 'DONE', 'var(--grn)'],
+    ['missed', 'Not visited', p => !!p.missed || (isToday && isOpen(p)), 'var(--red)'],
+    ['skipped', 'Skipped', p => p.status === 'SKIPPED' && !p.missed, 'var(--t3)'],
+    // visits made without a plan — they live in their own box below the plans
+    ...(!futureDay ? [['unpl', 'Unplanned', () => false, '#8b5cf6']] : []),
+  ];
+  const daySmIds = [...new Set([...dayPlans, ...dayUnplanned].map(p => p.salesmanId))];
+  const smPicked = dayFilterSm && daySmIds.includes(dayFilterSm) ? dayFilterSm : '';
+  const smPlans = smPicked ? dayPlans.filter(p => p.salesmanId === smPicked) : dayPlans;
+  const smUnplanned = smPicked ? dayUnplanned.filter(u => u.salesmanId === smPicked) : dayUnplanned;
+  const dfKey = DAY_FILTERS.some(f => f[0] === dayFilter) ? dayFilter : 'all';   // a chip this day doesn't have falls back to All
+  const dfTest = DAY_FILTERS.find(f => f[0] === dfKey)[2];
+  const dqs = dayQ.trim().toLowerCase();
+  const dqHit = p => !dqs || [p.dealerName, p.dealerCity, p.city, p.salesmanName, p.zone].some(v => String(v || '').toLowerCase().includes(dqs));
+  const shownPlans = smPlans.filter(dfTest).filter(dqHit);
+  const shownUnplanned = (dfKey === 'all' || dfKey === 'unpl' ? smUnplanned : []).filter(dqHit);
+  const dfCount = (k, test) => k === 'unpl' ? smUnplanned.length : k === 'all' ? smPlans.length + smUnplanned.length : smPlans.filter(test).length;
   const capPct = daySm ? Math.min(100, Math.round(dayPlans.length / maxPerDay * 100)) : 0;
 
   return (
@@ -335,7 +368,7 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
               {(canPlan || !isStaff) && <button className="btnp vc-planbtn" onClick={() => setPlanOpen(true)}><CalendarPlus size={15} /> {tr('Plan a visit')}</button>}
             </div>
             <div className="vc-legend">
-              {[['Visited', 'var(--grn)'], ['Planned', 'var(--acc)'], ['Self-added', '#06b6d4'], ['Unplanned visit', '#8b5cf6'], ['Not visited', 'var(--red)']].map(([l, c]) => <span key={l}><i style={{ background: c }} />{tr(l)}</span>)}
+              {[['Visited', 'var(--grn)'], ['Planned', 'var(--acc)'], ['Unplanned visit', '#8b5cf6'], ['Not visited', 'var(--red)']].map(([l, c]) => <span key={l}><i style={{ background: c }} />{tr(l)}</span>)}
             </div>
           </div>
           {view === 'month' && <div className="vc-month-grid">
@@ -345,7 +378,7 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
               const ps = (byDay[c] || []).filter(p => !sm || p.salesmanId === sm);
               const us = (byDayU[c] || []).filter(u => !sm || u.salesmanId === sm);
               const done = ps.filter(p => p.status === 'DONE').length;
-              const sel = c === day, tod = c === tdy, we = i % 7 >= 5;
+              const sel = c === day, tod = c === tdy, we = i % 7 >= 5, hol = holidayOn(c);
               const smIds = [...new Set(ps.map(p => p.salesmanId))];
               const chips = [...(sm
                 ? ps.map(p => ({ key: p._id, tone: toneOf(p), text: p.dealerName }))
@@ -354,11 +387,14 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
               const any = ps.length + us.length;
               const cellFull = !!sm && ps.length >= maxPerDay;
               return (
-                <div key={c} role="button" tabIndex={0} className={'vc-cell' + (sel ? ' sel' : '') + (tod ? ' tod' : '') + (we ? ' we' : '') + (c < tdy ? ' past' : '')}
-                  title={`${fmtDay(c)}${ps.length ? ` · ${ps.length} planned · ${done} visited` : ''}`}
+                <div key={c} role="button" tabIndex={0} className={'vc-cell' + (sel ? ' sel' : '') + (tod ? ' tod' : '') + (we ? ' we' : '') + (c < tdy ? ' past' : '') + (hol ? ' hol' : '')}
+                  style={hol ? { '--hol': HOLIDAY_TONE[hol.type] } : undefined}
+                  title={`${fmtDay(c)}${hol ? ` · ${HOLIDAY_LABEL[hol.type]}: ${hol.name}` : ''}${ps.length ? ` · ${ps.length} planned · ${done} visited` : ''}`}
                   onClick={() => pickDay(c)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickDay(c); } }}>
+                  {hol && <div className="vc-holwm" aria-hidden="true"><b>{HOLIDAY_LABEL[hol.type]}</b><span>{hol.name}</span></div>}
                   <div className="vc-head">
                     <span className="vc-num">{Number(c.slice(-2))}</span>
+                    {hol && ps.length > 0 && <span className="vc-holwarn" title={`${ps.length} visit${ps.length === 1 ? '' : 's'} planned on ${HOLIDAY_LABEL[hol.type].toLowerCase()} (${hol.name})`}>⚠</span>}
                     {ps.length > 0 && <span className={'vc-cap' + (cellFull ? ' full' : done === ps.length ? ' ok' : '')} title={sm ? `${ps.length} of ${maxPerDay} a day` : `${ps.length} planned`}>{sm ? `${ps.length}/${maxPerDay}` : ps.length}</span>}
                   </div>
                   {any > 0 && <div className="vc-chips">
@@ -371,6 +407,7 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
                     {any > 5 && <b>+</b>}
                   </div>}
                   {ps.length > 0 && <div className="vc-prog"><div style={{ width: Math.round(done / ps.length * 100) + '%' }} /></div>}
+                  {hol && <div className="vc-holtag" title={`${HOLIDAY_LABEL[hol.type]} · ${hol.name}`}>{hol.type === 'holiday' ? '🎉 ' : ''}{hol.name}</div>}
                 </div>
               );
             })}
@@ -379,10 +416,13 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
             {Array.from({ length: 7 }, (_, i) => addDays(wk0, i)).map((c, i) => {
               const ps = (byDay[c] || []).filter(p => !sm || p.salesmanId === sm);
               const us = (byDayU[c] || []).filter(u => !sm || u.salesmanId === sm);
+              const hol = holidayOn(c);
               return (
-                <div key={c} role="button" tabIndex={0} className={'vc-wcol' + (c === day ? ' sel' : '') + (c === tdy ? ' tod' : '') + (i >= 5 ? ' we' : '') + (c < from || c > to ? ' out' : '')}
+                <div key={c} role="button" tabIndex={0} className={'vc-wcol' + (c === day ? ' sel' : '') + (c === tdy ? ' tod' : '') + (i >= 5 ? ' we' : '') + (c < from || c > to ? ' out' : '') + (hol ? ' hol' : '')}
+                  style={hol ? { '--hol': HOLIDAY_TONE[hol.type] } : undefined}
                   onClick={() => pickDay(c)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickDay(c); } }}>
-                  <div className="vc-whead"><span>{DOW[i]}</span><b>{Number(c.slice(-2))}</b>{ps.length > 0 && <em>{ps.length}</em>}</div>
+                  {hol && <div className="vc-holwm" aria-hidden="true"><b>{HOLIDAY_LABEL[hol.type]}</b><span>{hol.name}</span></div>}
+                  <div className="vc-whead"><span>{DOW[i]}</span><b>{Number(c.slice(-2))}</b>{ps.length > 0 && <em>{ps.length}</em>}{hol && ps.length > 0 && <span className="vc-holwarn" title="Visits planned on a holiday">⚠</span>}</div>
                   <div className="vc-wlist">
                     {ps.map(p => <div key={p._id} className="vc-wit" style={{ '--tone': toneOf(p) }} title={`${p.dealerName} · ${labelOf(p)}`}><i /><span>{p.dealerName}</span>{!sm && <small>{firstName(p.salesmanId)}</small>}</div>)}
                     {us.length > 0 && <div className="vc-wit" style={{ '--tone': '#8b5cf6' }}><i /><span>✱ {us.length} unplanned</span></div>}
@@ -399,9 +439,11 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
               const n = (byDay[c] || []).filter(p => !sm || p.salesmanId === sm).length;
               const dw = (new Date(c + 'T00:00:00').getDay() + 6) % 7;
               const first = c.slice(-2) === '01' || c === stripDays[0];
-              return <button key={c} data-day={c} className={'vc-sday' + (c === day ? ' sel' : '') + (c === tdy ? ' tod' : '') + (dw >= 5 ? ' we' : '') + (c < tdy ? ' past' : '')} onClick={() => pickStripDay(c)}>
+              const hol = holidayOn(c);
+              return <button key={c} data-day={c} className={'vc-sday' + (c === day ? ' sel' : '') + (c === tdy ? ' tod' : '') + (dw >= 5 ? ' we' : '') + (c < tdy ? ' past' : '') + (hol ? ' hol' : '')}
+                style={hol ? { '--hol': HOLIDAY_TONE[hol.type] } : undefined} title={hol ? `${HOLIDAY_LABEL[hol.type]} · ${hol.name}` : undefined} onClick={() => pickStripDay(c)}>
                 {first && <i className="vc-smon">{new Date(c + 'T00:00:00').toLocaleDateString('en-IN', { month: 'short' })}</i>}
-                <span>{DOW[dw]}</span><b>{Number(c.slice(-2))}</b><em>{n ? n + ' planned' : '—'}</em></button>;
+                <span>{DOW[dw]}</span><b>{Number(c.slice(-2))}</b><em>{hol ? (n ? '⚠ ' : '') + HOLIDAY_LABEL[hol.type] : n ? n + ' planned' : '—'}</em></button>;
             })}
           </div>
           <button className="vc-sgo r" onClick={() => stepStrip(1)} aria-label="Later days"><ChevronRight size={16} /></button>
@@ -430,6 +472,16 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
               <Package size={15} /><span className="vc-carry-l">{tr('Samples for visits')}</span><span className="vc-carry-s">{tr('Samples')}</span>
             </button>}
           </div>
+          {dayHol && (
+            <div className="vc-holbanner" style={{ '--hol': HOLIDAY_TONE[dayHol.type] }}>
+              <div className="vc-holwm big" aria-hidden="true"><b>{HOLIDAY_LABEL[dayHol.type]}</b></div>
+              <CalendarDays size={16} />
+              <div style={{ minWidth: 0 }}>
+                <b>{HOLIDAY_LABEL[dayHol.type]} · {dayHol.name}</b>
+                <span>{dayPlans.length ? `${dayPlans.length} visit${dayPlans.length === 1 ? ' is' : 's are'} planned on this ${dayHol.type === 'half' ? 'half day' : 'holiday'} — check with the salesman.` : dayHol.type === 'half' ? 'Half working day.' : 'Office closed — no visits expected.'}</span>
+              </div>
+            </div>
+          )}
           <div className="vc-daystats">
             {daySm && <div className="vc-capbox" style={{ '--tone': full ? 'var(--red)' : 'var(--acc)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 6 }}>
@@ -438,19 +490,32 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
               </div>
               <div className="att-bar"><div style={{ width: capPct + '%' }} /></div>
             </div>}
-            <span className="kpi-pill" style={{ alignSelf: 'center' }}>Visited <b style={{ color: 'var(--grn)' }}>{dayDone}</b></span>
-            {dayMissed > 0 && <span className="kpi-pill" style={{ alignSelf: 'center' }}>Not visited <b style={{ color: 'var(--red)' }}>{dayMissed}</b></span>}
+            {(dayPlans.length > 0 || dayUnplanned.length > 0) && <div className="vc-dfilter" role="tablist" aria-label="Show">
+              {DAY_FILTERS.map(([k, l, test, tone]) => {
+                const n = dfCount(k, test);
+                if ((k === 'skipped' || k === 'unpl') && !n && dfKey !== k) return null;
+                return <button key={k} type="button" role="tab" aria-selected={dfKey === k} className={'vc-dfc' + (dfKey === k ? ' on' : '')} style={{ '--tone': tone }} onClick={() => setDayFilter(k)}>{tr(l)} <b>{n}</b></button>;
+              })}
+              {(dayPlans.length + dayUnplanned.length) > 4 && <label className="vc-dfq"><Search size={13} /><input value={dayQ} onChange={e => setDayQ(e.target.value)} placeholder="Search party…" />{dayQ && <button type="button" onClick={() => setDayQ('')} aria-label="Clear"><X size={12} /></button>}</label>}
+              {!sm && daySmIds.length > 1 && <select className="sel vc-dfsm" value={smPicked} onChange={e => setDayFilterSm(e.target.value)} title="Show one salesman">
+                <option value="">All salesmen</option>
+                {daySmIds.map(id => <option key={id} value={id}>{smName(id)}</option>)}
+              </select>}
+            </div>}
           </div>
 
-          {dayPlans.length === 0 && (
+          {dayPlans.length === 0 && dfKey !== 'unpl' && (
             <div className="vc-empty">
               <span className="sec-ico" style={{ '--tone': 'var(--t3)', width: 38, height: 38, borderRadius: 12 }}><CalendarDays size={18} /></span>
               <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--t2)' }}>{mayAdd ? 'Nothing planned yet' : 'Nothing planned for this day'}</div>
               {mayAdd && <div style={{ fontSize: 11.5, color: 'var(--t3)' }}>Add dealers below.</div>}
             </div>
           )}
-          <div style={{ display: 'grid', gap: 8, marginBottom: 12 }}>
-            {dayPlans.map((p, i) => (
+          {(dfKey !== 'all' || dqs) && shownPlans.length === 0 && shownUnplanned.length === 0 && (
+            <div className="vc-dfnone">{dqs ? <>No party matching “{dayQ.trim()}”</> : <>Nothing under “{tr(DAY_FILTERS.find(f => f[0] === dfKey)[1])}”</>}{smPicked ? ' for ' + smName(smPicked) : ''} on this day. <button type="button" onClick={() => { setDayFilter('all'); setDayFilterSm(''); setDayQ(''); }}>Show all</button></div>
+          )}
+          <div className={'vc-daylist' + (shownPlans.length > 4 ? ' scroll' : '')}>
+            {shownPlans.map(p => { const i = dayPlans.indexOf(p); return (
               <div key={p._id} className="att-card vc-item" style={{ '--tone': toneOf(p), cursor: 'default', ...(replacing?._id === p._id ? { borderColor: 'var(--acc)', boxShadow: '0 0 0 1px var(--acc)' } : {}), ...(p.status === 'DONE' ? { background: 'color-mix(in srgb, var(--grn) 5%, var(--bg1))' } : {}) }}>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
                   <span className="vc-av">
@@ -508,20 +573,20 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
                   </div>
                 </div>
               </div>
-            ))}
+            ); })}
           </div>
 
-          {dayUnplanned.length > 0 && (
+          {shownUnplanned.length > 0 && (
             <div className="vc-unpl">
-              <div className="vc-unpl-t"><span>✱</span> {tr('Unplanned visits')} <b>{dayUnplanned.length}</b><em>{tr('visited without being on the calendar')}</em></div>
-              {dayUnplanned.map(u0 => {
+              <div className="vc-unpl-t"><span>✱</span> {tr('Unplanned visits')} <b>{shownUnplanned.length}</b><em>{tr('visited without being on the calendar')}</em></div>
+              {shownUnplanned.map(u0 => {
                 // a check-in typed by name has no dealer link — find the dealer by name so its buttons still work
                 const u = u0.dealerId ? u0 : { ...u0, dealerId: (() => { const n = String(u0.dealerName || '').toLowerCase().replace(/\s+/g, ' ').trim(); const d = (dealers || []).find(x => String(x.name || '').toLowerCase().replace(/\s+/g, ' ').trim() === n); return d ? (d._id || d.id) : ''; })() };
                 return (
                 <div key={u._id} className="vc-unpl-row">
                   <span className="ini" style={{ '--h': hue(u.dealerName), width: 32, height: 32, borderRadius: 10, fontSize: 11 }}>{inits(u.dealerName)}</span>
                   <div className="vc-unpl-info" style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 750, color: 'var(--t1)', overflowWrap: 'anywhere' }}>{u.dealerName}</div>
+                    <div style={{ fontSize: 13, fontWeight: 750, color: 'var(--t1)', overflowWrap: 'anywhere', cursor: u.dealerId ? 'pointer' : undefined }} title={u.dealerId ? 'Open the dealer' : undefined} onClick={u.dealerId ? () => setOpen(u.dealerId) : undefined}>{u.dealerName}</div>
                     <div style={{ fontSize: 11, color: 'var(--t3)' }}>
                       {!sm && <>{u.salesmanName} · </>}{u.checkInTime ? 'in ' + new Date(u.checkInTime).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : ''}{u.checkOutTime ? ' · out ' + new Date(u.checkOutTime).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : ''}{u.city ? ' · ' + u.city : ''}
                     </div>
@@ -529,7 +594,7 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
                   <Badge tone={u.status === 'VISITED' ? 'var(--grn)' : u.status === 'ADDED' ? 'var(--t3)' : 'var(--yel)'}>{u.status === 'VISITED' ? 'Visited' : u.status === 'ADDED' ? (u.newParty ? 'New party' : 'Added') : 'In progress'}</Badge>{u.newParty && <small className="vc-leadtag" title="Saved in Leads — becomes a dealer by itself once it starts buying">(lead)</small>}
                   {u.walkInId && u.status !== 'VISITED' && u.salesmanId === currentUser?.id
                     ? <button className="btnp" title={u.status === 'ADDED' ? 'Check in — an unplanned visit' : 'Check out — fill the party details'} style={{ fontSize: 12, padding: '5px 12px', display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0, marginLeft: 'auto' }} onClick={() => openCheckIn(u)}>{tr(u.status === 'ADDED' ? 'Visit' : 'Check out')} <ArrowRight size={13} /></button>
-                    : u.dealerId && <button className="btn vc-lb" title="Open the dealer: summary, check-in, MOM" onClick={() => setOpen(u.dealerId)}><ArrowRight size={13} /><span>{tr('Visit')}</span></button>}
+                    : u.dealerId && u.status !== 'VISITED' && <button className="btn vc-lb" title="Open the dealer: summary, check-in, MOM" onClick={() => setOpen(u.dealerId)}><ArrowRight size={13} /><span>{tr('Visit')}</span></button>}
                   {u.status === 'ADDED' && u.canRemove && <button className="btn vc-ib" title="Take it off today's list" style={{ color: 'var(--red)' }} disabled={busy} onClick={() => act(() => api.deleteVisitPlan(u.walkInId))}><Trash2 size={13} /></button>}
                 </div>
                 );
@@ -594,7 +659,7 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
           <div style={{ overflowX: 'auto', margin: '0 -4px' }}>
             <table className="vc-table">
               <thead><tr>
-                <th style={{ textAlign: 'left' }}>Salesman</th><th>Planned</th><th style={{ color: 'var(--grn)' }}>Visited</th><th style={{ color: 'var(--red)' }}>Not visited</th><th>Upcoming</th><th>Done %</th>
+                <th style={{ textAlign: 'left' }}>Salesman</th><th>Planned</th><th style={{ color: 'var(--grn)' }}>Visited</th><th style={{ color: 'var(--red)' }}>Not visited</th><th style={{ color: '#d97706' }}>Not visited today</th><th>Upcoming</th><th>Done %</th>
               </tr></thead>
               <tbody>{report.map(r => { const closed = r.visited + r.missed; const dp = closed ? Math.round(r.visited / closed * 100) : null; const dc = dp == null ? 'var(--t3)' : dp >= 80 ? 'var(--grn)' : dp >= 50 ? 'var(--yel)' : 'var(--red)'; return (
                 <tr key={r.salesmanId}>
@@ -603,8 +668,8 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
                       <span className="ini" style={{ '--h': (r.name || '?').charCodeAt(0) * 37 % 360 }}>{(r.name || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase()}</span>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontWeight: 700, color: 'var(--t1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</div>
-                        <div className="vc-stack" title={`${r.visited} visited · ${r.missed} not visited · ${r.upcoming} upcoming`}>
-                          <div style={{ flex: r.visited, background: 'var(--grn)' }} /><div style={{ flex: r.missed, background: 'var(--red)' }} /><div style={{ flex: r.upcoming, background: 'var(--acc)' }} />
+                        <div className="vc-stack" title={`${r.visited} visited · ${r.missed} not visited · ${r.today} not visited today · ${r.upcoming} upcoming`}>
+                          <div style={{ flex: r.visited, background: 'var(--grn)' }} /><div style={{ flex: r.missed, background: 'var(--red)' }} /><div style={{ flex: r.today, background: '#d97706' }} /><div style={{ flex: r.upcoming, background: 'var(--acc)' }} />
                         </div>
                       </div>
                     </div>
@@ -612,11 +677,36 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
                   <td><span className="vc-n">{r.planned}</span></td>
                   <td><span className="vc-n" style={{ '--tone': 'var(--grn)' }}>{r.visited}</span></td>
                   <td><span className="vc-n" style={r.missed ? { '--tone': 'var(--red)' } : { color: 'var(--t3)' }}>{r.missed}</span></td>
+                  <td>{r.today ? <button type="button" className="vc-n vc-n-btn" style={{ '--tone': '#d97706' }} title="Planned today, not checked out yet — see the list below" onClick={() => todayListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>{r.today}</button> : <span className="vc-n" style={{ color: 'var(--t3)' }}>0</span>}</td>
                   <td style={{ color: 'var(--t3)' }}>{r.upcoming}</td>
                   <td style={{ minWidth: 84 }}><div style={{ fontWeight: 800, color: dc }}>{dp == null ? '—' : dp + '%'}</div>{closed > 0 && <div className="pbar"><div style={{ width: Math.min(dp, 100) + '%', background: dc }} /></div>}</td>
                 </tr>); })}</tbody>
             </table>
           </div>
+          {todayOpen.length > 0 && (
+            <div style={{ marginTop: 14, scrollMarginTop: 12 }} ref={todayListRef}>
+              <div className="sec-title" style={{ fontSize: 13.5, marginBottom: 8 }}>
+                <span className="sec-ico" style={{ '--tone': '#d97706', width: 26, height: 26, borderRadius: 8 }}><Clock size={13} /></span> Not visited today
+                <span className="count-pill" style={{ color: '#d97706', background: 'color-mix(in srgb, #d97706 12%, transparent)' }}>{todayOpen.length}</span>
+                <span className="sec-note">Planned for today, no check-out yet. Still open — they count as not visited if the day ends without one.</span>
+              </div>
+              <div className="vc-missed">
+                {todayOpen.map(p => (
+                  <div key={p._id} className="att-card" style={{ '--tone': '#d97706', display: 'flex', gap: 10, alignItems: 'center', fontSize: 12.5, padding: '10px 12px 10px 16px', cursor: 'default' }}>
+                    <span className="ini" style={{ '--h': hue(p.dealerName), width: 32, height: 32, borderRadius: 10 }}>{inits(p.dealerName)}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <a href="#" onClick={e => { e.preventDefault(); if (!p.newParty) setOpen(p.dealerId); }} style={{ fontWeight: 750, color: 'var(--t1)', textDecoration: 'none', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.dealerName}{p.newParty ? ' · new party' : ''}</a>
+                      <div style={{ fontSize: 11, color: 'var(--t3)', display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center' }}>
+                        <span style={{ color: '#d97706', fontWeight: 700 }}><Clock size={10} style={{ verticalAlign: -1 }} /> Today</span>
+                        {!sm && <span>· {p.salesmanName}</span>}
+                        {p.note && <span style={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>· {p.note}</span>}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {missedList.length > 0 && (
             <div style={{ marginTop: 14 }}>
               <div className="sec-title" style={{ fontSize: 13.5, marginBottom: 8 }}>
@@ -774,6 +864,23 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
         .vc-month-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
         .vc-dow { font-size: 10.5px; font-weight: 800; color: var(--t3); text-transform: uppercase; letter-spacing: .08em; text-align: center; padding: 2px 0 4px; }
         .vc-dow.we { opacity: .6; }
+        .vc-holwm { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; text-align: center; transform: rotate(-14deg); opacity: .2; color: var(--hol); z-index: 0; padding: 4px; overflow: hidden; }
+        .vc-holwm b { font-size: 13px; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; line-height: 1.1; }
+        .vc-holwm span { font-size: 10px; font-weight: 800; line-height: 1.15; margin-top: 2px; }
+        .vc-holwm.big b { font-size: 34px; }
+        .vc-cell.hol, .vc-wcol.hol { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--hol) 7%, var(--bg1)) 0 8px, var(--bg1) 8px 16px); border-color: color-mix(in srgb, var(--hol) 35%, var(--b1)); }
+        .vc-cell.hol > *:not(.vc-holwm), .vc-wcol.hol > *:not(.vc-holwm) { position: relative; z-index: 1; }
+        .vc-wcol { position: relative; overflow: hidden; }
+        .vc-holtag { margin-top: auto; font-size: 10px; font-weight: 800; color: var(--hol); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 1px 6px; border-radius: 6px; background: color-mix(in srgb, var(--hol) 12%, var(--bg1)); align-self: flex-start; max-width: 100%; }
+        .vc-holwarn { font-size: 11px; color: var(--hol, #e11d48); font-weight: 900; margin-left: 2px; }
+        .vc-sday.hol { border-color: color-mix(in srgb, var(--hol) 45%, var(--b1)); background: color-mix(in srgb, var(--hol) 8%, var(--bg1)); }
+        .vc-sday.hol em { color: var(--hol); font-weight: 800; }
+        .vc-holbanner { position: relative; overflow: hidden; display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin-bottom: 12px; border-radius: 12px; color: var(--hol); border: 1px dashed color-mix(in srgb, var(--hol) 55%, transparent); background: color-mix(in srgb, var(--hol) 8%, var(--bg1)); }
+        .vc-holbanner > div:not(.vc-holwm) { display: flex; flex-direction: column; gap: 1px; font-size: 12px; position: relative; }
+        .vc-holbanner > div:not(.vc-holwm) b { font-size: 13.5px; font-weight: 850; }
+        .vc-holbanner > div:not(.vc-holwm) span { color: var(--t2); }
+        .vc-holbanner .vc-holwm { justify-content: center; align-items: flex-end; padding-right: 14px; opacity: .1; }
+        .vc-n-btn { border: none; cursor: pointer; font: inherit; }
         .vc-cell { position: relative; min-height: 96px; min-width: 0; padding: 6px; border-radius: 12px; cursor: pointer; border: 1px solid var(--b1); background: var(--bg1); display: flex; flex-direction: column; gap: 4px; overflow: hidden; transition: background .15s, border-color .15s, box-shadow .15s, transform .15s; outline: none; }
         .vc-cell:hover { border-color: var(--b2); background: var(--bg2); transform: translateY(-1px); box-shadow: var(--shadowHover, 0 4px 14px rgba(0,0,0,.12)); }
         .vc-cell:focus-visible { box-shadow: 0 0 0 2px var(--acc); }
@@ -807,6 +914,20 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
         .vc-datebox.tod { background: var(--acc); border-color: var(--acc); }
         .vc-datebox.tod span, .vc-datebox.tod b { color: #fff; }
         .vc-daystats { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+        .vc-dfilter { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+        .vc-dfc { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; color: var(--t2); background: var(--bg2); border: 1px solid var(--b1); padding: 5px 11px; border-radius: 20px; cursor: pointer; white-space: nowrap; transition: background .15s, border-color .15s, color .15s; }
+        .vc-dfc b { font-weight: 850; color: var(--tone); }
+        .vc-dfc:hover { border-color: color-mix(in srgb, var(--tone) 45%, var(--b1)); }
+        .vc-dfc.on { color: #fff; background: var(--tone); border-color: var(--tone); }
+        .vc-dfc.on b { color: #fff; }
+        .vc-dfsm { font-size: 12px; padding: 5px 10px; border-radius: 20px; width: auto; max-width: 160px; }
+        .vc-dfq { display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; border: 1px solid var(--b2); border-radius: 20px; background: var(--bg1); color: var(--t3); flex: 1 1 150px; min-width: 130px; max-width: 240px; }
+        .vc-dfq input { border: none; outline: none; background: transparent; color: var(--t1); font-size: 12px; width: 100%; min-width: 0; }
+        .vc-dfq button { border: none; background: none; color: var(--t3); cursor: pointer; display: flex; padding: 0; }
+        .vc-daylist { display: grid; gap: 8px; margin-bottom: 12px; }
+        .vc-daylist.scroll { max-height: min(68vh, 760px); overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; scrollbar-width: thin; }
+        .vc-dfnone { font-size: 12.5px; color: var(--t3); padding: 14px; text-align: center; border: 1px dashed var(--b2); border-radius: 12px; margin-bottom: 12px; }
+        .vc-dfnone button { background: none; border: none; color: var(--acc); font-weight: 800; cursor: pointer; padding: 0 4px; }
         .vc-capbox { flex: 1 1 180px; min-width: 0; padding: 8px 12px; border-radius: 12px; background: var(--bg2); border: 1px solid var(--b1); }
         .vc-empty { display: flex; flex-direction: column; align-items: center; gap: 5px; text-align: center; padding: 18px 10px; margin-bottom: 12px; border-radius: 14px; border: 1px dashed var(--b2); background: color-mix(in srgb, var(--bg2) 60%, transparent); }
         .vc-item { padding: 12px 12px 12px 16px; }

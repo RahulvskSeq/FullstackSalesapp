@@ -3,6 +3,7 @@ import { X, Search, Plus, Trash2, CalendarPlus, MapPin, CheckCircle2, AlertTrian
 import { api } from '../api';
 import { useT } from '../i18n';
 import RepeatHint from './RepeatHint';
+import { holidayOn, HOLIDAY_LABEL, HOLIDAY_TONE } from '../lib/holidays';
 
 // "Plan a visit": every dealer on the right; tap + and the dealer drops into the day's
 // plan at the bottom. The day holds at most `maxPerDay` visits per salesman.
@@ -135,6 +136,10 @@ export default function PlanVisitDrawer({ dealers = [], plans = [], day, setDay,
           <input type="date" className="inp" value={day} min={tomorrow} onChange={e => e.target.value && setDay(e.target.value)} />
           {isStaff && <select className="sel" value={salesmanId} onChange={e => setSalesmanId(e.target.value)}><option value="">Pick a salesman…</option>{salesmen.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select>}
         </div>
+        {holidayOn(day) && (() => { const h = holidayOn(day); return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '0 0 10px', padding: '8px 11px', borderRadius: 10, fontSize: 12.5, fontWeight: 700, color: HOLIDAY_TONE[h.type], background: `color-mix(in srgb, ${HOLIDAY_TONE[h.type]} 9%, transparent)`, border: `1px dashed color-mix(in srgb, ${HOLIDAY_TONE[h.type]} 50%, transparent)` }}>
+            <AlertTriangle size={14} /> {fmtDay(day)} is {h.type === 'half' ? 'a half day' : h.type === 'compoff' ? 'a comp off' : 'an office holiday'} — {h.name}
+          </div>); })()}
         {salesmanId && <div className={'pv-cap' + (full ? ' full' : '')}>
           <div><b>{dayPlans.length} / {maxPerDay}</b> planned{full ? ' — the day is full' : ` · ${maxPerDay - dayPlans.length} more can go on this day`}</div>
           <div className="pv-bar"><i style={{ width: Math.min(100, dayPlans.length / maxPerDay * 100) + '%' }} /></div>
