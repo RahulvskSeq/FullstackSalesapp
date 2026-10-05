@@ -304,7 +304,7 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
     'LINER':         lam => lam,                    // 100% of laminate
     'LOUVRES':       lam => Math.round(lam * 0.30), // 30%
     'POLYMER SHEET': lam => Math.round(lam * 0.10), // 10%
-    'ROLLS':         ()  => 20,                     // flat 20
+    'ROLLS':         ()  => 35,                     // flat 35
   };
 
   // Colour an achievement against ITS OWN target, so a cell says whether that

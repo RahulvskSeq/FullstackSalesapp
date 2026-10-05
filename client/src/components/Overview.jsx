@@ -1296,6 +1296,7 @@ import SalesByBrand from './SalesByBrand';
 import CategoryFilter from './CategoryFilter';
 import { useGlobalCategoryFilter } from '../hooks/useGlobalCategoryFilter';
 import { useMonthTotals, pickTotals } from '../hooks/useMonthTotals';
+import { rollsOn, ROLLS_PER_SALESMAN, lamTarget } from '../lib/targetRule';
 import { api } from '../api';
 import { DealerVisitSearch } from './DealerVisitModal';
 import { notify } from './Toast';
@@ -1680,10 +1681,12 @@ const Overview=({dealers,currentUser,users,notes,onOpenDealer,onNavigate,onUpdat
   // One month, a salesman's own page or one salesman picked: the server's figures,
   // counted on the dealers owned THAT month (same as the admin salesman cards).
   const smOnly = !!ovF.sm && Object.entries(ovF).every(([k, v]) => k === 'sm' || !v);
-  const { data: mtData, filterOn: mtOn } = useMonthTotals(rangeActive ? '' : _moLabelToYM(selMoFull));
+  const { data: mtData, filterOn: mtOn, excluded: mtEx } = useMonthTotals(rangeActive ? '' : _moLabelToYM(selMoFull));
   const mt = rangeActive || (ovActive && !smOnly) ? null
-    : pickTotals(mtData, mtOn, { user: currentUser, isStaff: !mine, sm: ovActive ? ovF.sm : '' });
-  const ttShow = mt?.target ?? tt;
+    : pickTotals(mtData, mtOn, { user: currentUser, isStaff: !mine, sm: ovActive ? ovF.sm : '', excluded: mtEx });
+  // dealer targets are already scaled to the categories; Rolls is added once per salesman who has a target
+  const ttRolls = rollsOn(catExcluded) && !rangeActive ? ROLLS_PER_SALESMAN * new Set(myD.filter(x => rangeIdxs.some(i => lamTarget(x, i) > 0)).map(x => x.salesman)).size : 0;
+  const ttShow = mt?.target ?? (tt + ttRolls);
   const taShow = mt?.achieved ?? taAdj;
   const apShow = mt ? pct(ttShow, taShow) : apAdj;
   // Basic target = the category targets (Sales targets) for the categories shown,

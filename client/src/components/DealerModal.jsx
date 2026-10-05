@@ -8561,6 +8561,7 @@ import { notify, confirmDialog } from './Toast';
 import { VoiceTextarea } from './VoiceInput';
 import { Layers } from 'lucide-react';
 import { useZones } from '../hooks/useZones';
+import { catTargets, includedFactor } from '../lib/targetRule';
 
 // Local-calendar helpers. toISOString() is UTC, so before 05:30 IST it
 // reports yesterday; parsing 'YYYY-MM-DD' with new Date() is also UTC.
@@ -8688,6 +8689,12 @@ const DM_CSS=`
 .dm-kpi-v{font-size:22px;font-weight:850;letter-spacing:-.02em;line-height:1.1;color:var(--tone);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dm-kpi-sub{font-size:11px;color:var(--t3);margin-top:5px;min-height:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pbar.dm-pbar{width:100%;height:6px;margin-top:9px}
+.dm-cattgt{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:10px;font-size:11.5px}
+.dm-cattgt-l{font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--t3);margin-right:2px}
+.dm-cattgt-c{padding:3px 10px;border-radius:20px;border:1px solid var(--b1);background:var(--bg1);color:var(--t2);white-space:nowrap}
+.dm-cattgt-c b{color:var(--acc);font-weight:800;margin-left:2px}
+.dm-cattgt-c.off{opacity:.45}
+.dm-cattgt-c.off b{color:var(--t3)}
 .dm-tabbar{position:sticky;top:0;z-index:6;background:var(--bg1);padding:10px 24px;border-bottom:1px solid var(--b1)}
 .seg.dm-seg{display:flex;max-width:100%;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .dm-seg::-webkit-scrollbar{display:none}
@@ -8994,7 +9001,13 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
   // Smart per-month target — see utils.monthTarget. Each month gets its own
   // target if uploaded; otherwise we fall back to the dealer's global target
   // ONLY for months that have actual sales (so historical Sheets data is OK).
-  const viewTarget=monthTarget(dealer, selectedMonthIdx);
+  // The stored target is the LAMINATE target; the categories picked in this
+  // popup turn it into theirs (Liner 100%, Louvres 30%, Polymer 10%), so the
+  // target always measures the same categories as the achieved figure.
+  const tgtFactor=includedFactor(dCatSel.has('__none__')?new Set(['__none__']):dCatSel);
+  const tgtOf=i=>Math.round((monthTarget(dealer, i)||0)*tgtFactor);
+  const lamViewTarget=monthTarget(dealer, selectedMonthIdx)||0;
+  const viewTarget=tgtOf(selectedMonthIdx);
   const p=viewTarget?pct(viewTarget,viewAchieved):(viewAchieved>0?null:0);
   const tp=trendPct(monthsForView);
   const fc=forecast(monthsForView);
@@ -9004,7 +9017,7 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
   const dmRev=[...dmIdx].reverse();
   const chartData=dmIdx.map(i=>({
     month:MO[i].slice(0,3),units:monthsForView[i]||0,
-    target:monthTarget(dealer, i) || null,
+    target:tgtOf(i) || null,
     isSelected:i===selectedMonthIdx,
     label:MO[i],
     // null = this month predates category tracking, so it cannot be split.
@@ -9235,6 +9248,15 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
               <div className="dm-kpi-sub">3m vs 3m</div>
             </div>
           </div>
+          {lamViewTarget>0&&(
+            <div className="dm-cattgt">
+              <span className="dm-cattgt-l">{selMoLabel} target by category</span>
+              {catTargets(lamViewTarget).map(c=>{
+                const on=dCatSel.size===0||dCatSel.has(c.cat);
+                return <span key={c.cat} className={'dm-cattgt-c'+(on?'':' off')}>{c.label} <b>{c.value.toLocaleString('en-IN')}</b></span>;
+              })}
+            </div>
+          )}
         </div>
 
         {/* ── Sticky pill tab bar ─────────────────────────────────────── */}
@@ -9382,7 +9404,7 @@ const DealerModal=({dealer,users,currentUser,onSave,onDelete,onClose,notes,onAdd
                 <tbody>
                   {dmRev.map(i=>{
                     const v=monthsForView[i];
-                    const mt=monthTarget(dealer, i);
+                    const mt=tgtOf(i);
                     const prev=i>0?monthsForView[i-1]:null;
                     const diff=prev!=null?v-prev:null;
                     const diffP=prev&&prev>0?Math.round((diff/prev)*100):null;

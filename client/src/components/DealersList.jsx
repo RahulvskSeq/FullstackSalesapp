@@ -1163,6 +1163,7 @@ import { useMonth } from '../context';
 import { useGlobalCategoryFilter } from '../hooks/useGlobalCategoryFilter';
 import { StatusBadge, Avatar, MiniBars, MultiSelect } from './UI';
 import { notify } from './Toast';
+import { lamTarget, catTargets, TARGET_CATS } from '../lib/targetRule';
 
 // ── Drag-and-drop Kanban board ────────────────────────────
 const STATUS_COLORS = {
@@ -1337,7 +1338,7 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
   const [sort,setSort]=useState({col:'name',dir:1});
   const [limit,setLimit]=useState(150);          // rows drawn at once; "Show more" draws the rest
   const [colsOpen,setColsOpen]=useState(false);
-  const COLS0={loc:true,type:true,months:true,credit:true};
+  const COLS0={loc:true,type:true,catTgt:true,months:true,credit:true};
   const [cols,setCols]=useState(()=>{ try{ return {...COLS0,...JSON.parse(localStorage.getItem('stp_dl_cols')||'{}')}; }catch{ return COLS0; } });
   useEffect(()=>{ try{ localStorage.setItem('stp_dl_cols',JSON.stringify(cols)); }catch{} },[cols]);
   const [editCell,setEditCell]=useState(null);   // { id, i } — month cell being typed into
@@ -1366,6 +1367,8 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
       ...d,
       achieved:     d.months?.[selectedMonthIdx]||0,
       target:       d.monthTargets?.[selectedMonthIdx]||0,
+      // the entered (laminate) target split by category — Liner 100%, Louvres 30%, Polymer 10%
+      catTgt:       catTargets(lamTarget(d, selectedMonthIdx)),
       // Potential Status is a DEALER-level label. It used to fall back to the
       // per-month status, which still holds legacy performance words from the
       // sheet — that is why ACTIVE and DEAD appeared under Potential. Anything
@@ -1634,6 +1637,8 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
       const idCols   = ['Dealer ID','Dealer Name','Salesman','Zone','Dealer Type','City','State','PIN','Address'];
       const statCols = ['Performance','Perf Qty','Perf Month','Selected User'];
       const numsCols = ['Target','Achieved','Ach %','Trend %','6M Avg'];
+      const ctMo     = MO[selectedMonthIdx];
+      const ctCols   = TARGET_CATS.map(([,l])=>`${l} Tgt ${ctMo}`);
       const monCols  = MO.map(m=>m+scope);
       const credCols = ['Cr Days','Cr Limit'];
       // One column per ticked category, each dealer's total across the months
@@ -1648,7 +1653,7 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
           return a + (ym && catMonths.has(ym) ? (byMonth[ym] || 0) : 0);
         }, 0);
       };
-      const h = [...idCols, ...statCols, ...numsCols, ...monCols, ...catCols, ...credCols];
+      const h = [...idCols, ...statCols, ...numsCols, ...ctCols, ...monCols, ...catCols, ...credCols];
 
       const rows = filtered.map(x=>[
         x.id||'', x.name||'',
@@ -1656,6 +1661,7 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
         x.zone||'', x.dealerType||'None', x.city||'', x.state||'', x.pincode||'', x.address||'',
         x.perfStatus||'NEW DEALER', Number(x.perfQty||0), x.perfMonth||'', x.status||'',
         Number(x.target||0), Number(x.achieved||0), spct(x.target,x.achieved), trendPct(x.months)+'%', Number(x.avg6m||0),
+        ...x.catTgt.map(c=>c.value),
         ...MO.map((_,i)=>Number(monthVal(x,i))||0),
         ...catCols.map((_,i)=>Number(catTotal(x,picked[i]))||0),
         Number(x.creditDays||0), Number(x.creditLimit||0),
@@ -1670,13 +1676,14 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
           { label:'Dealer',      span:idCols.length,   tone:'dealer' },
           { label:'Status',      span:statCols.length, tone:'calc'   },
           { label:'Performance', span:numsCols.length, tone:'total'  },
+          { label:'Target by category · '+ctMo, span:ctCols.length, tone:'calc' },
           { label:'Monthly'+scope, span:monCols.length, tone:'a'     },
           ...(catCols.length ? [{ label:'By category', span:catCols.length, tone:'b' }] : []),
           { label:'Credit',      span:credCols.length, tone:'total'   },
         ],
         // Everything the app works out for itself — shown, not typed.
-        readonly:['Dealer ID','Performance','Perf Qty','Perf Month','Ach %','Trend %','6M Avg'].map(at),
-        numCols:[...numsCols.filter(c=>!/%/.test(c)), ...monCols, ...catCols, ...credCols, 'Perf Qty'].map(at),
+        readonly:['Dealer ID','Performance','Perf Qty','Perf Month','Ach %','Trend %','6M Avg',...ctCols].map(at),
+        numCols:[...numsCols.filter(c=>!/%/.test(c)), ...ctCols, ...monCols, ...catCols, ...credCols, 'Perf Qty'].map(at),
         widths:h.map(c=> c==='Dealer Name'?34 : c==='Address'?38 : c==='Salesman'?16 : c==='City'?15 : undefined),
         freezeCols:2,
       };
@@ -1737,7 +1744,7 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
               {colsOpen&&(<>
                 <div style={{position:'fixed',inset:0,zIndex:59}} onClick={()=>setColsOpen(false)}/>
                 <div className="dl-cols">
-                  {[['loc','Location (city, state, PIN, address)'],['type','Dealer type'],['months','Month-by-month figures'],['credit','Credit days & limit']].map(([k,l])=>(
+                  {[['loc','Location (city, state, PIN, address)'],['type','Dealer type'],['catTgt','Target by category'],['months','Month-by-month figures'],['credit','Credit days & limit']].map(([k,l])=>(
                     <label key={k}><input type="checkbox" checked={!!cols[k]} onChange={()=>setCols(c=>({...c,[k]:!c[k]}))} style={{accentColor:'var(--acc)'}}/>{l}</label>
                   ))}
                 </div>
@@ -1994,6 +2001,7 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
                   {sh('status','Selected User')}
                   {sh('target','Tgt')}{sh('achieved','Ach')}{sh('pct','%')}{sh('trend','Trend')}
                   {sh('avg6m','6m Avg')}
+                  {cols.catTgt&&TARGET_CATS.map(([c,l])=><th key={c} style={{textAlign:'right',whiteSpace:'nowrap'}} title={`${MO[selectedMonthIdx]} ${l} target`}>{l} Tgt</th>)}
                   {cols.months&&vRev.map(i=>{return<th key={i} style={{background:i===selectedMonthIdx?'color-mix(in srgb, var(--acc) 8%, transparent)':'var(--bg1)'}}>{MO[i]}</th>;})}
                   {cols.credit&&<>{sh('creditDays','CrD')}{sh('creditLimit','Cr Limit')}</>}
                   <th>Notes</th><th>Actions</th>
@@ -2052,6 +2060,7 @@ const DealersList=({dealers,currentUser,users,onEdit,onDelete,onAdd,selected,set
                       </td>
                       <td><span className={'trend '+(tp>0?'up':tp<0?'down':'')}>{tp>0?<ArrowUpRight size={11}/>:tp<0?<ArrowDownRight size={11}/>:'—'}{tp?Math.abs(tp)+'%':''}</span></td>
                       <td style={{textAlign:'right',color:'var(--t3)'}}>{x.avg6m||'—'}</td>
+                      {cols.catTgt&&x.catTgt.map(c=><td key={c.cat} style={{textAlign:'right',fontSize:12,color:c.value?'var(--t2)':'var(--t3)'}}>{c.value||'—'}</td>)}
                       {cols.months&&vRev.map(i=>{
                         // With a salesman filter on, a month belongs in this row
                         // only if the FILTERED salesman owned the dealer that

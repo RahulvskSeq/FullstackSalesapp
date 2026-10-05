@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
+import { targetFactor } from '../lib/targetRule';
 import { useGlobalCategoryFilter } from './useGlobalCategoryFilter';
 
 /**
@@ -70,9 +71,19 @@ export function useAllMonthsCategoryFilteredDealers(dealers, MO, selectedMonthId
   // Map each MO label → its YYYY-MM key once.
   const ymOf = useMemo(() => (MO || []).map(moToYM), [MO]);
 
+  // Targets follow the selected categories: a dealer's (laminate) target × the ratio of
+  // what is selected. The entered figures stay on monthTargetsRaw / targetRaw.
+  const factor = useMemo(() => targetFactor(excluded || new Set()), [excludedKey]); // eslint-disable-line
+  const scaleTargets = d => {
+    if (factor === 1) return d;
+    const raw = d.monthTargets || {}, mt = {};
+    for (const k of Object.keys(raw)) mt[k] = Math.round((Number(raw[k]) || 0) * factor);
+    return { ...d, monthTargets: mt, target: Math.round((Number(d.target) || 0) * factor), monthTargetsRaw: raw, targetRaw: d.target };
+  };
+
   const filtered = useMemo(() => {
-    if (!excluded || excluded.size === 0 || !cat) return dealers;
     if (!Array.isArray(dealers)) return dealers;
+    if (!excluded || excluded.size === 0 || !cat) return factor === 1 ? dealers : dealers.map(scaleTargets);
 
     const endIdx = (selectedMonthIdx == null || selectedMonthIdx < 0)
       ? (MO?.length || 0) - 1
@@ -94,9 +105,9 @@ export function useAllMonthsCategoryFilteredDealers(dealers, MO, selectedMonthId
       // Recompute the 6-month average off the adjusted figures. Every dealer
       // gets the computed value while a filter is active, so the column isn't
       // a mix of stored and derived numbers.
-      return { ...d, months: next, avg6m: avg6(next, endIdx) };
+      return scaleTargets({ ...d, months: next, avg6m: avg6(next, endIdx) });
     });
-  }, [dealers, excluded, cat, ymOf, selectedMonthIdx, MO]);
+  }, [dealers, excluded, cat, ymOf, selectedMonthIdx, MO, factor]); // eslint-disable-line
 
   // `dealers` — the category-adjusted array.
   // `includedTotalByMonth` — { 'YYYY-MM': qty } across ALL Sale rows, so a

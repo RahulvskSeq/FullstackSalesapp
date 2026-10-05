@@ -15411,6 +15411,7 @@ import ApiUrlSettings   from './components/ApiUrlSettings';
 import SalesByCategory  from './components/SalesByCategory';
 import { useAllMonthsCategoryFilteredDealers, moToYM } from './hooks/useAllMonthsCategoryFilter';
 import { useMonthTotals, pickTotals } from './hooks/useMonthTotals';
+import { rollsOn, ROLLS_PER_SALESMAN, lamTarget } from './lib/targetRule';
 
 // Screens load when first opened (then everything is prefetched once the app is idle),
 // so a phone parses a small start-up bundle instead of every page at once.
@@ -16011,6 +16012,9 @@ export default function App(){
     });
   },[dealersGloballyFiltered,currentUser,isStaff,selectedMonthIdx]);
 
+  // Monthly Entry edits the targets themselves: it gets the entered (laminate) figures, never the category-scaled ones
+  const myDealersRaw=useMemo(()=>myDealers.map(d=>d.monthTargetsRaw?{...d,monthTargets:d.monthTargetsRaw,target:d.targetRaw}:d),[myDealers]);
+
   const myNotes=useMemo(()=>{
     if(!currentUser)return[];
     if(isStaff)return notes;
@@ -16402,8 +16406,15 @@ export default function App(){
     : myDealers.reduce((s,x)=>s+(x.months?.[selectedMonthIdx]||0),0);
   // Server month totals (dealers owned that month) for a salesman's own Home —
   // the same figures the Overview cards and the admin salesman cards show.
-  const { data: _mtData, filterOn: _mtOn } = useMonthTotals(_snapYM || '');
-  const homeTotals = useMemo(() => pickTotals(_mtData, _mtOn, { user: currentUser, isStaff }), [_mtData, _mtOn, currentUser, isStaff]);
+  const { data: _mtData, filterOn: _mtOn, excluded: _mtEx } = useMonthTotals(_snapYM || '');
+  // office view: the dealer targets (already scaled to the categories) + Rolls once per salesman with a target
+  const _staffTarget = useMemo(() => {
+    if (!isStaff || !rollsOn(_mtEx)) return _ttSnap;
+    const sms = new Set(myDealers.filter(x => lamTarget(x, selectedMonthIdx) > 0).map(x => x.monthSalesman?.[selectedMonthIdx] || x.salesman));
+    return _ttSnap + ROLLS_PER_SALESMAN * sms.size;
+  }, [isStaff, _mtEx, _ttSnap, myDealers, selectedMonthIdx]);
+  const homeTotals = useMemo(() => pickTotals(_mtData, _mtOn, { user: currentUser, isStaff, excluded: _mtEx }) || (isStaff ? { target: _staffTarget, achieved: null } : null),
+    [_mtData, _mtOn, _mtEx, currentUser, isStaff, _staffTarget]);
   const ttSnap = homeTotals?.target ?? _ttSnap;
   const taSnap = homeTotals?.achieved ?? _taSnap;
   const sbP=pct(ttSnap,taSnap);
@@ -16672,7 +16683,7 @@ export default function App(){
                   {screen==='upload'&&<UploadMonth users={users} currentUser={currentUser} onSuccess={()=>loadFromDB(activeMO)}/>}
                   {screen==='salesUpload' && isStaff && <SalesUpload currentUser={currentUser} onUploaded={()=>{}}/>}
                   {screen==='salesCat'    && <SalesByCategory currentUser={currentUser} users={users} dealers={dealers} outstandingData={outstandingData} onOpenDealer={setEditingId}/>}
-                  {screen==='entry'&&<MonthlyEntry dealers={myDealers} users={users} currentUser={currentUser} onUpdateDealer={updateDealerFields} onSaved={()=>loadFromDB(activeMO)}/>}
+                  {screen==='entry'&&<MonthlyEntry dealers={myDealersRaw} users={users} currentUser={currentUser} onUpdateDealer={updateDealerFields} onSaved={()=>loadFromDB(activeMO)}/>}
                   {screen==='months'&&isStaff&&<ManageMonths dealers={dealers} users={users} currentUser={currentUser} monthConfig={monthConfig} saveMonthConfig={saveMonthConfig} loadFromDB={loadFromDB} onSync={syncSheets} syncing={syncing} lastSync={lastSync}/>}
                   {screen==='followups'&&<FollowupsHub notes={myNotes} dealers={myDealers} users={users} onUpdateNote={updateNote} onDeleteNote={deleteNote} onOpenDealer={setEditingId}/>}
                   {screen==='crm'        && <CRM            dealers={myDealers} users={users} currentUser={currentUser}/>}

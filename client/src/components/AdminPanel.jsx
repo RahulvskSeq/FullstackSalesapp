@@ -274,6 +274,7 @@ import ActivityLog from './ActivityLog';
 import UserManagement from './UserManagement';
 import CategoryFilter from './CategoryFilter';
 import { useGlobalCategoryFilter } from '../hooks/useGlobalCategoryFilter';
+import { withRolls, rollsOn, ROLLS_PER_SALESMAN, lamTarget } from '../lib/targetRule';
 import { api } from '../api';
 import { notify, confirmDialog } from './Toast';
 import { SHEET_SYNC_ENABLED } from '../featureFlags';
@@ -478,7 +479,10 @@ const AdminPanel=({section,onSection,hideRail,modules=[],renderPage,dealers,user
     target: monthTarget(d, selectedMonthIdx),
   })),[dealers, selectedMonthIdx]);
 
-  const tt=dealersForMonth.reduce((s,x)=>s+x.target,0),ta=dealersForMonth.reduce((s,x)=>s+x.achieved,0);
+  // targets follow the selected categories (lib/targetRule): + Rolls once per salesman who has a target
+  const { excluded: catEx } = useGlobalCategoryFilter();
+  const smWithTarget = new Set(dealersForMonth.filter(d => lamTarget(d, selectedMonthIdx) > 0).map(d => d.monthSalesman?.[selectedMonthIdx] || d.salesman)).size;
+  const tt=dealersForMonth.reduce((s,x)=>s+x.target,0) + (rollsOn(catEx) ? ROLLS_PER_SALESMAN * smWithTarget : 0),ta=dealersForMonth.reduce((s,x)=>s+x.achieved,0);
   // "Active" is a performance statement, so it reads the calculated tier.
   // This used to match ACTIVE / ACHIVERS / KEY ACCOUNT on `status` — after the
   // stale sheet values were cleared, ACTIVE no longer exists there and the
@@ -509,7 +513,7 @@ const AdminPanel=({section,onSection,hideRail,modules=[],renderPage,dealers,user
   };
   const smsActive = sms.filter(activeInMonth);
   const smsHidden = sms.length - smsActive.length;
-  const compareData=smsActive.map(s=>{const sd=dealersForMonth.filter(d=>ownerOf(d,selectedMonthIdx)===s.id);return{name:s.name,Target:sd.reduce((a,x)=>a+x.target,0),Achieved:sd.reduce((a,x)=>a+x.achieved,0),smId:s.id,color:s.color};});
+  const compareData=smsActive.map(s=>{const sd=dealersForMonth.filter(d=>ownerOf(d,selectedMonthIdx)===s.id);return{name:s.name,Target:withRolls(sd.reduce((a,x)=>a+x.target,0),catEx,sd.some(x=>lamTarget(x,selectedMonthIdx)>0)),Achieved:sd.reduce((a,x)=>a+x.achieved,0),smId:s.id,color:s.color};});
 
   // ── Section rail ──────────────────────────────────────────────────────
   // Pure navigation: every item maps onto the tab / adminSec state that
@@ -726,7 +730,7 @@ const AdminPanel=({section,onSection,hideRail,modules=[],renderPage,dealers,user
             {smsActive.map(s=>{
               const sd=dealersForMonth.filter(d=>ownerOf(d,selectedMonthIdx)===s.id);
               const ownedNow=dealersForMonth.filter(d=>d.salesman===s.id).length;
-              const st=sd.reduce((a,x)=>a+x.target,0),sa=sd.reduce((a,x)=>a+x.achieved,0),sp=pct(st,sa);
+              const st=withRolls(sd.reduce((a,x)=>a+x.target,0),catEx,sd.some(x=>lamTarget(x,selectedMonthIdx)>0)),sa=sd.reduce((a,x)=>a+x.achieved,0),sp=pct(st,sa);
               // Sparkline: each month sums the dealers this salesman owned
               // THAT month (per-month attribution). The selected month uses
               // the filtered achieved so the bar matches the KPI card.
@@ -781,7 +785,7 @@ const AdminPanel=({section,onSection,hideRail,modules=[],renderPage,dealers,user
               <tbody>
                 {smsActive.map(s=>{
                   const sd=dealersForMonth.filter(d=>ownerOf(d,selectedMonthIdx)===s.id);
-                  const st=sd.reduce((a,x)=>a+x.target,0),sa=sd.reduce((a,x)=>a+x.achieved,0);
+                  const st=withRolls(sd.reduce((a,x)=>a+x.target,0),catEx,sd.some(x=>lamTarget(x,selectedMonthIdx)>0)),sa=sd.reduce((a,x)=>a+x.achieved,0);
                   const mT=MO.map((_,i)=>dealers.reduce((a,d)=>ownerOf(d,i)===s.id?a+(d.months[i]||0):a,0));
                   return(
                     <tr key={s.id} onClick={()=>onNavigate('dealers',{sm:s.id})} style={{cursor:'pointer'}}>
