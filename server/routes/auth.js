@@ -274,6 +274,7 @@ router.put('/users/:id', protect, async (req, res) => {
         salesmen: clean(p.salesmen),
         features: clean(p.features),    // ← same story for the feature toggles
         pages:    clean(p.pages),       // left-nav page access allowlist
+        planFor:  clean(p.planFor),     // visit calendar: whose days this user may plan
       };
       update['permissions.states']   = permsToWrite.states;
       update['permissions.cities']   = permsToWrite.cities;
@@ -281,6 +282,7 @@ router.put('/users/:id', protect, async (req, res) => {
       update['permissions.salesmen'] = permsToWrite.salesmen;
       update['permissions.features'] = permsToWrite.features;
       update['permissions.pages']    = permsToWrite.pages;
+      update['permissions.planFor']  = permsToWrite.planFor;
     } else {
       update[k] = req.body[k];
     }
@@ -352,6 +354,7 @@ router.post('/users', protect, adminOnly, requireFeature('manageUsers'), async (
       salesmen: clean(permissions.salesmen),
       features: clean(permissions.features),  // ← same story for feature toggles
       pages:    clean(permissions.pages),     // left-nav page access
+      planFor:  clean(permissions.planFor),   // visit calendar: whose days this user may plan
     };
   }
   const user = await User.create(doc);

@@ -44,6 +44,8 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
   const { t: tr } = useT();
   const [unplanned, setUnplanned] = useState([]);   // visits made without a plan
   const [canPlan, setCanPlan] = useState(false);   // the server's answer: may this user plan for others
+  const [planFor, setPlanFor] = useState(null);    // null = any salesman; else only these salesmen's days (Settings → Permissions)
+  const mayPlan = sid => canPlan && (!planFor || planFor.includes(sid));
   const [maxPerDay, setMaxPerDay] = useState(8);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -73,7 +75,7 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
   const load = async () => {
     const seq = ++loadSeq.current;
     setBusy(true); setErr('');
-    try { const r = await api.visitPlans({ from: loadFrom, to: loadTo, ...(sm ? { salesmanId: sm } : {}) }); if (seq !== loadSeq.current) return; setPlans(r.items || []); setUnplanned(r.unplanned || []); setCanPlan(!!r.canPlan); setMaxPerDay(r.maxPerDay || 5); }
+    try { const r = await api.visitPlans({ from: loadFrom, to: loadTo, ...(sm ? { salesmanId: sm } : {}) }); if (seq !== loadSeq.current) return; setPlans(r.items || []); setUnplanned(r.unplanned || []); setCanPlan(!!r.canPlan); setPlanFor(Array.isArray(r.planFor) ? r.planFor : null); setMaxPerDay(r.maxPerDay || 5); }
     catch (e) { if (seq === loadSeq.current) setErr(e?.message || 'Could not load'); }
     finally { if (seq === loadSeq.current) setBusy(false); }
   };
@@ -121,8 +123,8 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
   const pool = useMemo(() => {
     const s = q.trim().toLowerCase(); if (s.length < 2) return [];
     const on = new Set(dayPlans.map(p => p.dealerId));
-    return dealers.filter(d => !on.has(d._id || d.id) && ((d.name || '').toLowerCase().includes(s) || (d.city || '').toLowerCase().includes(s))).sort((a, b) => (a.salesman === daySm ? -1 : 1) - (b.salesman === daySm ? -1 : 1)).slice(0, 10);
-  }, [q, dealers, daySm, dayPlans]);
+    return dealers.filter(d => (!planFor || planFor.includes(d.salesman) || (!isStaff && d.salesman === currentUser?.id)) && !on.has(d._id || d.id) && ((d.name || '').toLowerCase().includes(s) || (d.city || '').toLowerCase().includes(s))).sort((a, b) => (a.salesman === daySm ? -1 : 1) - (b.salesman === daySm ? -1 : 1)).slice(0, 10);
+  }, [q, dealers, daySm, dayPlans, planFor, isStaff, currentUser]);
 
   const act = async (fn) => { setBusy(true); setErr(''); try { await fn(); await load(); } catch (e) { setErr(e?.message || 'Could not do that'); } finally { setBusy(false); } };
   const add = (d) => {
@@ -478,7 +480,7 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
                       {p.accountStatus && p.accountStatus !== 'NONE' && <span>· {p.accountStatus}</span>}
                       {p.selfAdded ? <span>· added by {p.salesmanId === currentUser?.id ? 'you' : firstName(p.salesmanId)}</span> : p.plannedByName ? <span>· planned by {p.plannedByName.split(' ')[0]}</span> : null}
                     </div>
-                    {canPlan && editing[p._id] !== undefined ? (
+                    {mayPlan(p.salesmanId) && editing[p._id] !== undefined ? (
                       <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
                         <input className="inp" autoFocus value={editing[p._id]} onChange={e => setEditing(x => ({ ...x, [p._id]: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') saveNote(p); if (e.key === 'Escape') setEditing(x => { const n = { ...x }; delete n[p._id]; return n; }); }} style={{ flex: 1, minWidth: 0, fontSize: 12.5, padding: '7px 10px' }} placeholder="what to do at this dealer" />
                         <button className="btnp" style={{ fontSize: 12, padding: '5px 12px' }} onClick={() => saveNote(p)}>Save</button>
@@ -498,9 +500,9 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
                       : <>
                       <button className={p.status === 'DONE' ? 'btn' : 'btnp'} title="Open the dealer: summary, check-in, MOM" style={{ fontSize: 12, padding: '5px 12px', display: 'inline-flex', alignItems: 'center', gap: 5 }} onClick={() => setOpen(p.dealerId)}>{tr(p.status === 'DONE' ? 'Open' : 'Visit')} <ArrowRight size={13} /></button>
                       </>}
-                      {canPlan && editing[p._id] === undefined && <button className="btn vc-ib" title="Edit the office note" onClick={() => setEditing(x => ({ ...x, [p._id]: p.note }))}><Pencil size={13} /></button>}
-                      {canPlan && p.status !== 'DONE' && p.date > tdy && <button className="btn vc-ib" title="Replace with another dealer" style={replacing?._id === p._id ? { color: 'var(--acc)', borderColor: 'var(--acc)', background: 'var(--accL)' } : undefined} onClick={() => { setReplacing(r => r?._id === p._id ? null : p); setQ(''); }}><Repeat size={13} /></button>}
-                      {canPlan && p.status !== 'DONE' && <button className="btn vc-ib" title="Mark visited" style={{ color: 'var(--grn)' }} onClick={() => act(() => api.updateVisitPlan(p._id, { status: 'DONE' }))}><CheckCircle2 size={13} /></button>}
+                      {mayPlan(p.salesmanId) && editing[p._id] === undefined && <button className="btn vc-ib" title="Edit the office note" onClick={() => setEditing(x => ({ ...x, [p._id]: p.note }))}><Pencil size={13} /></button>}
+                      {mayPlan(p.salesmanId) && p.status !== 'DONE' && p.date > tdy && <button className="btn vc-ib" title="Replace with another dealer" style={replacing?._id === p._id ? { color: 'var(--acc)', borderColor: 'var(--acc)', background: 'var(--accL)' } : undefined} onClick={() => { setReplacing(r => r?._id === p._id ? null : p); setQ(''); }}><Repeat size={13} /></button>}
+                      {mayPlan(p.salesmanId) && p.status !== 'DONE' && <button className="btn vc-ib" title="Mark visited" style={{ color: 'var(--grn)' }} onClick={() => act(() => api.updateVisitPlan(p._id, { status: 'DONE' }))}><CheckCircle2 size={13} /></button>}
                       {p.canRemove && <button className="btn vc-ib" title={canPlan ? 'Cancel this visit' : 'Remove (you added it)'} style={{ color: 'var(--red)' }} onClick={() => { if (window.confirm(`Remove ${p.dealerName} from ${fmtDay(day)}?`)) act(() => api.deleteVisitPlan(p._id)); }}><Trash2 size={13} /></button>}
                     </div>
                   </div>
@@ -887,7 +889,8 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
       `}</style>
       {planOpen && <PlanVisitDrawer dealers={dealers} plans={plansAll} day={day}
         setDay={d => { setDay(d); const x = new Date(d + 'T00:00:00'); if (x.getFullYear() !== month.getFullYear() || x.getMonth() !== month.getMonth()) setMonth(new Date(x.getFullYear(), x.getMonth(), 1)); }}
-        salesmanId={isStaff ? sm : (currentUser?.id || '')} setSalesmanId={setSm} salesmen={salesmen} isStaff={isStaff} canPlan={canPlan} maxPerDay={maxPerDay}
+        salesmanId={isStaff ? (planFor && !planFor.includes(sm) ? (planFor[0] || '') : sm) : (currentUser?.id || '')} setSalesmanId={setSm}
+        salesmen={planFor ? salesmen.filter(s => planFor.includes(s.id)) : salesmen} planFor={planFor} isStaff={isStaff} canPlan={canPlan} maxPerDay={maxPerDay}
         onChanged={load} onClose={() => setPlanOpen(false)} />}
       {carryOpen && <SamplesCarryModal date={day} salesmanId={daySm || ''} onClose={() => setCarryOpen(false)} />}
       {ciOpen && (

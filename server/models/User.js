@@ -83,6 +83,9 @@ const S = new mongoose.Schema({
     // Ids match the sidebar nav ids (overview, dealers, map, outstanding,
     // visits, leads, tasks, reports, admin, …). Superadmin ignores this.
     pages:     { type:[String], default: [] },
+    // Visit calendar: plan for these salesmen's days only (with their dealers).
+    // Empty = the 'visitPlan' action decides (all salesmen) — see lib/planScope.js.
+    planFor:   { type:[String], default: [] },
   },
 }, { timestamps:true });
 export default mongoose.models.User || mongoose.model('User', S);

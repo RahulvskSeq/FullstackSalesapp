@@ -47,7 +47,7 @@ function CityPick({ cities, value, onChange }) {
   );
 }
 
-export default function PlanVisitDrawer({ dealers = [], plans = [], day, setDay, salesmanId, setSalesmanId, salesmen = [], isStaff, canPlan, maxPerDay = 8, onChanged, onClose }) {
+export default function PlanVisitDrawer({ dealers = [], plans = [], day, setDay, salesmanId, setSalesmanId, salesmen = [], planFor = null, isStaff, canPlan, maxPerDay = 8, onChanged, onClose }) {
   const { t: tr } = useT();
   const [q, setQ] = useState('');
   const [tier, setTier] = useState('');
@@ -99,14 +99,14 @@ export default function PlanVisitDrawer({ dealers = [], plans = [], day, setDay,
     const rank = d => { const i = TIERS.indexOf(d.status); return i >= 0 ? i : 3; };
     // a salesman plans his own dealers; the office sees the chosen salesman's first, then everyone else's
     return dealers
-      .filter(d => (canPlan || d.salesman === salesmanId))
+      .filter(d => planFor ? planFor.includes(d.salesman) : (canPlan || d.salesman === salesmanId))
       .filter(d => !onDay.has(d._id || d.id))
       .filter(d => !tier || d.status === tier)
       .filter(d => !city || cityKey(d.city) === city)
       .filter(d => !notMetOnly || (cov && cov[d._id || d.id] === 'NOT_MET'))
       .filter(d => !s || (d.name || '').toLowerCase().includes(s) || (d.city || '').toLowerCase().includes(s) || (d.zone || '').toLowerCase().includes(s))
       .sort((a, b) => ((a.salesman === salesmanId ? 0 : 1) - (b.salesman === salesmanId ? 0 : 1)) || rank(a) - rank(b) || (a.name || '').localeCompare(b.name || ''));
-  }, [dealers, q, tier, city, notMetOnly, cov, salesmanId, canPlan, dayPlans.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [dealers, q, tier, city, notMetOnly, cov, salesmanId, canPlan, planFor, dayPlans.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const shown = more ? pool : pool.slice(0, LIMIT);
 
   const run = async (id, fn) => { setBusyId(id); setErr(''); try { await fn(); await onChanged?.(); } catch (e) { setErr(e?.message || 'Could not do that'); } finally { setBusyId(''); } };

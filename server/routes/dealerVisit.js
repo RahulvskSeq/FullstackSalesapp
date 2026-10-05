@@ -231,7 +231,8 @@ router.get('/:dealerId/summary', protect, async (req, res) => {
       featureChecker(req),
       Visit.findOne({ userId: req.user.id, status: 'in-progress' }, 'dealerId dealerName checkInTime').lean(),
     ]);
-    res.json({ ...s, canPlan: can('visitPlan'), canEdit: can('visitMom'),
+    const { planScope, mayPlanFor } = await import('../lib/planScope.js');
+    res.json({ ...s, canPlan: mayPlanFor(await planScope(req), d.salesman), canEdit: can('visitMom'),
       activeVisit: open ? { id: String(open._id), dealerId: String(open.dealerId || ''), dealerName: open.dealerName, since: open.checkInTime, here: String(open.dealerId || '') === String(d._id) } : null });
   }
   catch (e) { console.error('[DEALER VISIT]', e.message); res.status(500).json({ error: e.message }); }

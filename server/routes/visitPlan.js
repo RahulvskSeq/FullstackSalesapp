@@ -8,6 +8,7 @@ import mongoose from 'mongoose';
 import SampleAllocation from '../models/SampleAllocation.js';
 import { sampleListsFor } from './dealerVisit.js';
 import { leadForPlannedParty } from '../lib/newPartyLead.js';
+import { planScope, mayPlanFor } from '../lib/planScope.js';
 
 /**
  * Visit calendar.
@@ -38,8 +39,12 @@ router.get('/', protect, async (req, res) => {
     const f = {};
     const from = YMD.test(req.query.from || '') ? req.query.from : '', to = YMD.test(req.query.to || '') ? req.query.to : '';
     if (from || to) f.date = { ...(from ? { $gte: from } : {}), ...(to ? { $lte: to } : {}) };
-    if (!isStaff(req)) f.salesmanId = req.user.id;
-    else if (req.query.salesmanId) f.salesmanId = String(req.query.salesmanId);
+    const scope = await planScope(req);
+    // a salesman sees his own days, plus those he was given to plan for
+    const allowed = [req.user.id, ...(scope?.ids ? [...scope.ids] : [])];
+    const wantSm = req.query.salesmanId ? String(req.query.salesmanId) : '';
+    if (!isStaff(req)) f.salesmanId = wantSm && allowed.includes(wantSm) ? wantSm : allowed.length > 1 ? { $in: allowed } : req.user.id;
+    else if (wantSm) f.salesmanId = wantSm;
     const all = await VisitPlan.find(f).sort({ date: 1, salesmanId: 1, order: 1, createdAt: 1 }).lean();
     // same-day new parties added from the Unplanned visit box are unplanned visits, not plans
     const items = all.filter(i => !i.walkIn), walkIns = all.filter(i => i.walkIn);
@@ -47,14 +52,14 @@ router.get('/', protect, async (req, res) => {
     const ids = [...new Set(items.map(i => i.dealerId))];
     const dealers = new Map((await Dealer.find({ _id: { $in: ids.filter(i => mongoose.isValidObjectId(i)) } }, 'name zone city status perfStatus phone').lean()).map(d => [String(d._id), d]));
     const users = new Map((await User.find({}, 'id name').lean()).map(u => [u.id, u.name]));
-    const planner = await canPlan(req);
+    const planner = !!scope;
     const today = todayYmd();
     // Visits made without a plan: a check-in on a day where that dealer was
     // not on the salesman's calendar. Shown on the calendar as "unplanned".
     const vf = {};
     if (from || to) vf.dateStr = { ...(from ? { $gte: from } : {}), ...(to ? { $lte: to } : {}) };
-    if (!isStaff(req)) vf.userId = req.user.id;
-    else if (req.query.salesmanId) vf.userId = String(req.query.salesmanId);
+    if (!isStaff(req)) vf.userId = f.salesmanId;
+    else if (wantSm) vf.userId = wantSm;
     const visits = await Visit.find(vf, 'userId dealerId dealerName dateStr status checkInTime checkOutTime checkInCity planId').sort({ checkInTime: 1 }).lean();
     const nm = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
     const planned = new Set();
@@ -79,18 +84,18 @@ router.get('/', protect, async (req, res) => {
     for (const w of walkIns) {
       if (w.status !== 'PLANNED' || started.has(String(w._id))) continue;
       unplanned.push({ _id: 'w' + w._id, walkInId: String(w._id), newParty: true, date: w.date, salesmanId: w.salesmanId, salesmanName: users.get(w.salesmanId) || w.salesmanId,
-        dealerId: '', dealerName: w.dealerName, city: '', status: 'ADDED', canRemove: w.salesmanId === req.user.id || planner });
+        dealerId: '', dealerName: w.dealerName, city: '', status: 'ADDED', canRemove: w.salesmanId === req.user.id || mayPlanFor(scope, w.salesmanId) });
     }
     res.json({
       unplanned,
-      canPlan: planner, maxPerDay: MAX_PER_DAY,
+      canPlan: planner, planFor: scope && !scope.all ? [...scope.ids] : null, maxPerDay: MAX_PER_DAY,
       items: items.map(i => {
         const d = dealers.get(i.dealerId);
         const missed = i.status === 'PLANNED' && i.date < today;   // the day passed and no check-out happened
         const own = i.plannedBy === req.user.id && i.salesmanId === req.user.id;   // he put it there himself
         return { ...i, dealerName: d?.name || i.dealerName, zone: d?.zone || '', city: d?.city || '', accountStatus: d?.status || '', perfStatus: d?.perfStatus || '', phone: d?.phone || '',
           salesmanName: users.get(i.salesmanId) || i.salesmanId, plannedByName: i.plannedByName || users.get(i.plannedBy) || i.plannedBy || '',
-          missed, selfAdded: i.plannedBy === i.salesmanId, canRemove: planner || (own && i.status !== 'DONE'), canEditNote: planner || own };
+          missed, selfAdded: i.plannedBy === i.salesmanId, canRemove: mayPlanFor(scope, i.salesmanId) || (own && i.status !== 'DONE'), canEditNote: mayPlanFor(scope, i.salesmanId) || own };
       }),
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -286,9 +291,10 @@ router.post('/', protect, async (req, res) => {
       try { p.leadId = await leadForPlannedParty({ name: newPartyName, salesmanId: req.user.id, salesmanName: me?.name, date, by: req.user.id, byName: me?.name, source: 'Visit — new party' }); await p.save(); } catch (e) { console.warn('[VISIT-PLAN lead]', e.message); }
       return res.json(p);
     }
-    const planner = await canPlan(req);
+    const scope = await planScope(req);
+    const planner = mayPlanFor(scope, salesmanId);
     const self = !planner && salesmanId === req.user.id && !isStaff(req);
-    if (!planner && !self) return res.status(403).json({ error: 'you can add dealers to your own day only' });
+    if (!planner && !self) return res.status(403).json({ error: scope && !scope.all ? 'you can plan visits only for the salesmen given to you' : 'you can add dealers to your own day only' });
     // a plan is for tomorrow onwards — a visit today is checked in as an unplanned visit
     if (date <= todayYmd()) return res.status(400).json({ error: 'Plans start from tomorrow — for a visit today, use Unplanned visit' });
     if (!dealerId) {
@@ -314,6 +320,8 @@ router.post('/', protect, async (req, res) => {
     const d = await Dealer.findById(dealerId, 'name salesman').lean(); if (!d) return res.status(404).json({ error: 'dealer not found' });
     // a salesman plans his own dealers — another rep's dealer would open to him as 'not your dealer'
     if (self && d.salesman !== req.user.id) return res.status(403).json({ error: 'you can add only your own dealers' });
+    // planning for given salesmen: their dealers only
+    if (planner && !scope.all && !scope.ids.has(String(d.salesman || ''))) return res.status(403).json({ error: `${d.name} is not a dealer of the salesmen you plan for` });
     const me = await User.findOne({ id: req.user.id }, 'name').lean();
     const dup = await VisitPlan.findOne({ date, salesmanId, dealerId }).lean();
     if (dup) return res.status(400).json({ error: `${d.name} is already on the list for ${date}` });
@@ -331,7 +339,8 @@ router.post('/', protect, async (req, res) => {
 router.put('/:id', protect, async (req, res) => {
   try {
     const p = await VisitPlan.findById(req.params.id); if (!p) return res.status(404).json({ error: 'not found' });
-    const planner = await canPlan(req);
+    const scope = await planScope(req);
+    const planner = mayPlanFor(scope, p.salesmanId);
     const mine = p.salesmanId === req.user.id;
     const own = mine && p.plannedBy === req.user.id;
     if (!planner && !mine) return res.status(403).json({ error: 'not your day' });
@@ -351,7 +360,8 @@ router.put('/:id', protect, async (req, res) => {
       // replace the dealer, keeping the note and the slot
       if (b.dealerId && String(b.dealerId) !== p.dealerId) {
         if (p.date <= todayYmd()) return res.status(400).json({ error: 'Plans start from tomorrow — a visit today is an unplanned visit' });
-        const d = await Dealer.findById(b.dealerId, 'name').lean(); if (!d) return res.status(404).json({ error: 'dealer not found' });
+        const d = await Dealer.findById(b.dealerId, 'name salesman').lean(); if (!d) return res.status(404).json({ error: 'dealer not found' });
+        if (planner && !scope.all && !scope.ids.has(String(d.salesman || ''))) return res.status(403).json({ error: `${d.name} is not a dealer of the salesmen you plan for` });
         const dup = await VisitPlan.findOne({ date: p.date, salesmanId: p.salesmanId, dealerId: String(d._id), _id: { $ne: p._id } }).lean();
         if (dup) return res.status(400).json({ error: `${d.name} is already on that day` });
         p.dealerId = String(d._id); p.dealerName = d.name; p.status = 'PLANNED'; p.momId = ''; p.newParty = false;
@@ -368,7 +378,7 @@ router.put('/:id', protect, async (req, res) => {
 router.delete('/:id', protect, async (req, res) => {
   try {
     const p = await VisitPlan.findById(req.params.id); if (!p) return res.status(404).json({ error: 'not found' });
-    const planner = await canPlan(req);
+    const planner = mayPlanFor(await planScope(req), p.salesmanId);
     const own = p.salesmanId === req.user.id && p.plannedBy === req.user.id;
     if (!planner && !(own && p.status !== 'DONE')) return res.status(403).json({ error: 'only the office can remove a dealer it planned' });
     await VisitPlan.deleteOne({ _id: p._id }); res.json({ ok: true });

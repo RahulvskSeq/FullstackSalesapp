@@ -293,6 +293,7 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
   const [permsCities,    setPermsCities]    = useState(new Set());
   const [permsZones,     setPermsZones]     = useState(new Set());
   const [permsSalesmen,  setPermsSalesmen]  = useState(new Set());
+  const [permsPlanFor,   setPermsPlanFor]   = useState(new Set());   // visit calendar: whose days this user may plan
   const [permsFeatures,  setPermsFeatures]  = useState(new Set());
   const [permsPages,     setPermsPages]     = useState(new Set());   // left-nav page access
   const [permsSaving,    setPermsSaving]    = useState(false);
@@ -345,6 +346,7 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
     setPermsCities(toCanon(cur.cities, allCities));
     setPermsZones(toCanon(cur.zones, allZones));
     setPermsSalesmen(new Set(Array.isArray(cur.salesmen) ? cur.salesmen : []));
+    setPermsPlanFor(new Set(Array.isArray(cur.planFor) ? cur.planFor : []));
     setPermsFeatures(new Set(Array.isArray(cur.features) ? cur.features : []));
     setPermsPages(new Set(Array.isArray(cur.pages) ? cur.pages : []));
     setPermsForUid(uid);
@@ -360,6 +362,7 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
         salesmen: [...permsSalesmen],
         features: [...permsFeatures],
         pages:    [...permsPages],
+        planFor:  [...permsPlanFor],
       };
       await api.updateUser(permsForUid, { permissions: next });
       setAllUsers({ ...allUsers, [permsForUid]: { ...allUsers[permsForUid], permissions: next } });
@@ -1347,6 +1350,48 @@ const UserManagement = ({ users, setUsers, currentUser, onClose, onLoginAs, onUs
                     );
                   })}
                 </div>
+              );
+            })()}
+
+            {/* ── Visit calendar: whose days this user may plan ─────────── */}
+            <div style={{fontSize:11, color:'var(--t3)', textTransform:'uppercase', letterSpacing:'.08em', marginBottom:6, marginTop:4}}>
+              Plan visits for <span style={{textTransform:'none', fontWeight:400}}>(optional — this user can plan, change and remove visits on these salesmen's days, with their dealers)</span>
+            </div>
+            {(() => {
+              const roster = Object.values(allUsers || users || {}).filter(u => u.role === 'salesman' && u.active !== false && u.id !== permsForUid);
+              if (roster.length === 0) return <div style={{fontSize:11, color:'var(--t3)', padding:'6px 0 12px'}}>No salesmen found.</div>;
+              return (
+                <>
+                <div style={{
+                  display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(150px, 1fr))', gap:6, marginBottom:6,
+                  padding:12, background:'var(--bg2)', borderRadius:6, maxHeight:220, overflowY:'auto',
+                }}>
+                  {roster.map(s => {
+                    const on = permsPlanFor.has(s.id);
+                    return (
+                      <label key={s.id} style={{
+                        fontSize:12, display:'inline-flex', alignItems:'center', gap:6, cursor:'pointer',
+                        padding:'6px 10px', borderRadius:5,
+                        background: on ? 'color-mix(in srgb, var(--acc) 16%, transparent)' : 'transparent',
+                        border:'1px solid ' + (on ? 'color-mix(in srgb, var(--acc) 50%, transparent)' : 'var(--b1)'),
+                        color: on ? 'var(--acc)' : 'var(--t2)', fontWeight: on?700:500,
+                      }}>
+                        <input type="checkbox" checked={on} onChange={()=>{
+                          const next = new Set(permsPlanFor);
+                          on ? next.delete(s.id) : next.add(s.id);
+                          setPermsPlanFor(next);
+                        }} style={{margin:0}}/>
+                        {s.name}
+                      </label>
+                    );
+                  })}
+                </div>
+                <div style={{fontSize:11, color:'var(--t3)', marginBottom:12}}>
+                  {permsPlanFor.size
+                    ? <>Only these salesmen — this replaces "Plan the visit calendar" for this user.</>
+                    : <>None ticked: the "Plan the visit calendar" action decides (all salesmen, or none).</>}
+                </div>
+                </>
               );
             })()}
 
