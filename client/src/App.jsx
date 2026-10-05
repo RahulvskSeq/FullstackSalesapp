@@ -16576,6 +16576,8 @@ export default function App(){
         // "Unplanned visit" is off the menu: visits are done from the calendar (its Unplanned
         // visit box opens this screen in a pop-up). The screen itself stays — #/visits still works.
         {id:'calendar', label:'My visit calendar', icon:Calendar},
+        // every new party a salesman meets lands here (from the calendar or a direct check-in)
+        {id:'leads',    label:'Leads',  icon:UserCheck},
         {id:'tasks',  label:'Tasks',  icon:CheckSquare},
     ]},
     // Its own group rather than a tab inside Product Transactions: the
@@ -16624,7 +16626,6 @@ export default function App(){
         {id:'reports',  label:'Sales & visit reports', icon:FileSpreadsheet, staff:true},
         // who may see the calendar sees this report too (it is the calendar's month, by top dealer)
         {id:'coverage', label:'Top dealers not met', icon:UserX, follows:'calendar'},
-        {id:'leads',    label:'Leads',  icon:UserCheck},
     ]},
     {id:'sheets',  label:'Sheets', icon:Table},
     {id:'producttx', label:'Product Transactions', icon:Package},

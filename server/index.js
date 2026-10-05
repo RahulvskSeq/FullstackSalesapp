@@ -363,6 +363,11 @@ mongoose.connect(process.env.MONGO_URI)
     const PORT = process.env.PORT || 5000;
     app.listen(PORT, () => {
       console.log(`✅ Server → http://localhost:${PORT}`);
+      // leads that start buying become dealers: shortly after start, then every 10 minutes
+      import('./lib/leadConversion.js').then(({ convertLeadsWithSales }) => {
+        const run = () => convertLeadsWithSales().catch(e => console.warn('[LEADS] conversion:', e.message));
+        setTimeout(run, 60 * 1000); setInterval(run, 10 * 60 * 1000);
+      });
       console.log(`   Health  → http://localhost:${PORT}/api/health`);
 
       // Keep server alive on Railway (prevents sleep)

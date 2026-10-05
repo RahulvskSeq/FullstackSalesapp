@@ -86,6 +86,22 @@ const DVM_CSS = `
   .dvm-cam.alt .dvm-cam-ico { background: color-mix(in srgb, var(--tone) 14%, transparent); }
   .dvm-plan { position: relative; overflow: hidden; padding: 12px 14px 12px 18px; margin-bottom: 12px; border-radius: 16px; background: color-mix(in srgb, #f59e0b 7%, var(--bg1)); border: 1px solid color-mix(in srgb, #f59e0b 30%, var(--b1)); }
   .dvm-plan::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: #f59e0b; }
+  .dvm-plan.sm { padding: 7px 12px 7px 14px; border-radius: 12px; margin-bottom: 10px; }
+  .dvm-plan.sm::before { width: 3px; }
+  .dvm-prow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; }
+  .dvm-pico { color: #f59e0b; flex-shrink: 0; }
+  .dvm-pt { font-weight: 800; color: var(--t2); font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; margin-right: 2px; }
+  .dvm-pchip { padding: 2px 9px; border-radius: 99px; border: 1px solid color-mix(in srgb, #f59e0b 40%, transparent); background: var(--bg1); color: #b45309; font-size: 11.5px; font-weight: 700; cursor: default; }
+  button.dvm-pchip[title*="tap to edit"] { cursor: pointer; }
+  .dvm-pchip.done { color: var(--grn); border-color: color-mix(in srgb, var(--grn) 40%, transparent); }
+  .dvm-pnone { color: var(--t3); font-size: 11.5px; }
+  .dvm-padd { margin-left: auto; padding: 2px 9px; border-radius: 8px; border: 1px dashed color-mix(in srgb, #f59e0b 50%, transparent); background: none; color: #b45309; font-size: 11px; font-weight: 700; cursor: pointer; }
+  .dvm-pline { display: flex; gap: 8px; align-items: baseline; margin-top: 5px; font-size: 12px; color: var(--t2); }
+  .dvm-pline > b { flex-shrink: 0; font-size: 11px; color: #b45309; }
+  .dvm-ptext { display: flex; flex-wrap: wrap; gap: 2px 10px; min-width: 0; }
+  .dvm-ptext em { font-style: normal; color: var(--t3); font-size: 11px; }
+  .dvm-pcol { color: var(--grn); font-weight: 700; }
+  .dvm-pedit { display: flex; gap: 6px; flex: 1; flex-wrap: wrap; }
   .dvm-foot { background: color-mix(in srgb, var(--bg2) 60%, var(--bg1)); }
 `;
 
@@ -248,7 +264,7 @@ export default function DealerVisitModal({ dealerId, dealerName = '', onClose })
             {dl && <div className="dvm-meta">
               <span className="dvm-mchip"><MapPin size={11} /> {dl.zone || 'no zone'}{dl.city ? ' · ' + dl.city : ''}{dl.state ? ', ' + dl.state : ''}{dl.address ? ' · ' + dl.address : ''}{dl.pincode ? ' · ' + dl.pincode : ''}</span>
               <span className="dvm-mchip">Salesman <b style={{ color: 'var(--t1)' }}>{dl.salesmanName}</b></span>
-              {dl.phone ? <a className="dvm-mchip" href={`tel:+${String(dl.phone).replace(/\D/g,'')}`} style={{ color: 'var(--acc)', textDecoration: 'none' }}><Phone size={11} /> {dl.phone}</a> : <span className="dvm-mchip" style={{ color: 'var(--red)' }}>no phone on master</span>}
+              {/* phone number not shown here */}
               <span style={S.chip(dl.accountStatus === 'STAR' ? '#b45309' : dl.accountStatus === 'KEY ACCOUNT' ? 'var(--acc)' : dl.accountStatus === 'ACHIEVER' ? 'var(--grn)' : 'var(--t3)')}>{dl.accountStatus}</span>
               {dl.perfStatus && <span style={S.chip('var(--t3)')}>{dl.perfStatus}</span>}
               {d.lastVisit ? <span className="dvm-mchip" style={{ color: 'var(--t3)' }}><History size={11} /> Last visit {fmtDT(d.lastVisit.date)} · {d.lastVisit.by}</span> : <span className="dvm-mchip" style={{ color: 'var(--t3)' }}>No visit on record</span>}
@@ -620,35 +636,41 @@ function PlanBox({ d, dealerId, onChanged }) {
   const [nf, setNf] = useState({ date: tomorrow(), salesmanId: d.dealer?.salesman || '', note: '', collectTarget: '' });
   const run = async (fn) => { setBusy(true); setErr(''); try { await fn(); await onChanged?.(); } catch (e) { setErr(e?.message || 'Could not save'); } finally { setBusy(false); } };
   if (!plans.length && !staff) return null;
+  const short = ymd => new Date(ymd + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  const first = n => String(n || '').split(' ')[0];
+  // a plan only gets a line of its own when there is something to read (or the office is editing it)
+  const detailed = plans.filter(p => p.note || p.collectTarget > 0 || p.salesmanNote || edit[p.id] !== undefined);
   return (
-    <div className="dvm-plan">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-        <span className="sec-ico" style={{ '--tone': '#f59e0b', width: 28, height: 28, borderRadius: 9 }}><ClipboardList size={14} /></span>
-        <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--t1)' }}>Planned by the office</div>
-        {plans.length > 0 && <span className="count-pill" style={{ color: '#f59e0b', background: 'color-mix(in srgb, #f59e0b 14%, transparent)' }}>{plans.length}</span>}
-        {staff && !adding && <button className="btne" style={{ fontSize: 11.5, padding: '4px 10px', marginLeft: 'auto' }} onClick={() => setAdding(true)}>+ Plan a visit</button>}
+    <div className="dvm-plan sm">
+      <div className="dvm-prow">
+        <ClipboardList size={13} className="dvm-pico" />
+        <span className="dvm-pt">Planned</span>
+        {plans.map(p => (
+          <button key={p.id} type="button" className={'dvm-pchip' + (p.status === 'DONE' ? ' done' : '')}
+            title={`${p.isToday ? 'Today' : fmtDate(p.date)} · ${p.salesmanName}${p.plannedByName ? ' · planned by ' + p.plannedByName : ''}${staff ? ' — tap to edit' : ''}`}
+            onClick={staff ? () => setEdit(e => (e[p.id] === undefined ? { ...e, [p.id]: p.note || '' } : (({ [p.id]: _, ...rest }) => rest)(e))) : undefined}>
+            {p.isToday ? 'Today' : short(p.date)}{staff ? ' · ' + first(p.salesmanName) : ''}{p.status === 'DONE' ? ' ✓' : ''}
+          </button>
+        ))}
+        {!plans.length && <span className="dvm-pnone">no visit planned</span>}
+        {staff && !adding && <button type="button" className="dvm-padd" onClick={() => setAdding(true)}>+ Plan</button>}
       </div>
-      {!plans.length && <div style={{ fontSize: 12, color: 'var(--t3)' }}>No visit planned for this dealer.</div>}
-      {plans.map(p => (
-        <div key={p.id} style={{ fontSize: 12.5, padding: '8px 10px', marginTop: 6, borderRadius: 12, background: 'var(--bg1)', border: '1px solid var(--b1)' }}>
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-            <b>{p.isToday ? 'Today' : fmtDate(p.date)}</b> · {p.salesmanName}
-            {p.status === 'DONE' ? <span style={S.chip('var(--grn)')}>visited</span> : <span style={S.chip('#f59e0b')}>planned</span>}
-            {staff && edit[p.id] === undefined && <button className="btn" style={{ fontSize: 10.5, padding: '1px 7px', marginLeft: 'auto' }} onClick={() => setEdit(e => ({ ...e, [p.id]: p.note || '' }))}>Edit note</button>}
-            {staff && p.status !== 'DONE' && <button className="btn" style={{ fontSize: 10.5, padding: '1px 7px', color: 'var(--red)' }} onClick={() => { if (window.confirm('Remove this planned visit?')) run(() => api.deleteVisitPlan(p.id)); }}>Remove</button>}
-          </div>
+      {detailed.map(p => (
+        <div key={p.id} className="dvm-pline">
+          <b>{p.isToday ? 'Today' : short(p.date)}</b>
           {edit[p.id] !== undefined ? (
-            <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-              <input autoFocus value={edit[p.id]} onChange={e => setEdit(x => ({ ...x, [p.id]: e.target.value }))} onKeyDown={e => { if (e.key === 'Escape') setEdit(x => { const n = { ...x }; delete n[p.id]; return n; }); }} style={{ ...S.input, fontSize: 12 }} placeholder="what to do at this dealer" />
-              <input type="number" min="0" value={edit[p.id + ':t'] ?? (p.collectTarget || '')} onChange={e => setEdit(x => ({ ...x, [p.id + ':t']: e.target.value }))} style={{ ...S.input, fontSize: 12, width: 110 }} placeholder="collect ₹" title="Amount to collect on this visit" />
+            <span className="dvm-pedit">
+              <input autoFocus value={edit[p.id]} onChange={e => setEdit(x => ({ ...x, [p.id]: e.target.value }))} onKeyDown={e => { if (e.key === 'Escape') setEdit(x => { const n = { ...x }; delete n[p.id]; return n; }); }} style={{ ...S.input, fontSize: 12 }} placeholder="what to do there" />
+              <input type="number" min="0" value={edit[p.id + ':t'] ?? (p.collectTarget || '')} onChange={e => setEdit(x => ({ ...x, [p.id + ':t']: e.target.value }))} style={{ ...S.input, fontSize: 12, width: 96 }} placeholder="collect ₹" />
               <button className="btnp" disabled={busy} style={{ fontSize: 11, padding: '3px 10px' }} onClick={() => run(async () => { await api.updateVisitPlan(p.id, { note: edit[p.id], collectTarget: Number(edit[p.id + ':t'] ?? p.collectTarget) || 0 }); setEdit(x => { const n = { ...x }; delete n[p.id]; delete n[p.id + ':t']; return n; }); })}>Save</button>
-            </div>
+              {p.status !== 'DONE' && <button className="btn" style={{ fontSize: 11, padding: '3px 8px', color: 'var(--red)' }} onClick={() => { if (window.confirm('Remove this planned visit?')) run(() => api.deleteVisitPlan(p.id)); }}>Remove</button>}
+            </span>
           ) : (
-            <>
-              {p.note ? <div style={{ color: 'var(--t2)' }}>{p.note} <span style={{ fontSize: 10.5, color: 'var(--t3)' }}>— {p.plannedByName}</span></div> : <div style={{ fontSize: 11.5, color: 'var(--t3)' }}>No note from the office.</div>}
-              {p.collectTarget > 0 && <div style={{ color: 'var(--grn)', fontWeight: 700 }}>To collect: {money(p.collectTarget)}</div>}
-              {p.salesmanNote && <div style={{ color: 'var(--t2)' }}><span style={{ color: 'var(--grn)', fontWeight: 700 }}>{String(p.salesmanName).split(' ')[0]}:</span> {p.salesmanNote}</div>}
-            </>
+            <span className="dvm-ptext">
+              {p.note && <span>{p.note}{p.plannedByName ? <em> — {first(p.plannedByName)}</em> : null}</span>}
+              {p.collectTarget > 0 && <span className="dvm-pcol">collect {money(p.collectTarget)}</span>}
+              {p.salesmanNote && <span><em>{first(p.salesmanName)}:</em> {p.salesmanNote}</span>}
+            </span>
           )}
         </div>
       ))}

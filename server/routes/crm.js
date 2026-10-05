@@ -233,13 +233,15 @@ const GSTIN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
 // A new party met on a planned visit goes to the office as a Lead (the office adds it to
 // the dealer list once it is real). Same GST, or same name with no GST, updates that lead
 // instead of making a second one.
-async function leadForNewParty(party, visit, note){
+async function leadForNewParty(party, visit, note, source = 'Visit calendar — new party', existingId = ''){
   const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const q = party.gst ? { gst: party.gst } : { company: new RegExp('^\\s*' + esc(party.name) + '\\s*$', 'i') };
   const who = visit.userName || visit.userId;
   const line = `Visited ${new Date(visit.checkInTime || Date.now()).toISOString().slice(0, 10)} by ${who}: ${note}`;
-  const found = await Lead.findOne(q);
+  // the lead made when the party was put on the calendar, else one with the same GST / name
+  const found = (existingId && mongoose.isValidObjectId(existingId) ? await Lead.findById(existingId) : null) || await Lead.findOne(q);
   if(found){
+    if(!found.status || found.status === 'NEW') found.status = 'CONTACTED';
     Object.assign(found, { company: party.name, ...(party.gst ? { gst: party.gst } : {}), ...(party.phone ? { phone: party.phone } : {}), city: party.city, state: party.state });
     found.updates.push({ by: visit.userId, byName: who, comment: line });
     await found.save();
@@ -247,7 +249,7 @@ async function leadForNewParty(party, visit, note){
   }
   const lead = await Lead.create({
     name: party.name, company: party.name, gst: party.gst, phone: party.phone, city: party.city, state: party.state,
-    source: 'Visit calendar — new party', status: 'CONTACTED',
+    source, status: 'CONTACTED',
     assignedTo: visit.userId, assignedName: who, createdBy: visit.userId, createdByName: who,
     notes: [party.noGst ? 'No GST (not registered).' : `GST ${party.gst}.`, line].join('\n'),
     updates: [{ by: visit.userId, byName: who, comment: line, status: 'CONTACTED' }],
@@ -314,7 +316,9 @@ router.post('/visits', protect, async (req, res) => {
       userId:   req.user.id,
       userName: me?.name || req.user.name || '',
       dealerId, dealerName: dealerName.trim(),
-      ...(fromPlan ? { planId: String(fromPlan._id), newParty: !!fromPlan.newParty } : {}),
+      ...(fromPlan ? { planId: String(fromPlan._id), newParty: !!fromPlan.newParty }
+        // a check-in at a party not in the dealer list is a new party too: its details are taken at check-out and it becomes a lead
+        : (!dealerId && req.body.isNewDealer) ? { newParty: true } : {}),
       status:   'in-progress',
       checkInTime:    new Date(),
       checkInPhoto:   photo,
@@ -415,10 +419,19 @@ router.post('/visits/:id/checkout', protect, async (req, res) => {
     v.comment = note.trim();
 
     await v.save();
+    // a new party met without a plan goes to Leads the same way
+    if(party && !v.planId){
+      try { v.leadId = await leadForNewParty(party, v, note.trim(), 'Visit — new party'); await v.save(); }
+      catch (e) { console.warn('[CRM/visits checkout] new party lead:', e.message); }
+    }
     if(v.planId){
       try {
         const set = { status: 'DONE', visitId: String(v._id) };
-        if(party){ set.party = party; set.dealerName = party.name; set.leadId = await leadForNewParty(party, v, note.trim()); }
+        if(party){
+          const plan = await VisitPlan.findById(v.planId, 'leadId').lean();
+          set.party = party; set.dealerName = party.name; set.leadId = await leadForNewParty(party, v, note.trim(), 'Visit calendar — new party', plan?.leadId || '');
+          v.leadId = set.leadId; await v.save();
+        }
         await VisitPlan.updateOne({ _id: v.planId, status: 'PLANNED' }, { $set: set });
       } catch (e) { console.warn('[CRM/visits checkout] new party:', e.message); }
     }

@@ -193,7 +193,9 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
       const list = mine.filter(d => String(d.status || '').trim().toUpperCase() === k);
       return { k, short, total: list.length, planned: list.filter(d => planned.has(String(d._id || d.id))).length };
     });
-    return { unique: planned.size, of: mine.length, tiers, topTotal: tiers.reduce((a, t) => a + t.total, 0), topPlanned: tiers.reduce((a, t) => a + t.planned, 0), mine, planned };
+    // real new parties only — route names (".Karatgi") and "New" placeholders never become leads
+    const newParties = new Set(vis.filter(p => p.newParty && !isRouteName(p.dealerName)).map(p => String(p.dealerName || '').trim().toLowerCase())).size;
+    return { unique: planned.size, newParties, of: mine.length, tiers, topTotal: tiers.reduce((a, t) => a + t.total, 0), topPlanned: tiers.reduce((a, t) => a + t.planned, 0), mine, planned };
   }, [plans, sm, dealers, isStaff, currentUser]);
   // dates each dealer is planned this month (for the summary pop-ups)
   const datesOf = useMemo(() => {
@@ -254,8 +256,9 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
     : month.toLocaleDateString('en-IN', { month: 'long' }) + (month.getFullYear() !== new Date().getFullYear() ? ' ' + month.getFullYear() : '');
   const goToday = () => { const d = new Date(); setMonth(new Date(d.getFullYear(), d.getMonth(), 1)); setDay(todayYmd()); };
   const tiles = [
-    { k: 'planned', n: kpi.planned, label: 'planned', rule: `${kpi.upcoming} still to go this month`, tone: 'var(--acc)', Icon: CalendarDays, onClick: () => setKList({ kind: 'planned' }) },
-    { k: 'unique', n: reach.unique, label: 'parties', rule: reach.of ? `of ${reach.of.toLocaleString('en-IN')} dealers` : 'different dealers', tone: '#8b5cf6', Icon: MapPin, onClick: () => setKList({ kind: 'parties' }) },
+    { k: 'planned', n: kpi.planned, label: 'planned', rule: `${kpi.upcoming} still to go`, tone: 'var(--acc)', Icon: CalendarDays, onClick: () => setKList({ kind: 'planned' }) },
+    { k: 'unique', n: reach.unique, label: 'parties', rule: reach.of ? (reach.newParties ? `of ${reach.of.toLocaleString('en-IN')}` : `of ${reach.of.toLocaleString('en-IN')} dealers`) : 'different dealers', tone: '#8b5cf6', Icon: MapPin, onClick: () => setKList({ kind: 'parties' }),
+      pill: reach.newParties ? { text: `+${reach.newParties} new`, title: 'New parties (not in the dealer list yet) planned this month — tap to see them', onClick: () => setKList({ kind: 'new' }) } : null },
     { k: 'top', top: true, tone: '#f59e0b', Icon: ListChecks },
     { k: 'done', n: kpi.done, label: 'visited', rule: closedPct == null ? 'none closed yet' : `${closedPct}% of closed visits`, tone: 'var(--grn)', Icon: CheckCircle2, onClick: () => setKList({ kind: 'visited' }) },
     { k: 'today', n: kpi.todayIn ? kpi.today : '—', label: 'today', rule: kpi.todayIn ? `${kpi.todayDone} of ${kpi.today} visited` : 'tap to jump to today', tone: '#06b6d4', Icon: Sun, onClick: goToday },
@@ -306,7 +309,8 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
             <div className="vck-ico"><t.Icon size={18} /></div>
             <div className="vck-main">
               <div className="vck-head"><b className="vck-n">{t.n}</b><span className="vck-lbl">{t.label}</span></div>
-              <span className="vck-sub">{t.rule}</span>
+              <span className="vck-subrow"><span className="vck-sub">{t.rule}</span>
+                {t.pill && <button type="button" className="vck-pill" title={t.pill.title} onClick={e => { e.stopPropagation(); t.pill.onClick(); }}>{t.pill.text}</button>}</span>
             </div>
             {t.onClick && <ChevronRight size={16} className="vck-go" />}
           </div>
@@ -464,7 +468,7 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
                           <Repeat size={11} /> {dates.length}× in {month.toLocaleDateString('en-IN', { month: 'short' })} <span>· {days.map((d, x) => <React.Fragment key={x}>{x ? ', ' : ''}{dates[x] === p.date ? <u>{d}</u> : d}</React.Fragment>)}</span>
                         </span>;
                       })()}
-                      {p.newParty && <Badge tone="#d97706">New party</Badge>}
+                      {p.newParty && <><Badge tone="#d97706">New party</Badge><small className="vc-leadtag" title="Saved in Leads — becomes a dealer by itself once it starts buying">(lead)</small></>}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 2, display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
                       {[p.zone, p.city].filter(Boolean).length > 0 && <span><MapPin size={10} style={{ verticalAlign: -1 }} /> {[p.zone, p.city].filter(Boolean).join(' · ')}</span>}
@@ -520,7 +524,7 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
                       {!sm && <>{u.salesmanName} · </>}{u.checkInTime ? 'in ' + new Date(u.checkInTime).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : ''}{u.checkOutTime ? ' · out ' + new Date(u.checkOutTime).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : ''}{u.city ? ' · ' + u.city : ''}
                     </div>
                   </div>
-                  <Badge tone={u.status === 'VISITED' ? 'var(--grn)' : u.status === 'ADDED' ? 'var(--t3)' : 'var(--yel)'}>{u.status === 'VISITED' ? 'Visited' : u.status === 'ADDED' ? (u.newParty ? 'New party' : 'Added') : 'In progress'}</Badge>
+                  <Badge tone={u.status === 'VISITED' ? 'var(--grn)' : u.status === 'ADDED' ? 'var(--t3)' : 'var(--yel)'}>{u.status === 'VISITED' ? 'Visited' : u.status === 'ADDED' ? (u.newParty ? 'New party' : 'Added') : 'In progress'}</Badge>{u.newParty && <small className="vc-leadtag" title="Saved in Leads — becomes a dealer by itself once it starts buying">(lead)</small>}
                   {u.walkInId && u.status !== 'VISITED' && u.salesmanId === currentUser?.id
                     ? <button className="btnp" title={u.status === 'ADDED' ? 'Check in — an unplanned visit' : 'Check out — fill the party details'} style={{ fontSize: 12, padding: '5px 12px', display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0, marginLeft: 'auto' }} onClick={() => openCheckIn(u)}>{tr(u.status === 'ADDED' ? 'Visit' : 'Check out')} <ArrowRight size={13} /></button>
                     : u.dealerId && <button className="btn vc-lb" title="Open the dealer: summary, check-in, MOM" onClick={() => setOpen(u.dealerId)}><ArrowRight size={13} /><span>{tr('Visit')}</span></button>}
@@ -658,6 +662,10 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
         .vck-lbl { font-size: 13px; font-weight: 700; color: var(--t1); overflow: hidden; text-overflow: ellipsis; }
         .vck-sub { font-size: 11px; color: var(--t3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .vck-go { color: var(--tone); opacity: .6; flex-shrink: 0; }
+        .vc-leadtag { font-size: 10.5px; font-weight: 700; color: #8b5cf6; margin-left: 2px; }
+        .vck-subrow { display: flex; align-items: center; gap: 6px; min-width: 0; }
+        .vck-pill { flex-shrink: 0; padding: 1px 8px; border-radius: 99px; border: 1px dashed color-mix(in srgb, var(--tone) 55%, transparent); background: color-mix(in srgb, var(--tone) 10%, var(--bg1)); color: var(--tone); font-size: 10.5px; font-weight: 800; cursor: pointer; white-space: nowrap; line-height: 1.5; }
+        .vck-pill:hover { background: var(--tone); color: #fff; border-style: solid; }
         .vck-pct { margin-left: auto; font-size: 11px; font-weight: 800; color: var(--tone); background: color-mix(in srgb, var(--tone) 14%, transparent); padding: 1px 7px; border-radius: 99px; }
         .vck-top .vck-lbl { white-space: nowrap; }
         .vck-top { grid-column: span 2; align-items: stretch; }
@@ -899,16 +907,20 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
         </div>
       )}
       {kList && <KpiList kList={kList} setKList={setKList} plans={plans} sm={sm} reach={reach} datesOf={datesOf} monthName={month.toLocaleDateString('en-IN', { month: 'long' })}
-        onOpen={id => { setKList(null); setOpen(id); }} />}
+        onOpen={id => { setKList(null); setOpen(id); }}
+        onGoDay={d => { setKList(null); pickStripDay(d); setTimeout(() => scrollToDay(), 80); }} />}
       {open && <DealerVisitModal dealerId={open} dealerName={plansAll.find(p => p.dealerId === open)?.dealerName || dealers.find(d => (d._id || d.id) === open)?.name || ''} onClose={() => { setOpen(null); load(); }} />}
     </div>
   );
 }
 
 // The dealers behind a summary card, in a pop-up: tap one to open it.
+const isRouteName = n => { const t = String(n || '').trim(); return !t || t.startsWith('.') || /^new( dealer| party)?$/i.test(t); };
+// "4, 14 Oct" — the days a dealer is planned, with the month so they never read as a count
+const dayList = ps => ps.map(p => Number(p.date.slice(-2))).join(', ') + ' ' + new Date(ps[ps.length - 1].date + 'T00:00:00').toLocaleDateString('en-IN', { month: 'short' });
 const TIER_TONE = { STAR: '#f59e0b', 'KEY ACCOUNT': '#8b5cf6', ACHIEVER: '#10b981', REACTIVE: '#0ea5e9' };
 const STATUS_TONE = { DONE: 'var(--grn)', PLANNED: 'var(--acc)', SKIPPED: 'var(--t3)' };
-function KpiList({ kList, setKList, plans, sm, reach, datesOf, monthName, onOpen }) {
+function KpiList({ kList, setKList, plans, sm, reach, datesOf, monthName, onOpen, onGoDay }) {
   const [q, setQ] = useState('');
   const [only, setOnly] = useState('all');          // top dealers: all | planned | not
   useEffect(() => { const k = e => { if (e.key === 'Escape') setKList(null); }; window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k); }, [setKList]);
@@ -919,18 +931,26 @@ function KpiList({ kList, setKList, plans, sm, reach, datesOf, monthName, onOpen
     const list = kList.kind === 'visited' ? vis.filter(p => p.status === 'DONE') : vis;
     title = kList.kind === 'visited' ? `Visited in ${monthName}` : `Planned visits in ${monthName}`; tone = kList.kind === 'visited' ? 'var(--grn)' : 'var(--acc)';
     rows = [...list].sort((a, b) => a.date.localeCompare(b.date) || (a.dealerName || '').localeCompare(b.dealerName || '')).map(p => ({
-      key: p._id, id: p.dealerId, name: p.dealerName, sub: [p.city, p.zone].filter(Boolean).join(' · '), date: short(p.date),
+      key: p._id, id: p.dealerId, goDay: p.date, name: p.dealerName, sub: [p.city, p.zone].filter(Boolean).join(' · '), date: short(p.date),
       chip: p.status === 'DONE' ? 'Visited' : p.missed ? 'Not visited' : 'Planned', chipTone: p.missed ? 'var(--red)' : STATUS_TONE[p.status] || 'var(--acc)' }));
+  } else if (kList.kind === 'new') {
+    title = `New parties planned in ${monthName}`; tone = '#8b5cf6';
+    // one row per party name (the same party planned twice is one lead), route names left out
+    const byName = new Map();
+    for (const [, ps] of datesOf) for (const p of ps) { if (!p.newParty || isRouteName(p.dealerName)) continue; const k = String(p.dealerName).trim().toLowerCase(); (byName.get(k) || byName.set(k, []).get(k)).push(p); }
+    const t0 = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
+    rows = [...byName.entries()].map(([k, ps]) => { ps.sort((a, b) => a.date.localeCompare(b.date)); return [k, ps]; }).map(([id, ps]) => ({ key: id, id: '', goDay: (ps.find(p => p.date >= t0) || ps[0]).date, name: ps[0].dealerName, sub: (ps[0].salesmanName || '') + (ps.some(p => p.status === 'DONE') ? ' · visited' : ''),
+      date: dayList(ps), chip: ps.some(p => p.status === 'DONE') ? 'Visited' : 'New party', chipTone: ps.some(p => p.status === 'DONE') ? 'var(--grn)' : '#8b5cf6' })).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   } else if (kList.kind === 'parties') {
     title = `Parties planned in ${monthName}`; tone = '#8b5cf6';
     rows = [...datesOf.entries()].map(([id, ps]) => ({ key: id, id, name: ps[0].dealerName, sub: [ps[0].city, ps[0].zone].filter(Boolean).join(' · '),
-      date: ps.map(p => Number(p.date.slice(-2))).join(', '), chip: ps.length > 1 ? ps.length + '×' : '1×', chipTone: '#8b5cf6' })).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      date: dayList(ps), chip: ps.length > 1 ? ps.length + '×' : '1×', chipTone: '#8b5cf6' })).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   } else {
     title = (kList.tier || 'Top dealers') + ` · ${monthName}`; tone = TIER_TONE[kList.tier] || '#f59e0b';
     rows = reach.mine.filter(d => { const st = String(d.status || '').trim().toUpperCase(); return kList.tier ? st === kList.tier : TIER_TONE[st]; })
       .map(d => { const id = String(d._id || d.id), ps = datesOf.get(id) || []; const st = String(d.status || '').trim().toUpperCase();
         return { key: id, id, name: d.name, sub: [d.city, d.zone].filter(Boolean).join(' · '), tier: st, planned: ps.length > 0,
-          date: ps.length ? ps.map(p => Number(p.date.slice(-2))).join(', ') : '', chip: ps.length ? ps.length + '× planned' : 'Not planned', chipTone: ps.length ? 'var(--grn)' : 'var(--red)' }; })
+          date: ps.length ? dayList(ps) : '', chip: ps.length ? ps.length + '× planned' : 'Not planned', chipTone: ps.length ? 'var(--grn)' : 'var(--red)' }; })
       .filter(r => only === 'all' || (only === 'planned' ? r.planned : !r.planned))
       .sort((a, b) => (a.planned - b.planned) || (a.name || '').localeCompare(b.name || ''));
   }
@@ -952,7 +972,8 @@ function KpiList({ kList, setKList, plans, sm, reach, datesOf, monthName, onOpen
         <div className="vckl-s"><Search size={14} /><input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="dealer, city or zone…" /></div>
         <div className="vckl-list">
           {shown.map(r => (
-            <div key={r.key} className="vckl-row" role="button" tabIndex={0} onClick={() => { if (r.id && !String(r.id).startsWith('new:')) onOpen(r.id); }}>
+            <div key={r.key} className="vckl-row" role="button" tabIndex={0} title={r.id && !String(r.id).startsWith('new:') ? 'Open the dealer' : r.goDay ? 'Open this day on the calendar' : ''}
+              onClick={() => { if (r.id && !String(r.id).startsWith('new:')) onOpen(r.id); else if (r.goDay) onGoDay(r.goDay); }}>
               {r.tier && <span className="vckl-t" style={{ '--t': TIER_TONE[r.tier] }}>{r.tier === 'KEY ACCOUNT' ? 'KEY' : r.tier}</span>}
               <span className="vckl-m"><b>{r.name}</b>{r.sub && <small>{r.sub}</small>}</span>
               {r.date && <span className="vckl-d">{r.date}</span>}

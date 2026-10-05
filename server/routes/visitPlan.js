@@ -7,6 +7,7 @@ import Visit from '../models/Visit.js';
 import mongoose from 'mongoose';
 import SampleAllocation from '../models/SampleAllocation.js';
 import { sampleListsFor } from './dealerVisit.js';
+import { leadForPlannedParty } from '../lib/newPartyLead.js';
 
 /**
  * Visit calendar.
@@ -281,6 +282,8 @@ router.post('/', protect, async (req, res) => {
       const me = await User.findOne({ id: req.user.id }, 'name').lean();
       const p = await VisitPlan.create({ date, salesmanId: req.user.id, dealerId: 'new:' + new mongoose.Types.ObjectId().toString(), dealerName: newPartyName,
         newParty: true, walkIn: true, order: 99, plannedBy: req.user.id, plannedByName: me?.name || req.user.id });
+      // the party is a lead from now on; check-out fills in its details
+      try { p.leadId = await leadForPlannedParty({ name: newPartyName, salesmanId: req.user.id, salesmanName: me?.name, date, by: req.user.id, byName: me?.name, source: 'Visit — new party' }); await p.save(); } catch (e) { console.warn('[VISIT-PLAN lead]', e.message); }
       return res.json(p);
     }
     const planner = await canPlan(req);
@@ -301,6 +304,11 @@ router.post('/', protect, async (req, res) => {
       const text = String(note || '').slice(0, 1000);
       const p = await VisitPlan.create({ date, salesmanId, dealerId: 'new:' + new mongoose.Types.ObjectId().toString(), dealerName: newPartyName, newParty: true, order: count,
         note: self ? '' : text, salesmanNote: self ? text : '', collectTarget: 0, plannedBy: req.user.id, plannedByName: me?.name || req.user.id });
+      try {
+        const sm = salesmanId === req.user.id ? me : await User.findOne({ id: salesmanId }, 'name').lean();
+        p.leadId = await leadForPlannedParty({ name: newPartyName, salesmanId, salesmanName: sm?.name, date, by: req.user.id, byName: me?.name });
+        await p.save();
+      } catch (e) { console.warn('[VISIT-PLAN lead]', e.message); }
       return res.json(p);
     }
     const d = await Dealer.findById(dealerId, 'name salesman').lean(); if (!d) return res.status(404).json({ error: 'dealer not found' });

@@ -34,6 +34,10 @@ const S = new mongoose.Schema({
   value:        { type:Number, default:0 },
   // History of updates the salesman / admin add over time
   updates:      [updateSchema],
+  // set when the lead starts buying and becomes our dealer (lib/leadConversion.js)
+  dealerId:     { type:String, default:'' },
+  dealerName:   { type:String, default:'' },
+  convertedAt:  { type:Date, default:null },
 }, { timestamps:true });
 
 S.index({ assignedTo:1, status:1 });
