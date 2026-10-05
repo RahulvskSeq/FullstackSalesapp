@@ -155,6 +155,9 @@ export default function DealerVisitModal({ dealerId, dealerName = '', onClose })
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(null);
   const [tab, setTab] = useState('mom');       // mom | previous
+  // the full dealer card (sales graph, months, key figures) opens over this popup; the class lifts it above
+  useEffect(() => { document.body.classList.add('stp-dvm-open'); return () => document.body.classList.remove('stp-dvm-open'); }, []);
+  const openDetails = () => window.dispatchEvent(new CustomEvent('stp:open-dealer', { detail: { id: dealerId } }));
   const [more, setMore] = useState({ show: false, has: false, give: false, back: false });
   const [sel, setSel] = useState([]);                     // ticked items across the four sample lists: { kind, id, from }
   const [dragOver, setDragOver] = useState('');
@@ -281,17 +284,18 @@ export default function DealerVisitModal({ dealerId, dealerName = '', onClose })
                 {v?.current ? (() => { const c2 = v.current; const col = c2.pct == null ? 'var(--t1)' : c2.pct >= 100 ? 'var(--grn)' : c2.pct >= 70 ? '#b45309' : 'var(--red)'; const vsAvg = v.avg6 > 0 ? Math.round((c2.achieved - v.avg6) / v.avg6 * 100) : null; return (
                   <>
                     <div className="dvm-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                      <div className="dvm-tile" style={{ borderLeft: `4px solid ${col}` }}>
+                      <div className="dvm-tile dvm-tap" role="button" tabIndex={0} title="Open the full dealer details" onClick={openDetails} onKeyDown={e => { if (e.key === 'Enter') openDetails(); }} style={{ borderLeft: `4px solid ${col}` }}>
                         <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: '.06em' }}>{c2.isThisMonth ? 'This month' : 'Latest month'} · {c2.label}</div>
                         <div style={{ fontSize: 30, fontWeight: 900, lineHeight: 1.1, color: col, marginTop: 4 }}>{num(c2.achieved)} <span style={{ fontSize: 15, color: 'var(--t3)', fontWeight: 700 }}>of {num(c2.target)}</span></div>
                         <div style={{ fontSize: 13, marginTop: 4, color: col, fontWeight: 700 }}>{c2.pct == null ? 'No target set' : c2.pct >= 100 ? `Target achieved · ${c2.pct}%` : `${c2.pct}% done · ${num(c2.toGo)} more to reach target`}</div>
                       </div>
-                      <div className="dvm-tile" style={{ borderLeft: '4px solid var(--acc)' }}>
+                      <div className="dvm-tile dvm-tap" role="button" tabIndex={0} title="Open the full dealer details" onClick={openDetails} onKeyDown={e => { if (e.key === 'Enter') openDetails(); }} style={{ borderLeft: '4px solid var(--acc)' }}>
                         <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: '.06em' }}>6-month average</div>
                         <div style={{ fontSize: 30, fontWeight: 900, lineHeight: 1.1, marginTop: 4 }}>{num(v.avg6)} <span style={{ fontSize: 15, color: 'var(--t3)', fontWeight: 700 }}>per month</span></div>
                         <div style={{ fontSize: 13, marginTop: 4, color: vsAvg == null ? 'var(--t3)' : vsAvg >= 0 ? 'var(--grn)' : 'var(--red)', fontWeight: 700 }}>{vsAvg == null ? 'No earlier months to compare' : vsAvg >= 0 ? `This month is ${vsAvg}% above the average` : `This month is ${-vsAvg}% below the average`}</div>
                       </div>
                     </div>
+                    <button type="button" className="dvm-more" onClick={openDetails}>Full details — sales graph, every month, outstanding ›</button>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
                       {v.months.map(m => <span key={m.label} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 20, border: '1px solid var(--b1)', background: m.ym === c2.ym ? 'color-mix(in srgb, var(--acc) 14%, transparent)' : 'var(--bg2)', color: 'var(--t2)' }}>{m.label} <b style={{ color: m.pct == null ? 'var(--t1)' : m.pct >= 100 ? 'var(--grn)' : 'var(--red)' }}>{num(m.achieved)}</b>{m.target ? <span style={{ color: 'var(--t3)' }}>/{num(m.target)}</span> : ''}</span>)}
                     </div>

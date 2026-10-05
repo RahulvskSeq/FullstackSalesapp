@@ -1274,6 +1274,11 @@ export default function Styles({theme}){
     .pv-chips button.on{background:var(--acc);border-color:var(--acc);color:#fff}
     .pv-chips button.nm.on{background:#ef4444;border-color:#ef4444}
     .pv-cp{position:relative}
+    /* dealer visit popup: tiles that open the full dealer card, which then sits above the popup */
+    .dvm-tap{cursor:pointer;transition:transform .12s,box-shadow .12s}
+    .dvm-tap:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(15,23,42,.10)}
+    .dvm-more{margin-top:8px;padding:6px 12px;border-radius:9px;border:1px solid color-mix(in srgb,var(--acc) 30%,transparent);background:color-mix(in srgb,var(--acc) 8%,transparent);color:var(--acc);font-size:12px;font-weight:700;cursor:pointer}
+    body.stp-dvm-open .dm-ov{z-index:2100}
     /* Sheets: fixed Dealers target item + its pane */
     .sh-fixed{display:flex;align-items:center;gap:9px;padding:11px 12px;cursor:pointer;border-bottom:1px solid var(--b1);border-left:3px solid transparent;background:color-mix(in srgb,#f59e0b 5%,transparent)}
     .sh-fixed.on{background:var(--bg2);border-left-color:#f59e0b}

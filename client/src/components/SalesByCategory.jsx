@@ -26,7 +26,9 @@ const fmt = n => (n == null ? '—' : Number(n).toLocaleString('en-IN'));
 // scoped server-side, so a salesman opening Overview sees only their own row.
 const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[], onOpenDealer, onlyMtd=false } = {}) => {
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superadmin';
-  const { MO: ctxMO } = useMonth() || {};
+  const { MO: ctxMO, selectedMonthIdx } = useMonth() || {};
+  // the month picked at the top of the app — this screen follows it
+  const globalYM = moToYM(ctxMO?.[selectedMonthIdx]) || '';
   const { t: tr } = useT();
   // MTD summary on Home opens as salesman cards; the table (where targets are typed) is one tap away
   const [mtdView, setMtdView] = useState(onlyMtd ? 'summary' : 'table');
@@ -75,9 +77,19 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
   useEffect(() => {
     api.salesMonths().then(ms => {
       setMonths(ms);
-      if (ms.length) setMonth(ms[ms.length-1]);     // latest by default
+      // the top month when it has data, else the latest month with data
+      if (globalYM && ms.includes(globalYM)) setMonth(globalYM);
+      else if (ms.length) setMonth(ms[ms.length-1]);
     }).catch(()=>{});
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // changing the month at the top moves this screen to it (the picker here can still choose another)
+  const firstGlobal = useRef(true);
+  useEffect(() => {
+    if (firstGlobal.current) { firstGlobal.current = false; return; }
+    if (globalYM) setMonth(globalYM);
+  }, [globalYM]);
+  // a month with no sales uploaded still appears in the picker, so the choice is visible
+  const monthOptions = month && !months.includes(month) ? [...months, month].sort() : months;
 
   // Reload all three aggregates whenever month changes
   // Sequence number so an older month's reply cannot overwrite a newer one.
@@ -892,8 +904,8 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
             {isAdmin && <button className={'seg-b'+(mtdView==='table'?' on':'')} style={{'--tone':'var(--acc)'}} onClick={()=>setMtdView('table')}>Edit targets</button>}
           </div>
           <select value={month} onChange={e=>setMonth(e.target.value)} className="inp mtd-month">
-            {months.length === 0 && <option value="">(no data yet)</option>}
-            {months.map(m => <option key={m} value={m}>{m}</option>)}
+            {monthOptions.length === 0 && <option value="">(no data yet)</option>}
+            {monthOptions.map(m => <option key={m} value={m}>{m}{months.includes(m) ? '' : ' (no data)'}</option>)}
           </select>
           <button className="btn" onClick={load} disabled={loading} style={{padding:'6px 9px'}} title="Reload">
             <RefreshCw size={13} className={loading?'spin':''}/>
@@ -913,8 +925,8 @@ const SalesByCategory = ({ currentUser, users={}, dealers=[], outstandingData=[]
         <div style={{display:'flex',alignItems:'center',gap:6}}>
           <Calendar size={14} color="var(--t3)"/>
           <select value={month} onChange={e=>setMonth(e.target.value)} className="inp" style={{minWidth:140}}>
-            {months.length === 0 && <option value="">(no data yet)</option>}
-            {months.map(m => <option key={m} value={m}>{m}</option>)}
+            {monthOptions.length === 0 && <option value="">(no data yet)</option>}
+            {monthOptions.map(m => <option key={m} value={m}>{m}{months.includes(m) ? '' : ' (no data)'}</option>)}
           </select>
         </div>
         <button className="btn" onClick={load} disabled={loading}>

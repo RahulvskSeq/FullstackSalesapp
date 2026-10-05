@@ -16413,6 +16413,13 @@ export default function App(){
   // everything inside the popup from the dealer's own Sale history, and dies
   // with the popup — so in-popup changes never leak back to the home filter.
   const editing=editingId?dealers.find(x=>x.id===editingId):null;
+  // the dealer visit popup asks for the full dealer card (it opens on top of the popup)
+  useEffect(()=>{
+    const h=e=>{ const id=String(e.detail?.id||''); if(!id) return;
+      if(dealers.some(x=>x.id===id)) setEditingId(id); else notify.error('This dealer is not in your list'); };
+    window.addEventListener('stp:open-dealer',h);
+    return ()=>window.removeEventListener('stp:open-dealer',h);
+  },[dealers]);
 
   // Features an admin has switched off, app-wide. Separate from per-user
   // permissions: this asks whether the feature is on at all.

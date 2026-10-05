@@ -62,7 +62,8 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
   // Day view: a strip you swipe through — two weeks back to about six weeks ahead of today
   // (stretched to keep the chosen day inside), loaded with the month so every tile has its count
   const t0 = todayYmd();
-  const stripFrom = [addDays(t0, -14), addDays(day, -7)].sort()[0], stripTo = [addDays(t0, 45), addDays(day, 14)].sort()[1];
+  const [ahead, setAhead] = useState(60);   // days ahead of today in the strip; grows as you scroll toward the end
+  const stripFrom = [addDays(t0, -14), addDays(day, -7)].sort()[0], stripTo = [addDays(t0, ahead), addDays(day, 14)].sort()[1];
   const lo = view === 'day' ? stripFrom : wk0, hi = view === 'day' ? stripTo : wk6;
   const loadFrom = lo < from ? lo : from, loadTo = hi > to ? hi : to;
   const plans = useMemo(() => plansAll.filter(p => p.date >= from && p.date <= to), [plansAll, from, to]);   // month figures count the month only
@@ -211,6 +212,15 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
     const box = stripRef.current, el = box?.querySelector(`[data-day="${day}"]`);
     if (box && el) box.scrollTo({ left: el.offsetLeft - box.clientWidth / 2 + el.clientWidth / 2, behavior: 'smooth' });
   }, [day, view, stripFrom]);
+  // a mouse wheel scrolls the strip sideways; near the end, more future days are added
+  useEffect(() => {
+    const box = stripRef.current; if (!box || view !== 'day') return;
+    const wheel = e => { if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { box.scrollLeft += e.deltaY; e.preventDefault(); } };
+    box.addEventListener('wheel', wheel, { passive: false });
+    return () => box.removeEventListener('wheel', wheel);
+  }, [view]);
+  const onStripScroll = e => { const b = e.currentTarget; if (b.scrollLeft + b.clientWidth > b.scrollWidth - 240) setAhead(a => Math.min(a + 30, 400)); };
+  const stepStrip = dir => { const b = stripRef.current; if (b) b.scrollBy({ left: dir * Math.max(240, b.clientWidth * 0.8), behavior: 'smooth' }); };
   const pickStripDay = (c) => {
     const x = new Date(c + 'T00:00:00');
     if (x.getFullYear() !== month.getFullYear() || x.getMonth() !== month.getMonth()) setMonth(new Date(x.getFullYear(), x.getMonth(), 1));
@@ -376,7 +386,9 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
               );
             })}
           </div>}
-          {view === 'day' && <div className="vc-strip scroll" ref={stripRef}>
+          {view === 'day' && <div className="vc-stripwrap">
+          <button className="vc-sgo l" onClick={() => stepStrip(-1)} aria-label="Earlier days"><ChevronLeft size={16} /></button>
+          <div className="vc-strip scroll" ref={stripRef} onScroll={onStripScroll}>
             {stripDays.map(c => {
               const n = (byDay[c] || []).filter(p => !sm || p.salesmanId === sm).length;
               const dw = (new Date(c + 'T00:00:00').getDay() + 6) % 7;
@@ -385,6 +397,8 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
                 {first && <i className="vc-smon">{new Date(c + 'T00:00:00').toLocaleDateString('en-IN', { month: 'short' })}</i>}
                 <span>{DOW[dw]}</span><b>{Number(c.slice(-2))}</b><em>{n ? n + ' planned' : '—'}</em></button>;
             })}
+          </div>
+          <button className="vc-sgo r" onClick={() => stepStrip(1)} aria-label="Later days"><ChevronRight size={16} /></button>
           </div>}
         </div>
 
@@ -712,6 +726,10 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
         .vc-wit small { flex-shrink: 0; font-size: 9.5px; color: var(--t3); }
         .vc-wnone { font-size: 11px; color: var(--t3); text-align: center; padding-top: 6px; }
         .vc-strip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+        .vc-stripwrap { position: relative; display: flex; align-items: center; gap: 6px; min-width: 0; }
+        .vc-stripwrap .vc-strip { flex: 1; min-width: 0; }
+        .vc-sgo { flex-shrink: 0; width: 30px; height: 56px; border-radius: 10px; border: 1px solid var(--b2); background: var(--bg1); color: var(--t2); display: grid; place-items: center; cursor: pointer; }
+        .vc-sgo:hover { color: var(--acc); border-color: var(--acc); }
         .vc-strip.scroll { display: flex; overflow-x: auto; scroll-snap-type: x proximity; padding: 2px 2px 6px; scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
         .vc-strip.scroll .vc-sday { flex: 0 0 76px; scroll-snap-align: center; position: relative; }
         .vc-sday.past { opacity: .6; }
@@ -805,6 +823,7 @@ export default function VisitCalendar({ dealers = [], users = {}, currentUser, o
         .vc-missed { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); }
         @media (max-width: 1180px) { .vc-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
         @media (max-width: 860px) { .vc-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } .vck-top { grid-column: 1 / -1; } }
+        @media (max-width: 600px) { .vc-sgo { display: none; } }
         @media (max-width: 600px) { .vck { padding: 11px 12px; gap: 10px; } .vck-ico { width: 34px; height: 34px; border-radius: 10px; } .vck-n { font-size: 20px; } .vck-lbl { font-size: 12px; } .vck-sub { font-size: 10.5px; } .vck-top { flex-wrap: wrap; } .vck-tiers { flex-basis: 100%; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 8px 0 0; border-left: 0; border-top: 1px dashed color-mix(in srgb, var(--tone) 30%, var(--b1)); gap: 4px 10px; } }
         @media (max-width: 600px) {
           .vc-views { margin-left: 0; }
