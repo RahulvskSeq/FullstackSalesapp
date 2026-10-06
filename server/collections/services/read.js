@@ -33,7 +33,13 @@ export async function listBalances(scopeF, q = {}) {
   const names = new Map((await User().find({ id: { $in: [...new Set(items.map(i => i.salesmanId))] } }, 'id name').lean()).map(u => [u.id, u.name]));
   const phones = new Map((await Dealer().find({ _id: { $in: items.map(i => i.dealerId) } }, 'phone whatsappOptOut').lean()).map(d => [String(d._id), d]));
   const pend = await pendingByDealer(items.map(i => String(i.dealerId)));
-  return { items: items.map(i => ({ ...i, buckets: asObj(i.buckets), salesmanName: names.get(i.salesmanId) || i.salesmanId, phone: phones.get(String(i.dealerId))?.phone || '', whatsappOptOut: !!phones.get(String(i.dealerId))?.whatsappOptOut, pendingApproval: pend.get(String(i.dealerId))?.amount || 0, pendingRecorded: pend.get(String(i.dealerId))?.recorded || 0, came30: pend.get(String(i.dealerId))?.came30 || 0, came30Count: pend.get(String(i.dealerId))?.came30Count || 0 })), total, page, limit, sum: agg[0]?.sum || 0, owing: agg[0]?.owing || 0 };
+  // the dealer's latest promise when none is open — a broken or kept one still tells the story
+  const lastP = new Map((await ColPromise.aggregate([
+    { $match: { dealerId: { $in: items.filter(i => !i.promise?.amount).map(i => i.dealerId) }, status: { $ne: 'CANCELLED' } } },
+    { $sort: { promiseDate: -1, createdAt: -1 } },
+    { $group: { _id: '$dealerId', amount: { $first: '$amount' }, date: { $first: '$promiseDate' }, status: { $first: '$status' }, received: { $first: '$received' } } },
+  ])).map(p => [String(p._id), { amount: p.amount, date: p.date, status: p.status, received: p.received || 0 }]));
+  return { items: items.map(i => ({ ...i, lastPromise: lastP.get(String(i.dealerId)) || null, buckets: asObj(i.buckets), salesmanName: names.get(i.salesmanId) || i.salesmanId, phone: phones.get(String(i.dealerId))?.phone || '', whatsappOptOut: !!phones.get(String(i.dealerId))?.whatsappOptOut, pendingApproval: pend.get(String(i.dealerId))?.amount || 0, pendingRecorded: pend.get(String(i.dealerId))?.recorded || 0, came30: pend.get(String(i.dealerId))?.came30 || 0, came30Count: pend.get(String(i.dealerId))?.came30Count || 0 })), total, page, limit, sum: agg[0]?.sum || 0, owing: agg[0]?.owing || 0 };
 }
 
 /** Everything about one dealer, in the sections the Dealer 360 screen shows. */
